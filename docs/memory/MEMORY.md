@@ -1,0 +1,4 @@
+- [zhyq 园区项目](zhyq-project.md) — 全新 Java+Vue3、不用 yudao、从零搭,目录 ~/Documents/zhyq(2026-07-13 起在 Mac)
+- [zhyq 后端代码图谱](zhyq-backend-map.md) — 后端结构/API 图谱,codegraph 已索引(backend/.codegraph),用 npx 跑
+- [zhyq 前端代码图谱](zhyq-frontend-map.md) — 前端结构/页面分布,codegraph 已索引(frontend/.codegraph)
+- [zhyq 升级调研](zhyq-upgrade-research.md) — 方案v2(25家对标)执行中,卡片在 docs/upgrade/cards/,报告前不改代码

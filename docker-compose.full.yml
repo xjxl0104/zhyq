@@ -1,0 +1,49 @@
+# 全家桶一键部署:MySQL + 后端 + 前端(Nginx)
+# 用法:docker compose -f docker-compose.full.yml up -d --build
+# 打开:http://localhost  (演示账号 admin / zhyq@2026)
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: zhyq-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: zhyq123456
+      MYSQL_DATABASE: zhyq_park
+      TZ: Asia/Shanghai
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --default-time-zone=+08:00
+    volumes:
+      - zhyq_mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-pzhyq123456"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  backend:
+    build: ./backend
+    container_name: zhyq-backend
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      TZ: Asia/Shanghai
+      # 容器内连 mysql 服务(内部 3306),Flyway 自动建表+灌种子
+      DB_URL: jdbc:mysql://mysql:3306/zhyq_park?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useSSL=false
+      DB_USERNAME: root
+      DB_PASSWORD: zhyq123456
+
+  frontend:
+    build: ./frontend
+    container_name: zhyq-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "80:80"   # 对外唯一出口;改成 "8080:80" 可避开占用
+
+volumes:
+  zhyq_mysql_data:
