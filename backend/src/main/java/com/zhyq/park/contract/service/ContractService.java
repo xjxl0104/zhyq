@@ -2,6 +2,7 @@ package com.zhyq.park.contract.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.zhyq.park.common.event.DomainEvent;
 import com.zhyq.park.common.exception.BizException;
 import com.zhyq.park.contract.entity.ApprovalRef;
 import com.zhyq.park.contract.entity.Contract;
@@ -15,13 +16,16 @@ import com.zhyq.park.contract.mapper.ContractRoomMapper;
 import com.zhyq.park.contract.mapper.ContractVersionMapper;
 import com.zhyq.park.contract.mapper.FinBillMapper;
 import com.zhyq.park.contract.mapper.RoomRefMapper;
+import com.zhyq.park.workflow.service.WorkflowService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 
@@ -39,6 +43,8 @@ public class ContractService {
     private final FinBillMapper finBillMapper;
     private final RoomRefMapper roomRefMapper;
     private final ApprovalRefMapper approvalRefMapper;
+    private final ApplicationEventPublisher eventPublisher;
+    private final WorkflowService workflowService;
 
     // 合同状态
     private static final int ST_DRAFT = 1;      // 草稿
@@ -75,6 +81,12 @@ public class ContractService {
         approval.setStatus(2); // 审批中
         approval.setApplyBy("system");
         approvalRefMapper.insert(approval);
+
+        eventPublisher.publishEvent(new DomainEvent.ContractSubmitted(id, c.getCode(), LocalDateTime.now()));
+
+        // 发起审批链(叠加在合同审批之上的前置流程)。未配启用流程定义时 start() 直接返回,降级为旧单节点审批。
+        // 传入 approval.getId() 作单据头(D1-方案A)。start 内部只用 wf_* 表 + 发事件,不回调 submit,无循环依赖。
+        workflowService.start("contract", id, approval.getId());
     }
 
     /**
@@ -117,6 +129,11 @@ public class ContractService {
 
         // ③ 生成周期账单计划
         generateBillPlan(c, rooms);
+
+        // ④ 发布领域事件(保守:副作用已在上方同事务完成,本事件仅供下游感知;
+        //    AFTER_COMMIT 消费,事务回滚则不发)
+        eventPublisher.publishEvent(new DomainEvent.ContractApproved(
+                c.getId(), c.getCode(), c.getTenantRefId(), c.getProjectId(), LocalDateTime.now()));
     }
 
     /**
@@ -258,5 +275,9 @@ public class ContractService {
         cv.setChangeType("退租");
         cv.setEffectDate(today);
         contractVersionMapper.insert(cv);
+
+        // 发布退租事件(供下游感知,不改既有逻辑)
+        eventPublisher.publishEvent(new DomainEvent.ContractTerminated(
+                c.getId(), c.getCode(), c.getTenantRefId(), c.getProjectId(), LocalDateTime.now()));
     }
 }

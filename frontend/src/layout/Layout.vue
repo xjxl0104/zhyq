@@ -37,6 +37,12 @@
           <span class="crumb">{{ currentTitle }}</span>
         </div>
         <div class="actions">
+          <el-icon class="theme-btn" @click="openAssistant" title="AI 助手">
+            <MagicStick />
+          </el-icon>
+          <el-icon class="theme-btn" @click="theme.toggle()" :title="theme.isDark ? '切换亮色' : '切换暗色'">
+            <Moon v-if="!theme.isDark" /><Sunny v-else />
+          </el-icon>
           <button class="screen-btn" @click="openScreen">
             <el-icon><Monitor /></el-icon><span>监控大屏</span>
           </button>
@@ -53,10 +59,11 @@
           </el-dropdown>
         </div>
       </el-header>
+      <TagsView />
       <el-main>
         <router-view v-slot="{ Component }">
           <transition name="fade-slide" mode="out-in">
-            <keep-alive><component :is="Component" /></keep-alive>
+            <keep-alive><component :is="Component" :key="route.fullPath" /></keep-alive>
           </transition>
         </router-view>
       </el-main>
@@ -66,12 +73,16 @@
 
 <script setup>
 import { computed, ref } from 'vue'
+import { ElMessage } from 'element-plus'
 import { useRoute, useRouter } from 'vue-router'
 import { menuTree } from './menu'
 import request from '@/utils/request'
+import { useThemeStore } from '@/stores/theme'
+import TagsView from './TagsView.vue'
 
 const route = useRoute()
 const router = useRouter()
+const theme = useThemeStore()
 const collapsed = ref(false)
 const activePath = computed(() => route.path)
 const currentTitle = computed(() => route.meta.title || '')
@@ -93,6 +104,10 @@ function onClick(c) {
 }
 function openScreen() {
   window.open(router.resolve('/screen').href, '_blank')
+}
+// AI 助手扩展点位:后端 /api/agent/chat 已预留,本轮仅占位入口,接 agent 时在此挂载对话面板
+function openAssistant() {
+  ElMessage.info('AI 助手入口已预留,功能开发中')
 }
 </script>
 
@@ -190,6 +205,11 @@ function openScreen() {
 .crumb { font-size: 16px; font-weight: 600; color: var(--text-title); }
 
 .actions { display: flex; align-items: center; gap: 18px; }
+.theme-btn {
+  font-size: 19px; color: var(--text-secondary); cursor: pointer;
+  padding: 6px; border-radius: 7px; transition: all .15s;
+}
+.theme-btn:hover { background: var(--bg-hover); color: var(--brand); }
 .screen-btn {
   display: flex; align-items: center; gap: 6px;
   border: none; cursor: pointer;

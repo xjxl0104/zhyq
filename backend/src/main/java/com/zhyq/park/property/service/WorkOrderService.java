@@ -1,11 +1,13 @@
 package com.zhyq.park.property.service;
 
+import com.zhyq.park.common.event.DomainEvent;
 import com.zhyq.park.common.exception.BizException;
 import com.zhyq.park.property.entity.WorkOrder;
 import com.zhyq.park.property.entity.WorkOrderLog;
 import com.zhyq.park.property.mapper.WorkOrderLogMapper;
 import com.zhyq.park.property.mapper.WorkOrderMapper;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -22,6 +24,7 @@ public class WorkOrderService {
 
     private final WorkOrderMapper workOrderMapper;
     private final WorkOrderLogMapper workOrderLogMapper;
+    private final ApplicationEventPublisher eventPublisher;
 
     public static final int ST_PENDING_DISPATCH = 1; // 待派单
     public static final int ST_PENDING_ACCEPT = 2;    // 待接单
@@ -126,6 +129,7 @@ public class WorkOrderService {
         upd.setScore(score);
         workOrderMapper.updateById(upd);
         log(id, "验收", operator, "验收通过,满意度评分:" + (score == null ? "-" : score));
+        eventPublisher.publishEvent(new DomainEvent.WorkOrderClosed(id, LocalDateTime.now()));
     }
 
     /** 关闭:→已关闭(6)。已完成(5)的工单已终态,不允许再关闭覆盖 */
@@ -140,5 +144,6 @@ public class WorkOrderService {
         upd.setStatus(ST_CLOSED);
         workOrderMapper.updateById(upd);
         log(id, "关闭", operator, StringUtils.hasText(content) ? content : "工单关闭");
+        eventPublisher.publishEvent(new DomainEvent.WorkOrderClosed(id, LocalDateTime.now()));
     }
 }

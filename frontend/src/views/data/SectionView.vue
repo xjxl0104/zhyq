@@ -69,26 +69,7 @@
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
 import { projectApi, buildingApi, floorApi, roomApi } from '@/api/building'
-
-// 状态色映射(规格书 §17)
-const STATUS = {
-  0: { label: '未配置', color: '#94a3b8' },
-  1: { label: '可租', color: '#16a34a' },
-  2: { label: '锁定', color: '#f59e0b' },
-  3: { label: '意向占用', color: '#f59e0b' },
-  4: { label: '签约中', color: '#f59e0b' },
-  5: { label: '在租', color: '#4f46e5' },
-  6: { label: '退租处理中', color: '#e5484d' },
-  7: { label: '维修', color: '#e5484d' },
-  8: { label: '停用', color: '#e5484d' }
-}
-const legends = [
-  { label: '可租', color: '#16a34a' },
-  { label: '锁定/意向/签约中', color: '#f59e0b' },
-  { label: '在租', color: '#4f46e5' },
-  { label: '退租/维修/停用', color: '#e5484d' },
-  { label: '未配置', color: '#94a3b8' }
-]
+import { ROOM_STATUS_LEGENDS as legends, roomStatusLabel, roomStatusColor } from '@/constants/roomStatus'
 
 const projects = ref([])
 const buildings = ref([])
@@ -100,8 +81,8 @@ const loading = ref(false)
 const dialogVisible = ref(false)
 const current = ref(null)
 
-const statusLabel = (s) => (STATUS[s] || STATUS[0]).label
-const statusColor = (s) => (STATUS[s] || STATUS[0]).color
+const statusLabel = roomStatusLabel
+const statusColor = roomStatusColor
 const fmtArea = (v) => (v == null ? '—' : Number(v) + ' ㎡')
 
 // 状态色浅底 + 左侧 4px 状态色条
@@ -179,44 +160,44 @@ onMounted(async () => {
 <style scoped>
 .toolbar {
   display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;
-  background: #fff; border-radius: 8px; padding: 14px 20px; margin-bottom: 16px;
-  box-shadow: 0 1px 4px rgba(0, 21, 41, 0.06);
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 14px 20px; margin-bottom: 16px;
 }
 .filters { display: flex; gap: 12px; }
 .legend { display: flex; flex-wrap: wrap; gap: 16px; }
-.legend-item { display: flex; align-items: center; gap: 6px; font-size: 13px; color: #6b7280; }
+.legend-item { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-secondary); }
 .legend-dot { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
 
 .section-card {
-  background: #fff; border-radius: 8px; padding: 8px 20px 20px;
-  box-shadow: 0 1px 4px rgba(0, 21, 41, 0.06); min-height: 200px;
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 8px 20px 20px; min-height: 200px;
 }
 .floors { display: flex; flex-direction: column; }
-.floor-row { display: flex; gap: 16px; padding: 16px 0; border-bottom: 1px dashed #eef0f4; }
+.floor-row { display: flex; gap: 16px; padding: 16px 0; border-bottom: 1px dashed var(--border); }
 .floor-row:last-child { border-bottom: none; }
 .floor-badge {
   flex-shrink: 0; width: 72px; display: flex; flex-direction: column; align-items: center; justify-content: center;
-  background: linear-gradient(135deg, #eef2ff, #e0e7ff); border-radius: 8px; padding: 10px 0;
+  background: var(--el-color-primary-light-9); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 10px 0;
 }
-.fb-name { font-size: 15px; font-weight: 700; color: #4f46e5; }
-.fb-cnt { font-size: 12px; color: #9aa1ac; margin-top: 4px; }
+.fb-name { font-size: 15px; font-weight: 700; color: var(--brand); }
+.fb-cnt { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
 .room-grid {
   flex: 1; display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 10px;
 }
 .room-cell {
-  border-radius: 8px; padding: 12px 12px; cursor: pointer; transition: all 0.2s;
-  box-shadow: 0 1px 2px rgba(0, 21, 41, 0.04);
+  border-radius: var(--radius-sm); padding: 12px 12px; cursor: pointer; transition: all 0.2s;
+  box-shadow: var(--shadow-card);
 }
-.room-cell:hover { transform: translateY(-3px); box-shadow: 0 6px 16px rgba(0, 21, 41, 0.12); }
-.rc-no { font-size: 15px; font-weight: 600; color: #303133; }
-.rc-area { font-size: 12px; color: #6b7280; margin-top: 4px; }
+.room-cell:hover { transform: translateY(-3px); box-shadow: var(--shadow-pop); }
+.rc-no { font-size: 15px; font-weight: 600; color: var(--text-title); }
+.rc-area { font-size: 12px; color: var(--text-secondary); margin-top: 4px; }
 
 .summary-bar {
   display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px;
-  background: #fff; border-radius: 8px; padding: 16px 20px; margin-top: 16px;
-  box-shadow: 0 1px 4px rgba(0, 21, 41, 0.06);
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 16px 20px; margin-top: 16px;
 }
 .sm-item { display: flex; flex-direction: column; align-items: center; }
-.sm-num { font-size: 26px; font-weight: 700; color: #303133; }
-.sm-lab { font-size: 13px; color: #6b7280; margin-top: 4px; }
+.sm-num { font-size: 26px; font-weight: 700; color: var(--text-title); }
+.sm-lab { font-size: 13px; color: var(--text-secondary); margin-top: 4px; }
 </style>

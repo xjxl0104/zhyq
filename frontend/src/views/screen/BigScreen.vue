@@ -102,7 +102,23 @@ const fin = reactive({}), contract = reactive({}), device = reactive({}), room =
 const alarms = ref([]), funnel = ref([])
 const roomRef = ref(), trendRef = ref(), woRef = ref()
 const now = ref('')
-let timer = null
+
+// 大屏调色板:集中一处,替代散落的硬编码 hex,便于统一调色
+const PALETTE = {
+  cyan: '#22d3ee', sky: '#0ea5e9', blue: '#60a5fa', deepBlue: '#0369a1',
+  axisLine: '#334155', axisLabel: '#94a3b8', splitLine: '#1e293b',
+  label: '#cbd5e1'
+}
+const darkAxis = {
+  axisLine: { lineStyle: { color: PALETTE.axisLine } },
+  axisLabel: { color: PALETTE.axisLabel },
+  splitLine: { lineStyle: { color: PALETTE.splitLine } }
+}
+
+// —— 定时器与图表实例集中管理,卸载时统一清理 ——
+const timers = []
+const charts = {}
+function addTimer(fn, ms) { fn(); timers.push(setInterval(fn, ms)) }
 
 const fmtW = (v) => (Number(v || 0) / 10000).toFixed(1)
 const pct = (a, b) => b ? Math.round(a * 100 / b) : 0
@@ -113,78 +129,113 @@ function tick() {
   now.value = d.toLocaleString('zh-CN', { hour12: false })
 }
 
-const darkAxis = {
-  axisLine: { lineStyle: { color: '#334155' } },
-  axisLabel: { color: '#94a3b8' },
-  splitLine: { lineStyle: { color: '#1e293b' } }
+// —— 各卡片独立数据源,独立轮询,互不阻塞 ——
+async function loadOverview() {
+  try {
+    const ov = await dashboardApi.overview()
+    Object.assign(fin, ov.finance); Object.assign(contract, ov.contract)
+    Object.assign(device, ov.device); Object.assign(room, ov.room); Object.assign(other, ov.other)
+  } catch (e) { /* 单卡片失败不影响其他 */ }
+}
+
+async function loadAlarms() {
+  try {
+    const al = await request.get('/iot/alarm/page', { params: { pageNo: 1, pageSize: 6, status: 1 } })
+    let list = al.records || []
+    if (!list.length) {
+      const al2 = await request.get('/iot/alarm/page', { params: { pageNo: 1, pageSize: 6 } })
+      list = al2.records || []
+    }
+    alarms.value = list
+  } catch (e) { /* 保留上次数据 */ }
+}
+
+async function loadFunnel() {
+  try {
+    const leadStats = await leadApi.stats()
+    const total = leadStats.total || 0
+    funnel.value = [
+      { label: '总线索', value: total, w: 100 },
+      { label: '跟进中', value: Math.max(total - leadStats.invalid, 0), w: 80 },
+      { label: '意向', value: Math.round(total * 0.4), w: 55 },
+      { label: '已转化', value: Math.round(total * (leadStats.convertRate || 15) / 100) || 1, w: 30 }
+    ]
+  } catch (e) {}
+}
+
+// —— 图表:实例留引用,可重复 setOption,统一 resize/dispose ——
+function chartOf(key, el) {
+  if (!charts[key]) charts[key] = echarts.init(el)
+  return charts[key]
+}
+
+async function loadRoomChart() {
+  try {
+    const roomData = await dashboardApi.roomStatus()
+    chartOf('room', roomRef.value).setOption({
+      tooltip: { trigger: 'item' },
+      legend: { bottom: 0, textStyle: { color: PALETTE.axisLabel }, type: 'scroll' },
+      series: [{
+        type: 'pie', radius: ['38%', '62%'], center: ['50%', '42%'], data: roomData,
+        label: { color: PALETTE.label, formatter: '{b}\n{c}' }
+      }]
+    })
+  } catch (e) {}
+}
+
+async function loadTrendChart() {
+  try {
+    const trend = await dashboardApi.revenueTrend()
+    chartOf('trend', trendRef.value).setOption({
+      tooltip: { trigger: 'axis' },
+      legend: { data: ['应收', '实收'], textStyle: { color: PALETTE.axisLabel }, top: 0 },
+      grid: { left: 70, right: 30, top: 40, bottom: 30 },
+      xAxis: { type: 'category', data: trend.months, ...darkAxis },
+      yAxis: { type: 'value', ...darkAxis },
+      series: [
+        { name: '应收', type: 'bar', data: trend.receivable, itemStyle: { color: PALETTE.sky }, barWidth: '30%' },
+        { name: '实收', type: 'line', data: trend.received, smooth: true, itemStyle: { color: PALETTE.cyan }, lineStyle: { width: 3 } }
+      ]
+    })
+  } catch (e) {}
+}
+
+async function loadWoChart() {
+  try {
+    const wo = await dashboardApi.workOrderCategory()
+    chartOf('wo', woRef.value).setOption({
+      tooltip: { trigger: 'axis' },
+      grid: { left: 40, right: 20, top: 20, bottom: 30 },
+      xAxis: { type: 'category', data: wo.map(x => x.name), ...darkAxis },
+      yAxis: { type: 'value', ...darkAxis },
+      series: [{ type: 'bar', data: wo.map(x => x.value), barWidth: '40%',
+        itemStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{ offset: 0, color: PALETTE.cyan }, { offset: 1, color: PALETTE.deepBlue }]) } }]
+    })
+  } catch (e) {}
+}
+
+function resizeAll() {
+  Object.values(charts).forEach(c => c && c.resize())
 }
 
 onMounted(async () => {
-  tick(); timer = setInterval(tick, 1000)
-  const ov = await dashboardApi.overview()
-  Object.assign(fin, ov.finance); Object.assign(contract, ov.contract)
-  Object.assign(device, ov.device); Object.assign(room, ov.room); Object.assign(other, ov.other)
-
-  // 告警列表
-  try {
-    const al = await request.get('/iot/alarm/page', { params: { pageNo: 1, pageSize: 6, status: 1 } })
-    alarms.value = al.records || []
-  } catch (e) { alarms.value = [] }
-  // 若无未确认告警,取全部近期
-  if (!alarms.value.length) {
-    try { const al2 = await request.get('/iot/alarm/page', { params: { pageNo: 1, pageSize: 6 } }); alarms.value = al2.records || [] } catch (e) {}
-  }
-
-  // 线索漏斗
-  const leadStats = await leadApi.stats()
-  const total = leadStats.total || 0
-  funnel.value = [
-    { label: '总线索', value: total, w: 100 },
-    { label: '跟进中', value: Math.max(total - leadStats.invalid, 0), w: 80 },
-    { label: '意向', value: Math.round(total * 0.4), w: 55 },
-    { label: '已转化', value: Math.round(total * (leadStats.convertRate || 15) / 100) || 1, w: 30 }
-  ]
-
+  addTimer(tick, 1000)
+  // 卡片粒度独立轮询:告警最勤(15s),KPI/图表次之(30s/60s),线索最缓(60s)
+  addTimer(loadAlarms, 15000)
+  addTimer(loadOverview, 30000)
+  addTimer(loadFunnel, 60000)
   await nextTick()
-  renderCharts()
+  addTimer(loadRoomChart, 60000)
+  addTimer(loadTrendChart, 60000)
+  addTimer(loadWoChart, 60000)
+  window.addEventListener('resize', resizeAll)
 })
 
-async function renderCharts() {
-  const roomData = await dashboardApi.roomStatus()
-  echarts.init(roomRef.value).setOption({
-    tooltip: { trigger: 'item' },
-    legend: { bottom: 0, textStyle: { color: '#94a3b8' }, type: 'scroll' },
-    series: [{
-      type: 'pie', radius: ['38%', '62%'], center: ['50%', '42%'], data: roomData,
-      label: { color: '#cbd5e1', formatter: '{b}\n{c}' }
-    }]
-  })
-
-  const trend = await dashboardApi.revenueTrend()
-  echarts.init(trendRef.value).setOption({
-    tooltip: { trigger: 'axis' },
-    legend: { data: ['应收', '实收'], textStyle: { color: '#94a3b8' }, top: 0 },
-    grid: { left: 70, right: 30, top: 40, bottom: 30 },
-    xAxis: { type: 'category', data: trend.months, ...darkAxis },
-    yAxis: { type: 'value', ...darkAxis },
-    series: [
-      { name: '应收', type: 'bar', data: trend.receivable, itemStyle: { color: '#0ea5e9' }, barWidth: '30%' },
-      { name: '实收', type: 'line', data: trend.received, smooth: true, itemStyle: { color: '#22d3ee' }, lineStyle: { width: 3 } }
-    ]
-  })
-
-  const wo = await dashboardApi.workOrderCategory()
-  echarts.init(woRef.value).setOption({
-    tooltip: { trigger: 'axis' },
-    grid: { left: 40, right: 20, top: 20, bottom: 30 },
-    xAxis: { type: 'category', data: wo.map(x => x.name), ...darkAxis },
-    yAxis: { type: 'value', ...darkAxis },
-    series: [{ type: 'bar', data: wo.map(x => x.value), barWidth: '40%',
-      itemStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{ offset: 0, color: '#22d3ee' }, { offset: 1, color: '#0369a1' }]) } }]
-  })
-}
-
-onUnmounted(() => timer && clearInterval(timer))
+onUnmounted(() => {
+  timers.forEach(clearInterval)
+  window.removeEventListener('resize', resizeAll)
+  Object.values(charts).forEach(c => c && c.dispose())
+})
 </script>
 
 <style scoped>

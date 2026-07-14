@@ -3,6 +3,7 @@ package com.zhyq.park.property.controller;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.zhyq.park.common.event.DomainEvent;
 import com.zhyq.park.common.result.PageResult;
 import com.zhyq.park.common.result.Result;
 import com.zhyq.park.property.entity.WorkOrder;
@@ -13,9 +14,11 @@ import com.zhyq.park.property.service.WorkOrderService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -29,6 +32,7 @@ public class WorkOrderController {
     private final WorkOrderMapper workOrderMapper;
     private final WorkOrderLogMapper workOrderLogMapper;
     private final WorkOrderService workOrderService;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Operation(summary = "分页查询工单")
     @GetMapping("/page")
@@ -74,6 +78,8 @@ public class WorkOrderController {
             wo.setStatus(WorkOrderService.ST_PENDING_DISPATCH);
         }
         workOrderMapper.insert(wo);
+        eventPublisher.publishEvent(new DomainEvent.WorkOrderCreated(
+                wo.getId(), wo.getOrderType(), null, LocalDateTime.now()));
         return Result.ok(wo.getId());
     }
 
