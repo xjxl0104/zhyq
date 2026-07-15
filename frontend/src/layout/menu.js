@@ -58,7 +58,9 @@ export const menuTree = [
       { title: '投诉建议', path: '/property/complaint' },
       { title: '意见反馈', path: '/property/feedback' },
       { title: '投票问卷', path: '/property/survey' },
-      { title: '物业活动', path: '/property/activity' }
+      { title: '物业活动', path: '/property/activity' },
+      { title: '资源目录', path: '/rsv/resource' },
+      { title: '资源预订', path: '/rsv/booking' }
     ]
   },
   {

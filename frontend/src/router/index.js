@@ -63,6 +63,10 @@ const routes = [
       { path: 'property/check-green', meta: { title: '绿化检查', ctype: '绿化' }, component: () => import('@/views/property/Check.vue') },
       { path: 'property/check-quality', meta: { title: '品质核查', ctype: '品质' }, component: () => import('@/views/property/Check.vue') },
 
+      // 资源预订(#23,统一目录+预订,叠加于既有会议室/场地预约)
+      { path: 'rsv/resource', meta: { title: '资源目录' }, component: () => import('@/views/rsv/Resource.vue') },
+      { path: 'rsv/booking', meta: { title: '资源预订' }, component: () => import('@/views/rsv/Booking.vue') },
+
       // 惠企
       { path: 'service/visitor', meta: { title: '访客预约' }, component: () => import('@/views/service/Visitor.vue') },
       { path: 'service/mall', meta: { title: '在线商城' }, component: () => import('@/views/service/Mall.vue') },
