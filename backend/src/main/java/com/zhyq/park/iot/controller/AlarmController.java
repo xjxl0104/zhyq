@@ -3,21 +3,16 @@ package com.zhyq.park.iot.controller;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import com.zhyq.park.common.event.DomainEvent;
 import com.zhyq.park.common.result.PageResult;
 import com.zhyq.park.common.result.Result;
 import com.zhyq.park.iot.entity.Alarm;
-import com.zhyq.park.iot.entity.Device;
 import com.zhyq.park.iot.mapper.AlarmMapper;
-import com.zhyq.park.iot.mapper.DeviceMapper;
+import com.zhyq.park.iot.service.AlarmService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.web.bind.annotation.*;
-
-import java.time.LocalDateTime;
 
 @Slf4j
 @Tag(name = "智慧物联-告警")
@@ -27,8 +22,7 @@ import java.time.LocalDateTime;
 public class AlarmController {
 
     private final AlarmMapper alarmMapper;
-    private final DeviceMapper deviceMapper;
-    private final ApplicationEventPublisher eventPublisher;
+    private final AlarmService alarmService;
 
     @Operation(summary = "分页查询告警")
     @GetMapping("/page")
@@ -50,26 +44,10 @@ public class AlarmController {
         return Result.ok(alarmMapper.selectById(id));
     }
 
-    @Operation(summary = "新增告警")
+    @Operation(summary = "新增告警(去重上报:同设备+同类型活动告警只累加次数,不重复建单)")
     @PostMapping
     public Result<Long> add(@RequestBody Alarm alarm) {
-        alarmMapper.insert(alarm);
-        try {
-            Long spaceId = null;
-            if (alarm.getDeviceId() != null) {
-                Device device = deviceMapper.selectById(alarm.getDeviceId());
-                if (device != null) {
-                    spaceId = device.getSpaceId();
-                }
-            }
-            eventPublisher.publishEvent(new DomainEvent.AlarmRaised(
-                    alarm.getId(), alarm.getDeviceId(),
-                    alarm.getLevel() == null ? null : String.valueOf(alarm.getLevel()),
-                    spaceId, alarm.getAlarmType(), LocalDateTime.now()));
-        } catch (Exception e) {
-            log.warn("发布 AlarmRaised 事件失败,不影响告警落库,alarmId={}", alarm.getId(), e);
-        }
-        return Result.ok(alarm.getId());
+        return Result.ok(alarmService.raise(alarm));
     }
 
     @Operation(summary = "修改告警")
@@ -89,22 +67,42 @@ public class AlarmController {
     @Operation(summary = "确认告警(状态→2已确认)")
     @PostMapping("/{id}/confirm")
     public Result<Void> confirm(@PathVariable Long id) {
-        Alarm alarm = alarmMapper.selectById(id);
-        if (alarm != null) {
-            alarm.setStatus(2);
-            alarmMapper.updateById(alarm);
-        }
+        alarmService.confirm(id);
         return Result.ok();
     }
 
-    @Operation(summary = "关闭告警(状态→5已关闭)")
+    @Operation(summary = "开始处理(状态→3处理中,可指派受理人)")
+    @PostMapping("/{id}/start")
+    public Result<Void> start(@PathVariable Long id, @RequestParam(required = false) String assignee) {
+        alarmService.start(id, assignee);
+        return Result.ok();
+    }
+
+    @Operation(summary = "标记恢复(状态→4已恢复,退出活动告警域)")
+    @PostMapping("/{id}/recover")
+    public Result<Void> recover(@PathVariable Long id) {
+        alarmService.recover(id);
+        return Result.ok();
+    }
+
+    @Operation(summary = "关闭告警(状态→5已关闭,退出活动告警域)")
     @PostMapping("/{id}/close")
     public Result<Void> close(@PathVariable Long id) {
-        Alarm alarm = alarmMapper.selectById(id);
-        if (alarm != null) {
-            alarm.setStatus(5);
-            alarmMapper.updateById(alarm);
-        }
+        alarmService.close(id);
+        return Result.ok();
+    }
+
+    @Operation(summary = "标记误报(状态→6误报,退出活动告警域)")
+    @PostMapping("/{id}/false-positive")
+    public Result<Void> falsePositive(@PathVariable Long id) {
+        alarmService.falsePositive(id);
+        return Result.ok();
+    }
+
+    @Operation(summary = "指派受理人")
+    @PostMapping("/{id}/assign")
+    public Result<Void> assign(@PathVariable Long id, @RequestParam String assignee) {
+        alarmService.assign(id, assignee);
         return Result.ok();
     }
 }

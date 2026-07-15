@@ -10,8 +10,10 @@ import com.zhyq.park.common.event.DomainEvent.AlarmRaised;
  * 规则条件匹配器(纯函数,无状态)。
  *
  * <p>D1 决策(设计文档 §6):条件用简单 JSON 字段匹配,非表达式引擎。
- * 首期仅支持 {@code minLevel}(int,event.level >= minLevel 即命中),
- * 结构上按 key 分派,后续新增条件键(如 deviceType)只需加一个 if 分支。</p>
+ * 支持 {@code minLevel}(int,event.level >= minLevel 即命中)与
+ * {@code alarmType}(string,精确匹配 event.alarmType,#13 新增),
+ * 结构上按 key 分派,后续新增条件键(如 deviceType)只需加一个 if 分支。
+ * 多条件键同时存在时为 AND 关系,全部满足才命中。</p>
  */
 public final class RuleEvaluator {
 
@@ -40,6 +42,12 @@ public final class RuleEvaluator {
             Integer minLevel = condition.getInt("minLevel");
             Integer eventLevel = parseLevel(event.level());
             if (minLevel == null || eventLevel == null || eventLevel < minLevel) {
+                return false;
+            }
+        }
+        if (condition.containsKey("alarmType")) {
+            String expected = condition.getStr("alarmType");
+            if (expected == null || !expected.equals(event.alarmType())) {
                 return false;
             }
         }

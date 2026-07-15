@@ -48,4 +48,29 @@ class RuleEvaluatorTest {
     void malformedJson_isNoMatch() {
         assertFalse(RuleEvaluator.matches("{not-json", alarm("9")));
     }
+
+    @Test
+    void alarmType_matches_whenEqual() {
+        assertTrue(RuleEvaluator.matches("{\"alarmType\":\"测试告警\"}", alarm("1")));
+    }
+
+    @Test
+    void alarmType_rejects_whenDifferent() {
+        assertFalse(RuleEvaluator.matches("{\"alarmType\":\"烟感告警\"}", alarm("1")));
+    }
+
+    @Test
+    void combined_minLevelAndAlarmType_matches_whenBothSatisfied() {
+        assertTrue(RuleEvaluator.matches("{\"minLevel\":2,\"alarmType\":\"测试告警\"}", alarm("3")));
+    }
+
+    @Test
+    void combined_minLevelAndAlarmType_rejects_whenAlarmTypeMismatchEvenIfLevelOk() {
+        assertFalse(RuleEvaluator.matches("{\"minLevel\":2,\"alarmType\":\"烟感告警\"}", alarm("3")));
+    }
+
+    @Test
+    void combined_minLevelAndAlarmType_rejects_whenLevelTooLowEvenIfAlarmTypeMatches() {
+        assertFalse(RuleEvaluator.matches("{\"minLevel\":2,\"alarmType\":\"测试告警\"}", alarm("1")));
+    }
 }
