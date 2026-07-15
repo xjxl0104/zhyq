@@ -18,4 +18,9 @@ public class Alarm extends BaseEntity {
     private String location;
     private String content;
     private LocalDateTime alarmTime;
+    private String assignee;
+    private Integer occurCount;
+    private LocalDateTime firstTime;
+    private LocalDateTime lastTime;
+    private Integer active;
 }

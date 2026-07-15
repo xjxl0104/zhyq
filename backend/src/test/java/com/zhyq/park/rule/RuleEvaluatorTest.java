@@ -11,7 +11,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class RuleEvaluatorTest {
 
     private AlarmRaised alarm(String level) {
-        return new AlarmRaised(1L, 2L, level, 3L, LocalDateTime.now());
+        return new AlarmRaised(1L, 2L, level, 3L, "测试告警", LocalDateTime.now());
     }
 
     @Test

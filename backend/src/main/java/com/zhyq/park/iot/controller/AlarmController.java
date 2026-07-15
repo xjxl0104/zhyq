@@ -65,7 +65,7 @@ public class AlarmController {
             eventPublisher.publishEvent(new DomainEvent.AlarmRaised(
                     alarm.getId(), alarm.getDeviceId(),
                     alarm.getLevel() == null ? null : String.valueOf(alarm.getLevel()),
-                    spaceId, LocalDateTime.now()));
+                    spaceId, alarm.getAlarmType(), LocalDateTime.now()));
         } catch (Exception e) {
             log.warn("发布 AlarmRaised 事件失败,不影响告警落库,alarmId={}", alarm.getId(), e);
         }
