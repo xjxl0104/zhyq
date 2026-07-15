@@ -7,14 +7,17 @@ import com.zhyq.park.building.entity.Project;
 import com.zhyq.park.building.mapper.ProjectMapper;
 import com.zhyq.park.common.result.PageResult;
 import com.zhyq.park.common.result.Result;
+import com.zhyq.park.space.service.SpaceSyncService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
+@Slf4j
 @Tag(name = "建筑管理-项目")
 @RestController
 @RequestMapping("/building/project")
@@ -22,6 +25,7 @@ import java.util.List;
 public class ProjectController {
 
     private final ProjectMapper projectMapper;
+    private final SpaceSyncService spaceSyncService;
 
     @Operation(summary = "分页查询项目")
     @GetMapping("/page")
@@ -49,6 +53,7 @@ public class ProjectController {
     @PostMapping
     public Result<Long> add(@RequestBody Project project) {
         projectMapper.insert(project);
+        try { spaceSyncService.sync("project", project.getId()); } catch (Exception e) { log.warn("space sync fail project {}", project.getId(), e); }
         return Result.ok(project.getId());
     }
 
@@ -56,6 +61,7 @@ public class ProjectController {
     @PutMapping
     public Result<Void> update(@RequestBody Project project) {
         projectMapper.updateById(project);
+        try { spaceSyncService.sync("project", project.getId()); } catch (Exception e) { log.warn("space sync fail project {}", project.getId(), e); }
         return Result.ok();
     }
 
@@ -63,6 +69,7 @@ public class ProjectController {
     @DeleteMapping("/{id}")
     public Result<Void> delete(@PathVariable Long id) {
         projectMapper.deleteById(id);
+        try { spaceSyncService.remove("project", id); } catch (Exception e) { log.warn("space remove fail project {}", id, e); }
         return Result.ok();
     }
 

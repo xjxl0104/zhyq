@@ -7,9 +7,11 @@ import com.zhyq.park.building.entity.Room;
 import com.zhyq.park.building.mapper.RoomMapper;
 import com.zhyq.park.common.result.PageResult;
 import com.zhyq.park.common.result.Result;
+import com.zhyq.park.space.service.SpaceSyncService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 
@@ -19,6 +21,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+@Slf4j
 @Tag(name = "建筑管理-房源")
 @RestController
 @RequestMapping("/building/room")
@@ -29,6 +32,7 @@ public class RoomController {
     private static final int STATUS_RENTED = 5;   // 在租
 
     private final RoomMapper roomMapper;
+    private final SpaceSyncService spaceSyncService;
 
     @Operation(summary = "分页查询房源")
     @GetMapping("/page")
@@ -58,6 +62,7 @@ public class RoomController {
     @PostMapping
     public Result<Long> add(@RequestBody Room room) {
         roomMapper.insert(room);
+        try { spaceSyncService.sync("room", room.getId()); } catch (Exception e) { log.warn("space sync fail room {}", room.getId(), e); }
         return Result.ok(room.getId());
     }
 
@@ -65,6 +70,7 @@ public class RoomController {
     @PutMapping
     public Result<Void> update(@RequestBody Room room) {
         roomMapper.updateById(room);
+        try { spaceSyncService.sync("room", room.getId()); } catch (Exception e) { log.warn("space sync fail room {}", room.getId(), e); }
         return Result.ok();
     }
 
@@ -72,6 +78,7 @@ public class RoomController {
     @DeleteMapping("/{id}")
     public Result<Void> delete(@PathVariable Long id) {
         roomMapper.deleteById(id);
+        try { spaceSyncService.remove("room", id); } catch (Exception e) { log.warn("space remove fail room {}", id, e); }
         return Result.ok();
     }
 

@@ -45,6 +45,34 @@ docker compose -f docker-compose.full.yml up -d --build      # 改代码后重�
 | `docker-compose.yml` | **本地开发**:只起 MySQL(:3316),前后端在宿主机裸跑热重载 |
 | `docker-compose.full.yml` | **整体部署/换机/上云**:MySQL + 后端 + 前端全容器化,一个 80 端口出口 |
 
+## 空间树(#3)部署后回填步骤 ⚠️ 必读
+
+统一空间树主数据 `sys_space` 采用**手动 reconcile**（不随启动自动跑）。历史业务数据的 `space_id` 回填迁移 `V21__backfill_space_id.sql` 会在容器启动时由 Flyway 自动执行，但**此时 `sys_space` 尚未 reconcile、表为空，V21 会匹配 0 行**（且 Flyway 记为已应用、不会再自动重跑）。
+
+因此**每次全新部署（或首次灌种子后）**，须按下面顺序手动补一次：
+
+```bash
+# 1) 登录拿 token（admin / zhyq@2026）
+TK=$(curl -s -X POST http://localhost/api/auth/login -H 'Content-Type: application/json' \
+  -d '{"username":"admin","password":"zhyq@2026"}' | sed 's/.*"token":"\([^"]*\)".*/\1/')
+
+# 2) 触发空间树全量回填（把 project/building/floor/room 投影进 sys_space）
+curl -s -X POST http://localhost/api/space/reconcile -H "Authorization: Bearer $TK"
+
+# 3) reconcile 完成后，重跑一次 V21 的回填 UPDATE（幂等，只填 space_id IS NULL 的行）
+#    直接对容器内 MySQL 执行下面 5 条语句（库名 zhyq_park）：
+docker compose -f docker-compose.full.yml exec -T mysql \
+  mysql -uroot -pzhyq123456 zhyq_park <<'SQL'
+UPDATE biz_contract_room r JOIN sys_space s ON s.ref_type='room' AND s.ref_id=r.room_id AND s.deleted=0 SET r.space_id=s.id WHERE r.space_id IS NULL;
+UPDATE pm_work_order w JOIN sys_space s ON s.ref_type='room' AND s.ref_id=w.room_id AND s.deleted=0 SET w.space_id=s.id WHERE w.space_id IS NULL;
+UPDATE eng_reading rd JOIN eng_meter m ON rd.meter_id=m.id JOIN sys_space s ON s.ref_type='room' AND s.ref_id=m.room_id AND s.deleted=0 SET rd.space_id=s.id WHERE rd.space_id IS NULL;
+UPDATE biz_contract c JOIN sys_space s ON s.ref_type='project' AND s.ref_id=c.project_id AND s.deleted=0 SET c.space_id=s.id WHERE c.space_id IS NULL;
+UPDATE iot_device d JOIN sys_space s ON s.ref_type='building' AND s.ref_id=d.building_id AND s.deleted=0 SET d.space_id=s.id WHERE d.space_id IS NULL;
+SQL
+```
+
+> 说明：V21 语句本身幂等（`WHERE space_id IS NULL`），重跑安全。日常运行中新建的房间等由 building controller 增量同步进 `sys_space`，无需手动 reconcile；每日 03:17 有对账 Job 兜底漂移。`biz_contract`（无 room_id，回填到 PROJECT 级）与 `iot_device`（无 room_id，回填到 BUILDING 级）为已知粒度降级，详见 `docs/upgrade/#3-空间树设计.md`。
+
 ## 上云(生产)提醒
 
 这套 full 镜像同样可直接部署到云服务器。上生产前须改:

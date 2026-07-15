@@ -7,14 +7,17 @@ import com.zhyq.park.building.entity.Building;
 import com.zhyq.park.building.mapper.BuildingMapper;
 import com.zhyq.park.common.result.PageResult;
 import com.zhyq.park.common.result.Result;
+import com.zhyq.park.space.service.SpaceSyncService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
+@Slf4j
 @Tag(name = "建筑管理-楼宇")
 @RestController
 @RequestMapping("/building/building")
@@ -22,6 +25,7 @@ import java.util.List;
 public class BuildingController {
 
     private final BuildingMapper buildingMapper;
+    private final SpaceSyncService spaceSyncService;
 
     @Operation(summary = "分页查询楼宇")
     @GetMapping("/page")
@@ -49,6 +53,7 @@ public class BuildingController {
     @PostMapping
     public Result<Long> add(@RequestBody Building building) {
         buildingMapper.insert(building);
+        try { spaceSyncService.sync("building", building.getId()); } catch (Exception e) { log.warn("space sync fail building {}", building.getId(), e); }
         return Result.ok(building.getId());
     }
 
@@ -56,6 +61,7 @@ public class BuildingController {
     @PutMapping
     public Result<Void> update(@RequestBody Building building) {
         buildingMapper.updateById(building);
+        try { spaceSyncService.sync("building", building.getId()); } catch (Exception e) { log.warn("space sync fail building {}", building.getId(), e); }
         return Result.ok();
     }
 
@@ -63,6 +69,7 @@ public class BuildingController {
     @DeleteMapping("/{id}")
     public Result<Void> delete(@PathVariable Long id) {
         buildingMapper.deleteById(id);
+        try { spaceSyncService.remove("building", id); } catch (Exception e) { log.warn("space remove fail building {}", id, e); }
         return Result.ok();
     }
 
