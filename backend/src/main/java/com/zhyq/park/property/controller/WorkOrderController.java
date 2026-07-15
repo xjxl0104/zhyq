@@ -10,6 +10,7 @@ import com.zhyq.park.property.entity.WorkOrder;
 import com.zhyq.park.property.entity.WorkOrderLog;
 import com.zhyq.park.property.mapper.WorkOrderLogMapper;
 import com.zhyq.park.property.mapper.WorkOrderMapper;
+import com.zhyq.park.property.service.SlaEscalationJob;
 import com.zhyq.park.property.service.WorkOrderService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -32,6 +33,7 @@ public class WorkOrderController {
     private final WorkOrderMapper workOrderMapper;
     private final WorkOrderLogMapper workOrderLogMapper;
     private final WorkOrderService workOrderService;
+    private final SlaEscalationJob slaEscalationJob;
     private final ApplicationEventPublisher eventPublisher;
 
     @Operation(summary = "分页查询工单")
@@ -122,7 +124,21 @@ public class WorkOrderController {
     @Operation(summary = "处理完成")
     @PostMapping("/{id}/finish")
     public Result<Void> finish(@PathVariable Long id, @RequestBody(required = false) Map<String, Object> body) {
-        workOrderService.finish(id, operatorOf(body), body == null ? null : strOf(body.get("content")));
+        String content = body == null ? null : strOf(body.get("content"));
+        String resolutionCode = body == null ? null : strOf(body.get("resolutionCode"));
+        workOrderService.finish(id, operatorOf(body), content, resolutionCode);
+        return Result.ok();
+    }
+
+    @Operation(summary = "回访评价")
+    @PostMapping("/{id}/revisit")
+    public Result<Void> revisit(@PathVariable Long id, @RequestBody(required = false) Map<String, Object> body) {
+        Integer score = null;
+        if (body != null && body.get("score") != null) {
+            score = Integer.valueOf(String.valueOf(body.get("score")));
+        }
+        String remark = body == null ? null : strOf(body.get("remark"));
+        workOrderService.revisit(id, operatorOf(body), score, remark);
         return Result.ok();
     }
 
@@ -141,6 +157,13 @@ public class WorkOrderController {
     @PostMapping("/{id}/close")
     public Result<Void> close(@PathVariable Long id, @RequestBody(required = false) Map<String, Object> body) {
         workOrderService.close(id, operatorOf(body), body == null ? null : strOf(body.get("content")));
+        return Result.ok();
+    }
+
+    @Operation(summary = "手动触发SLA超时扫描(调试/运维工具,复用定时任务同一逻辑)")
+    @PostMapping("/sla-scan")
+    public Result<Void> slaScan() {
+        slaEscalationJob.doScan();
         return Result.ok();
     }
 
