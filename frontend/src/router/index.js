@@ -67,6 +67,9 @@ const routes = [
       { path: 'rsv/resource', meta: { title: '资源目录' }, component: () => import('@/views/rsv/Resource.vue') },
       { path: 'rsv/booking', meta: { title: '资源预订' }, component: () => import('@/views/rsv/Booking.vue') },
 
+      // 资产管理(#20,台账+签出签入/报废/维修/盘点)
+      { path: 'am/asset', meta: { title: '资产管理' }, component: () => import('@/views/am/Asset.vue') },
+
       // 惠企
       { path: 'service/visitor', meta: { title: '访客预约' }, component: () => import('@/views/service/Visitor.vue') },
       { path: 'service/mall', meta: { title: '在线商城' }, component: () => import('@/views/service/Mall.vue') },
