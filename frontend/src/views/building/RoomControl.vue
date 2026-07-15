@@ -42,8 +42,9 @@
           <el-table-column prop="orientation" label="朝向" width="80" />
           <el-table-column prop="decoration" label="装修" width="90" />
           <el-table-column label="租金底价" width="120"><template #default="{ row }">¥{{ row.basePrice }}/㎡</template></el-table-column>
-          <el-table-column label="操作" width="140" fixed="right">
+          <el-table-column label="操作" width="200" fixed="right">
             <template #default="{ row }">
+              <el-button link type="primary" @click="showDetail(row)">详情</el-button>
               <el-button link type="primary" @click="openDialog(row)">编辑</el-button>
               <el-popconfirm title="确认删除?" @confirm="remove(row.id)">
                 <template #reference><el-button link type="danger">删除</el-button></template>
@@ -94,8 +95,14 @@
 
 <script setup>
 import { reactive, ref, onMounted, computed } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { projectApi, buildingApi, floorApi, roomApi } from '@/api/building'
+
+const router = useRouter()
+function showDetail(row) {
+  router.push(`/building/room/detail/${row.id}`)
+}
 
 // 状态映射(附录B)
 const allStatus = [

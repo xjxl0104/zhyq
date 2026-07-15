@@ -194,37 +194,18 @@
       </template>
     </el-dialog>
 
-    <!-- 详情弹窗 -->
-    <el-dialog v-model="detail.visible" title="合同详情" width="640px">
-      <el-descriptions :column="2" border v-if="detail.contract">
-        <el-descriptions-item label="合同编号">{{ detail.contract.code }}</el-descriptions-item>
-        <el-descriptions-item label="状态">
-          <el-tag :type="statusTagType(detail.contract.status)">{{ statusText(detail.contract.status) }}</el-tag>
-        </el-descriptions-item>
-        <el-descriptions-item label="租客">{{ tenantName(detail.contract.tenantRefId) }}</el-descriptions-item>
-        <el-descriptions-item label="园区">{{ projectName(detail.contract.projectId) }}</el-descriptions-item>
-        <el-descriptions-item label="起始日期">{{ detail.contract.startDate }}</el-descriptions-item>
-        <el-descriptions-item label="结束日期">{{ detail.contract.endDate }}</el-descriptions-item>
-        <el-descriptions-item label="租赁单价">{{ detail.contract.rentPrice }} 元/㎡</el-descriptions-item>
-        <el-descriptions-item label="租赁面积">{{ detail.contract.rentArea }} ㎡</el-descriptions-item>
-        <el-descriptions-item label="保证金">{{ detail.contract.deposit }} 元</el-descriptions-item>
-        <el-descriptions-item label="付款周期">{{ detail.contract.payCycle }} 月</el-descriptions-item>
-      </el-descriptions>
-      <el-table :data="detail.rooms" border style="margin-top: 16px" size="small">
-        <el-table-column prop="roomId" label="房源ID" />
-        <el-table-column prop="rentArea" label="租赁面积" />
-        <el-table-column prop="rentPrice" label="租赁单价" />
-      </el-table>
-    </el-dialog>
   </div>
 </template>
 
 <script setup>
 import { reactive, ref, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { contractApi } from '@/api/contract'
 import { tenantApi } from '@/api/tenant'
 import { projectApi } from '@/api/building'
+
+const router = useRouter()
 
 // 租客/园区 名称映射(下拉 + 表格名称解析)
 const tenants = ref([])
@@ -341,12 +322,8 @@ async function terminate(id) {
   load()
 }
 
-const detail = reactive({ visible: false, contract: null, rooms: [] })
-async function showDetail(row) {
-  const res = await contractApi.get(row.id)
-  detail.contract = res.contract
-  detail.rooms = res.rooms || []
-  detail.visible = true
+function showDetail(row) {
+  router.push(`/contract/detail/${row.id}`)
 }
 
 onMounted(() => { loadRefs(); load() })

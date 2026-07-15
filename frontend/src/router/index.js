@@ -15,6 +15,7 @@ const routes = [
       { path: 'building/project', meta: { title: '项目管理' }, component: () => import('@/views/building/Project.vue') },
       { path: 'building/building', meta: { title: '建筑管理' }, component: () => import('@/views/building/Building.vue') },
       { path: 'building/room', meta: { title: '租控管理' }, component: () => import('@/views/building/RoomControl.vue') },
+      { path: 'building/room/detail/:id', meta: { title: '房源详情' }, component: () => import('@/views/building/RoomDetail.vue') },
 
       // 招商
       { path: 'crm/lead', meta: { title: '线索管理' }, component: () => import('@/views/crm/Lead.vue') },
@@ -26,11 +27,13 @@ const routes = [
 
       // 租客
       { path: 'tenant/list', meta: { title: '租客列表' }, component: () => import('@/views/tenant/TenantList.vue') },
+      { path: 'tenant/detail/:id', meta: { title: '租客详情' }, component: () => import('@/views/tenant/TenantDetail.vue') },
       { path: 'tenant/staff', meta: { title: '租客员工' }, component: () => import('@/views/tenant/Staff.vue') },
       { path: 'tenant/message', meta: { title: '站内信管理' }, component: () => import('@/views/tenant/Message.vue') },
 
       // 合同
       { path: 'contract/list', meta: { title: '合同列表' }, component: () => import('@/views/contract/ContractList.vue') },
+      { path: 'contract/detail/:id', meta: { title: '合同详情' }, component: () => import('@/views/contract/ContractDetail.vue') },
       { path: 'contract/archive', meta: { title: '合同归档' }, component: () => import('@/views/contract/Archive.vue') },
       { path: 'contract/setting', meta: { title: '合同设置' }, component: () => import('@/views/contract/Setting.vue') },
 
@@ -59,6 +62,18 @@ const routes = [
       { path: 'property/check-clean', meta: { title: '保洁检查', ctype: '保洁' }, component: () => import('@/views/property/Check.vue') },
       { path: 'property/check-green', meta: { title: '绿化检查', ctype: '绿化' }, component: () => import('@/views/property/Check.vue') },
       { path: 'property/check-quality', meta: { title: '品质核查', ctype: '品质' }, component: () => import('@/views/property/Check.vue') },
+
+      // 资源预订(#23,统一目录+预订,叠加于既有会议室/场地预约)
+      { path: 'rsv/resource', meta: { title: '资源目录' }, component: () => import('@/views/rsv/Resource.vue') },
+      { path: 'rsv/booking', meta: { title: '资源预订' }, component: () => import('@/views/rsv/Booking.vue') },
+
+      // 资产管理(#20,台账+签出签入/报废/维修/盘点)
+      { path: 'am/asset', meta: { title: '资产管理' }, component: () => import('@/views/am/Asset.vue') },
+
+      // 便捷通行(#21,门禁记录/访客登记/停车)
+      { path: 'acc/access', meta: { title: '门禁通行记录' }, component: () => import('@/views/acc/Access.vue') },
+      { path: 'acc/visitor', meta: { title: '访客登记' }, component: () => import('@/views/acc/Visitor.vue') },
+      { path: 'acc/parking', meta: { title: '停车管理' }, component: () => import('@/views/acc/Parking.vue') },
 
       // 惠企
       { path: 'service/visitor', meta: { title: '访客预约' }, component: () => import('@/views/service/Visitor.vue') },

@@ -21,7 +21,7 @@
     <!-- 表格区 -->
     <div class="table-card">
       <div class="toolbar">
-        <el-button type="primary" @click="openDialog()"><el-icon><Plus /></el-icon>新增楼宇</el-button>
+        <el-button type="primary" @click="openAdd()"><el-icon><Plus /></el-icon>新增楼宇</el-button>
       </div>
       <el-table :data="list" v-loading="loading" border stripe>
         <el-table-column type="index" label="#" width="55" />
@@ -44,10 +44,8 @@
         </el-table-column>
         <el-table-column label="操作" width="150" fixed="right">
           <template #default="{ row }">
-            <el-button link type="primary" @click="openDialog(row)">编辑</el-button>
-            <el-popconfirm title="确认删除?" @confirm="remove(row.id)">
-              <template #reference><el-button link type="danger">删除</el-button></template>
-            </el-popconfirm>
+            <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
+            <el-button link type="danger" @click="remove(row)">删除</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -57,7 +55,7 @@
     </div>
 
     <!-- 表单弹窗 -->
-    <el-dialog v-model="dialog.visible" :title="dialog.title" width="520px">
+    <el-dialog v-model="dialogVisible" :title="dialogTitle" width="520px">
       <el-form :model="form" label-width="90px" ref="formRef" :rules="rules">
         <el-form-item label="所属项目" prop="projectId">
           <el-select v-model="form.projectId" placeholder="请选择项目" style="width: 100%">
@@ -90,7 +88,7 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="dialog.visible = false">取消</el-button>
+        <el-button @click="dialogVisible = false">取消</el-button>
         <el-button type="primary" @click="submit">确定</el-button>
       </template>
     </el-dialog>
@@ -98,61 +96,31 @@
 </template>
 
 <script setup>
-import { reactive, ref, computed, onMounted } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ref, computed, onMounted } from 'vue'
 import { buildingApi, projectApi } from '@/api/building'
+import { useCrudPage } from '@/composables/useCrudPage'
 
-const loading = ref(false)
-const list = ref([])
-const total = ref(0)
 const projects = ref([])
 const projectMap = computed(() => Object.fromEntries(projects.value.map((p) => [p.id, p.name])))
-const query = reactive({ pageNo: 1, pageSize: 10, projectId: null, name: '' })
-
-async function load() {
-  loading.value = true
-  try {
-    const res = await buildingApi.page(query)
-    list.value = res.records
-    total.value = res.total
-  } finally {
-    loading.value = false
-  }
-}
-function reset() {
-  Object.assign(query, { pageNo: 1, projectId: null, name: '' })
-  load()
-}
 
 const formRef = ref()
-const dialog = reactive({ visible: false, title: '' })
-const blank = { id: null, projectId: null, code: '', name: '', floorCount: 1, buildArea: 0, usageType: '办公', status: 1, sort: 0 }
-const form = reactive({ ...blank })
+const blank = () => ({ id: null, projectId: null, code: '', name: '', floorCount: 1, buildArea: 0, usageType: '办公', status: 1, sort: 0 })
 const rules = {
   projectId: [{ required: true, message: '请选择所属项目', trigger: 'change' }],
   code: [{ required: true, message: '请输入楼宇编码', trigger: 'blur' }],
   name: [{ required: true, message: '请输入楼宇名称', trigger: 'blur' }]
 }
 
-function openDialog(row) {
-  dialog.visible = true
-  dialog.title = row ? '编辑楼宇' : '新增楼宇'
-  if (row) Object.assign(form, row)
-  else Object.assign(form, blank)
-}
-async function submit() {
-  await formRef.value.validate()
-  if (form.id) await buildingApi.update(form)
-  else await buildingApi.add(form)
-  ElMessage.success('保存成功')
-  dialog.visible = false
-  load()
-}
-async function remove(id) {
-  await buildingApi.remove(id)
-  ElMessage.success('删除成功')
-  load()
-}
+const {
+  loading, list, total, query, load, reset,
+  dialogVisible, dialogTitle, form,
+  openAdd, openEdit, submit, remove
+} = useCrudPage(buildingApi, {
+  defaultQuery: { projectId: null, name: '' },
+  emptyForm: blank,
+  titles: { add: '新增楼宇', edit: '编辑楼宇' },
+  beforeSubmit: () => formRef.value.validate()
+})
 
 onMounted(async () => {
   projects.value = await projectApi.list()

@@ -20,7 +20,7 @@
 
     <div class="table-card">
       <div class="toolbar">
-        <el-button type="primary" @click="openDialog()"><el-icon><Plus /></el-icon>新建项目</el-button>
+        <el-button type="primary" @click="openAdd()"><el-icon><Plus /></el-icon>新建项目</el-button>
       </div>
       <el-table :data="list" v-loading="loading" border stripe>
         <el-table-column type="index" label="#" width="55" />
@@ -39,10 +39,8 @@
         </el-table-column>
         <el-table-column label="操作" width="140" fixed="right">
           <template #default="{ row }">
-            <el-button link type="primary" @click="openDialog(row)">编辑</el-button>
-            <el-popconfirm title="确认删除?" @confirm="remove(row.id)">
-              <template #reference><el-button link type="danger">删除</el-button></template>
-            </el-popconfirm>
+            <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
+            <el-button link type="danger" @click="remove(row)">删除</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -51,7 +49,7 @@
                      v-model:page-size="query.pageSize" @change="load" />
     </div>
 
-    <el-dialog v-model="dialog.visible" :title="dialog.title" width="560px">
+    <el-dialog v-model="dialogVisible" :title="dialogTitle" width="560px">
       <el-form :model="form" label-width="90px" ref="formRef" :rules="rules">
         <el-row :gutter="12">
           <el-col :span="12"><el-form-item label="项目编码" prop="code"><el-input v-model="form.code" /></el-form-item></el-col>
@@ -79,7 +77,7 @@
         </el-row>
       </el-form>
       <template #footer>
-        <el-button @click="dialog.visible = false">取消</el-button>
+        <el-button @click="dialogVisible = false">取消</el-button>
         <el-button type="primary" @click="submit">确定</el-button>
       </template>
     </el-dialog>
@@ -87,40 +85,28 @@
 </template>
 
 <script setup>
-import { reactive, ref, onMounted } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ref, onMounted } from 'vue'
 import { projectApi } from '@/api/building'
-
-const loading = ref(false)
-const list = ref([])
-const total = ref(0)
-const query = reactive({ pageNo: 1, pageSize: 10, name: '', status: null })
-
-async function load() {
-  loading.value = true
-  try { const res = await projectApi.page(query); list.value = res.records; total.value = res.total }
-  finally { loading.value = false }
-}
-function reset() { Object.assign(query, { pageNo: 1, name: '', status: null }); load() }
+import { useCrudPage } from '@/composables/useCrudPage'
 
 const formRef = ref()
-const dialog = reactive({ visible: false, title: '' })
-const blank = { id: null, code: '', name: '', type: '产业园', city: '', address: '', manageArea: 0, buildArea: 0, manager: '', status: 1 }
-const form = reactive({ ...blank })
+const blank = () => ({ id: null, code: '', name: '', type: '产业园', city: '', address: '', manageArea: 0, buildArea: 0, manager: '', status: 1 })
 const rules = {
   code: [{ required: true, message: '请输入项目编码', trigger: 'blur' }],
   name: [{ required: true, message: '请输入项目名称', trigger: 'blur' }]
 }
-function openDialog(row) {
-  dialog.visible = true; dialog.title = row ? '编辑项目' : '新建项目'
-  Object.assign(form, row ? row : blank)
-}
-async function submit() {
-  await formRef.value.validate()
-  form.id ? await projectApi.update(form) : await projectApi.add(form)
-  ElMessage.success('保存成功'); dialog.visible = false; load()
-}
-async function remove(id) { await projectApi.remove(id); ElMessage.success('删除成功'); load() }
+
+const {
+  loading, list, total, query, load, reset,
+  dialogVisible, dialogTitle, form,
+  openAdd, openEdit, submit, remove
+} = useCrudPage(projectApi, {
+  defaultQuery: { name: '', status: null },
+  emptyForm: blank,
+  titles: { add: '新建项目', edit: '编辑项目' },
+  beforeSubmit: () => formRef.value.validate()
+})
+
 onMounted(load)
 </script>
 <style scoped>.pager { margin-top: 16px; justify-content: flex-end; }</style>
