@@ -13,6 +13,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
@@ -54,7 +55,7 @@ public class AlarmService {
      * 否则新建活动告警并发 {@link DomainEvent.AlarmRaised}(供 #8 规则引擎消费建单)。
      * 唯一键 uk_active(device_id, alarm_type, active) 兜并发:insert 撞键则退化为累加路径。
      */
-    @Transactional(rollbackFor = Exception.class)
+    @Transactional(rollbackFor = Exception.class, isolation = Isolation.READ_COMMITTED)
     public Long raise(Alarm alarm) {
         LocalDateTime now = LocalDateTime.now();
         Alarm existedActive = alarmMapper.selectOne(new LambdaQueryWrapper<Alarm>()
@@ -98,11 +99,11 @@ public class AlarmService {
     }
 
     private void increment(Alarm existed, LocalDateTime now) {
-        Alarm upd = new Alarm();
-        upd.setId(existed.getId());
-        upd.setOccurCount((existed.getOccurCount() == null ? 1 : existed.getOccurCount()) + 1);
-        upd.setLastTime(now);
-        alarmMapper.updateById(upd);
+        // 原地 read-modify-write 在并发重复上报下会丢更新,改为原子 SQL 自增(occur_count = occur_count + 1)
+        alarmMapper.update(null, new LambdaUpdateWrapper<Alarm>()
+                .eq(Alarm::getId, existed.getId())
+                .setSql("occur_count = occur_count + 1")
+                .set(Alarm::getLastTime, now));
     }
 
     private void publishAlarmRaised(Alarm alarm, LocalDateTime now) {
