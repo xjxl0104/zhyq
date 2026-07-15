@@ -15,6 +15,7 @@ public class Device extends BaseEntity {
     private String vendor;
     private Long projectId;
     private Long buildingId;
+    private Long spaceId;
     private String location;
     private Integer status;
 }

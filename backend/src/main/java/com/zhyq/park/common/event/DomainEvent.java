@@ -70,8 +70,9 @@ public sealed interface DomainEvent {
 
     // ==================== 物联 / 预警域 ====================
 
-    /** IoT 告警产生(供联动规则中心消费:自动生成工单并按空间派单,批次②)。 */
-    record AlarmRaised(Long alarmId, Long deviceId, String level, Long spaceId, LocalDateTime occurredAt) implements DomainEvent {
+    /** IoT 告警产生(供联动规则中心消费:自动生成工单并按空间派单,批次②;#13 加 alarmType 供规则按告警类型匹配)。 */
+    record AlarmRaised(Long alarmId, Long deviceId, String level, Long spaceId, String alarmType,
+                       LocalDateTime occurredAt) implements DomainEvent {
         public String type() { return "alarm.raised"; }
     }
 

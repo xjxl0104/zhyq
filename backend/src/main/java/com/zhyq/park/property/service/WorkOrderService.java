@@ -13,6 +13,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
+import java.util.Set;
 
 /**
  * 工单状态流转:每步写一条 pm_work_order_log(action/operator/content),整体事务。
@@ -32,6 +33,22 @@ public class WorkOrderService {
     public static final int ST_PENDING_VERIFY = 4;    // 待验收
     public static final int ST_DONE = 5;              // 已完成
     public static final int ST_CLOSED = 6;            // 已关闭
+
+    // SLA 超时状态
+    public static final int SLA_RESP_TIMEOUT = 1;     // 响应超时
+    public static final int SLA_RESOLVE_TIMEOUT = 2;  // 解决超时
+
+    // 解决代码常量
+    public static final String RESOLUTION_REPAIRED = "REPAIRED";      // 已修复
+    public static final String RESOLUTION_REPLACED = "REPLACED";      // 已更换
+    public static final String RESOLUTION_REBOOT = "REBOOT";          // 重启恢复
+    public static final String RESOLUTION_NO_ISSUE = "NO_ISSUE";      // 未见异常
+    public static final String RESOLUTION_TRANSFERRED = "TRANSFERRED"; // 转外部
+    public static final String RESOLUTION_OTHER = "OTHER";            // 其他
+
+    private static final Set<String> RESOLUTION_CODES = Set.of(
+            RESOLUTION_REPAIRED, RESOLUTION_REPLACED, RESOLUTION_REBOOT,
+            RESOLUTION_NO_ISSUE, RESOLUTION_TRANSFERRED, RESOLUTION_OTHER);
 
     private WorkOrder require(Long id) {
         WorkOrder wo = workOrderMapper.selectById(id);
@@ -97,20 +114,52 @@ public class WorkOrderService {
         log(id, "到场", operator, "已到场:" + now);
     }
 
-    /** 处理完成:处理中(3)→待验收(4),记录完成时间 */
+    /** 处理完成:处理中(3)→待验收(4),记录完成时间。兼容老调用,不带解决代码 */
     @Transactional(rollbackFor = Exception.class)
     public void finish(Long id, String operator, String content) {
+        finish(id, operator, content, null);
+    }
+
+    /** 处理完成:处理中(3)→待验收(4),记录完成时间 + 可选标准化解决代码 */
+    @Transactional(rollbackFor = Exception.class)
+    public void finish(Long id, String operator, String content, String resolutionCode) {
         WorkOrder wo = require(id);
         if (wo.getStatus() == null || wo.getStatus() != ST_PROCESSING) {
             throw new BizException("仅处理中的工单可提交完成");
+        }
+        if (resolutionCode != null && !RESOLUTION_CODES.contains(resolutionCode)) {
+            throw new BizException("解决代码不合法: " + resolutionCode);
         }
         LocalDateTime now = LocalDateTime.now();
         WorkOrder upd = new WorkOrder();
         upd.setId(id);
         upd.setStatus(ST_PENDING_VERIFY);
         upd.setFinishTime(now);
+        upd.setResolutionCode(resolutionCode);
         workOrderMapper.updateById(upd);
         log(id, "处理", operator, StringUtils.hasText(content) ? content : "处理完成");
+    }
+
+    /** 回访:完成(5)后的满意度回访,记回访时间/备注/评分 */
+    @Transactional(rollbackFor = Exception.class)
+    public void revisit(Long id, String operator, Integer score, String remark) {
+        WorkOrder wo = require(id);
+        if (wo.getStatus() == null || wo.getStatus() != ST_DONE) {
+            throw new BizException("仅已完成状态的工单可回访");
+        }
+        if (score != null && (score < 1 || score > 5)) {
+            throw new BizException("满意度评分需在 1-5 之间");
+        }
+        WorkOrder upd = new WorkOrder();
+        upd.setId(id);
+        upd.setRevisitTime(LocalDateTime.now());
+        upd.setRevisitRemark(remark);
+        if (score != null) {
+            upd.setScore(score);
+        }
+        workOrderMapper.updateById(upd);
+        log(id, "回访", operator, "满意度回访:" + (score == null ? "-" : score)
+                + (StringUtils.hasText(remark) ? ",备注:" + remark : ""));
     }
 
     /** 验收:待验收(4)→已完成(5),记录满意度评分 */
