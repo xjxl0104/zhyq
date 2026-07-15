@@ -31,9 +31,6 @@
     <el-container>
       <el-header class="navbar">
         <div class="nav-left">
-          <el-icon class="collapse-btn" @click="collapsed = !collapsed">
-            <Fold v-if="!collapsed" /><Expand v-else />
-          </el-icon>
           <span class="crumb">{{ currentTitle }}</span>
         </div>
         <div class="actions">
@@ -197,17 +194,12 @@ function openAssistant() {
   padding: 0 22px;
 }
 .nav-left { display: flex; align-items: center; gap: 14px; }
-.collapse-btn {
-  font-size: 19px; color: var(--text-secondary); cursor: pointer;
-  padding: 6px; border-radius: 7px; transition: all .15s;
-}
-.collapse-btn:hover { background: var(--bg-hover); color: var(--brand); }
 .crumb { font-size: 16px; font-weight: 600; color: var(--text-title); }
 
 .actions { display: flex; align-items: center; gap: 18px; }
 .theme-btn {
-  font-size: 19px; color: var(--text-secondary); cursor: pointer;
-  padding: 6px; border-radius: 7px; transition: all .15s;
+  font-size: 22px; color: var(--text-secondary); cursor: pointer;
+  padding: 7px; border-radius: 7px; transition: all .15s;
 }
 .theme-btn:hover { background: var(--bg-hover); color: var(--brand); }
 .screen-btn {
