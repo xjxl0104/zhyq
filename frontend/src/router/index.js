@@ -70,6 +70,11 @@ const routes = [
       // 资产管理(#20,台账+签出签入/报废/维修/盘点)
       { path: 'am/asset', meta: { title: '资产管理' }, component: () => import('@/views/am/Asset.vue') },
 
+      // 便捷通行(#21,门禁记录/访客登记/停车)
+      { path: 'acc/access', meta: { title: '门禁通行记录' }, component: () => import('@/views/acc/Access.vue') },
+      { path: 'acc/visitor', meta: { title: '访客登记' }, component: () => import('@/views/acc/Visitor.vue') },
+      { path: 'acc/parking', meta: { title: '停车管理' }, component: () => import('@/views/acc/Parking.vue') },
+
       // 惠企
       { path: 'service/visitor', meta: { title: '访客预约' }, component: () => import('@/views/service/Visitor.vue') },
       { path: 'service/mall', meta: { title: '在线商城' }, component: () => import('@/views/service/Mall.vue') },

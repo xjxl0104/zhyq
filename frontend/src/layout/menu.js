@@ -26,6 +26,13 @@ export const menuTree = [
     ]
   },
   {
+    title: '便捷通行', icon: 'Postcard', children: [
+      { title: '门禁通行记录', path: '/acc/access' },
+      { title: '访客登记', path: '/acc/visitor' },
+      { title: '停车管理', path: '/acc/parking' }
+    ]
+  },
+  {
     title: '招商租赁', icon: 'Promotion', children: [
       {
         title: '招商', icon: 'Promotion', children: [
