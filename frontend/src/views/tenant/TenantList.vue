@@ -73,8 +73,9 @@
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="200" fixed="right">
+        <el-table-column label="操作" width="260" fixed="right">
           <template #default="{ row }">
+            <el-button link type="primary" @click="showDetail(row)">详情</el-button>
             <el-button link type="primary" @click="openDialog(row)">编辑</el-button>
             <el-popconfirm title="确认归档?" @confirm="archive(row.id)">
               <template #reference><el-button link type="warning">归档</el-button></template>
@@ -133,9 +134,15 @@
 
 <script setup>
 import { reactive, ref, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { tenantApi } from '@/api/tenant'
 import { projectApi } from '@/api/building'
+
+const router = useRouter()
+function showDetail(row) {
+  router.push(`/tenant/detail/${row.id}`)
+}
 
 // 园区名称映射
 const projects = ref([])

@@ -15,6 +15,7 @@ const routes = [
       { path: 'building/project', meta: { title: '项目管理' }, component: () => import('@/views/building/Project.vue') },
       { path: 'building/building', meta: { title: '建筑管理' }, component: () => import('@/views/building/Building.vue') },
       { path: 'building/room', meta: { title: '租控管理' }, component: () => import('@/views/building/RoomControl.vue') },
+      { path: 'building/room/detail/:id', meta: { title: '房源详情' }, component: () => import('@/views/building/RoomDetail.vue') },
 
       // 招商
       { path: 'crm/lead', meta: { title: '线索管理' }, component: () => import('@/views/crm/Lead.vue') },
@@ -26,11 +27,13 @@ const routes = [
 
       // 租客
       { path: 'tenant/list', meta: { title: '租客列表' }, component: () => import('@/views/tenant/TenantList.vue') },
+      { path: 'tenant/detail/:id', meta: { title: '租客详情' }, component: () => import('@/views/tenant/TenantDetail.vue') },
       { path: 'tenant/staff', meta: { title: '租客员工' }, component: () => import('@/views/tenant/Staff.vue') },
       { path: 'tenant/message', meta: { title: '站内信管理' }, component: () => import('@/views/tenant/Message.vue') },
 
       // 合同
       { path: 'contract/list', meta: { title: '合同列表' }, component: () => import('@/views/contract/ContractList.vue') },
+      { path: 'contract/detail/:id', meta: { title: '合同详情' }, component: () => import('@/views/contract/ContractDetail.vue') },
       { path: 'contract/archive', meta: { title: '合同归档' }, component: () => import('@/views/contract/Archive.vue') },
       { path: 'contract/setting', meta: { title: '合同设置' }, component: () => import('@/views/contract/Setting.vue') },
 
