@@ -25,6 +25,7 @@ public class WorkOrder extends BaseEntity {
     private Long projectId;
     private Long buildingId;
     private Long roomId;
+    private Long spaceId;
     /** 位置 */
     private String location;
     /** 分类/工种 */
@@ -50,5 +51,7 @@ public class WorkOrder extends BaseEntity {
     private LocalDateTime finishTime;
     /** 满意度评分1-5 */
     private Integer score;
+    /** 来源告警id(防重) */
+    private Long sourceAlarmId;
     private String remark;
 }
