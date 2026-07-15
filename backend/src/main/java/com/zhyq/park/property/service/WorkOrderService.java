@@ -33,6 +33,18 @@ public class WorkOrderService {
     public static final int ST_DONE = 5;              // 已完成
     public static final int ST_CLOSED = 6;            // 已关闭
 
+    // SLA 超时状态
+    public static final int SLA_RESP_TIMEOUT = 1;     // 响应超时
+    public static final int SLA_RESOLVE_TIMEOUT = 2;  // 解决超时
+
+    // 解决代码常量
+    public static final String RESOLUTION_REPAIRED = "REPAIRED";      // 已修复
+    public static final String RESOLUTION_REPLACED = "REPLACED";      // 已更换
+    public static final String RESOLUTION_REBOOT = "REBOOT";          // 重启恢复
+    public static final String RESOLUTION_NO_ISSUE = "NO_ISSUE";      // 未见异常
+    public static final String RESOLUTION_TRANSFERRED = "TRANSFERRED"; // 转外部
+    public static final String RESOLUTION_OTHER = "OTHER";            // 其他
+
     private WorkOrder require(Long id) {
         WorkOrder wo = workOrderMapper.selectById(id);
         if (wo == null) {

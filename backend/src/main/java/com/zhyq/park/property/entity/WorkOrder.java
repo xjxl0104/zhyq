@@ -54,4 +54,14 @@ public class WorkOrder extends BaseEntity {
     /** 来源告警id(防重) */
     private Long sourceAlarmId;
     private String remark;
+    /** 标准化解决代码 */
+    private String resolutionCode;
+    /** SLA状态:NULL正常 1响应超时 2解决超时 */
+    private Integer slaState;
+    /** 是否已升级通知 */
+    private Integer escalated;
+    /** 回访时间 */
+    private LocalDateTime revisitTime;
+    /** 回访备注 */
+    private String revisitRemark;
 }
