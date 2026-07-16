@@ -8,22 +8,12 @@
       <el-scrollbar class="menu-scroll">
         <el-menu :default-active="activePath" router unique-opened :collapse="collapsed"
                  :collapse-transition="false" class="side-menu">
-          <template v-for="item in menuTree" :key="item.title">
-            <el-menu-item v-if="!item.children" :index="item.path">
-              <el-icon><component :is="item.icon" /></el-icon>
-              <template #title>{{ item.title }}</template>
-            </el-menu-item>
-            <el-sub-menu v-else :index="item.title">
-              <template #title>
-                <el-icon><component :is="item.icon" /></el-icon>
-                <span>{{ item.title }}</span>
-              </template>
-              <el-menu-item v-for="c in item.children" :key="c.path"
-                            :index="c.path" @click="onClick(c)">
-                {{ c.title }}
-              </el-menu-item>
-            </el-sub-menu>
-          </template>
+          <MenuItem
+            v-for="item in menuTree"
+            :key="item.title"
+            :item="item"
+            @leaf="onClick"
+          />
         </el-menu>
       </el-scrollbar>
     </el-aside>
@@ -76,6 +66,7 @@ import { menuTree } from './menu'
 import request from '@/utils/request'
 import { useThemeStore } from '@/stores/theme'
 import TagsView from './TagsView.vue'
+import MenuItem from './MenuItem.vue'
 
 const route = useRoute()
 const router = useRouter()
