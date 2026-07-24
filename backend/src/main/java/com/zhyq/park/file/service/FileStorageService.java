@@ -6,8 +6,9 @@ import java.time.format.DateTimeFormatter;
 import java.util.Set;
 
 /**
- * 文件存储:安全校验纯函数(static,可单测)。磁盘 IO 与持久化在 Task 4 补。
+ * 文件存储:安全校验纯函数(static,可单测) + 磁盘 IO 实例方法。
  */
+@org.springframework.stereotype.Service
 public class FileStorageService {
 
     public static final Set<String> ALLOWED_EXT = Set.of(
@@ -44,5 +45,56 @@ public class FileStorageService {
             throw new IllegalArgumentException("非法路径: " + relative);
         }
         return resolved;
+    }
+
+    @org.springframework.beans.factory.annotation.Value("${zhyq.upload.path:./uploads}")
+    private String uploadPath;
+
+    @org.springframework.beans.factory.annotation.Value("${zhyq.upload.url-prefix:/uploads}")
+    private String urlPrefix;
+
+    // 20MB,与 application.yml 二次校验一致
+    private static final long MAX_SIZE = 20L * 1024 * 1024;
+
+    public record StoredResult(String storePath, String url, String ext,
+                               String contentType, long size, String originalName) {}
+
+    public StoredResult store(org.springframework.web.multipart.MultipartFile file) {
+        if (file == null || file.isEmpty()) {
+            throw new com.zhyq.park.common.exception.BizException("文件为空");
+        }
+        if (file.getSize() > MAX_SIZE) {
+            throw new com.zhyq.park.common.exception.BizException("文件超过20MB上限");
+        }
+        String original = org.springframework.util.StringUtils.cleanPath(
+            file.getOriginalFilename() == null ? "" : file.getOriginalFilename());
+        String ext = extOf(original);
+        if (!isAllowed(ext)) {
+            throw new com.zhyq.park.common.exception.BizException("不允许的文件类型: " + ext);
+        }
+        String uuid = java.util.UUID.randomUUID().toString().replace("-", "");
+        String stored = newStoredName(original, uuid);
+        String relative = buildRelativePath(java.time.LocalDate.now(), stored);
+        java.nio.file.Path root = java.nio.file.Paths.get(uploadPath).toAbsolutePath();
+        java.nio.file.Path target = resolveSafely(root, relative);
+        try {
+            java.nio.file.Files.createDirectories(target.getParent());
+            file.transferTo(target.toFile());
+        } catch (java.io.IOException e) {
+            throw new com.zhyq.park.common.exception.BizException("文件保存失败");
+        }
+        String url = urlPrefix + "/" + relative;
+        return new StoredResult(relative, url, ext, file.getContentType(), file.getSize(), original);
+    }
+
+    public void deletePhysical(String storePath) {
+        if (storePath == null || storePath.isBlank()) return;
+        try {
+            java.nio.file.Path root = java.nio.file.Paths.get(uploadPath).toAbsolutePath();
+            java.nio.file.Path target = resolveSafely(root, storePath);
+            java.nio.file.Files.deleteIfExists(target);
+        } catch (Exception ignore) {
+            // 物理文件删除失败不阻断逻辑删除
+        }
     }
 }
