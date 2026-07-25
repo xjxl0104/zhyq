@@ -35,6 +35,9 @@ services:
       DB_URL: jdbc:mysql://mysql:3306/zhyq_park?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useSSL=false
       DB_USERNAME: root
       DB_PASSWORD: zhyq123456
+    volumes:
+      # 上传文件持久化:宿主 ./uploads <-> 容器 /app/uploads(默认 zhyq.upload.path=./uploads,WORKDIR=/app)
+      - ./uploads:/app/uploads
 
   frontend:
     build: ./frontend

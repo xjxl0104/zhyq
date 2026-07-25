@@ -79,3 +79,7 @@ SQL
 1. MySQL root 密码(compose 里的 `zhyq123456`)
 2. 登录鉴权换成 Spring Security + BCrypt + JWT(当前为演示级)
 3. CORS 白名单收紧到正式域名(现放通了 localhost 和 trycloudflare)
+
+### 文件上传持久化
+上传文件存于后端容器 /app/uploads,已通过 docker-compose.full.yml 挂载宿主 ./uploads 持久化。
+换机/重建容器前备份宿主 ./uploads 目录即可保留附件。
