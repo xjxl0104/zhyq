@@ -13,6 +13,20 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 @Configuration
 public class WebConfig implements WebMvcConfigurer {
 
+    @org.springframework.beans.factory.annotation.Value("${zhyq.upload.path:./uploads}")
+    private String uploadPath;
+
+    @org.springframework.beans.factory.annotation.Value("${zhyq.upload.url-prefix:/uploads}")
+    private String urlPrefix;
+
+    @Override
+    public void addResourceHandlers(
+            org.springframework.web.servlet.config.annotation.ResourceHandlerRegistry registry) {
+        String location = "file:" + java.nio.file.Paths.get(uploadPath).toAbsolutePath() + "/";
+        registry.addResourceHandler(urlPrefix + "/**")
+                .addResourceLocations(location);
+    }
+
     @Override
     public void addCorsMappings(CorsRegistry registry) {
         // 本地开发 + Cloudflare 隧道演示白名单(quick tunnel 域名每次随机,放通整个 trycloudflare)
