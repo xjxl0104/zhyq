@@ -2,3 +2,4 @@
 - [zhyq 后端代码图谱](zhyq-backend-map.md) — 后端结构/API 图谱,codegraph 已索引(backend/.codegraph),用 npx 跑
 - [zhyq 前端代码图谱](zhyq-frontend-map.md) — 前端结构/页面分布,codegraph 已索引(frontend/.codegraph)
 - [zhyq 升级调研](zhyq-upgrade-research.md) — 方案v2(25家对标)执行中,卡片在 docs/upgrade/cards/,报告前不改代码
+- [zhyq 编译环境](zhyq-build-env.md) — 本机 mvn/java 不在 PATH,编译需手动指 JAVA_HOME + libexec mvn 全路径
