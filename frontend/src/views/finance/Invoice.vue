@@ -76,6 +76,9 @@
         </el-form-item>
         <el-form-item label="关联账单ID"><el-input v-model="form.billId" placeholder="账单ID(可选)" /></el-form-item>
         <el-form-item label="备注"><el-input v-model="form.remark" type="textarea" :rows="2" /></el-form-item>
+        <el-form-item label="附件">
+          <FileUpload v-model="attachFiles" biz-type="invoice" :biz-id="form.id" />
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="dialog.visible = false">取消</el-button>
@@ -89,6 +92,8 @@
 import { reactive, ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { invoiceApi } from '@/api/finance'
+import { fileApi } from '@/api/file'
+import FileUpload from '@/components/FileUpload.vue'
 
 const statusMap = {
   1: { label: '申请中', type: 'warning' },
@@ -122,21 +127,33 @@ const formRef = ref()
 const dialog = reactive({ visible: false, title: '' })
 const blank = { id: null, title: '', taxNo: '', amount: 0, invoiceType: '普票', billId: null, remark: '', status: 1 }
 const form = reactive({ ...blank })
+const attachFiles = ref([])
 const rules = {
   title: [{ required: true, message: '请输入发票抬头', trigger: 'blur' }],
   amount: [{ required: true, message: '请输入金额', trigger: 'blur' }]
 }
 
-function openDialog(row) {
+async function openDialog(row) {
   dialog.visible = true
   dialog.title = row ? '编辑发票' : '新增发票'
-  if (row) Object.assign(form, row)
-  else Object.assign(form, blank)
+  attachFiles.value = []
+  if (row) {
+    Object.assign(form, row)
+    try { attachFiles.value = await fileApi.list('invoice', row.id) } catch (e) { /* 忽略 */ }
+  } else {
+    Object.assign(form, blank)
+  }
 }
 async function submit() {
   await formRef.value.validate()
+  let newId = form.id
   if (form.id) await invoiceApi.update(form)
-  else await invoiceApi.add(form)
+  else newId = await invoiceApi.add(form)
+  // 先传后回填:把新上传(bizId 为空)的附件关联到本发票
+  const pendingIds = (attachFiles.value || []).filter(f => f && f.id && !f.bizId).map(f => f.id)
+  if (newId && pendingIds.length) {
+    try { await fileApi.attach('invoice', newId, pendingIds) } catch (e) { /* 忽略,不阻断保存 */ }
+  }
   ElMessage.success('保存成功')
   dialog.visible = false
   load()

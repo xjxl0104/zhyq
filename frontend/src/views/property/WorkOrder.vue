@@ -113,6 +113,7 @@
         <el-form-item label="联系人"><el-input v-model="form.contact" /></el-form-item>
         <el-form-item label="联系电话"><el-input v-model="form.contactPhone" /></el-form-item>
         <el-form-item label="备注"><el-input v-model="form.remark" type="textarea" /></el-form-item>
+        <el-form-item label="附件"><FileUpload v-model="attachFiles" biz-type="work_order" :biz-id="form.id" /></el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="dialog.visible = false">取消</el-button>
@@ -186,6 +187,8 @@
 import { reactive, ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { workOrderApi } from '@/api/property'
+import { fileApi } from '@/api/file'
+import FileUpload from '@/components/FileUpload.vue'
 
 const orderTypes = ['报修', '巡检', '告警']
 const urgencyMap = {
@@ -235,6 +238,7 @@ const formRef = ref()
 const dialog = reactive({ visible: false, title: '' })
 const defaultForm = () => ({ id: null, title: '', orderType: '报修', location: '', category: '', urgency: 2, contact: '', contactPhone: '', remark: '' })
 const form = reactive(defaultForm())
+const attachFiles = ref([])
 const rules = {
   title: [{ required: true, message: '请输入标题', trigger: 'blur' }]
 }
@@ -242,10 +246,15 @@ function openDialog() {
   dialog.visible = true
   dialog.title = '新增工单'
   Object.assign(form, defaultForm())
+  attachFiles.value = []
 }
 async function submit() {
   await formRef.value.validate()
-  await workOrderApi.add(form)
+  const newId = await workOrderApi.add(form)
+  const pendingIds = (attachFiles.value || []).filter(f => f && f.id && !f.bizId).map(f => f.id)
+  if (newId && pendingIds.length) {
+    try { await fileApi.attach('work_order', newId, pendingIds) } catch (e) { /* 忽略,不阻断保存 */ }
+  }
   ElMessage.success('保存成功')
   dialog.visible = false
   refresh()

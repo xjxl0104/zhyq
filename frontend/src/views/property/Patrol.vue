@@ -89,6 +89,7 @@
           </el-radio-group>
         </el-form-item>
         <el-form-item label="备注"><el-input v-model="form.remark" type="textarea" /></el-form-item>
+        <el-form-item label="附件"><FileUpload v-model="attachFiles" biz-type="patrol" :biz-id="form.id" /></el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="dialog.visible = false">取消</el-button>
@@ -102,6 +103,8 @@
 import { reactive, ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { patrolApi } from '@/api/property'
+import { fileApi } from '@/api/file'
+import FileUpload from '@/components/FileUpload.vue'
 
 const loading = ref(false)
 const list = ref([])
@@ -133,20 +136,31 @@ function reset() {
 const formRef = ref()
 const dialog = reactive({ visible: false, title: '' })
 const form = reactive({ id: null, routeName: '', point: '', patroller: '', patrolTime: '', result: '正常', remark: '' })
+const attachFiles = ref([])
 const rules = {
   routeName: [{ required: true, message: '请输入巡更路线', trigger: 'blur' }]
 }
 
-function openDialog(row) {
+async function openDialog(row) {
   dialog.visible = true
   dialog.title = row ? '编辑巡更记录' : '新增巡更记录'
-  if (row) Object.assign(form, row)
-  else Object.assign(form, { id: null, routeName: '', point: '', patroller: '', patrolTime: '', result: '正常', remark: '' })
+  attachFiles.value = []
+  if (row) {
+    Object.assign(form, row)
+    try { attachFiles.value = await fileApi.list('patrol', row.id) } catch (e) { /* 忽略 */ }
+  } else {
+    Object.assign(form, { id: null, routeName: '', point: '', patroller: '', patrolTime: '', result: '正常', remark: '' })
+  }
 }
 async function submit() {
   await formRef.value.validate()
+  let newId = form.id
   if (form.id) await patrolApi.update(form)
-  else await patrolApi.add(form)
+  else newId = await patrolApi.add(form)
+  const pendingIds = (attachFiles.value || []).filter(f => f && f.id && !f.bizId).map(f => f.id)
+  if (newId && pendingIds.length) {
+    try { await fileApi.attach('patrol', newId, pendingIds) } catch (e) { /* 忽略,不阻断保存 */ }
+  }
   ElMessage.success('保存成功')
   dialog.visible = false
   refresh()

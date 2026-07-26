@@ -86,6 +86,9 @@
         </el-form-item>
         <el-form-item label="来文单位"><el-input v-model="form.fromUnit" placeholder="来文单位/拟稿部门" /></el-form-item>
         <el-form-item label="正文"><el-input v-model="form.content" type="textarea" :rows="6" /></el-form-item>
+        <el-form-item label="附件">
+          <FileUpload v-model="attachFiles" biz-type="oa_document" :biz-id="form.id" />
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="dialog.visible = false">取消</el-button>
@@ -116,6 +119,8 @@
 import { reactive, ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { documentApi } from '@/api/oa'
+import { fileApi } from '@/api/file'
+import FileUpload from '@/components/FileUpload.vue'
 
 // 状态:1拟稿 2核稿 3签发 4归档
 const statusOptions = [
@@ -156,22 +161,33 @@ function reset() {
 const formRef = ref()
 const dialog = reactive({ visible: false, title: '' })
 const form = reactive({ id: null, docNo: '', title: '', docType: '发文', fromUnit: '', content: '' })
+const attachFiles = ref([])
 const rules = {
   docNo: [{ required: true, message: '请输入文号', trigger: 'blur' }],
   title: [{ required: true, message: '请输入标题', trigger: 'blur' }],
   docType: [{ required: true, message: '请选择收发文', trigger: 'change' }]
 }
 
-function openDialog(row) {
+async function openDialog(row) {
   dialog.visible = true
   dialog.title = row ? '编辑公文' : '新增公文'
-  if (row) Object.assign(form, row)
-  else Object.assign(form, { id: null, docNo: '', title: '', docType: '发文', fromUnit: '', content: '' })
+  attachFiles.value = []
+  if (row) {
+    Object.assign(form, row)
+    try { attachFiles.value = await fileApi.list('oa_document', row.id) } catch (e) { /* 忽略 */ }
+  } else {
+    Object.assign(form, { id: null, docNo: '', title: '', docType: '发文', fromUnit: '', content: '' })
+  }
 }
 async function submit() {
   await formRef.value.validate()
+  let newId = form.id
   if (form.id) await documentApi.update(form)
-  else await documentApi.add(form)
+  else newId = await documentApi.add(form)
+  const pendingIds = (attachFiles.value || []).filter(f => f && f.id && !f.bizId).map(f => f.id)
+  if (newId && pendingIds.length) {
+    try { await fileApi.attach('oa_document', newId, pendingIds) } catch (e) { /* 忽略,不阻断保存 */ }
+  }
   ElMessage.success('保存成功')
   dialog.visible = false
   load()

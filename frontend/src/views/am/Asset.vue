@@ -91,6 +91,9 @@
         <el-form-item label="备注">
           <el-input v-model="form.remark" type="textarea" :rows="2" />
         </el-form-item>
+        <el-form-item label="附件">
+          <FileUpload v-model="attachFiles" biz-type="asset" :biz-id="form.id" />
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
@@ -104,6 +107,8 @@
 import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { assetApi } from '@/api/am'
+import { fileApi } from '@/api/file'
+import FileUpload from '@/components/FileUpload.vue'
 import { useCrudPage } from '@/composables/useCrudPage'
 
 const formRef = ref()
@@ -126,13 +131,38 @@ const statusMap = {
 const {
   loading, list, total, query, load, reset,
   dialogVisible, dialogTitle, form,
-  openAdd, openEdit, submit, remove
+  openAdd: crudOpenAdd, openEdit: crudOpenEdit, remove
 } = useCrudPage(assetApi, {
   defaultQuery: { category: '', status: null },
   emptyForm: blank,
   titles: { add: '新增资产', edit: '编辑资产' },
   beforeSubmit: () => formRef.value.validate()
 })
+
+const attachFiles = ref([])
+
+function openAdd() {
+  crudOpenAdd()
+  attachFiles.value = []
+}
+async function openEdit(row) {
+  crudOpenEdit(row)
+  attachFiles.value = []
+  try { attachFiles.value = await fileApi.list('asset', row.id) } catch (e) { /* 忽略 */ }
+}
+async function submit() {
+  await formRef.value.validate()
+  let newId = form.id
+  if (form.id) await assetApi.update(form)
+  else newId = await assetApi.add(form)
+  const pendingIds = (attachFiles.value || []).filter(f => f && f.id && !f.bizId).map(f => f.id)
+  if (newId && pendingIds.length) {
+    try { await fileApi.attach('asset', newId, pendingIds) } catch (e) { /* 忽略,不阻断保存 */ }
+  }
+  ElMessage.success('保存成功')
+  dialogVisible.value = false
+  await load()
+}
 
 async function doCheckout(row) {
   const { value: holder } = await ElMessageBox.prompt('请输入领用人', '签出', {

@@ -123,6 +123,9 @@
           </el-form-item>
         </template>
         <el-form-item label="备注"><el-input v-model="form.remark" type="textarea" /></el-form-item>
+        <el-form-item label="附件">
+          <FileUpload v-model="attachFiles" biz-type="tenant" :biz-id="form.id" />
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="dialog.visible = false">取消</el-button>
@@ -138,6 +141,8 @@ import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { tenantApi } from '@/api/tenant'
 import { projectApi } from '@/api/building'
+import { fileApi } from '@/api/file'
+import FileUpload from '@/components/FileUpload.vue'
 
 const router = useRouter()
 function showDetail(row) {
@@ -192,22 +197,32 @@ const defaultForm = () => ({
   status: 1, remark: ''
 })
 const form = reactive(defaultForm())
+const attachFiles = ref([])
 const rules = {
   code: [{ required: true, message: '请输入租客编码', trigger: 'blur' }],
   name: [{ required: true, message: '请输入名称', trigger: 'blur' }],
   tenantType: [{ required: true, message: '请选择类型', trigger: 'change' }]
 }
 
-function openDialog(row) {
+async function openDialog(row) {
   dialog.visible = true
   dialog.title = row ? '编辑租客' : '新增租客'
   Object.assign(form, defaultForm())
-  if (row) Object.assign(form, row)
+  attachFiles.value = []
+  if (row) {
+    Object.assign(form, row)
+    try { attachFiles.value = await fileApi.list('tenant', row.id) } catch (e) { /* 忽略 */ }
+  }
 }
 async function submit() {
   await formRef.value.validate()
+  let newId = form.id
   if (form.id) await tenantApi.update(form)
-  else await tenantApi.add(form)
+  else newId = await tenantApi.add(form)
+  const pendingIds = (attachFiles.value || []).filter(f => f && f.id && !f.bizId).map(f => f.id)
+  if (newId && pendingIds.length) {
+    try { await fileApi.attach('tenant', newId, pendingIds) } catch (e) { /* 忽略,不阻断保存 */ }
+  }
   ElMessage.success('保存成功')
   dialog.visible = false
   load()
