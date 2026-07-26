@@ -7,6 +7,7 @@ import com.zhyq.park.system.mapper.SysMenuMapper;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -20,6 +21,7 @@ public class SysMenuController {
     private final SysMenuMapper menuMapper;
 
     @Operation(summary = "菜单列表(树形由前端组装)")
+    @PreAuthorize("hasAuthority('system:menu:query')")
     @GetMapping("/list")
     public Result<List<SysMenu>> list() {
         return Result.ok(menuMapper.selectList(
@@ -27,12 +29,14 @@ public class SysMenuController {
     }
 
     @Operation(summary = "菜单详情")
+    @PreAuthorize("hasAuthority('system:menu:query')")
     @GetMapping("/{id}")
     public Result<SysMenu> get(@PathVariable Long id) {
         return Result.ok(menuMapper.selectById(id));
     }
 
     @Operation(summary = "新增菜单")
+    @PreAuthorize("hasAuthority('system:menu:add')")
     @PostMapping
     public Result<Long> add(@RequestBody SysMenu menu) {
         menuMapper.insert(menu);
@@ -40,6 +44,7 @@ public class SysMenuController {
     }
 
     @Operation(summary = "修改菜单")
+    @PreAuthorize("hasAuthority('system:menu:edit')")
     @PutMapping
     public Result<Void> update(@RequestBody SysMenu menu) {
         menuMapper.updateById(menu);
@@ -47,6 +52,7 @@ public class SysMenuController {
     }
 
     @Operation(summary = "删除菜单")
+    @PreAuthorize("hasAuthority('system:menu:delete')")
     @DeleteMapping("/{id}")
     public Result<Void> delete(@PathVariable Long id) {
         menuMapper.deleteById(id);

@@ -14,6 +14,7 @@ import com.zhyq.park.finance.mapper.ReceiptMapper;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
@@ -31,6 +32,7 @@ public class ReceiptController {
     private final ReceiptLogMapper receiptLogMapper;
 
     @Operation(summary = "分页查询收据")
+    @PreAuthorize("hasAuthority('finance:receipt:query')")
     @GetMapping("/page")
     public Result<PageResult<Receipt>> page(@RequestParam(defaultValue = "1") int pageNo,
                                             @RequestParam(defaultValue = "10") int pageSize,
@@ -45,12 +47,14 @@ public class ReceiptController {
     }
 
     @Operation(summary = "收据详情")
+    @PreAuthorize("hasAuthority('finance:receipt:query')")
     @GetMapping("/{id}")
     public Result<Receipt> get(@PathVariable Long id) {
         return Result.ok(receiptMapper.selectById(id));
     }
 
     @Operation(summary = "新增收据")
+    @PreAuthorize("hasAuthority('finance:receipt:add')")
     @PostMapping
     public Result<Long> add(@RequestBody Receipt receipt) {
         receiptMapper.insert(receipt);
@@ -58,6 +62,7 @@ public class ReceiptController {
     }
 
     @Operation(summary = "修改收据")
+    @PreAuthorize("hasAuthority('finance:receipt:edit')")
     @PutMapping
     public Result<Void> update(@RequestBody Receipt receipt) {
         receiptMapper.updateById(receipt);
@@ -65,6 +70,7 @@ public class ReceiptController {
     }
 
     @Operation(summary = "删除收据")
+    @PreAuthorize("hasAuthority('finance:receipt:delete')")
     @DeleteMapping("/{id}")
     public Result<Void> delete(@PathVariable Long id) {
         receiptMapper.deleteById(id);
@@ -72,6 +78,7 @@ public class ReceiptController {
     }
 
     @Operation(summary = "打印收据(打印次数原子+1,写打印日志)")
+    @PreAuthorize("hasAuthority('finance:receipt:print')")
     @Transactional(rollbackFor = Exception.class)
     @PostMapping("/{id}/print")
     public Result<Void> print(@PathVariable Long id) {
@@ -94,6 +101,7 @@ public class ReceiptController {
     }
 
     @Operation(summary = "收据打印日志列表")
+    @PreAuthorize("hasAuthority('finance:receipt:query')")
     @GetMapping("/{id}/logs")
     public Result<List<ReceiptLog>> logs(@PathVariable Long id) {
         return Result.ok(receiptLogMapper.selectList(

@@ -8,6 +8,7 @@ import com.zhyq.park.finance.service.PaymentService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
@@ -24,6 +25,7 @@ public class PaymentController {
     private final PaymentMapper paymentMapper;
 
     @Operation(summary = "收款(事务:支付单+账单结清+流水;幂等键 payNo 可选)")
+    @PreAuthorize("hasAuthority('finance:payment:pay')")
     @PostMapping
     public Result<Payment> pay(@RequestBody Map<String, Object> body) {
         Long billId = body.get("billId") == null ? null : Long.valueOf(body.get("billId").toString());
@@ -34,6 +36,7 @@ public class PaymentController {
     }
 
     @Operation(summary = "查某账单的收款记录")
+    @PreAuthorize("hasAuthority('finance:payment:query')")
     @GetMapping("/list")
     public Result<List<Payment>> list(@RequestParam Long billId) {
         return Result.ok(paymentMapper.selectList(

@@ -9,6 +9,7 @@ import com.zhyq.park.system.entity.SysRole;
 import com.zhyq.park.system.mapper.SysRoleMapper;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 
@@ -22,6 +23,7 @@ public class SysRoleController {
 
     private final SysRoleMapper roleMapper;
 
+    @PreAuthorize("hasAuthority('system:role:query')")
     @GetMapping("/page")
     public Result<PageResult<SysRole>> page(@RequestParam(defaultValue = "1") int pageNo,
                                             @RequestParam(defaultValue = "10") int pageSize,
@@ -32,23 +34,27 @@ public class SysRoleController {
         return Result.ok(PageResult.of(p.getTotal(), p.getRecords()));
     }
 
+    @PreAuthorize("hasAuthority('system:role:query')")
     @GetMapping("/list")
     public Result<List<SysRole>> list() {
         return Result.ok(roleMapper.selectList(new LambdaQueryWrapper<SysRole>().eq(SysRole::getStatus, 1)));
     }
 
+    @PreAuthorize("hasAuthority('system:role:add')")
     @PostMapping
     public Result<Long> add(@RequestBody SysRole role) {
         roleMapper.insert(role);
         return Result.ok(role.getId());
     }
 
+    @PreAuthorize("hasAuthority('system:role:edit')")
     @PutMapping
     public Result<Void> update(@RequestBody SysRole role) {
         roleMapper.updateById(role);
         return Result.ok();
     }
 
+    @PreAuthorize("hasAuthority('system:role:delete')")
     @DeleteMapping("/{id}")
     public Result<Void> delete(@PathVariable Long id) {
         roleMapper.deleteById(id);

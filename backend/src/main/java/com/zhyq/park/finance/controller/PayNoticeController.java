@@ -13,6 +13,7 @@ import com.zhyq.park.finance.mapper.PayNoticeMapper;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
@@ -36,6 +37,7 @@ public class PayNoticeController {
     private static final int ST_SENT = 2;    // 已发送
 
     @Operation(summary = "分页查询收款通知")
+    @PreAuthorize("hasAuthority('finance:notice:query')")
     @GetMapping("/page")
     public Result<PageResult<PayNotice>> page(@RequestParam(defaultValue = "1") int pageNo,
                                               @RequestParam(defaultValue = "10") int pageSize,
@@ -50,6 +52,7 @@ public class PayNoticeController {
     }
 
     @Operation(summary = "删除收款通知")
+    @PreAuthorize("hasAuthority('finance:notice:delete')")
     @DeleteMapping("/{id}")
     public Result<Void> delete(@PathVariable Long id) {
         noticeMapper.deleteById(id);
@@ -57,6 +60,7 @@ public class PayNoticeController {
     }
 
     @Operation(summary = "一键生成收款通知(对逾期/待收付应收账单且无待发送通知者生成)")
+    @PreAuthorize("hasAuthority('finance:notice:generate')")
     @Transactional(rollbackFor = Exception.class)
     @PostMapping("/generate")
     public Result<Integer> generate() {
@@ -91,6 +95,7 @@ public class PayNoticeController {
     }
 
     @Operation(summary = "发送收款通知(条件更新 1→2)")
+    @PreAuthorize("hasAuthority('finance:notice:send')")
     @PostMapping("/{id}/send")
     public Result<Void> send(@PathVariable Long id, @RequestBody(required = false) Map<String, Object> body) {
         String sendChannel = body != null && body.get("sendChannel") != null

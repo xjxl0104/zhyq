@@ -12,6 +12,7 @@ import com.zhyq.park.finance.mapper.ContractRefMapper;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
@@ -35,6 +36,7 @@ public class CheckoutReportController {
     private static final String FEE_RENT = "租金";
 
     @Operation(summary = "退房报表分页(已终止合同 + 租金账单聚合)")
+    @PreAuthorize("hasAuthority('finance:report:query')")
     @GetMapping("/page")
     public Result<PageResult<Map<String, Object>>> page(@RequestParam(defaultValue = "1") int pageNo,
                                                         @RequestParam(defaultValue = "10") int pageSize) {
@@ -67,6 +69,7 @@ public class CheckoutReportController {
     }
 
     @Operation(summary = "退房报表统计")
+    @PreAuthorize("hasAuthority('finance:report:query')")
     @GetMapping("/stats")
     public Result<Map<String, Object>> stats() {
         List<ContractRef> list = contractMapper.selectList(new LambdaQueryWrapper<ContractRef>()

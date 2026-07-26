@@ -13,6 +13,7 @@ import com.zhyq.park.system.mapper.MsgTemplateMapper;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 
@@ -31,6 +32,7 @@ public class MsgCenterController {
     // ===== 消息模板 =====
 
     @Operation(summary = "分页查询消息模板")
+    @PreAuthorize("hasAuthority('system:message:query')")
     @GetMapping("/template/page")
     public Result<PageResult<MsgTemplate>> templatePage(@RequestParam(defaultValue = "1") int pageNo,
                                                           @RequestParam(defaultValue = "10") int pageSize,
@@ -47,6 +49,7 @@ public class MsgCenterController {
     }
 
     @Operation(summary = "新增消息模板")
+    @PreAuthorize("hasAuthority('system:message:add')")
     @PostMapping("/template")
     public Result<Long> templateAdd(@RequestBody MsgTemplate template) {
         templateMapper.insert(template);
@@ -54,6 +57,7 @@ public class MsgCenterController {
     }
 
     @Operation(summary = "修改消息模板")
+    @PreAuthorize("hasAuthority('system:message:edit')")
     @PutMapping("/template")
     public Result<Void> templateUpdate(@RequestBody MsgTemplate template) {
         templateMapper.updateById(template);
@@ -61,6 +65,7 @@ public class MsgCenterController {
     }
 
     @Operation(summary = "删除消息模板")
+    @PreAuthorize("hasAuthority('system:message:delete')")
     @DeleteMapping("/template/{id}")
     public Result<Void> templateDelete(@PathVariable Long id) {
         templateMapper.deleteById(id);
@@ -70,6 +75,7 @@ public class MsgCenterController {
     // ===== 发送记录 =====
 
     @Operation(summary = "分页查询发送记录")
+    @PreAuthorize("hasAuthority('system:message:query')")
     @GetMapping("/record/page")
     public Result<PageResult<MsgRecord>> recordPage(@RequestParam(defaultValue = "1") int pageNo,
                                                       @RequestParam(defaultValue = "10") int pageSize,
@@ -86,6 +92,7 @@ public class MsgCenterController {
     }
 
     @Operation(summary = "删除发送记录")
+    @PreAuthorize("hasAuthority('system:message:delete')")
     @DeleteMapping("/record/{id}")
     public Result<Void> recordDelete(@PathVariable Long id) {
         recordMapper.deleteById(id);
@@ -95,6 +102,7 @@ public class MsgCenterController {
     // ===== 模拟发送 =====
 
     @Operation(summary = "模拟发送消息")
+    @PreAuthorize("hasAuthority('system:message:send')")
     @PostMapping("/send")
     public Result<String> send(@RequestBody SendRequest req) {
         LambdaQueryWrapper<MsgTemplate> qw = new LambdaQueryWrapper<MsgTemplate>()
