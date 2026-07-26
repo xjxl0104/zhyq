@@ -6,9 +6,10 @@ services:
     image: mysql:8.0
     container_name: zhyq-mysql
     restart: unless-stopped
+    env_file: [.env]
     environment:
-      MYSQL_ROOT_PASSWORD: zhyq123456
-      MYSQL_DATABASE: zhyq_park
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:?must set in .env}
+      MYSQL_DATABASE: ${DB_NAME:-zhyq_park}
       TZ: Asia/Shanghai
     command:
       - --character-set-server=utf8mb4
@@ -17,7 +18,7 @@ services:
     volumes:
       - zhyq_mysql_data:/var/lib/mysql
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-pzhyq123456"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-p${DB_ROOT_PASSWORD}"]
       interval: 5s
       timeout: 5s
       retries: 20
@@ -29,12 +30,18 @@ services:
     depends_on:
       mysql:
         condition: service_healthy
+    env_file: [.env]
     environment:
       TZ: Asia/Shanghai
       # 容器内连 mysql 服务(内部 3306),Flyway 自动建表+灌种子
-      DB_URL: jdbc:mysql://mysql:3306/zhyq_park?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useSSL=false
+      DB_URL: jdbc:mysql://mysql:3306/${DB_NAME:-zhyq_park}?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useSSL=false
       DB_USERNAME: root
-      DB_PASSWORD: zhyq123456
+      DB_PASSWORD: ${DB_ROOT_PASSWORD:?must set in .env}
+      JWT_SECRET: ${JWT_SECRET:?must set in .env}
+      JWT_EXPIRE_SECONDS: ${JWT_EXPIRE_SECONDS:-28800}
+      APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY:-}
+      SWAGGER_ENABLED: ${SWAGGER_ENABLED:-false}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-}
     volumes:
       # 上传文件持久化:宿主 ./uploads <-> 容器 /app/uploads(默认 zhyq.upload.path=./uploads,WORKDIR=/app)
       - ./uploads:/app/uploads

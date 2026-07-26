@@ -21,3 +21,15 @@ dist-ssr/
 # ---- Env ----
 .env
 .env.local
+.env.*
+!.env.example
+backend/.env
+
+# ---- Secrets / Certs ----
+*.pem
+*.key
+*.p12
+*.jks
+*.keystore
+*-key.json
+credentials.json
