@@ -4,7 +4,6 @@ import io.swagger.v3.oas.models.OpenAPI;
 import io.swagger.v3.oas.models.info.Info;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.web.servlet.config.annotation.CorsRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
 /**
@@ -27,18 +26,6 @@ public class WebConfig implements WebMvcConfigurer {
                 .addResourceLocations(location);
     }
 
-    @Override
-    public void addCorsMappings(CorsRegistry registry) {
-        // 本地开发 + Cloudflare 隧道演示白名单(quick tunnel 域名每次随机,放通整个 trycloudflare)
-        registry.addMapping("/**")
-                .allowedOriginPatterns(
-                        "http://localhost:*", "http://127.0.0.1:*",
-                        "https://*.trycloudflare.com")
-                .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
-                .allowedHeaders("*")
-                .allowCredentials(true)
-                .maxAge(3600);
-    }
 
     @Bean
     public OpenAPI openAPI() {
