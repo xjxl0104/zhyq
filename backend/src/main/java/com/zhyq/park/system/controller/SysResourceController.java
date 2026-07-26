@@ -12,6 +12,7 @@ import com.zhyq.park.system.mapper.SysResourceMapper;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 
@@ -24,6 +25,7 @@ public class SysResourceController {
     private final SysResourceMapper resourceMapper;
 
     @Operation(summary = "分页查询运营资源")
+    @PreAuthorize("hasAuthority('system:resource:query')")
     @GetMapping("/page")
     public Result<PageResult<SysResource>> page(@RequestParam(defaultValue = "1") int pageNo,
                                                  @RequestParam(defaultValue = "10") int pageSize,
@@ -41,12 +43,14 @@ public class SysResourceController {
     }
 
     @Operation(summary = "运营资源详情")
+    @PreAuthorize("hasAuthority('system:resource:query')")
     @GetMapping("/{id}")
     public Result<SysResource> get(@PathVariable Long id) {
         return Result.ok(resourceMapper.selectById(id));
     }
 
     @Operation(summary = "新增运营资源")
+    @PreAuthorize("hasAuthority('system:resource:add')")
     @PostMapping
     public Result<Long> add(@RequestBody SysResource resource) {
         resourceMapper.insert(resource);
@@ -54,6 +58,7 @@ public class SysResourceController {
     }
 
     @Operation(summary = "修改运营资源")
+    @PreAuthorize("hasAuthority('system:resource:edit')")
     @PutMapping
     public Result<Void> update(@RequestBody SysResource resource) {
         resourceMapper.updateById(resource);
@@ -61,6 +66,7 @@ public class SysResourceController {
     }
 
     @Operation(summary = "删除运营资源")
+    @PreAuthorize("hasAuthority('system:resource:delete')")
     @DeleteMapping("/{id}")
     public Result<Void> delete(@PathVariable Long id) {
         resourceMapper.deleteById(id);
@@ -68,6 +74,7 @@ public class SysResourceController {
     }
 
     @Operation(summary = "上下架切换")
+    @PreAuthorize("hasAuthority('system:resource:edit')")
     @PostMapping("/{id}/toggle")
     public Result<Void> toggle(@PathVariable Long id) {
         SysResource resource = resourceMapper.selectById(id);

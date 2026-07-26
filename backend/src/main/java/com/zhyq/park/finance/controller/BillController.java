@@ -10,6 +10,7 @@ import com.zhyq.park.finance.mapper.BillMapper;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 
@@ -28,6 +29,7 @@ public class BillController {
     private final BillMapper billMapper;
 
     @Operation(summary = "分页查询账单")
+    @PreAuthorize("hasAuthority('finance:bill:query')")
     @GetMapping("/page")
     public Result<PageResult<Bill>> page(@RequestParam(defaultValue = "1") int pageNo,
                                          @RequestParam(defaultValue = "10") int pageSize,
@@ -53,6 +55,7 @@ public class BillController {
     }
 
     @Operation(summary = "账单统计(顶部卡片)")
+    @PreAuthorize("hasAuthority('finance:bill:query')")
     @GetMapping("/stats")
     public Result<Map<String, Object>> stats() {
         List<Bill> all = billMapper.selectList(new LambdaQueryWrapper<>());
@@ -80,6 +83,7 @@ public class BillController {
     }
 
     @Operation(summary = "逾期账单分页(应收方向:status=6 或 应收日<今天且未结清)")
+    @PreAuthorize("hasAuthority('finance:bill:query')")
     @GetMapping("/overdue")
     public Result<PageResult<Bill>> overdue(@RequestParam(defaultValue = "1") int pageNo,
                                             @RequestParam(defaultValue = "10") int pageSize) {
@@ -95,6 +99,7 @@ public class BillController {
     }
 
     @Operation(summary = "计算滞纳金(遍历逾期未结清的应收账单)")
+    @PreAuthorize("hasAuthority('finance:bill:calcLateFee')")
     @PostMapping("/calcLateFee")
     public Result<Integer> calcLateFee() {
         LocalDate today = LocalDate.now();
@@ -135,12 +140,14 @@ public class BillController {
     }
 
     @Operation(summary = "账单详情")
+    @PreAuthorize("hasAuthority('finance:bill:query')")
     @GetMapping("/{id}")
     public Result<Bill> get(@PathVariable Long id) {
         return Result.ok(billMapper.selectById(id));
     }
 
     @Operation(summary = "新增账单")
+    @PreAuthorize("hasAuthority('finance:bill:add')")
     @PostMapping
     public Result<Long> add(@RequestBody Bill bill) {
         billMapper.insert(bill);
@@ -148,6 +155,7 @@ public class BillController {
     }
 
     @Operation(summary = "修改账单")
+    @PreAuthorize("hasAuthority('finance:bill:edit')")
     @PutMapping
     public Result<Void> update(@RequestBody Bill bill) {
         billMapper.updateById(bill);
@@ -155,6 +163,7 @@ public class BillController {
     }
 
     @Operation(summary = "删除账单")
+    @PreAuthorize("hasAuthority('finance:bill:delete')")
     @DeleteMapping("/{id}")
     public Result<Void> delete(@PathVariable Long id) {
         billMapper.deleteById(id);

@@ -7,6 +7,7 @@ import com.zhyq.park.finance.mapper.SettingMapper;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
@@ -22,6 +23,7 @@ public class SettingController {
     private final SettingMapper settingMapper;
 
     @Operation(summary = "按模块查询配置列表")
+    @PreAuthorize("hasAuthority('finance:setting:query')")
     @GetMapping("/list")
     public Result<List<Setting>> list(@RequestParam(required = false) String module) {
         LambdaQueryWrapper<Setting> qw = new LambdaQueryWrapper<>();
@@ -31,6 +33,7 @@ public class SettingController {
     }
 
     @Operation(summary = "批量保存配置")
+    @PreAuthorize("hasAuthority('finance:setting:edit')")
     @Transactional(rollbackFor = Exception.class)
     @PutMapping("/batch")
     public Result<Void> batch(@RequestBody List<Setting> settings) {
@@ -43,6 +46,7 @@ public class SettingController {
     }
 
     @Operation(summary = "新增配置")
+    @PreAuthorize("hasAuthority('finance:setting:add')")
     @PostMapping
     public Result<Long> add(@RequestBody Setting setting) {
         settingMapper.insert(setting);
@@ -50,6 +54,7 @@ public class SettingController {
     }
 
     @Operation(summary = "删除配置")
+    @PreAuthorize("hasAuthority('finance:setting:delete')")
     @DeleteMapping("/{id}")
     public Result<Void> delete(@PathVariable Long id) {
         settingMapper.deleteById(id);

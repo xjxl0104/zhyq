@@ -12,6 +12,7 @@ import com.zhyq.park.system.mapper.SysDictTypeMapper;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 
@@ -27,6 +28,7 @@ public class SysDictController {
     private final SysDictDataMapper dataMapper;
 
     @Operation(summary = "字典类型分页")
+    @PreAuthorize("hasAuthority('system:dict:query')")
     @GetMapping("/type/page")
     public Result<PageResult<SysDictType>> typePage(@RequestParam(defaultValue = "1") int pageNo,
                                                     @RequestParam(defaultValue = "10") int pageSize,
@@ -37,18 +39,21 @@ public class SysDictController {
         return Result.ok(PageResult.of(p.getTotal(), p.getRecords()));
     }
 
+    @PreAuthorize("hasAuthority('system:dict:add')")
     @PostMapping("/type")
     public Result<Long> addType(@RequestBody SysDictType t) {
         typeMapper.insert(t);
         return Result.ok(t.getId());
     }
 
+    @PreAuthorize("hasAuthority('system:dict:edit')")
     @PutMapping("/type")
     public Result<Void> updateType(@RequestBody SysDictType t) {
         typeMapper.updateById(t);
         return Result.ok();
     }
 
+    @PreAuthorize("hasAuthority('system:dict:delete')")
     @DeleteMapping("/type/{id}")
     public Result<Void> delType(@PathVariable Long id) {
         typeMapper.deleteById(id);
@@ -56,6 +61,7 @@ public class SysDictController {
     }
 
     @Operation(summary = "按类型取字典项")
+    @PreAuthorize("hasAuthority('system:dict:query')")
     @GetMapping("/data/{dictType}")
     public Result<List<SysDictData>> dataByType(@PathVariable String dictType) {
         return Result.ok(dataMapper.selectList(new LambdaQueryWrapper<SysDictData>()
@@ -64,18 +70,21 @@ public class SysDictController {
                 .orderByAsc(SysDictData::getSort)));
     }
 
+    @PreAuthorize("hasAuthority('system:dict:add')")
     @PostMapping("/data")
     public Result<Long> addData(@RequestBody SysDictData d) {
         dataMapper.insert(d);
         return Result.ok(d.getId());
     }
 
+    @PreAuthorize("hasAuthority('system:dict:edit')")
     @PutMapping("/data")
     public Result<Void> updateData(@RequestBody SysDictData d) {
         dataMapper.updateById(d);
         return Result.ok();
     }
 
+    @PreAuthorize("hasAuthority('system:dict:delete')")
     @DeleteMapping("/data/{id}")
     public Result<Void> delData(@PathVariable Long id) {
         dataMapper.deleteById(id);

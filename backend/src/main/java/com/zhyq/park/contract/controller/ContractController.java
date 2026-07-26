@@ -15,6 +15,7 @@ import com.zhyq.park.contract.service.ContractService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 
@@ -33,6 +34,7 @@ public class ContractController {
     private final ContractService contractService;
 
     @Operation(summary = "分页查询合同")
+    @PreAuthorize("hasAuthority('contract:query')")
     @GetMapping("/page")
     public Result<PageResult<Contract>> page(@RequestParam(defaultValue = "1") int pageNo,
                                              @RequestParam(defaultValue = "10") int pageSize,
@@ -53,6 +55,7 @@ public class ContractController {
     }
 
     @Operation(summary = "合同详情(含房源列表)")
+    @PreAuthorize("hasAuthority('contract:query')")
     @GetMapping("/{id}")
     public Result<Map<String, Object>> get(@PathVariable Long id) {
         Contract contract = contractMapper.selectById(id);
@@ -65,6 +68,7 @@ public class ContractController {
     }
 
     @Operation(summary = "新增合同")
+    @PreAuthorize("hasAuthority('contract:add')")
     @PostMapping
     public Result<Long> add(@RequestBody Contract contract) {
         if (contract.getStatus() == null) {
@@ -75,6 +79,7 @@ public class ContractController {
     }
 
     @Operation(summary = "修改合同")
+    @PreAuthorize("hasAuthority('contract:edit')")
     @PutMapping
     public Result<Void> update(@RequestBody Contract contract) {
         contractMapper.updateById(contract);
@@ -82,6 +87,7 @@ public class ContractController {
     }
 
     @Operation(summary = "删除合同")
+    @PreAuthorize("hasAuthority('contract:delete')")
     @DeleteMapping("/{id}")
     public Result<Void> delete(@PathVariable Long id) {
         contractMapper.deleteById(id);
@@ -89,6 +95,7 @@ public class ContractController {
     }
 
     @Operation(summary = "提交审批(草稿→待审核)")
+    @PreAuthorize("hasAuthority('contract:submit')")
     @PostMapping("/{id}/submit")
     public Result<Void> submit(@PathVariable Long id) {
         contractService.submit(id);
@@ -96,6 +103,7 @@ public class ContractController {
     }
 
     @Operation(summary = "审批通过(待审核→执行中,生成账单计划)")
+    @PreAuthorize("hasAuthority('contract:approve')")
     @PostMapping("/{id}/approve")
     public Result<Void> approve(@PathVariable Long id) {
         contractService.approve(id);
@@ -103,6 +111,7 @@ public class ContractController {
     }
 
     @Operation(summary = "退租(→已终止,释放房源)")
+    @PreAuthorize("hasAuthority('contract:terminate')")
     @PostMapping("/{id}/terminate")
     public Result<Void> terminate(@PathVariable Long id) {
         contractService.terminate(id);
@@ -110,6 +119,7 @@ public class ContractController {
     }
 
     @Operation(summary = "归档(已到期/已终止→已归档)")
+    @PreAuthorize("hasAuthority('contract:archive')")
     @PostMapping("/{id}/archive")
     public Result<Void> archive(@PathVariable Long id) {
         int updated = contractMapper.update(null, new LambdaUpdateWrapper<Contract>()

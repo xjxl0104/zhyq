@@ -2,6 +2,7 @@ package com.zhyq.park.common.exception;
 
 import com.zhyq.park.common.result.Result;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.validation.BindException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -38,6 +39,17 @@ public class GlobalExceptionHandler {
         }
         String msg = fieldError != null ? fieldError.getDefaultMessage() : "参数校验失败";
         return Result.fail(400, msg);
+    }
+
+    /**
+     * 方法级 @PreAuthorize 拒绝:抛在 DispatcherServlet 内,不经 Security 的 AccessDeniedHandler,
+     * 需在此统一转 403(否则落兜底 handler 变 500)。Spring Security 6 的
+     * AuthorizationDeniedException 继承自 AccessDeniedException,一并覆盖。
+     */
+    @ExceptionHandler(AccessDeniedException.class)
+    public Result<Void> handleAccessDenied(AccessDeniedException e) {
+        log.warn("权限不足: {}", e.getMessage());
+        return Result.fail(403, "权限不足");
     }
 
     @ExceptionHandler(Exception.class)

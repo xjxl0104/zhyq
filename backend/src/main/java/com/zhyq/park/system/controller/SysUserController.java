@@ -10,6 +10,7 @@ import com.zhyq.park.system.mapper.SysUserMapper;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 
@@ -24,6 +25,7 @@ public class SysUserController {
     private final SysUserMapper userMapper;
 
     @Operation(summary = "分页查询用户")
+    @PreAuthorize("hasAuthority('system:user:query')")
     @GetMapping("/page")
     public Result<PageResult<SysUser>> page(@RequestParam(defaultValue = "1") int pageNo,
                                             @RequestParam(defaultValue = "10") int pageSize,
@@ -42,12 +44,14 @@ public class SysUserController {
     }
 
     @Operation(summary = "用户详情")
+    @PreAuthorize("hasAuthority('system:user:query')")
     @GetMapping("/{id}")
     public Result<SysUser> get(@PathVariable Long id) {
         return Result.ok(userMapper.selectById(id));
     }
 
     @Operation(summary = "新增用户")
+    @PreAuthorize("hasAuthority('system:user:add')")
     @PostMapping
     public Result<Long> add(@RequestBody SysUser user) {
         userMapper.insert(user);
@@ -55,6 +59,7 @@ public class SysUserController {
     }
 
     @Operation(summary = "修改用户")
+    @PreAuthorize("hasAuthority('system:user:edit')")
     @PutMapping
     public Result<Void> update(@RequestBody SysUser user) {
         userMapper.updateById(user);
@@ -62,6 +67,7 @@ public class SysUserController {
     }
 
     @Operation(summary = "删除用户")
+    @PreAuthorize("hasAuthority('system:user:delete')")
     @DeleteMapping("/{id}")
     public Result<Void> delete(@PathVariable Long id) {
         userMapper.deleteById(id);
@@ -69,6 +75,7 @@ public class SysUserController {
     }
 
     @Operation(summary = "全部用户(下拉)")
+    @PreAuthorize("hasAuthority('system:user:query')")
     @GetMapping("/list")
     public Result<List<SysUser>> list() {
         return Result.ok(userMapper.selectList(new LambdaQueryWrapper<SysUser>().eq(SysUser::getStatus, 1)));

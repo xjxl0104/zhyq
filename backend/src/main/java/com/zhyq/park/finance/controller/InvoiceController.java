@@ -10,6 +10,7 @@ import com.zhyq.park.finance.mapper.InvoiceMapper;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 
@@ -22,6 +23,7 @@ public class InvoiceController {
     private final InvoiceMapper invoiceMapper;
 
     @Operation(summary = "分页查询发票")
+    @PreAuthorize("hasAuthority('finance:invoice:query')")
     @GetMapping("/page")
     public Result<PageResult<Invoice>> page(@RequestParam(defaultValue = "1") int pageNo,
                                             @RequestParam(defaultValue = "10") int pageSize,
@@ -38,12 +40,14 @@ public class InvoiceController {
     }
 
     @Operation(summary = "发票详情")
+    @PreAuthorize("hasAuthority('finance:invoice:query')")
     @GetMapping("/{id}")
     public Result<Invoice> get(@PathVariable Long id) {
         return Result.ok(invoiceMapper.selectById(id));
     }
 
     @Operation(summary = "新增发票")
+    @PreAuthorize("hasAuthority('finance:invoice:add')")
     @PostMapping
     public Result<Long> add(@RequestBody Invoice invoice) {
         invoiceMapper.insert(invoice);
@@ -51,6 +55,7 @@ public class InvoiceController {
     }
 
     @Operation(summary = "修改发票")
+    @PreAuthorize("hasAuthority('finance:invoice:edit')")
     @PutMapping
     public Result<Void> update(@RequestBody Invoice invoice) {
         invoiceMapper.updateById(invoice);
@@ -58,6 +63,7 @@ public class InvoiceController {
     }
 
     @Operation(summary = "删除发票")
+    @PreAuthorize("hasAuthority('finance:invoice:delete')")
     @DeleteMapping("/{id}")
     public Result<Void> delete(@PathVariable Long id) {
         invoiceMapper.deleteById(id);

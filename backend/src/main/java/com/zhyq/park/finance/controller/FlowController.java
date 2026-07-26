@@ -10,6 +10,7 @@ import com.zhyq.park.finance.mapper.FlowMapper;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 @Tag(name = "财务-收支流水")
@@ -21,6 +22,7 @@ public class FlowController {
     private final FlowMapper flowMapper;
 
     @Operation(summary = "分页查询流水")
+    @PreAuthorize("hasAuthority('finance:flow:query')")
     @GetMapping("/page")
     public Result<PageResult<Flow>> page(@RequestParam(defaultValue = "1") int pageNo,
                                          @RequestParam(defaultValue = "10") int pageSize,
