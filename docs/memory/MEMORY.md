@@ -3,3 +3,4 @@
 - [zhyq 前端代码图谱](zhyq-frontend-map.md) — 前端结构/页面分布,codegraph 已索引(frontend/.codegraph)
 - [zhyq 升级调研](zhyq-upgrade-research.md) — 方案v2(25家对标)执行中,卡片在 docs/upgrade/cards/,报告前不改代码
 - [zhyq 编译环境](zhyq-build-env.md) — 本机 mvn/java 不在 PATH,编译需手动指 JAVA_HOME + libexec mvn 全路径
+- [zhyq ver4.0 生产化改造](zhyq-ver4-prod-hardening.md) — ver4.0=生产化+云端部署;3.2/3.3 已做,剩 3.4 RBAC 做完提 ver4.0
