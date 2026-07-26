@@ -2,6 +2,7 @@ package com.zhyq.park.file.controller;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.zhyq.park.common.result.Result;
+import com.zhyq.park.file.FileAttachRule;
 import com.zhyq.park.file.entity.SysFile;
 import com.zhyq.park.file.mapper.SysFileMapper;
 import com.zhyq.park.file.service.FileStorageService;
@@ -62,6 +63,41 @@ public class FileController {
             storageService.deletePhysical(f.getStorePath());
         }
         return Result.ok();
+    }
+
+    @Operation(summary = "批量关联附件到业务对象(先传后回填:仅回填 bizId 为空的记录)")
+    @PostMapping("/attach")
+    public Result<Integer> attach(@RequestBody AttachRequest req) {
+        if (req == null || req.getBizType() == null || req.getBizType().isBlank()
+                || req.getBizId() == null || req.getFileIds() == null || req.getFileIds().isEmpty()) {
+            return Result.ok(0);
+        }
+        int attached = 0;
+        for (Long fileId : req.getFileIds()) {
+            SysFile f = fileMapper.selectById(fileId);
+            if (f == null || !FileAttachRule.canAttach(f)) {
+                continue;                    // 不存在或已关联 → 跳过,防越权覆盖
+            }
+            f.setBizType(req.getBizType());
+            f.setBizId(req.getBizId());
+            fileMapper.updateById(f);
+            attached++;
+        }
+        return Result.ok(attached);
+    }
+
+    /** 关联请求体 */
+    public static class AttachRequest {
+        private String bizType;
+        private Long bizId;
+        private List<Long> fileIds;
+
+        public String getBizType() { return bizType; }
+        public void setBizType(String bizType) { this.bizType = bizType; }
+        public Long getBizId() { return bizId; }
+        public void setBizId(Long bizId) { this.bizId = bizId; }
+        public List<Long> getFileIds() { return fileIds; }
+        public void setFileIds(List<Long> fileIds) { this.fileIds = fileIds; }
     }
 
     private SysFile save(MultipartFile file, String bizType, Long bizId) {

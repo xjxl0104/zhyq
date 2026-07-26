@@ -17,6 +17,10 @@ export const fileApi = {
   list(bizType, bizId) {
     return request.get('/file/list', { params: { bizType, bizId } })
   },
+  // 先传后回填:业务保存拿到新 id 后,把已上传附件关联过去
+  attach(bizType, bizId, fileIds) {
+    return request.post('/file/attach', { bizType, bizId, fileIds })
+  },
   remove(id) {
     return request.delete(`/file/${id}`)
   }

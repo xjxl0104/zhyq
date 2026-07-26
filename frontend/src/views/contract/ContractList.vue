@@ -186,6 +186,11 @@
               <el-input v-model="form.remark" type="textarea" :rows="2" />
             </el-form-item>
           </el-col>
+          <el-col :span="24">
+            <el-form-item label="附件">
+              <FileUpload v-model="attachFiles" biz-type="contract" :biz-id="form.id" />
+            </el-form-item>
+          </el-col>
         </el-row>
       </el-form>
       <template #footer>
@@ -202,6 +207,8 @@ import { reactive, ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { contractApi } from '@/api/contract'
+import { fileApi } from '@/api/file'
+import FileUpload from '@/components/FileUpload.vue'
 import { tenantApi } from '@/api/tenant'
 import { projectApi } from '@/api/building'
 
@@ -279,6 +286,7 @@ const emptyForm = () => ({
   deposit: 0, chargeMode: 1, payCycle: 3, freeMonths: 0, remark: ''
 })
 const form = reactive(emptyForm())
+const attachFiles = ref([])
 const rules = {
   code: [{ required: true, message: '请输入合同编号', trigger: 'blur' }],
   tenantRefId: [{ required: true, message: '请选择租客', trigger: 'change' }],
@@ -287,16 +295,33 @@ const rules = {
   endDate: [{ required: true, message: '请选择结束日期', trigger: 'change' }]
 }
 
-function openDialog(row) {
+async function openDialog(row) {
   dialog.visible = true
   dialog.title = row ? '编辑合同' : '新增合同'
-  if (row) Object.assign(form, row)
-  else Object.assign(form, emptyForm())
+  attachFiles.value = []
+  if (row) {
+    Object.assign(form, row)
+    // 编辑:载入已关联附件
+    try { attachFiles.value = await fileApi.list('contract', row.id) } catch (e) { /* 忽略 */ }
+  } else {
+    Object.assign(form, emptyForm())
+  }
 }
 async function submitForm() {
   await formRef.value.validate()
-  if (form.id) await contractApi.update(form)
-  else await contractApi.add(form)
+  let contractId = form.id
+  if (form.id) {
+    await contractApi.update(form)
+  } else {
+    contractId = await contractApi.add(form)
+  }
+  // 先传后回填:把新上传(bizId 为空)的附件关联到本合同
+  const pendingIds = (attachFiles.value || [])
+    .filter(f => f && f.id && !f.bizId)
+    .map(f => f.id)
+  if (contractId && pendingIds.length) {
+    try { await fileApi.attach('contract', contractId, pendingIds) } catch (e) { /* 忽略,不阻断保存 */ }
+  }
   ElMessage.success('保存成功')
   dialog.visible = false
   load()
