@@ -7,25 +7,11 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
 /**
- * Web 配置:CORS 跨域 + OpenAPI 文档信息
+ * Web 配置:OpenAPI 文档信息。
+ * 附件不做静态目录映射(避免匿名可读),统一走鉴权下载接口 /file/download/{id}。
  */
 @Configuration
 public class WebConfig implements WebMvcConfigurer {
-
-    @org.springframework.beans.factory.annotation.Value("${zhyq.upload.path:./uploads}")
-    private String uploadPath;
-
-    @org.springframework.beans.factory.annotation.Value("${zhyq.upload.url-prefix:/uploads}")
-    private String urlPrefix;
-
-    @Override
-    public void addResourceHandlers(
-            org.springframework.web.servlet.config.annotation.ResourceHandlerRegistry registry) {
-        String location = "file:" + java.nio.file.Paths.get(uploadPath).toAbsolutePath() + "/";
-        registry.addResourceHandler(urlPrefix + "/**")
-                .addResourceLocations(location);
-    }
-
 
     @Bean
     public OpenAPI openAPI() {

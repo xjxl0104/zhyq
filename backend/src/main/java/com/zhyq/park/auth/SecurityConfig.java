@@ -54,9 +54,9 @@ public class SecurityConfig {
                 .requestMatchers(
                         "/auth/login",
                         "/doc.html", "/webjars/**", "/v3/api-docs/**", "/swagger-ui/**",
-                        "/uploads/**",
                         "/favicon.ico", "/error"
                 ).permitAll()
+                // 附件不再静态放行,统一走鉴权下载接口 /file/download/{id}
                 .anyRequest().authenticated()
             )
             .exceptionHandling(e -> e

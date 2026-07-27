@@ -23,5 +23,9 @@ export const fileApi = {
   },
   remove(id) {
     return request.delete(`/file/${id}`)
+  },
+  // 鉴权下载(替代匿名静态 /uploads):返回原始 axios 响应,res.data 为 Blob
+  download(id) {
+    return request.get(`/file/download/${id}`, { responseType: 'blob' })
   }
 }

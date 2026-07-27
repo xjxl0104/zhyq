@@ -3,6 +3,7 @@ package com.zhyq.park.system.controller;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.zhyq.park.common.exception.BizException;
 import com.zhyq.park.common.result.PageResult;
 import com.zhyq.park.common.result.Result;
 import com.zhyq.park.system.entity.SysUser;
@@ -11,6 +12,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 
@@ -23,6 +25,7 @@ import java.util.List;
 public class SysUserController {
 
     private final SysUserMapper userMapper;
+    private final PasswordEncoder passwordEncoder;
 
     @Operation(summary = "分页查询用户")
     @PreAuthorize("hasAuthority('system:user:query')")
@@ -50,18 +53,28 @@ public class SysUserController {
         return Result.ok(userMapper.selectById(id));
     }
 
-    @Operation(summary = "新增用户")
+    @Operation(summary = "新增用户(密码必填,BCrypt 入库)")
     @PreAuthorize("hasAuthority('system:user:add')")
     @PostMapping
     public Result<Long> add(@RequestBody SysUser user) {
+        if (!StringUtils.hasText(user.getPassword())) {
+            throw new BizException("请设置初始密码");
+        }
+        user.setPassword(passwordEncoder.encode(user.getPassword()));
         userMapper.insert(user);
         return Result.ok(user.getId());
     }
 
-    @Operation(summary = "修改用户")
+    @Operation(summary = "修改用户(密码留空则不变,填写则 BCrypt 重置)")
     @PreAuthorize("hasAuthority('system:user:edit')")
     @PutMapping
     public Result<Void> update(@RequestBody SysUser user) {
+        if (StringUtils.hasText(user.getPassword())) {
+            user.setPassword(passwordEncoder.encode(user.getPassword()));
+        } else {
+            // 置 null:MyBatis-Plus updateById 忽略 null 字段,保留原密码
+            user.setPassword(null);
+        }
         userMapper.updateById(user);
         return Result.ok();
     }

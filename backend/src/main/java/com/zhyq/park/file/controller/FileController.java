@@ -1,7 +1,10 @@
 package com.zhyq.park.file.controller;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.zhyq.park.common.config.MyMetaObjectHandler;
+import com.zhyq.park.common.exception.BizException;
 import com.zhyq.park.common.result.Result;
+import com.zhyq.park.file.FileAccessRule;
 import com.zhyq.park.file.FileAttachRule;
 import com.zhyq.park.file.entity.SysFile;
 import com.zhyq.park.file.mapper.SysFileMapper;
@@ -9,9 +12,18 @@ import com.zhyq.park.file.service.FileStorageService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
+import org.springframework.core.io.FileSystemResource;
+import org.springframework.core.io.Resource;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -54,15 +66,47 @@ public class FileController {
             .orderByDesc(SysFile::getId)));
     }
 
-    @Operation(summary = "删除附件")
+    @Operation(summary = "删除附件(仅上传者本人或 admin)")
     @DeleteMapping("/{id}")
     public Result<Void> remove(@PathVariable Long id) {
         SysFile f = fileMapper.selectById(id);
         if (f != null) {
+            if (!FileAccessRule.canDelete(f, MyMetaObjectHandler.currentOperator(), isAdmin())) {
+                throw new BizException(403, "仅上传者本人或管理员可删除该附件");
+            }
             fileMapper.deleteById(id);          // 逻辑删除
             storageService.deletePhysical(f.getStorePath());
         }
         return Result.ok();
+    }
+
+    @Operation(summary = "鉴权下载附件(替代匿名静态 /uploads)")
+    @GetMapping("/download/{id}")
+    public ResponseEntity<Resource> download(@PathVariable Long id) {
+        SysFile f = fileMapper.selectById(id);
+        if (f == null) {
+            throw new BizException("附件不存在");
+        }
+        Resource resource = new FileSystemResource(storageService.resolveExisting(f.getStorePath()));
+        MediaType mediaType;
+        try {
+            mediaType = MediaType.parseMediaType(f.getContentType());
+        } catch (Exception e) {
+            mediaType = MediaType.APPLICATION_OCTET_STREAM;
+        }
+        ContentDisposition disposition = ContentDisposition.attachment()
+                .filename(f.getOriginalName() == null ? "file" : f.getOriginalName(), StandardCharsets.UTF_8)
+                .build();
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, disposition.toString())
+                .contentType(mediaType)
+                .body(resource);
+    }
+
+    private static boolean isAdmin() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        return auth != null && auth.getAuthorities().stream()
+                .anyMatch(a -> "ROLE_admin".equals(a.getAuthority()));
     }
 
     @Operation(summary = "批量关联附件到业务对象(先传后回填:仅回填 bizId 为空的记录)")

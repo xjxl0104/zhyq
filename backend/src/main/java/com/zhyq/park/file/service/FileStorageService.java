@@ -97,4 +97,17 @@ public class FileStorageService {
             // 物理文件删除失败不阻断逻辑删除
         }
     }
+
+    /** 鉴权下载用:按库中相对路径定位磁盘文件(含路径穿越防护),不存在抛业务异常 */
+    public Path resolveExisting(String storePath) {
+        if (storePath == null || storePath.isBlank()) {
+            throw new com.zhyq.park.common.exception.BizException("附件路径为空");
+        }
+        Path root = java.nio.file.Paths.get(uploadPath).toAbsolutePath();
+        Path target = resolveSafely(root, storePath);
+        if (!java.nio.file.Files.isRegularFile(target)) {
+            throw new com.zhyq.park.common.exception.BizException("附件文件不存在或已被清理");
+        }
+        return target;
+    }
 }

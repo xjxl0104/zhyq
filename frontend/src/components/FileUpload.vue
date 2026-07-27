@@ -1,5 +1,5 @@
 <script setup>
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { uploadUrl, fileApi } from '@/api/file'
 
@@ -18,8 +18,9 @@ watch(() => props.modelValue, (val) => {
   fileList.value = (val || []).map(f => ({ name: f.originalName, url: f.url, id: f.id, raw: f }))
 }, { immediate: true })
 
-const headers = { Authorization: `Bearer ${localStorage.getItem('zhyq_token') || ''}` }
-const uploadData = { bizType: props.bizType, bizId: props.bizId }
+// computed:跟随 props 变化与当前 token(直传不走 axios 拦截器,需手动带头)
+const headers = computed(() => ({ Authorization: `Bearer ${localStorage.getItem('zhyq_token') || ''}` }))
+const uploadData = computed(() => ({ bizType: props.bizType, bizId: props.bizId }))
 
 function onSuccess(res) {
   // 后端 Result 结构 { code, message, data }
@@ -49,6 +50,24 @@ async function onRemove(uploadFile) {
     emit('update:modelValue', next)
   }
 }
+
+// 点击文件名 → 鉴权下载(/uploads 静态匿名访问已关闭)
+async function onPreview(uploadFile) {
+  const id = uploadFile.id || (uploadFile.raw && uploadFile.raw.id)
+    || (uploadFile.response && uploadFile.response.data && uploadFile.response.data.id)
+  if (!id) return
+  try {
+    const res = await fileApi.download(id)
+    const blobUrl = URL.createObjectURL(res.data)
+    const a = document.createElement('a')
+    a.href = blobUrl
+    a.download = uploadFile.name || 'file'
+    a.click()
+    URL.revokeObjectURL(blobUrl)
+  } catch (e) {
+    ElMessage.error('下载失败')
+  }
+}
 </script>
 
 <template>
@@ -62,11 +81,12 @@ async function onRemove(uploadFile) {
     :on-error="onError"
     :before-upload="beforeUpload"
     :on-remove="onRemove"
+    :on-preview="onPreview"
     multiple
   >
     <el-button type="primary">选择文件</el-button>
     <template #tip>
-      <div class="el-upload__tip">支持 jpg/png/pdf/doc/xls/dwg 等,单个不超过 20MB</div>
+      <div class="el-upload__tip">支持 jpg/png/pdf/doc/xls/dwg 等,单个不超过 20MB;点击文件名下载</div>
     </template>
   </el-upload>
 </template>

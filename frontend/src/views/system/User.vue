@@ -61,6 +61,10 @@
         <el-form-item label="账号" prop="username">
           <el-input v-model="form.username" :disabled="!!form.id" />
         </el-form-item>
+        <el-form-item label="密码" prop="password">
+          <el-input v-model="form.password" type="password" show-password
+                    :placeholder="form.id ? '留空则不修改密码' : '请设置初始密码'" />
+        </el-form-item>
         <el-form-item label="昵称" prop="nickname"><el-input v-model="form.nickname" /></el-form-item>
         <el-form-item label="手机号"><el-input v-model="form.phone" /></el-form-item>
         <el-form-item label="邮箱"><el-input v-model="form.email" /></el-form-item>
@@ -106,17 +110,25 @@ function reset() {
 
 const formRef = ref()
 const dialog = reactive({ visible: false, title: '' })
-const form = reactive({ id: null, username: '', nickname: '', phone: '', email: '', status: 1 })
+const form = reactive({ id: null, username: '', password: '', nickname: '', phone: '', email: '', status: 1 })
 const rules = {
   username: [{ required: true, message: '请输入账号', trigger: 'blur' }],
+  password: [{
+    validator: (rule, value, callback) => {
+      // 新增必填;编辑留空 = 不修改
+      if (!form.id && !value) callback(new Error('请设置初始密码'))
+      else if (value && value.length < 6) callback(new Error('密码至少 6 位'))
+      else callback()
+    }, trigger: 'blur'
+  }],
   nickname: [{ required: true, message: '请输入昵称', trigger: 'blur' }]
 }
 
 function openDialog(row) {
   dialog.visible = true
   dialog.title = row ? '编辑用户' : '新增用户'
-  if (row) Object.assign(form, row)
-  else Object.assign(form, { id: null, username: '', nickname: '', phone: '', email: '', status: 1 })
+  if (row) Object.assign(form, row, { password: '' })
+  else Object.assign(form, { id: null, username: '', password: '', nickname: '', phone: '', email: '', status: 1 })
 }
 async function submit() {
   await formRef.value.validate()

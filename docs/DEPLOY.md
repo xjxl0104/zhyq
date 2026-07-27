@@ -76,9 +76,11 @@ SQL
 ## 上云(生产)提醒
 
 这套 full 镜像同样可直接部署到云服务器。上生产前须改:
-1. MySQL root 密码(compose 里的 `zhyq123456`)
-2. 登录鉴权换成 Spring Security + BCrypt + JWT(当前为演示级)
-3. CORS 白名单收紧到正式域名(现放通了 localhost 和 trycloudflare)
+1. ~~MySQL root 密码(compose 里的 `zhyq123456`)~~ 已外置:compose 读 `.env` 的 `DB_ROOT_PASSWORD`(必填)
+2. ~~登录鉴权换成 Spring Security + BCrypt + JWT~~ 已完成(ver4.0):无状态 JWT + BCrypt,`JWT_SECRET` 必须由 `.env` 提供
+3. CORS 白名单收紧到正式域名:`.env` 的 `CORS_ALLOWED_ORIGINS`(默认仍放通 localhost/trycloudflare,生产必改)
+4. 上线后立刻逐用户改密:V29 曾把演示账号统一重置为 `zhyq@2026`,用户管理页(编辑用户 → 填新密码)即可 BCrypt 重置
+5. 附件访问已收紧:`/uploads` 不再匿名静态放行,统一走鉴权接口 `GET /api/file/download/{id}`;附件删除仅上传者本人或 admin
 
 ### 文件上传持久化
 上传文件存于后端容器 /app/uploads,已通过 docker-compose.full.yml 挂载宿主 ./uploads 持久化。
