@@ -1,6 +1,7 @@
 package com.zhyq.park.auth;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.zhyq.park.auth.mapper.AuthQueryMapper;
 import com.zhyq.park.common.exception.BizException;
 import com.zhyq.park.common.result.Result;
 import com.zhyq.park.system.entity.SysUser;

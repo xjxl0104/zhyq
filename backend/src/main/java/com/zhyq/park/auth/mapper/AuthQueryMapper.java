@@ -1,4 +1,4 @@
-package com.zhyq.park.auth;
+package com.zhyq.park.auth.mapper;
 
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
@@ -9,6 +9,7 @@ import java.util.List;
 /**
  * 认证/鉴权查询:用户 → 角色 → 菜单权限标识。
  * 走注解 SQL,只读,不侵入既有 system mapper。
+ * 必须在 *.mapper 包内以匹配主类 @MapperScan("com.zhyq.park.**.mapper")。
  */
 @Mapper
 public interface AuthQueryMapper {
