@@ -115,6 +115,7 @@
           <el-date-picker v-model="bookingForm.endTime" type="datetime" placeholder="选择结束时间"
                           value-format="YYYY-MM-DD HH:mm:ss" style="width: 100%" />
         </el-form-item>
+        <el-form-item label="附件"><FileUpload v-model="attachFiles" biz-type="meeting" :biz-id="bookingForm.id" /></el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="bookingDialog.visible = false">取消</el-button>
@@ -128,6 +129,8 @@
 import { reactive, ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { meetingRoomApi, bookingApi } from '@/api/property'
+import { fileApi } from '@/api/file'
+import FileUpload from '@/components/FileUpload.vue'
 
 const bookingStatusMap = {
   1: { label: '待核销', type: 'warning' },
@@ -206,6 +209,7 @@ const bookingFormRef = ref()
 const bookingDialog = reactive({ visible: false })
 const defaultBooking = () => ({ roomId: null, booker: '', startTime: '', endTime: '', status: 1 })
 const bookingForm = reactive(defaultBooking())
+const attachFiles = ref([])
 const bookingRules = {
   roomId: [{ required: true, message: '请选择会议室', trigger: 'change' }],
   booker: [{ required: true, message: '请输入预约人', trigger: 'blur' }],
@@ -215,11 +219,16 @@ const bookingRules = {
 function openBookingDialog() {
   bookingDialog.visible = true
   Object.assign(bookingForm, defaultBooking())
+  attachFiles.value = []
 }
 async function submitBooking() {
   await bookingFormRef.value.validate()
   // 冲突校验由后端完成:重叠时段后端抛 BizException,request 拦截器自动 ElMessage 提示
-  await bookingApi.add(bookingForm)
+  const newId = await bookingApi.add(bookingForm)
+  const pendingIds = (attachFiles.value || []).filter(f => f && f.id && !f.bizId).map(f => f.id)
+  if (newId && pendingIds.length) {
+    try { await fileApi.attach('meeting', newId, pendingIds) } catch (e) { /* 忽略,不阻断保存 */ }
+  }
   ElMessage.success('预约成功')
   bookingDialog.visible = false
   loadBookings()

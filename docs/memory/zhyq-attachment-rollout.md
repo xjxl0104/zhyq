@@ -62,3 +62,12 @@ ver4.0 = 三部分汇总,仓库用**分支**标版本:
 - oa/Document ✓(add 返 Result<Long>)
 - oa/Approval ✗ 跳过:审批中心列表,记录由合同/退款/调账等流程生成,页面仅审批意见框无新增弹窗。
 
+
+## ver4.1 全量铺开(2026-07-27,user 要求查缺补漏)
+新接 19 页(4 并行子代理,后端零改动,所有模块 add 均返回 Result<Long>):
+- OA:Article(article)/ Notice(oa_notice)/ Task(oa_task)/ Recruit(recruit)
+- 物业:Feedback(complaint)/ Activity(activity)/ Meeting 预约(meeting)/ Inspection(inspection)/ Check(pm_check)/ Asset(pm_asset)
+- 惠企:Pass(goods_pass)/ Declare(declare)/ Decoration(decoration)/ Policy(policy)
+- 系统:MessageCenter 消息模板(message);CRM:Customer(customer)/ Lead(crm_lead);IoT:Device(device)/ Vendor(vendor)
+注意:property/Asset 用 pm_asset 避开 am/Asset 的 asset;Meeting 附件挂"新增预约"弹窗,会议室弹窗未接(需要时另配 meeting_room)。
+仍不接:纯配置页(字典/部门/岗位/菜单/角色)、自动生成类(收据/OA审批/告警)。

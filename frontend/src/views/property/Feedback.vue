@@ -62,6 +62,7 @@
         <el-form-item label="提交租客ID"><el-input-number v-model="form.tenantRefId" :min="0" style="width: 100%" /></el-form-item>
         <el-form-item label="联系人"><el-input v-model="form.contact" /></el-form-item>
         <el-form-item label="电话"><el-input v-model="form.phone" /></el-form-item>
+        <el-form-item label="附件"><FileUpload v-model="attachFiles" biz-type="complaint" :biz-id="form.id" /></el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="dialog.visible = false">取消</el-button>
@@ -88,6 +89,8 @@ import { reactive, ref, onMounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { feedbackApi } from '@/api/property'
+import { fileApi } from '@/api/file'
+import FileUpload from '@/components/FileUpload.vue'
 
 const route = useRoute()
 
@@ -120,21 +123,32 @@ function reset() {
 const formRef = ref()
 const dialog = reactive({ visible: false, title: '' })
 const form = reactive({ id: null, title: '', content: '', tenantRefId: null, contact: '', phone: '' })
+const attachFiles = ref([])
 const rules = {
   title: [{ required: true, message: '请输入标题', trigger: 'blur' }]
 }
 
-function openDialog(row) {
+async function openDialog(row) {
   dialog.visible = true
   dialog.title = row ? '编辑' : '新增'
-  if (row) Object.assign(form, row)
-  else Object.assign(form, { id: null, title: '', content: '', tenantRefId: null, contact: '', phone: '' })
+  attachFiles.value = []
+  if (row) {
+    Object.assign(form, row)
+    try { attachFiles.value = await fileApi.list('complaint', row.id) } catch (e) { /* 忽略 */ }
+  } else {
+    Object.assign(form, { id: null, title: '', content: '', tenantRefId: null, contact: '', phone: '' })
+  }
 }
 async function submit() {
   await formRef.value.validate()
   const data = { ...form, ftype: route.meta.ftype }
+  let newId = form.id
   if (form.id) await feedbackApi.update(data)
-  else await feedbackApi.add(data)
+  else newId = await feedbackApi.add(data)
+  const pendingIds = (attachFiles.value || []).filter(f => f && f.id && !f.bizId).map(f => f.id)
+  if (newId && pendingIds.length) {
+    try { await fileApi.attach('complaint', newId, pendingIds) } catch (e) { /* 忽略,不阻断保存 */ }
+  }
   ElMessage.success('保存成功')
   dialog.visible = false
   load()

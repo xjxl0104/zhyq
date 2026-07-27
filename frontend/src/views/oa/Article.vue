@@ -86,6 +86,9 @@
             <el-radio :value="2">已发布</el-radio>
           </el-radio-group>
         </el-form-item>
+        <el-form-item label="附件">
+          <FileUpload v-model="attachFiles" biz-type="article" :biz-id="form.id" />
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="dialog.visible = false">取消</el-button>
@@ -110,6 +113,8 @@
 import { reactive, ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { articleApi } from '@/api/oa'
+import { fileApi } from '@/api/file'
+import FileUpload from '@/components/FileUpload.vue'
 
 function categoryTagType(category) {
   if (category === '新闻') return 'primary'
@@ -147,20 +152,30 @@ const formRef = ref()
 const dialog = reactive({ visible: false, title: '' })
 const defaultForm = () => ({ id: null, title: '', category: '新闻', author: '', content: '', status: 1 })
 const form = reactive(defaultForm())
+const attachFiles = ref([])
 const rules = {
   title: [{ required: true, message: '请输入标题', trigger: 'blur' }]
 }
 
-function openDialog(row) {
+async function openDialog(row) {
   dialog.visible = true
   dialog.title = row ? '编辑文章' : '新增文章'
   if (row) Object.assign(form, row)
   else Object.assign(form, defaultForm())
+  attachFiles.value = []
+  if (row) {
+    try { attachFiles.value = await fileApi.list('article', row.id) } catch (e) { /* 忽略 */ }
+  }
 }
 async function submit() {
   await formRef.value.validate()
+  let articleId = form.id
   if (form.id) await articleApi.update(form)
-  else await articleApi.add(form)
+  else articleId = await articleApi.add(form)
+  const pendingIds = (attachFiles.value || []).filter(f => f && f.id && !f.bizId).map(f => f.id)
+  if (articleId && pendingIds.length) {
+    try { await fileApi.attach('article', articleId, pendingIds) } catch (e) { /* 忽略,不阻断保存 */ }
+  }
   ElMessage.success('保存成功')
   dialog.visible = false
   load()

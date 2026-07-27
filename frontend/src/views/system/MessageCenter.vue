@@ -148,6 +148,9 @@
             <el-radio :value="0">停用</el-radio>
           </el-radio-group>
         </el-form-item>
+        <el-form-item label="附件">
+          <FileUpload v-model="attachFiles" biz-type="message" :biz-id="tplForm.id" />
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="tplDialog.visible = false">取消</el-button>
@@ -182,6 +185,8 @@
 import { reactive, ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { msgApi } from '@/api/system'
+import { fileApi } from '@/api/file'
+import FileUpload from '@/components/FileUpload.vue'
 
 const channelOptions = ['站内信', '短信', '邮件']
 const activeTab = ref('template')
@@ -211,21 +216,32 @@ const tplFormRef = ref()
 const tplDialog = reactive({ visible: false, title: '' })
 const emptyTplForm = () => ({ id: null, code: '', name: '', channel: '站内信', content: '', status: 1 })
 const tplForm = reactive(emptyTplForm())
+const attachFiles = ref([])
 const tplRules = {
   code: [{ required: true, message: '请输入编码', trigger: 'blur' }],
   name: [{ required: true, message: '请输入名称', trigger: 'blur' }],
   channel: [{ required: true, message: '请选择渠道', trigger: 'change' }]
 }
-function openTplDialog(row) {
+async function openTplDialog(row) {
   tplDialog.visible = true
   tplDialog.title = row ? '编辑模板' : '新增模板'
-  if (row) Object.assign(tplForm, row)
-  else Object.assign(tplForm, emptyTplForm())
+  attachFiles.value = []
+  if (row) {
+    Object.assign(tplForm, row)
+    try { attachFiles.value = await fileApi.list('message', row.id) } catch (e) { /* 忽略 */ }
+  } else {
+    Object.assign(tplForm, emptyTplForm())
+  }
 }
 async function submitTemplate() {
   await tplFormRef.value.validate()
+  let templateId = tplForm.id
   if (tplForm.id) await msgApi.templateUpdate(tplForm)
-  else await msgApi.templateAdd(tplForm)
+  else templateId = await msgApi.templateAdd(tplForm)
+  const pendingIds = (attachFiles.value || []).filter(f => f && f.id && !f.bizId).map(f => f.id)
+  if (templateId && pendingIds.length) {
+    try { await fileApi.attach('message', templateId, pendingIds) } catch (e) { /* 忽略,不阻断保存 */ }
+  }
   ElMessage.success('保存成功')
   tplDialog.visible = false
   loadTemplates()

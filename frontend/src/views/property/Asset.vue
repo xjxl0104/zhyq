@@ -124,6 +124,7 @@
           </el-radio-group>
         </el-form-item>
         <el-form-item label="备注"><el-input v-model="form.remark" type="textarea" /></el-form-item>
+        <el-form-item label="附件"><FileUpload v-model="attachFiles" biz-type="pm_asset" :biz-id="form.id" /></el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="dialog.visible = false">取消</el-button>
@@ -137,6 +138,8 @@
 import { reactive, ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { assetApi } from '@/api/property'
+import { fileApi } from '@/api/file'
+import FileUpload from '@/components/FileUpload.vue'
 
 const categories = ['办公设备', '机电', '安防', '家具', 'IT']
 const statusMap = {
@@ -177,20 +180,31 @@ const formRef = ref()
 const dialog = reactive({ visible: false, title: '' })
 const defaultForm = () => ({ id: null, code: '', name: '', category: '办公设备', location: '', price: 0, purchaseDate: null, warrantyEnd: null, owner: '', status: 1, remark: '' })
 const form = reactive(defaultForm())
+const attachFiles = ref([])
 const rules = {
   name: [{ required: true, message: '请输入资产名称', trigger: 'blur' }]
 }
 
-function openDialog(row) {
+async function openDialog(row) {
   dialog.visible = true
   dialog.title = row ? '编辑资产' : '新增资产'
-  if (row) Object.assign(form, defaultForm(), row)
-  else Object.assign(form, defaultForm())
+  attachFiles.value = []
+  if (row) {
+    Object.assign(form, defaultForm(), row)
+    try { attachFiles.value = await fileApi.list('pm_asset', row.id) } catch (e) { /* 忽略 */ }
+  } else {
+    Object.assign(form, defaultForm())
+  }
 }
 async function submit() {
   await formRef.value.validate()
+  let newId = form.id
   if (form.id) await assetApi.update(form)
-  else await assetApi.add(form)
+  else newId = await assetApi.add(form)
+  const pendingIds = (attachFiles.value || []).filter(f => f && f.id && !f.bizId).map(f => f.id)
+  if (newId && pendingIds.length) {
+    try { await fileApi.attach('pm_asset', newId, pendingIds) } catch (e) { /* 忽略,不阻断保存 */ }
+  }
   ElMessage.success('保存成功')
   dialog.visible = false
   refresh()

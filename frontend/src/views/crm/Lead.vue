@@ -113,6 +113,9 @@
                           placeholder="选择时间" style="width: 100%" />
         </el-form-item>
         <el-form-item label="备注"><el-input v-model="form.remark" type="textarea" :rows="2" /></el-form-item>
+        <el-form-item label="附件">
+          <FileUpload v-model="attachFiles" biz-type="crm_lead" :biz-id="form.id" />
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="dialog.visible = false">取消</el-button>
@@ -168,6 +171,8 @@
 import { reactive, ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { leadApi, followApi, customerApi } from '@/api/crm'
+import { fileApi } from '@/api/file'
+import FileUpload from '@/components/FileUpload.vue'
 
 const statusOptions = [
   { value: 1, label: '新建', type: 'warning' },
@@ -228,21 +233,32 @@ const formRef = ref()
 const dialog = reactive({ visible: false, title: '' })
 const emptyForm = () => ({ id: null, contact: '', phone: '', company: '', source: '', demandArea: '', status: 1, nextFollow: null, remark: '' })
 const form = reactive(emptyForm())
+const attachFiles = ref([])
 const rules = {
   contact: [{ required: true, message: '请输入联系人', trigger: 'blur' }],
   phone: [{ required: true, message: '请输入电话', trigger: 'blur' }]
 }
 
-function openDialog(row) {
+async function openDialog(row) {
   dialog.visible = true
   dialog.title = row ? '编辑线索' : '新增线索'
-  if (row) Object.assign(form, row)
-  else Object.assign(form, emptyForm())
+  attachFiles.value = []
+  if (row) {
+    Object.assign(form, row)
+    try { attachFiles.value = await fileApi.list('crm_lead', row.id) } catch (e) { /* 忽略 */ }
+  } else {
+    Object.assign(form, emptyForm())
+  }
 }
 async function submit() {
   await formRef.value.validate()
+  let leadId = form.id
   if (form.id) await leadApi.update(form)
-  else await leadApi.add(form)
+  else leadId = await leadApi.add(form)
+  const pendingIds = (attachFiles.value || []).filter(f => f && f.id && !f.bizId).map(f => f.id)
+  if (leadId && pendingIds.length) {
+    try { await fileApi.attach('crm_lead', leadId, pendingIds) } catch (e) { /* 忽略,不阻断保存 */ }
+  }
   ElMessage.success('保存成功')
   dialog.visible = false
   load()

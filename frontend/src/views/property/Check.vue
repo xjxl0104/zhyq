@@ -78,6 +78,7 @@
             <el-radio :value="3">已整改</el-radio>
           </el-radio-group>
         </el-form-item>
+        <el-form-item label="附件"><FileUpload v-model="attachFiles" biz-type="pm_check" :biz-id="form.id" /></el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="dialog.visible = false">取消</el-button>
@@ -92,6 +93,8 @@ import { reactive, ref, computed, onMounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { checkApi } from '@/api/property'
+import { fileApi } from '@/api/file'
+import FileUpload from '@/components/FileUpload.vue'
 
 const route = useRoute()
 const ctype = computed(() => route.meta.ctype || '保洁')
@@ -132,22 +135,33 @@ function reset() {
 const formRef = ref()
 const dialog = reactive({ visible: false, title: '' })
 const form = reactive({ id: null, ctype: ctype.value, location: '', checker: '', checkTime: '', score: 8, issues: '', status: 1 })
+const attachFiles = ref([])
 
 const rules = {
   location: [{ required: true, message: '请输入检查位置', trigger: 'blur' }]
 }
 
-function openDialog(row) {
+async function openDialog(row) {
   dialog.visible = true
   dialog.title = row ? `编辑${ctype.value}检查` : `新增${ctype.value}检查`
-  if (row) Object.assign(form, row)
-  else Object.assign(form, { id: null, ctype: ctype.value, location: '', checker: '', checkTime: '', score: 8, issues: '', status: 1 })
+  attachFiles.value = []
+  if (row) {
+    Object.assign(form, row)
+    try { attachFiles.value = await fileApi.list('pm_check', row.id) } catch (e) { /* 忽略 */ }
+  } else {
+    Object.assign(form, { id: null, ctype: ctype.value, location: '', checker: '', checkTime: '', score: 8, issues: '', status: 1 })
+  }
 }
 async function submit() {
   await formRef.value.validate()
   form.ctype = ctype.value
+  let newId = form.id
   if (form.id) await checkApi.update(form)
-  else await checkApi.add(form)
+  else newId = await checkApi.add(form)
+  const pendingIds = (attachFiles.value || []).filter(f => f && f.id && !f.bizId).map(f => f.id)
+  if (newId && pendingIds.length) {
+    try { await fileApi.attach('pm_check', newId, pendingIds) } catch (e) { /* 忽略,不阻断保存 */ }
+  }
   ElMessage.success('保存成功')
   dialog.visible = false
   load()

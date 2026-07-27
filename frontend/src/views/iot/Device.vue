@@ -93,6 +93,9 @@
             <el-option v-for="(label, val) in statusMap" :key="val" :label="label" :value="Number(val)" />
           </el-select>
         </el-form-item>
+        <el-form-item label="附件">
+          <FileUpload v-model="attachFiles" biz-type="device" :biz-id="form.id" />
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="dialog.visible = false">取消</el-button>
@@ -106,6 +109,8 @@
 import { reactive, ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { deviceApi } from '@/api/iot'
+import { fileApi } from '@/api/file'
+import FileUpload from '@/components/FileUpload.vue'
 
 const categories = ['门禁', '门锁', '停车', '充电桩', '摄像头', '传感器', '空开', '消防']
 // 0未激活 1在线 2离线 3故障 4维护 5停用
@@ -144,21 +149,32 @@ function reset() {
 const formRef = ref()
 const dialog = reactive({ visible: false, title: '' })
 const form = reactive({ id: null, code: '', name: '', category: null, vendor: '', location: '', status: 1 })
+const attachFiles = ref([])
 const rules = {
   code: [{ required: true, message: '请输入设备编号', trigger: 'blur' }],
   name: [{ required: true, message: '请输入名称', trigger: 'blur' }]
 }
 
-function openDialog(row) {
+async function openDialog(row) {
   dialog.visible = true
   dialog.title = row ? '编辑设备' : '新增设备'
-  if (row) Object.assign(form, row)
-  else Object.assign(form, { id: null, code: '', name: '', category: null, vendor: '', location: '', status: 1 })
+  attachFiles.value = []
+  if (row) {
+    Object.assign(form, row)
+    try { attachFiles.value = await fileApi.list('device', row.id) } catch (e) { /* 忽略 */ }
+  } else {
+    Object.assign(form, { id: null, code: '', name: '', category: null, vendor: '', location: '', status: 1 })
+  }
 }
 async function submit() {
   await formRef.value.validate()
+  let deviceId = form.id
   if (form.id) await deviceApi.update(form)
-  else await deviceApi.add(form)
+  else deviceId = await deviceApi.add(form)
+  const pendingIds = (attachFiles.value || []).filter(f => f && f.id && !f.bizId).map(f => f.id)
+  if (deviceId && pendingIds.length) {
+    try { await fileApi.attach('device', deviceId, pendingIds) } catch (e) { /* 忽略,不阻断保存 */ }
+  }
   ElMessage.success('保存成功')
   dialog.visible = false
   load()

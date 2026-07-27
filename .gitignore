@@ -33,3 +33,7 @@ backend/.env
 *.keystore
 *-key.json
 credentials.json
+
+# ---- 运行时上传文件 ----
+backend/uploads/
+uploads/

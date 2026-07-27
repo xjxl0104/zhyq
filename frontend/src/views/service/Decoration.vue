@@ -73,6 +73,9 @@
           <el-date-picker v-model="form.endDate" type="date" value-format="YYYY-MM-DD" style="width: 100%" />
         </el-form-item>
         <el-form-item label="装修范围"><el-input v-model="form.scope" type="textarea" :rows="3" /></el-form-item>
+        <el-form-item label="附件">
+          <FileUpload v-model="attachFiles" biz-type="decoration" :biz-id="form.id" />
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="dialog.visible = false">取消</el-button>
@@ -86,6 +89,8 @@
 import { reactive, ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { decorationApi } from '@/api/service'
+import { fileApi } from '@/api/file'
+import FileUpload from '@/components/FileUpload.vue'
 import { tenantApi } from '@/api/tenant'
 
 // 1待审批 2施工中 3已完工 4已驳回
@@ -144,21 +149,32 @@ const formRef = ref()
 const dialog = reactive({ visible: false, title: '' })
 const defaultForm = () => ({ id: null, tenantRefId: null, roomId: null, contractor: '', contact: '', phone: '', startDate: null, endDate: null, scope: '' })
 const form = reactive(defaultForm())
+const attachFiles = ref([])
 const rules = {
   tenantRefId: [{ required: true, message: '请选择申请租客', trigger: 'change' }],
   contractor: [{ required: true, message: '请输入施工单位', trigger: 'blur' }]
 }
 
-function openDialog(row) {
+async function openDialog(row) {
   dialog.visible = true
   dialog.title = row ? '编辑装修申请' : '新增装修申请'
-  if (row) Object.assign(form, row)
-  else Object.assign(form, defaultForm())
+  attachFiles.value = []
+  if (row) {
+    Object.assign(form, row)
+    try { attachFiles.value = await fileApi.list('decoration', row.id) } catch (e) { /* 忽略 */ }
+  } else {
+    Object.assign(form, defaultForm())
+  }
 }
 async function submit() {
   await formRef.value.validate()
+  let decorationId = form.id
   if (form.id) await decorationApi.update(form)
-  else await decorationApi.add(form)
+  else decorationId = await decorationApi.add(form)
+  const pendingIds = (attachFiles.value || []).filter(f => f && f.id && !f.bizId).map(f => f.id)
+  if (decorationId && pendingIds.length) {
+    try { await fileApi.attach('decoration', decorationId, pendingIds) } catch (e) { /* 忽略,不阻断保存 */ }
+  }
   ElMessage.success('保存成功')
   dialog.visible = false
   load()

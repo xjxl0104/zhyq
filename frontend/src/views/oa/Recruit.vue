@@ -76,6 +76,9 @@
           </el-radio-group>
         </el-form-item>
         <el-form-item label="备注"><el-input v-model="form.remark" type="textarea" :rows="2" /></el-form-item>
+        <el-form-item label="附件">
+          <FileUpload v-model="attachFiles" biz-type="recruit" :biz-id="form.id" />
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="dialog.visible = false">取消</el-button>
@@ -89,6 +92,8 @@
 import { reactive, ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { recruitApi } from '@/api/oa'
+import { fileApi } from '@/api/file'
+import FileUpload from '@/components/FileUpload.vue'
 
 const loading = ref(false)
 const list = ref([])
@@ -125,20 +130,30 @@ const formRef = ref()
 const dialog = reactive({ visible: false, title: '' })
 const defaultForm = () => ({ id: null, postName: '', dept: '', headcount: 1, salaryRange: '', status: 1, remark: '' })
 const form = reactive(defaultForm())
+const attachFiles = ref([])
 const rules = {
   postName: [{ required: true, message: '请输入职位', trigger: 'blur' }]
 }
 
-function openDialog(row) {
+async function openDialog(row) {
   dialog.visible = true
   dialog.title = row ? '编辑招聘' : '新增招聘'
   if (row) Object.assign(form, row)
   else Object.assign(form, defaultForm())
+  attachFiles.value = []
+  if (row) {
+    try { attachFiles.value = await fileApi.list('recruit', row.id) } catch (e) { /* 忽略 */ }
+  }
 }
 async function submit() {
   await formRef.value.validate()
+  let recruitId = form.id
   if (form.id) await recruitApi.update(form)
-  else await recruitApi.add(form)
+  else recruitId = await recruitApi.add(form)
+  const pendingIds = (attachFiles.value || []).filter(f => f && f.id && !f.bizId).map(f => f.id)
+  if (recruitId && pendingIds.length) {
+    try { await fileApi.attach('recruit', recruitId, pendingIds) } catch (e) { /* 忽略,不阻断保存 */ }
+  }
   ElMessage.success('保存成功')
   dialog.visible = false
   load()

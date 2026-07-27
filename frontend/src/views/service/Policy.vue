@@ -113,6 +113,9 @@
             <el-option v-for="(label, val) in statusMap" :key="val" :label="label" :value="Number(val)" />
           </el-select>
         </el-form-item>
+        <el-form-item label="附件">
+          <FileUpload v-model="attachFiles" biz-type="policy" :biz-id="form.id" />
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="dialog.visible = false">取消</el-button>
@@ -126,6 +129,8 @@
 import { reactive, ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { policyApi } from '@/api/service'
+import { fileApi } from '@/api/file'
+import FileUpload from '@/components/FileUpload.vue'
 import { tenantApi } from '@/api/tenant'
 
 // 1有效 0已过期
@@ -176,20 +181,31 @@ const formRef = ref()
 const dialog = reactive({ visible: false, title: '' })
 const defaultForm = () => ({ id: null, title: '', source: '', ptype: '', industry: '', publishDate: null, deadline: null, content: '', status: 1 })
 const form = reactive(defaultForm())
+const attachFiles = ref([])
 const rules = {
   title: [{ required: true, message: '请输入政策标题', trigger: 'blur' }]
 }
 
-function openDialog(row) {
+async function openDialog(row) {
   dialog.visible = true
   dialog.title = row ? '编辑政策' : '新增政策'
-  if (row) Object.assign(form, row)
-  else Object.assign(form, defaultForm())
+  attachFiles.value = []
+  if (row) {
+    Object.assign(form, row)
+    try { attachFiles.value = await fileApi.list('policy', row.id) } catch (e) { /* 忽略 */ }
+  } else {
+    Object.assign(form, defaultForm())
+  }
 }
 async function submitForm() {
   await formRef.value.validate()
+  let policyId = form.id
   if (form.id) await policyApi.update(form)
-  else await policyApi.add(form)
+  else policyId = await policyApi.add(form)
+  const pendingIds = (attachFiles.value || []).filter(f => f && f.id && !f.bizId).map(f => f.id)
+  if (policyId && pendingIds.length) {
+    try { await fileApi.attach('policy', policyId, pendingIds) } catch (e) { /* 忽略,不阻断保存 */ }
+  }
   ElMessage.success('保存成功')
   dialog.visible = false
   load()

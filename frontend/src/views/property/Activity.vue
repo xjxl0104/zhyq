@@ -68,6 +68,7 @@
           <el-date-picker v-model="form.endTime" type="datetime" value-format="YYYY-MM-DD HH:mm:ss"
                           placeholder="选择结束时间" style="width: 100%" />
         </el-form-item>
+        <el-form-item label="附件"><FileUpload v-model="attachFiles" biz-type="activity" :biz-id="form.id" /></el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="dialog.visible = false">取消</el-button>
@@ -81,6 +82,8 @@
 import { reactive, ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { activityApi } from '@/api/property'
+import { fileApi } from '@/api/file'
+import FileUpload from '@/components/FileUpload.vue'
 
 const statusMap = {
   1: { label: '报名中', type: 'success' },
@@ -111,20 +114,31 @@ function reset() {
 const formRef = ref()
 const dialog = reactive({ visible: false, title: '' })
 const form = reactive({ id: null, title: '', content: '', location: '', startTime: '', endTime: '' })
+const attachFiles = ref([])
 const rules = {
   title: [{ required: true, message: '请输入标题', trigger: 'blur' }]
 }
 
-function openDialog(row) {
+async function openDialog(row) {
   dialog.visible = true
   dialog.title = row ? '编辑' : '新增'
-  if (row) Object.assign(form, row)
-  else Object.assign(form, { id: null, title: '', content: '', location: '', startTime: '', endTime: '' })
+  attachFiles.value = []
+  if (row) {
+    Object.assign(form, row)
+    try { attachFiles.value = await fileApi.list('activity', row.id) } catch (e) { /* 忽略 */ }
+  } else {
+    Object.assign(form, { id: null, title: '', content: '', location: '', startTime: '', endTime: '' })
+  }
 }
 async function submit() {
   await formRef.value.validate()
+  let newId = form.id
   if (form.id) await activityApi.update(form)
-  else await activityApi.add(form)
+  else newId = await activityApi.add(form)
+  const pendingIds = (attachFiles.value || []).filter(f => f && f.id && !f.bizId).map(f => f.id)
+  if (newId && pendingIds.length) {
+    try { await fileApi.attach('activity', newId, pendingIds) } catch (e) { /* 忽略,不阻断保存 */ }
+  }
   ElMessage.success('保存成功')
   dialog.visible = false
   load()

@@ -72,6 +72,9 @@
           </el-select>
         </el-form-item>
         <el-form-item label="备注"><el-input v-model="form.remark" type="textarea" /></el-form-item>
+        <el-form-item label="附件">
+          <FileUpload v-model="attachFiles" biz-type="vendor" :biz-id="form.id" />
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="dialog.visible = false">取消</el-button>
@@ -85,6 +88,8 @@
 import { reactive, ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { vendorApi } from '@/api/iot'
+import { fileApi } from '@/api/file'
+import FileUpload from '@/components/FileUpload.vue'
 
 // 1启用 0停用
 const statusMap = { 1: '启用', 0: '停用' }
@@ -115,20 +120,31 @@ function reset() {
 const formRef = ref()
 const dialog = reactive({ visible: false, title: '' })
 const form = reactive({ id: null, name: '', platform: '', apiUrl: '', appKey: '', appSecret: '', status: 1, remark: '' })
+const attachFiles = ref([])
 const rules = {
   name: [{ required: true, message: '请输入厂商名称', trigger: 'blur' }]
 }
 
-function openDialog(row) {
+async function openDialog(row) {
   dialog.visible = true
   dialog.title = row ? '编辑厂商' : '新增厂商'
-  if (row) Object.assign(form, row)
-  else Object.assign(form, { id: null, name: '', platform: '', apiUrl: '', appKey: '', appSecret: '', status: 1, remark: '' })
+  attachFiles.value = []
+  if (row) {
+    Object.assign(form, row)
+    try { attachFiles.value = await fileApi.list('vendor', row.id) } catch (e) { /* 忽略 */ }
+  } else {
+    Object.assign(form, { id: null, name: '', platform: '', apiUrl: '', appKey: '', appSecret: '', status: 1, remark: '' })
+  }
 }
 async function submit() {
   await formRef.value.validate()
+  let vendorId = form.id
   if (form.id) await vendorApi.update(form)
-  else await vendorApi.add(form)
+  else vendorId = await vendorApi.add(form)
+  const pendingIds = (attachFiles.value || []).filter(f => f && f.id && !f.bizId).map(f => f.id)
+  if (vendorId && pendingIds.length) {
+    try { await fileApi.attach('vendor', vendorId, pendingIds) } catch (e) { /* 忽略,不阻断保存 */ }
+  }
   ElMessage.success('保存成功')
   dialog.visible = false
   load()

@@ -85,6 +85,7 @@
             <el-radio :value="0">停用</el-radio>
           </el-radio-group>
         </el-form-item>
+        <el-form-item label="附件"><FileUpload v-model="attachFiles" biz-type="inspection" :biz-id="form.id" /></el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="dialog.visible = false">取消</el-button>
@@ -98,6 +99,8 @@
 import { reactive, ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { inspectionApi } from '@/api/property'
+import { fileApi } from '@/api/file'
+import FileUpload from '@/components/FileUpload.vue'
 
 const cycles = ['每日', '每周', '每月']
 const cycleMap = { '每日': 'primary', '每周': 'success', '每月': 'warning' }
@@ -126,20 +129,31 @@ const formRef = ref()
 const dialog = reactive({ visible: false, title: '' })
 const defaultForm = () => ({ id: null, name: '', cycle: '每日', route: '', points: '', status: 1 })
 const form = reactive(defaultForm())
+const attachFiles = ref([])
 const rules = {
   name: [{ required: true, message: '请输入计划名称', trigger: 'blur' }]
 }
 
-function openDialog(row) {
+async function openDialog(row) {
   dialog.visible = true
   dialog.title = row ? '编辑计划' : '新增计划'
-  if (row) Object.assign(form, defaultForm(), row)
-  else Object.assign(form, defaultForm())
+  attachFiles.value = []
+  if (row) {
+    Object.assign(form, defaultForm(), row)
+    try { attachFiles.value = await fileApi.list('inspection', row.id) } catch (e) { /* 忽略 */ }
+  } else {
+    Object.assign(form, defaultForm())
+  }
 }
 async function submit() {
   await formRef.value.validate()
+  let newId = form.id
   if (form.id) await inspectionApi.update(form)
-  else await inspectionApi.add(form)
+  else newId = await inspectionApi.add(form)
+  const pendingIds = (attachFiles.value || []).filter(f => f && f.id && !f.bizId).map(f => f.id)
+  if (newId && pendingIds.length) {
+    try { await fileApi.attach('inspection', newId, pendingIds) } catch (e) { /* 忽略,不阻断保存 */ }
+  }
   ElMessage.success('保存成功')
   dialog.visible = false
   load()

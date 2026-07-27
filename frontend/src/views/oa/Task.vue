@@ -81,6 +81,9 @@
             <el-option v-for="(label, val) in statusMap" :key="val" :label="label" :value="Number(val)" />
           </el-select>
         </el-form-item>
+        <el-form-item label="附件">
+          <FileUpload v-model="attachFiles" biz-type="oa_task" :biz-id="form.id" />
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="dialog.visible = false">取消</el-button>
@@ -94,6 +97,8 @@
 import { reactive, ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { taskApi } from '@/api/oa'
+import { fileApi } from '@/api/file'
+import FileUpload from '@/components/FileUpload.vue'
 
 // 1待处理 2处理中 3已完成
 const statusMap = { 1: '待处理', 2: '处理中', 3: '已完成' }
@@ -138,20 +143,30 @@ async function done(id) {
 const formRef = ref()
 const dialog = reactive({ visible: false, title: '' })
 const form = reactive({ id: null, title: '', owner: '', priority: 2, source: null, dueDate: null, content: '', status: 1 })
+const attachFiles = ref([])
 const rules = {
   title: [{ required: true, message: '请输入任务标题', trigger: 'blur' }]
 }
 
-function openDialog(row) {
+async function openDialog(row) {
   dialog.visible = true
   dialog.title = row ? '编辑任务' : '新增任务'
   if (row) Object.assign(form, row)
   else Object.assign(form, { id: null, title: '', owner: '', priority: 2, source: null, dueDate: null, content: '', status: 1 })
+  attachFiles.value = []
+  if (row) {
+    try { attachFiles.value = await fileApi.list('oa_task', row.id) } catch (e) { /* 忽略 */ }
+  }
 }
 async function submit() {
   await formRef.value.validate()
+  let taskId = form.id
   if (form.id) await taskApi.update(form)
-  else await taskApi.add(form)
+  else taskId = await taskApi.add(form)
+  const pendingIds = (attachFiles.value || []).filter(f => f && f.id && !f.bizId).map(f => f.id)
+  if (taskId && pendingIds.length) {
+    try { await fileApi.attach('oa_task', taskId, pendingIds) } catch (e) { /* 忽略,不阻断保存 */ }
+  }
   ElMessage.success('保存成功')
   dialog.visible = false
   load()
