@@ -3,16 +3,17 @@ package com.zhyq.park.system.controller;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import com.zhyq.park.common.exception.BizException;
 import com.zhyq.park.common.result.PageResult;
 import com.zhyq.park.common.result.Result;
+import com.zhyq.park.system.dto.SysUserDetailResponse;
+import com.zhyq.park.system.dto.SysUserSaveRequest;
 import com.zhyq.park.system.entity.SysUser;
 import com.zhyq.park.system.mapper.SysUserMapper;
+import com.zhyq.park.system.service.UserManagementService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 
@@ -25,7 +26,7 @@ import java.util.List;
 public class SysUserController {
 
     private final SysUserMapper userMapper;
-    private final PasswordEncoder passwordEncoder;
+    private final UserManagementService userManagementService;
 
     @Operation(summary = "分页查询用户")
     @PreAuthorize("hasAuthority('system:user:query')")
@@ -43,39 +44,29 @@ public class SysUserController {
           .eq(status != null, SysUser::getStatus, status)
           .orderByDesc(SysUser::getId);
         IPage<SysUser> p = userMapper.selectPage(new Page<>(pageNo, pageSize), qw);
+        userManagementService.fillRoleNames(p.getRecords());
         return Result.ok(PageResult.of(p.getTotal(), p.getRecords()));
     }
 
     @Operation(summary = "用户详情")
     @PreAuthorize("hasAuthority('system:user:query')")
     @GetMapping("/{id}")
-    public Result<SysUser> get(@PathVariable Long id) {
-        return Result.ok(userMapper.selectById(id));
+    public Result<SysUserDetailResponse> get(@PathVariable Long id) {
+        return Result.ok(userManagementService.get(id));
     }
 
-    @Operation(summary = "新增用户(密码必填,BCrypt 入库)")
-    @PreAuthorize("hasAuthority('system:user:add')")
+    @Operation(summary = "新增用户并分配角色")
+    @PreAuthorize("hasAuthority('system:user:add') and hasAuthority('system:user:role')")
     @PostMapping
-    public Result<Long> add(@RequestBody SysUser user) {
-        if (!StringUtils.hasText(user.getPassword())) {
-            throw new BizException("请设置初始密码");
-        }
-        user.setPassword(passwordEncoder.encode(user.getPassword()));
-        userMapper.insert(user);
-        return Result.ok(user.getId());
+    public Result<Long> add(@RequestBody SysUserSaveRequest request) {
+        return Result.ok(userManagementService.create(request));
     }
 
-    @Operation(summary = "修改用户(密码留空则不变,填写则 BCrypt 重置)")
-    @PreAuthorize("hasAuthority('system:user:edit')")
+    @Operation(summary = "修改用户并重新分配角色")
+    @PreAuthorize("hasAuthority('system:user:edit') and hasAuthority('system:user:role')")
     @PutMapping
-    public Result<Void> update(@RequestBody SysUser user) {
-        if (StringUtils.hasText(user.getPassword())) {
-            user.setPassword(passwordEncoder.encode(user.getPassword()));
-        } else {
-            // 置 null:MyBatis-Plus updateById 忽略 null 字段,保留原密码
-            user.setPassword(null);
-        }
-        userMapper.updateById(user);
+    public Result<Void> update(@RequestBody SysUserSaveRequest request) {
+        userManagementService.update(request);
         return Result.ok();
     }
 
@@ -83,7 +74,7 @@ public class SysUserController {
     @PreAuthorize("hasAuthority('system:user:delete')")
     @DeleteMapping("/{id}")
     public Result<Void> delete(@PathVariable Long id) {
-        userMapper.deleteById(id);
+        userManagementService.delete(id);
         return Result.ok();
     }
 
@@ -91,6 +82,9 @@ public class SysUserController {
     @PreAuthorize("hasAuthority('system:user:query')")
     @GetMapping("/list")
     public Result<List<SysUser>> list() {
-        return Result.ok(userMapper.selectList(new LambdaQueryWrapper<SysUser>().eq(SysUser::getStatus, 1)));
+        List<SysUser> users = userMapper.selectList(
+                new LambdaQueryWrapper<SysUser>().eq(SysUser::getStatus, 1));
+        userManagementService.fillRoleNames(users);
+        return Result.ok(users);
     }
 }
