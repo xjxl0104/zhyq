@@ -33,6 +33,17 @@
         <el-table-column prop="nickname" label="昵称" min-width="120" />
         <el-table-column prop="phone" label="手机号" min-width="130" />
         <el-table-column prop="email" label="邮箱" min-width="160" />
+        <el-table-column label="角色" min-width="190">
+          <template #default="{ row }">
+            <div v-if="row.roleNames?.length" class="role-list">
+              <el-tag v-for="name in row.roleNames" :key="name"
+                      :type="name === '平台超级管理员' ? 'danger' : 'primary'">
+                {{ name }}
+              </el-tag>
+            </div>
+            <span v-else class="muted">未分配</span>
+          </template>
+        </el-table-column>
         <el-table-column label="状态" width="90">
           <template #default="{ row }">
             <el-tag :type="row.status === 1 ? 'success' : 'danger'">
@@ -56,8 +67,8 @@
     </div>
 
     <!-- 表单弹窗 -->
-    <el-dialog v-model="dialog.visible" :title="dialog.title" width="520px">
-      <el-form :model="form" label-width="80px" ref="formRef" :rules="rules">
+    <el-dialog v-model="dialog.visible" :title="dialog.title" width="580px">
+      <el-form v-loading="dialog.loading" :model="form" label-width="90px" ref="formRef" :rules="rules">
         <el-form-item label="账号" prop="username">
           <el-input v-model="form.username" :disabled="!!form.id" />
         </el-form-item>
@@ -68,6 +79,19 @@
         <el-form-item label="昵称" prop="nickname"><el-input v-model="form.nickname" /></el-form-item>
         <el-form-item label="手机号"><el-input v-model="form.phone" /></el-form-item>
         <el-form-item label="邮箱"><el-input v-model="form.email" /></el-form-item>
+        <el-form-item label="角色" prop="roleIds">
+          <el-select v-model="form.roleIds" multiple collapse-tags collapse-tags-tooltip
+                     placeholder="请选择一个或多个角色" style="width: 100%">
+            <el-option v-for="role in roles" :key="role.id" :value="role.id"
+                       :label="role.code === 'admin' ? `${role.name}（超级管理员）` : role.name">
+              <span>{{ role.name }}</span>
+              <el-tag v-if="role.code === 'admin'" type="danger" size="small" class="admin-tag">
+                超级管理员
+              </el-tag>
+            </el-option>
+          </el-select>
+          <div class="form-tip">用户权限为所选角色权限的并集，修改后需重新登录生效。</div>
+        </el-form-item>
         <el-form-item label="状态">
           <el-radio-group v-model="form.status">
             <el-radio :value="1">正常</el-radio>
@@ -86,10 +110,11 @@
 <script setup>
 import { reactive, ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { userApi } from '@/api/system'
+import { userApi, roleApi } from '@/api/system'
 
 const loading = ref(false)
 const list = ref([])
+const roles = ref([])
 const total = ref(0)
 const query = reactive({ pageNo: 1, pageSize: 10, username: '', nickname: '', status: null })
 
@@ -109,8 +134,11 @@ function reset() {
 }
 
 const formRef = ref()
-const dialog = reactive({ visible: false, title: '' })
-const form = reactive({ id: null, username: '', password: '', nickname: '', phone: '', email: '', status: 1 })
+const dialog = reactive({ visible: false, title: '', loading: false })
+const emptyForm = {
+  id: null, username: '', password: '', nickname: '', phone: '', email: '', status: 1, roleIds: []
+}
+const form = reactive({ ...emptyForm })
 const rules = {
   username: [{ required: true, message: '请输入账号', trigger: 'blur' }],
   password: [{
@@ -121,14 +149,27 @@ const rules = {
       else callback()
     }, trigger: 'blur'
   }],
-  nickname: [{ required: true, message: '请输入昵称', trigger: 'blur' }]
+  nickname: [{ required: true, message: '请输入昵称', trigger: 'blur' }],
+  roleIds: [{ type: 'array', required: true, min: 1, message: '请至少选择一个角色', trigger: 'change' }]
 }
 
-function openDialog(row) {
+async function loadRoles() {
+  roles.value = await roleApi.list()
+}
+
+async function openDialog(row) {
   dialog.visible = true
   dialog.title = row ? '编辑用户' : '新增用户'
-  if (row) Object.assign(form, row, { password: '' })
-  else Object.assign(form, { id: null, username: '', password: '', nickname: '', phone: '', email: '', status: 1 })
+  formRef.value?.clearValidate()
+  Object.assign(form, emptyForm, { roleIds: [] })
+  if (!row) return
+  dialog.loading = true
+  try {
+    const detail = await userApi.get(row.id)
+    Object.assign(form, detail.user, { password: '', roleIds: detail.roleIds || [] })
+  } finally {
+    dialog.loading = false
+  }
 }
 async function submit() {
   await formRef.value.validate()
@@ -144,9 +185,13 @@ async function remove(id) {
   load()
 }
 
-onMounted(load)
+onMounted(() => Promise.all([load(), loadRoles()]))
 </script>
 
 <style scoped>
 .pager { margin-top: 16px; justify-content: flex-end; }
+.role-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.muted { color: var(--el-text-color-secondary); }
+.admin-tag { margin-left: 8px; }
+.form-tip { margin-top: 6px; color: var(--el-text-color-secondary); font-size: 12px; line-height: 1.4; }
 </style>
