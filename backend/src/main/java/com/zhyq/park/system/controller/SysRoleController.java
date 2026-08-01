@@ -5,8 +5,10 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.zhyq.park.common.result.PageResult;
 import com.zhyq.park.common.result.Result;
+import com.zhyq.park.system.dto.RolePermissionRequest;
 import com.zhyq.park.system.entity.SysRole;
 import com.zhyq.park.system.mapper.SysRoleMapper;
+import com.zhyq.park.system.service.RoleManagementService;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -22,6 +24,7 @@ import java.util.List;
 public class SysRoleController {
 
     private final SysRoleMapper roleMapper;
+    private final RoleManagementService roleManagementService;
 
     @PreAuthorize("hasAuthority('system:role:query')")
     @GetMapping("/page")
@@ -43,21 +46,34 @@ public class SysRoleController {
     @PreAuthorize("hasAuthority('system:role:add')")
     @PostMapping
     public Result<Long> add(@RequestBody SysRole role) {
-        roleMapper.insert(role);
-        return Result.ok(role.getId());
+        return Result.ok(roleManagementService.add(role));
     }
 
     @PreAuthorize("hasAuthority('system:role:edit')")
     @PutMapping
     public Result<Void> update(@RequestBody SysRole role) {
-        roleMapper.updateById(role);
+        roleManagementService.update(role);
         return Result.ok();
     }
 
     @PreAuthorize("hasAuthority('system:role:delete')")
     @DeleteMapping("/{id}")
     public Result<Void> delete(@PathVariable Long id) {
-        roleMapper.deleteById(id);
+        roleManagementService.delete(id);
+        return Result.ok();
+    }
+
+    @PreAuthorize("hasAuthority('system:role:query')")
+    @GetMapping("/{id}/menu-ids")
+    public Result<List<Long>> menuIds(@PathVariable Long id) {
+        return Result.ok(roleManagementService.getMenuIds(id));
+    }
+
+    @PreAuthorize("hasAuthority('system:role:permission')")
+    @PutMapping("/{id}/menu-ids")
+    public Result<Void> saveMenuIds(@PathVariable Long id,
+                                    @RequestBody RolePermissionRequest request) {
+        roleManagementService.saveMenuIds(id, request.getMenuIds());
         return Result.ok();
     }
 }
