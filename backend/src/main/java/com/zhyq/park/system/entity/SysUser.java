@@ -1,9 +1,12 @@
 package com.zhyq.park.system.entity;
 
 import com.baomidou.mybatisplus.annotation.TableName;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.zhyq.park.common.base.BaseEntity;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
+
+import java.util.List;
 
 @Data
 @EqualsAndHashCode(callSuper = true)
@@ -23,4 +26,6 @@ public class SysUser extends BaseEntity {
     private Integer userType;
     private Integer status;
     private String remark;
+    @TableField(exist = false)
+    private List<String> roleNames;
 }
