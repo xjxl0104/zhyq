@@ -28,7 +28,7 @@ docker compose -f docker-compose.full.yml up -d --build      # 改代码后重�
 
 ## 数据说明
 
-- **表结构 + 演示数据**:Flyway 迁移(V1~V16)在后端首次启动时自动执行,新库开箱即用,无需手工导入。
+- **表结构 + 演示数据**:Flyway 迁移(V1~V31)在后端首次启动时自动执行,新库开箱即用,无需手工导入。
 - **端口 80 被占用**:把 `docker-compose.full.yml` 里 frontend 的 `"80:80"` 改成 `"8080:80"`,访问 http://localhost:8080。
 - **迁移业务数据**(仅当你想保留手工录入的数据):
   ```bash
@@ -37,6 +37,28 @@ docker compose -f docker-compose.full.yml up -d --build      # 改代码后重�
   # 新机起库后导入
   docker exec -i zhyq-mysql mysql -uroot -pzhyq123456 zhyq_park < zhyq_backup.sql
   ```
+
+## ver4.2 升级说明（用户多角色与角色权限配置）
+
+升级前建议先备份数据库；随后切换到 `ver4.2` 分支并重建容器：
+
+```bash
+git fetch origin
+git checkout ver4.2
+git pull --ff-only origin ver4.2
+docker compose -f docker-compose.full.yml up -d --build
+```
+
+后端启动时 Flyway 会自动执行 `V31__rbac_management.sql`：
+
+- 保留全部现有用户及角色关联，包括已经上线的两个超级管理员；仅清理重复关联记录。
+- 为用户—角色、角色—菜单关系增加唯一约束，防止重复授权。
+- 新增“用户分配角色”和“角色配置权限”两个权限点，并自动授予现有 `admin` 角色。
+- `admin` 角色为系统保护角色，不能编辑、删除或重新配置权限；系统始终至少保留一个启用的超级管理员。
+
+升级完成后，现有超级管理员需要**退出并重新登录一次**，JWT 才会包含新增管理权限。之后可在“系统管理 → 用户管理”中为用户多选角色（选择 `admin` 即创建超级管理员），并在“系统管理 → 角色管理”中为普通角色配置菜单和按钮权限。角色调整同样在相关用户下次登录时生效。
+
+V31 不删除业务用户或角色，应用代码临时回退到 `ver4.1` 时可保留该迁移产生的唯一索引和权限数据；不要手工删除 Flyway 历史记录。
 
 ## 两套 compose 的区别
 
