@@ -59,6 +59,7 @@ public class UserManagementService {
         boolean oldAdmin = userRoleMapper.hasRoleCode(existing.getId(), ADMIN_CODE) > 0;
         boolean newAdmin = containsAdmin(roles);
 
+        guardAdminAccountEdit(oldAdmin);
         guardAdminRoleChange(oldAdmin, newAdmin);
         if (oldAdmin && Integer.valueOf(1).equals(existing.getStatus())
                 && (!newAdmin || !Integer.valueOf(1).equals(request.getStatus()))) {
@@ -173,6 +174,12 @@ public class UserManagementService {
     private void guardAdminRoleChange(boolean oldAdmin, boolean newAdmin) {
         if (oldAdmin != newAdmin && !currentUserContext.isAdmin()) {
             throw new BizException("只有超级管理员可以授予或撤销超级管理员角色");
+        }
+    }
+
+    private void guardAdminAccountEdit(boolean targetIsAdmin) {
+        if (targetIsAdmin && !currentUserContext.isAdmin()) {
+            throw new BizException("只有超级管理员可以编辑超级管理员账号");
         }
     }
 

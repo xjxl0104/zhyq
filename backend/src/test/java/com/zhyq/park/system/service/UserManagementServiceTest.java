@@ -107,6 +107,20 @@ class UserManagementServiceTest {
     }
 
     @Test
+    void nonAdministratorCannotEditExistingAdministrator() {
+        when(userMapper.selectById(USER_ID)).thenReturn(existingUser(1));
+        when(roleMapper.selectBatchIds(anyCollection())).thenReturn(List.of(adminRole()));
+        when(userRoleMapper.hasRoleCode(USER_ID, "admin")).thenReturn(1);
+        when(currentUserContext.isAdmin()).thenReturn(false);
+
+        BizException ex = assertThrows(BizException.class, () -> service.update(
+                request(USER_ID, "old-user", "new-secret", 1, List.of(1L))));
+
+        assertTrue(ex.getMessage().contains("超级管理员"));
+        verify(userMapper, never()).updateById(any(SysUser.class));
+    }
+
+    @Test
     void updateReplacesRolesAndKeepsPasswordWhenBlank() {
         SysUser existing = existingUser(1);
         when(userMapper.selectById(USER_ID)).thenReturn(existing);
@@ -140,6 +154,7 @@ class UserManagementServiceTest {
         when(userMapper.selectById(USER_ID)).thenReturn(existingUser(1));
         when(roleMapper.selectBatchIds(anyCollection())).thenReturn(List.of(adminRole()));
         when(userRoleMapper.hasRoleCode(USER_ID, "admin")).thenReturn(1);
+        when(currentUserContext.isAdmin()).thenReturn(true);
         when(userRoleMapper.countActiveAdminUsers()).thenReturn(1);
 
         assertThrows(BizException.class, () -> service.update(
