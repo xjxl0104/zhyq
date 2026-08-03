@@ -13,6 +13,7 @@ import com.zhyq.park.building.mapper.FloorMapper;
 import com.zhyq.park.building.mapper.ProjectMapper;
 import com.zhyq.park.building.mapper.RoomMapper;
 import com.zhyq.park.common.exception.BizException;
+import com.zhyq.park.importing.entity.ImportBatch;
 import com.zhyq.park.importing.entity.ImportRow;
 import com.zhyq.park.importing.mapper.ImportRowMapper;
 import com.zhyq.park.receivable.dto.ReceivableProvisionPreview;
@@ -53,6 +54,7 @@ public class ReceivableProvisionService {
     private final FloorMapper floorMapper;
     private final RoomMapper roomMapper;
     private final SpaceSyncService spaceSyncService;
+    private final com.zhyq.park.importing.mapper.ImportBatchMapper batchMapper;
 
     /** 读批次各业务行的解析数据,去重产出待建/可复用租户与空间清单。 */
     public ReceivableProvisionPreview preview(Long batchId) {
@@ -252,6 +254,32 @@ public class ReceivableProvisionService {
                 throw new BizException("回填导入行绑定失败,请刷新后重试");
             }
         }
+        // 回填后按各行实际状态重算批次 valid/invalid 计数,否则 confirm 的
+        // batch.invalidRows==0 校验无法通过(行已 VALID 但批次计数仍是旧值)。
+        recountBatch(batchId);
+    }
+
+    /** 按当前行状态重算批次 valid/invalid 计数并写回(不含 METADATA 行)。 */
+    private void recountBatch(Long batchId) {
+        List<ImportRow> rows = rowMapper.selectList(new LambdaQueryWrapper<ImportRow>()
+                .eq(ImportRow::getBatchId, batchId));
+        int valid = 0, invalid = 0;
+        for (ImportRow row : rows) {
+            if (ROW_METADATA.equals(row.getStatus())) {
+                continue;
+            }
+            if (ROW_VALID.equals(row.getStatus())) {
+                valid++;
+            } else {
+                invalid++;
+            }
+        }
+        ImportBatch batch = batchMapper.selectById(batchId);
+        if (batch != null) {
+            batch.setValidRows(valid);
+            batch.setInvalidRows(invalid);
+            batchMapper.updateById(batch);
+        }
     }
 
     private Long resolveTenantRefId(String tenantRaw, Map<String, Long> tenantIdByRaw,
@@ -319,8 +347,15 @@ public class ReceivableProvisionService {
         return values;
     }
 
+    // 短码:sys_space.code 会把各级 code 串联(P..-B..-F..-R..),4 级链总长必须 <=64,
+    // 故这里生成紧凑 base36 码(约 12 字符),避免统一空间树 code 列截断。
+    private static final java.util.concurrent.atomic.AtomicInteger CODE_SEQ =
+            new java.util.concurrent.atomic.AtomicInteger(0);
+
     private String uniqueCode(String prefix) {
-        return prefix + "-" + System.currentTimeMillis() + "-" + Math.abs(java.util.UUID.randomUUID().hashCode());
+        String stamp = Long.toString(System.currentTimeMillis(), 36);
+        String seq = Integer.toString(CODE_SEQ.incrementAndGet(), 36);
+        return prefix + "-" + stamp + seq; // 例:AUTO-R-lwxk3a1  (远小于 64)
     }
 
     private ObjectNode readObject(String json) {
