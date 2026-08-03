@@ -47,6 +47,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.Function;
 
 @Service
 @RequiredArgsConstructor
@@ -195,19 +196,20 @@ public class VendingImportService {
                 switch (type) {
                     case MACHINE -> restoreOrDelete(row, VendingMachine.class,
                             machineMapper::selectById, machineMapper::updateById,
-                            id -> machineMapper.deleteById(id));
+                            id -> machineMapper.deleteById(id), VendingMachine::getSourceBatchId, batchId);
                     case SALE -> restoreOrDelete(row, VendingSale.class,
                             saleMapper::selectById, saleMapper::updateById,
-                            id -> saleMapper.deleteById(id));
+                            id -> saleMapper.deleteById(id), VendingSale::getSourceBatchId, batchId);
                     case RESTOCK -> restoreOrDelete(row, VendingRestock.class,
                             restockMapper::selectById, restockMapper::updateById,
-                            id -> restockMapper.deleteById(id));
+                            id -> restockMapper.deleteById(id), VendingRestock::getSourceBatchId, batchId);
                     case FAULT -> restoreOrDelete(row, VendingFault.class,
                             faultMapper::selectById, faultMapper::updateById,
-                            id -> faultMapper.deleteById(id));
+                            id -> faultMapper.deleteById(id), VendingFault::getSourceBatchId, batchId);
                     case RECONCILIATION -> restoreOrDelete(row, VendingReconciliation.class,
                             reconciliationMapper::selectById, reconciliationMapper::updateById,
-                            id -> reconciliationMapper.deleteById(id));
+                            id -> reconciliationMapper.deleteById(id),
+                            VendingReconciliation::getSourceBatchId, batchId);
                 }
                 row.setStatus(ImportBatchService.ROLLED_BACK);
                 rowMapper.updateById(row);
@@ -401,9 +403,14 @@ public class VendingImportService {
     }
 
     private <T extends com.zhyq.park.common.base.BaseEntity> void restoreOrDelete(
-            ImportRow row, Class<T> type, IdFinder<T> finder, Writer<T> updater, IdDeleter deleter) {
+            ImportRow row, Class<T> type, IdFinder<T> finder, Writer<T> updater, IdDeleter deleter,
+            Function<T, Long> sourceBatch, Long rollbackBatchId) {
         ObjectNode raw = readObject(row.getRawJson());
         JsonNode before = raw.get("beforeImage");
+        T current = finder.find(row.getTargetId());
+        if (current == null || !rollbackBatchId.equals(sourceBatch.apply(current))) {
+            throw new BizException("该记录已被后续批次更新，不能撤销旧批次");
+        }
         if (before == null || before.isNull()) {
             deleter.delete(row.getTargetId());
             return;
@@ -414,8 +421,6 @@ public class VendingImportService {
         } catch (JsonProcessingException e) {
             throw new BizException("售货机导入回滚快照已损坏");
         }
-        T current = finder.find(row.getTargetId());
-        if (current == null) throw new BizException("售货机导入目标已不存在，不能自动回滚");
         previous.setId(row.getTargetId());
         previous.setVersion(current.getVersion());
         previous.setDeleted(current.getDeleted());

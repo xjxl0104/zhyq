@@ -56,6 +56,7 @@ public class ReceivableImportService {
 
     private final ReceivableWorkbookParser workbookParser;
     private final ReceivableRuleParser ruleParser;
+    private final ReceivableBindingValidator bindingValidator;
     private final ImportBatchService batchService;
     private final ImportBatchMapper batchMapper;
     private final ImportRowMapper rowMapper;
@@ -129,6 +130,7 @@ public class ReceivableImportService {
         if (row == null || !batchId.equals(row.getBatchId()) || ROW_METADATA.equals(row.getStatus())) {
             throw new BizException("导入行不存在或不属于该批次");
         }
+        bindingValidator.validate(batch.getTenantId(), request);
 
         ObjectNode normalized = readObject(row.getNormalizedJson());
         ObjectNode binding = normalized.with("binding");
@@ -191,7 +193,7 @@ public class ReceivableImportService {
             ReceivableRegister register = registerMapper.selectOne(
                     new LambdaQueryWrapper<ReceivableRegister>()
                             .eq(ReceivableRegister::getTenantId, batch.getTenantId())
-                            .eq(ReceivableRegister::getBusinessKey, importRow.getRowFingerprint()));
+                            .eq(ReceivableRegister::getBusinessKey, incoming.getBusinessKey()));
             if (register == null) {
                 register = incoming;
                 registerMapper.insert(register);
@@ -236,10 +238,17 @@ public class ReceivableImportService {
             throw new BizException("该批次已生成账单或财务后续数据，不能整批撤销");
         }
 
-        for (ImportRow row : rows(batchId)) {
-            if (!ROW_IMPORTED.equals(row.getStatus()) || row.getTargetId() == null) continue;
+        List<ImportRow> importedRows = rows(batchId).stream()
+                .filter(row -> ROW_IMPORTED.equals(row.getStatus()) && row.getTargetId() != null)
+                .toList();
+        for (ImportRow row : importedRows) {
+            ReceivableRegister current = registerMapper.selectById(row.getTargetId());
+            if (current == null || !batchId.equals(current.getSourceBatchId())) {
+                throw new BizException("应收登记表已被后续批次更新，不能撤销旧批次");
+            }
+        }
+        for (ImportRow row : importedRows) {
             ReceivableRegister register = registerMapper.selectById(row.getTargetId());
-            if (register == null) continue;
             ruleMapper.delete(new LambdaQueryWrapper<ReceivableRule>()
                     .eq(ReceivableRule::getRegisterId, register.getId()));
             depositMapper.delete(new LambdaQueryWrapper<DepositLedger>()
@@ -249,6 +258,8 @@ public class ReceivableImportService {
             if (previousNode != null && !previousNode.isNull()) {
                 ReceivableRegister previous = treeValue(previousNode, ReceivableRegister.class);
                 previous.setId(register.getId());
+                previous.setVersion(register.getVersion());
+                previous.setDeleted(register.getDeleted());
                 if (registerMapper.updateById(previous) != 1) {
                     throw new BizException("应收登记表修订撤销冲突，请刷新后重试");
                 }
@@ -291,7 +302,9 @@ public class ReceivableImportService {
         cells.put("rentAccount", rentMasked);
         cells.put("propertyAccount", propertyMasked);
         raw.set("cells", cells);
-        raw.set("formulas", objectMapper.valueToTree(row.formulas()));
+        ObjectNode safeFormulas = objectMapper.valueToTree(row.formulas());
+        safeFormulas.remove(List.of("rentAccount", "propertyAccount"));
+        raw.set("formulas", safeFormulas);
 
         ImportRow importRow = new ImportRow();
         importRow.setTenantId(batch.getTenantId());
@@ -353,8 +366,8 @@ public class ReceivableImportService {
                                           String rentAccountMasked, String propertyAccountMasked) {
         ReceivableRegister register = new ReceivableRegister();
         register.setTenantId(batch.getTenantId());
-        register.setBusinessKey(source.getRowFingerprint());
-        register.setInternalCode("RR-" + source.getRowFingerprint().substring(0, 20));
+        register.setBusinessKey(bindingBusinessKey(tenantRefId, spaceId, roomId, contractId));
+        register.setInternalCode("RR-" + register.getBusinessKey().substring(0, 20));
         register.setSeqNo(row.seqNo());
         register.setAgreementNoRaw(row.agreementNoRaw());
         register.setTenantNameRaw(row.tenantNameRaw());
@@ -397,6 +410,13 @@ public class ReceivableImportService {
         register.setSourceRowId(source.getId());
         register.setSourceVersion(1);
         return register;
+    }
+
+    public static String bindingBusinessKey(Long tenantRefId, Long spaceId,
+                                            Long roomId, Long contractId) {
+        String source = "receivable|tenant=" + tenantRefId + "|contract=" + contractId
+                + (roomId == null ? "|space=" + spaceId : "|room=" + roomId);
+        return ImportFileHasher.sha256(source.getBytes(StandardCharsets.UTF_8));
     }
 
     private void rejectCorrectionWithDownstreamData(ReceivableRegister register) {
@@ -493,8 +513,13 @@ public class ReceivableImportService {
                 }
             });
 
-            boolean rentWaiver = containsAny(clause, "抵扣") && mentionsRent(clause)
-                    || containsAny(clause, "免租期", "免租金", "无需支付租赁费");
+            boolean rentOffset = containsAny(clause, "抵扣") && mentionsRent(clause);
+            if (rentOffset) {
+                ranges.forEach(range -> persistOffset(register, "RENT", range,
+                        monthlyOffset(clause, row.monthlyRent(), range), clause));
+            }
+            boolean rentWaiver = !rentOffset
+                    && containsAny(clause, "免租期", "免租金", "无需支付租赁费");
             boolean propertyWaiver = mentionsProperty(clause)
                     && containsAny(clause, "免缴", "无需支付", "免物业", "免管理费");
             if (rentWaiver) ranges.forEach(range -> persistWaiver(register, "RENT", range, clause));
@@ -519,6 +544,26 @@ public class ReceivableImportService {
         discount.setDiscountRate(rate);
         discount.setRawText(raw);
         ruleMapper.insert(discount);
+    }
+
+    private void persistOffset(ReceivableRegister register, String feeType,
+                               ReceivableRuleParser.DateRange range, BigDecimal amount, String raw) {
+        ReceivableRule offset = baseRule(register, feeType, "OFFSET", 47);
+        offset.setEffectiveStart(range.start());
+        offset.setEffectiveEnd(range.end());
+        offset.setFixedAmount(zero(amount).setScale(2, java.math.RoundingMode.HALF_UP));
+        offset.setRawText(raw);
+        ruleMapper.insert(offset);
+    }
+
+    private BigDecimal monthlyOffset(String clause, BigDecimal monthlyRent,
+                                     ReceivableRuleParser.DateRange range) {
+        return ruleParser.parseCurrencyAmount(clause).map(total -> {
+            long months = java.time.temporal.ChronoUnit.MONTHS.between(
+                    java.time.YearMonth.from(range.start()), java.time.YearMonth.from(range.end())) + 1;
+            return months <= 0 ? total : total.divide(BigDecimal.valueOf(months), 2,
+                    java.math.RoundingMode.HALF_UP);
+        }).orElse(zero(monthlyRent));
     }
 
     private static boolean mentionsRent(String raw) {
@@ -664,6 +709,10 @@ public class ReceivableImportService {
         if (rawValues instanceof ObjectNode values) {
             values.put("rentAccount", rentMasked);
             values.put("propertyAccount", propertyMasked);
+        }
+        JsonNode formulas = rowData.path("formulas");
+        if (formulas instanceof ObjectNode values) {
+            values.remove(List.of("rentAccount", "propertyAccount"));
         }
     }
 

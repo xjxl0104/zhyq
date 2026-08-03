@@ -64,6 +64,7 @@ final class ReceivableWorkbookFixture {
             first.getCell(17).setCellFormula("0.4*4700*30");
             first.getCell(18).setCellFormula("0.067*4700*30");
             first.getCell(19).setCellFormula("R4+S4");
+            first.getCell(24).setCellFormula("\"户名：示例企业；开户行：示例银行；账号：\"&\"622200000001\"");
 
             Row totals = sheet.createRow(12);
             totals.createCell(1).setCellValue("总计");

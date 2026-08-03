@@ -143,9 +143,34 @@ class VendingImportServiceTest {
         assertEquals("IMPORTED", storedRows.get(0).getStatus());
         assertTrue(storedRows.get(0).getRawJson().contains("beforeImage"));
 
-        when(saleMapper.selectById(88L)).thenReturn(existing);
+        VendingSale current = new VendingSale();
+        current.setId(88L);
+        current.setVersion(4);
+        current.setSourceBatchId(preview.batchId());
+        when(saleMapper.selectById(88L)).thenReturn(current);
         service.rollback(preview.batchId(), "admin");
         verify(saleMapper, org.mockito.Mockito.times(2)).updateById(any(VendingSale.class));
+    }
+
+    @Test
+    void rollbackRejectsOlderBatchAfterItsRecordWasOverwritten() throws Exception {
+        VendingSale existing = new VendingSale();
+        existing.setId(88L);
+        existing.setVersion(3);
+        existing.setSourceBatchId(5L);
+        when(saleMapper.selectOne(any())).thenReturn(existing);
+        byte[] bytes = workbook(VendingImportType.SALE,
+                new String[]{"O-01", "1", "M-01", "P-01", "矿泉水", "2", "6", "1", "5",
+                        "微信", "2026-08-01 10:30:00", "已完成"});
+        VendingImportPreview preview = service.preview(VendingImportType.SALE, file("sale.xlsx", bytes));
+        service.confirm(preview.batchId(), "admin");
+        VendingSale overwrittenAgain = new VendingSale();
+        overwrittenAgain.setId(88L);
+        overwrittenAgain.setVersion(5);
+        overwrittenAgain.setSourceBatchId(99L);
+        when(saleMapper.selectById(88L)).thenReturn(overwrittenAgain);
+
+        assertThrows(BizException.class, () -> service.rollback(preview.batchId(), "admin"));
     }
 
     @Test

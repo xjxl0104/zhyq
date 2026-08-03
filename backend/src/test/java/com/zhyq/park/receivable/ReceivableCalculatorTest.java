@@ -51,6 +51,18 @@ class ReceivableCalculatorTest {
     }
 
     @Test
+    void offsetSubtractsFixedAmountInsteadOfWaivingWholeMonth() {
+        ReceivableRule offset = rule("OFFSET");
+        offset.setEffectiveStart(LocalDate.of(2026, 8, 1));
+        offset.setEffectiveEnd(LocalDate.of(2026, 8, 31));
+        offset.setFixedAmount(new BigDecimal("1000"));
+
+        assertEquals(new BigDecimal("9000.00"), calculator.applyRules(
+                new BigDecimal("10000"), YearMonth.of(2026, 8),
+                LocalDate.of(2026, 5, 1), List.of(offset)));
+    }
+
+    @Test
     void authoritativeMonthlyAmountIsTheBaseForEscalation() {
         ReceivableRegister register = new ReceivableRegister();
         register.setContractStartDate(LocalDate.of(2026, 5, 1));
