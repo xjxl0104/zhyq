@@ -15,6 +15,8 @@ export const receivableApi = {
   bind: (batchId, rowId, data) => request.put(
     `/finance/receivable/import/${batchId}/rows/${rowId}/binding`, data),
   confirm: (batchId) => request.post(`/finance/receivable/import/${batchId}/confirm`),
+  provisionPreview: (batchId) => request.get(`/finance/receivable/import/${batchId}/provision/preview`),
+  provision: (batchId, body) => request.post(`/finance/receivable/import/${batchId}/provision`, body),
   rollback: (batchId) => request.post(`/finance/receivable/import/${batchId}/rollback`),
   batches: () => request.get('/finance/receivable/import/batches'),
   generate: (id) => request.post(`/finance/receivable/${id}/generate`),
