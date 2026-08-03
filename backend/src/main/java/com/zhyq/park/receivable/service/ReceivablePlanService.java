@@ -33,6 +33,10 @@ public class ReceivablePlanService {
     @Transactional(rollbackFor = Exception.class)
     public ReceivableGenerateResult generate(long registerId) {
         ReceivableRegister register = requireConfirmed(registerId);
+        // 合同为空的登记仅做应收登记,禁止生成账单;待关联合同后再生成(ver5.1)
+        if (register.getContractId() == null) {
+            throw new BizException("该登记未关联合同,不能生成账单;请先关联合同");
+        }
         List<ReceivableRule> rules = ruleMapper.selectList(new LambdaQueryWrapper<ReceivableRule>()
                 .eq(ReceivableRule::getRegisterId, registerId)
                 .eq(ReceivableRule::getStatus, "ACTIVE")

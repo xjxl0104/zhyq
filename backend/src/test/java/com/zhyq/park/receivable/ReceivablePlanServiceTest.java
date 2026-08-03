@@ -91,6 +91,16 @@ class ReceivablePlanServiceTest {
         assertThrows(BizException.class, () -> service.generate(8L));
     }
 
+    @Test
+    void rejectsBillGenerationWhenContractIsNull() {
+        ReceivableRegister noContract = register("CONFIRMED");
+        noContract.setContractId(null);
+        when(registerMapper.selectByIdForUpdate(7L)).thenReturn(noContract);
+
+        assertThrows(BizException.class, () -> service.generate(7L));
+        verify(billMapper, never()).insert(any(Bill.class));
+    }
+
     private static ReceivableRegister register(String status) {
         ReceivableRegister register = new ReceivableRegister();
         register.setId(7L);
