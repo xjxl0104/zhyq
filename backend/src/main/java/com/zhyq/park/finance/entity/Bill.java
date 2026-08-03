@@ -20,8 +20,14 @@ public class Bill extends BaseEntity {
 
     /** 账单号(全局唯一) */
     private String code;
+    /** 计费幂等键 */
+    private String billingKey;
     /** 来源合同 */
     private Long contractId;
+    /** 来源应收登记表 */
+    private Long receivableRegisterId;
+    /** 来源计费规则 */
+    private Long receivableRuleId;
     /** 租客 */
     private Long tenantRefId;
     private Long projectId;
