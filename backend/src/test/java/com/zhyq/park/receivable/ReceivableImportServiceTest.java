@@ -42,6 +42,7 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -178,15 +179,27 @@ class ReceivableImportServiceTest {
     }
 
     @Test
-    void bindingRequiresContractAsWellAsTenantAndSpaceOrRoom() throws Exception {
+    void bindingRequiresTenantAndSpaceOrRoomButContractIsOptional() throws Exception {
         ReceivableImportPreview preview = preview();
         Long rowId = preview.rows().get(0).rowId();
 
         service.bindRow(preview.batchId(), new ReceivableBindRequest(rowId, 300L, 400L, null, null));
 
         ImportRow row = storedRows.stream().filter(item -> rowId.equals(item.getId())).findFirst().orElseThrow();
+        assertEquals("VALID", row.getStatus());
+        assertNull(row.getErrorMessage());
+    }
+
+    @Test
+    void bindingWithoutTenantOrSpaceStaysNeedsBinding() throws Exception {
+        ReceivableImportPreview preview = preview();
+        Long rowId = preview.rows().get(0).rowId();
+
+        service.bindRow(preview.batchId(), new ReceivableBindRequest(rowId, 300L, null, null, null));
+
+        ImportRow row = storedRows.stream().filter(item -> rowId.equals(item.getId())).findFirst().orElseThrow();
         assertEquals("NEEDS_BINDING", row.getStatus());
-        assertTrue(row.getErrorMessage().contains("合同"));
+        assertTrue(row.getErrorMessage().contains("租户及空间/房间"));
     }
 
     @Test

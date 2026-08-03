@@ -29,17 +29,20 @@ public class ReceivableBindingValidator {
     private final SpaceNodeMapper spaceMapper;
 
     public void validate(Long systemTenantId, ReceivableBindRequest request) {
-        if (request == null || request.tenantRefId() == null || request.contractId() == null
+        if (request == null || request.tenantRefId() == null
                 || (request.spaceId() == null && request.roomId() == null)) {
-            throw new BizException("请绑定租户、空间/房间及合同");
+            throw new BizException("请绑定租户及空间/房间");
         }
         BizTenant tenant = tenantMapper.selectById(request.tenantRefId());
         requireSameSystemTenant(tenant, systemTenantId, "租户不存在或不属于当前园区");
 
-        Contract contract = contractMapper.selectById(request.contractId());
-        requireSameSystemTenant(contract, systemTenantId, "合同不存在或不属于当前园区");
-        if (!Objects.equals(contract.getTenantRefId(), request.tenantRefId())) {
-            throw new BizException("合同与所选租户不一致");
+        Contract contract = null;
+        if (request.contractId() != null) {
+            contract = contractMapper.selectById(request.contractId());
+            requireSameSystemTenant(contract, systemTenantId, "合同不存在或不属于当前园区");
+            if (!Objects.equals(contract.getTenantRefId(), request.tenantRefId())) {
+                throw new BizException("合同与所选租户不一致");
+            }
         }
 
         SpaceNode selectedSpace = request.spaceId() == null ? null : spaceMapper.selectById(request.spaceId());
@@ -49,7 +52,7 @@ public class ReceivableBindingValidator {
 
         if (request.roomId() != null) {
             validateRoom(systemTenantId, request, selectedSpace);
-        } else {
+        } else if (contract != null) {
             validateProjectSpace(contract, selectedSpace, systemTenantId);
         }
     }

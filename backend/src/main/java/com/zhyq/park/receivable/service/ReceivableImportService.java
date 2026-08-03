@@ -142,12 +142,11 @@ public class ReceivableImportService {
 
         List<String> errors = jsonStrings(normalized.path("validationErrors"));
         boolean bindingComplete = request.tenantRefId() != null
-                && (request.spaceId() != null || request.roomId() != null)
-                && request.contractId() != null;
+                && (request.spaceId() != null || request.roomId() != null);
         row.setStatus(!errors.isEmpty() ? ROW_INVALID : bindingComplete ? ROW_VALID : ROW_NEEDS_BINDING);
         row.setErrorMessage(!errors.isEmpty()
                 ? String.join("；", errors)
-                : bindingComplete ? null : "请绑定租户、空间/房间及合同");
+                : bindingComplete ? null : "请绑定租户及空间/房间");
         row.setNormalizedJson(write(normalized));
         if (rowMapper.updateById(row) != 1) {
             throw new BizException("导入行绑定失败，请刷新后重试");

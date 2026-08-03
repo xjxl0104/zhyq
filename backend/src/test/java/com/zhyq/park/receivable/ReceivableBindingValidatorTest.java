@@ -13,6 +13,7 @@ import com.zhyq.park.space.mapper.SpaceNodeMapper;
 import com.zhyq.park.tenant.entity.BizTenant;
 import com.zhyq.park.tenant.mapper.BizTenantMapper;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
@@ -86,6 +87,19 @@ class ReceivableBindingValidatorTest {
 
         assertDoesNotThrow(() -> validator.validate(1L,
                 new ReceivableBindRequest(100L, 11L, 12L, 13L, 14L)));
+    }
+
+    @Test
+    @DisplayName("合同为空但已绑定租户与房间时校验通过")
+    void acceptsNullContractWithTenantAndRoom() {
+        Room room = new Room();
+        room.setId(13L);
+        room.setTenantId(1L);
+        when(rooms.selectById(13L)).thenReturn(room);
+        when(contractRooms.selectCount(any())).thenReturn(1L);
+
+        assertDoesNotThrow(() -> validator.validate(1L,
+                new ReceivableBindRequest(100L, 11L, null, 13L, null)));
     }
 
     private static SpaceNode space(Long id, String path, String refType, Long refId) {
