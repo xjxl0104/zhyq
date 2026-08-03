@@ -80,6 +80,13 @@
             <version>${hutool.version}</version>
         </dependency>
 
+        <!-- 受控 Excel 导入/导出；只读取公式缓存值，不执行宏或外链 -->
+        <dependency>
+            <groupId>org.apache.poi</groupId>
+            <artifactId>poi-ooxml</artifactId>
+            <version>5.2.5</version>
+        </dependency>
+
         <dependency>
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>
