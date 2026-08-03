@@ -48,7 +48,7 @@ class ReceivablePlanServiceTest {
 
     @Test
     void createsSeparateRentPropertyAndTwoDepositBills() {
-        when(registerMapper.selectById(7L)).thenReturn(register("CONFIRMED"));
+        when(registerMapper.selectByIdForUpdate(7L)).thenReturn(register("CONFIRMED"));
         when(ruleMapper.selectList(any())).thenReturn(rules());
         when(billMapper.selectCount(any())).thenReturn(0L);
         when(billMapper.insert(any(Bill.class))).thenReturn(1);
@@ -69,7 +69,7 @@ class ReceivablePlanServiceTest {
 
     @Test
     void secondGenerationSkipsExistingBillingKeys() {
-        when(registerMapper.selectById(7L)).thenReturn(register("CONFIRMED"));
+        when(registerMapper.selectByIdForUpdate(7L)).thenReturn(register("CONFIRMED"));
         when(ruleMapper.selectList(any())).thenReturn(rules());
         when(billMapper.selectCount(any())).thenReturn(1L);
 
@@ -82,12 +82,12 @@ class ReceivablePlanServiceTest {
 
     @Test
     void rejectsUnconfirmedOrUnresolvedRegister() {
-        when(registerMapper.selectById(7L)).thenReturn(register("DRAFT"));
+        when(registerMapper.selectByIdForUpdate(7L)).thenReturn(register("DRAFT"));
         assertThrows(BizException.class, () -> service.generate(7L));
 
         ReceivableRegister unresolved = register("CONFIRMED");
         unresolved.setTenantRefId(null);
-        when(registerMapper.selectById(8L)).thenReturn(unresolved);
+        when(registerMapper.selectByIdForUpdate(8L)).thenReturn(unresolved);
         assertThrows(BizException.class, () -> service.generate(8L));
     }
 

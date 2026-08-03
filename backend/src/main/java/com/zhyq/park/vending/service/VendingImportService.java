@@ -1,6 +1,7 @@
 package com.zhyq.park.vending.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -196,19 +197,28 @@ public class VendingImportService {
                 switch (type) {
                     case MACHINE -> restoreOrDelete(row, VendingMachine.class,
                             machineMapper::selectById, machineMapper::updateById,
-                            id -> machineMapper.deleteById(id), VendingMachine::getSourceBatchId, batchId);
+                            (current, expectedBatch) -> machineMapper.update(
+                                    null, rollbackDelete(current, expectedBatch)),
+                            VendingMachine::getSourceBatchId, batchId);
                     case SALE -> restoreOrDelete(row, VendingSale.class,
                             saleMapper::selectById, saleMapper::updateById,
-                            id -> saleMapper.deleteById(id), VendingSale::getSourceBatchId, batchId);
+                            (current, expectedBatch) -> saleMapper.update(
+                                    null, rollbackDelete(current, expectedBatch)),
+                            VendingSale::getSourceBatchId, batchId);
                     case RESTOCK -> restoreOrDelete(row, VendingRestock.class,
                             restockMapper::selectById, restockMapper::updateById,
-                            id -> restockMapper.deleteById(id), VendingRestock::getSourceBatchId, batchId);
+                            (current, expectedBatch) -> restockMapper.update(
+                                    null, rollbackDelete(current, expectedBatch)),
+                            VendingRestock::getSourceBatchId, batchId);
                     case FAULT -> restoreOrDelete(row, VendingFault.class,
                             faultMapper::selectById, faultMapper::updateById,
-                            id -> faultMapper.deleteById(id), VendingFault::getSourceBatchId, batchId);
+                            (current, expectedBatch) -> faultMapper.update(
+                                    null, rollbackDelete(current, expectedBatch)),
+                            VendingFault::getSourceBatchId, batchId);
                     case RECONCILIATION -> restoreOrDelete(row, VendingReconciliation.class,
                             reconciliationMapper::selectById, reconciliationMapper::updateById,
-                            id -> reconciliationMapper.deleteById(id),
+                            (current, expectedBatch) -> reconciliationMapper.update(
+                                    null, rollbackDelete(current, expectedBatch)),
                             VendingReconciliation::getSourceBatchId, batchId);
                 }
                 row.setStatus(ImportBatchService.ROLLED_BACK);
@@ -403,7 +413,8 @@ public class VendingImportService {
     }
 
     private <T extends com.zhyq.park.common.base.BaseEntity> void restoreOrDelete(
-            ImportRow row, Class<T> type, IdFinder<T> finder, Writer<T> updater, IdDeleter deleter,
+            ImportRow row, Class<T> type, IdFinder<T> finder, Writer<T> updater,
+            ConditionalDeleter<T> deleter,
             Function<T, Long> sourceBatch, Long rollbackBatchId) {
         ObjectNode raw = readObject(row.getRawJson());
         JsonNode before = raw.get("beforeImage");
@@ -412,7 +423,9 @@ public class VendingImportService {
             throw new BizException("该记录已被后续批次更新，不能撤销旧批次");
         }
         if (before == null || before.isNull()) {
-            deleter.delete(row.getTargetId());
+            if (deleter.delete(current, rollbackBatchId) != 1) {
+                throw new BizException("售货机记录已被修改，不能自动回滚");
+            }
             return;
         }
         T previous;
@@ -427,6 +440,17 @@ public class VendingImportService {
         if (updater.write(previous) != 1) {
             throw new BizException("售货机记录已被修改，不能自动回滚");
         }
+    }
+
+    private <T extends com.zhyq.park.common.base.BaseEntity> UpdateWrapper<T> rollbackDelete(
+            T current, Long rollbackBatchId) {
+        return new UpdateWrapper<T>()
+                .eq("id", current.getId())
+                .eq("source_batch_id", rollbackBatchId)
+                .eq("version", current.getVersion())
+                .eq("deleted", 0)
+                .set("deleted", 1)
+                .setSql("version = version + 1");
     }
 
     private ObjectNode readObject(String json) {
@@ -549,7 +573,7 @@ public class VendingImportService {
     private interface IdFinder<T> { T find(Long id); }
 
     @FunctionalInterface
-    private interface IdDeleter { void delete(Long id); }
+    private interface ConditionalDeleter<T> { int delete(T current, Long rollbackBatchId); }
 
     private record PersistOutcome(Long targetId, Object beforeImage) {}
 }

@@ -117,9 +117,10 @@ class ReceivableImportServiceTest {
             storedRegisters.add(register);
             return 1;
         });
-        when(registerMapper.selectById(any(Long.class))).thenAnswer(invocation -> storedRegisters.stream()
+        when(registerMapper.selectByIdForUpdate(any(Long.class))).thenAnswer(invocation -> storedRegisters.stream()
                 .filter(register -> register.getId().equals(invocation.getArgument(0)))
                 .findFirst().orElse(null));
+        when(registerMapper.update(org.mockito.ArgumentMatchers.isNull(), any())).thenReturn(1);
         when(ruleMapper.insert(any(ReceivableRule.class))).thenAnswer(invocation -> {
             storedRules.add(invocation.getArgument(0));
             return 1;
@@ -203,7 +204,39 @@ class ReceivableImportServiceTest {
                     preview.rows().get(i).rowId(), 300L + i, 400L + i, null, 500L + i));
         }
         service.confirm(preview.batchId(), "admin");
-        when(billMapper.selectCount(any())).thenReturn(1L);
+        when(billMapper.countIncludingDeletedByReceivableSourceBatch(preview.batchId())).thenReturn(1L);
+
+        assertThrows(BizException.class, () -> service.rollback(preview.batchId(), "admin"));
+    }
+
+    @Test
+    void rollbackRejectsBillsEvenAfterTheyWereSoftDeleted() throws Exception {
+        ReceivableImportPreview preview = preview();
+        for (int i = 0; i < preview.rows().size(); i++) {
+            service.bindRow(preview.batchId(), new ReceivableBindRequest(
+                    preview.rows().get(i).rowId(), 300L + i, 400L + i, null, 500L + i));
+        }
+        service.confirm(preview.batchId(), "admin");
+
+        var countMethod = BillMapper.class.getMethod(
+                "countIncludingDeletedByReceivableSourceBatch", Long.class);
+        var select = countMethod.getAnnotation(org.apache.ibatis.annotations.Select.class);
+        String countSql = select == null ? "" : String.join(" ", select.value());
+        assertTrue(!countSql.contains("deleted") && countSql.toUpperCase().contains("FOR UPDATE"));
+        when(billMapper.countIncludingDeletedByReceivableSourceBatch(preview.batchId())).thenReturn(1L);
+
+        assertThrows(BizException.class, () -> service.rollback(preview.batchId(), "admin"));
+    }
+
+    @Test
+    void rollbackFailsWhenConditionalDeleteLosesAConcurrentRevision() throws Exception {
+        ReceivableImportPreview preview = preview();
+        for (int i = 0; i < preview.rows().size(); i++) {
+            service.bindRow(preview.batchId(), new ReceivableBindRequest(
+                    preview.rows().get(i).rowId(), 300L + i, 400L + i, null, 500L + i));
+        }
+        service.confirm(preview.batchId(), "admin");
+        when(registerMapper.update(org.mockito.ArgumentMatchers.isNull(), any())).thenReturn(0);
 
         assertThrows(BizException.class, () -> service.rollback(preview.batchId(), "admin"));
     }
@@ -218,7 +251,7 @@ class ReceivableImportServiceTest {
         service.confirm(preview.batchId(), "admin");
         ReceivableRegister overwritten = storedRegisters.get(0);
         overwritten.setSourceBatchId(99L);
-        when(registerMapper.selectById(overwritten.getId())).thenReturn(overwritten);
+        when(registerMapper.selectByIdForUpdate(overwritten.getId())).thenReturn(overwritten);
 
         assertThrows(BizException.class, () -> service.rollback(preview.batchId(), "admin"));
         verify(registerMapper, never()).deleteById(overwritten.getId());
@@ -251,13 +284,34 @@ class ReceivableImportServiceTest {
         assertEquals(preview.batchId(), existing.getSourceBatchId());
 
         existing.setVersion(4); // simulate MyBatis optimistic-lock increment made by the correction update
-        when(registerMapper.selectById(77L)).thenReturn(existing);
+        when(registerMapper.selectByIdForUpdate(77L)).thenReturn(existing);
         service.rollback(preview.batchId(), "admin");
         ArgumentCaptor<ReceivableRegister> restored = ArgumentCaptor.forClass(ReceivableRegister.class);
         verify(registerMapper, times(2)).updateById(restored.capture());
         assertEquals(3, restored.getAllValues().get(1).getSourceVersion());
         assertEquals("RR-STABLE", restored.getAllValues().get(1).getInternalCode());
         assertEquals(4, restored.getAllValues().get(1).getVersion());
+    }
+
+    @Test
+    void propertyFeeOffsetCreatesMonthlyPropertyOffsetRules() throws Exception {
+        ReceivableImportPreview preview = preview();
+        ObjectMapper mapper = new ObjectMapper().findAndRegisterModules();
+        ImportRow first = storedRows.get(0);
+        var normalized = (com.fasterxml.jackson.databind.node.ObjectNode) mapper.readTree(first.getNormalizedJson());
+        ((com.fasterxml.jackson.databind.node.ObjectNode) normalized.path("rowData"))
+                .put("discountRaw", "20260801-20261031物业管理费抵扣3000元");
+        first.setNormalizedJson(mapper.writeValueAsString(normalized));
+
+        for (int i = 0; i < preview.rows().size(); i++) {
+            service.bindRow(preview.batchId(), new ReceivableBindRequest(
+                    preview.rows().get(i).rowId(), 300L + i, 400L + i, null, 500L + i));
+        }
+        service.confirm(preview.batchId(), "admin");
+
+        assertTrue(storedRules.stream().anyMatch(rule -> "PROPERTY".equals(rule.getFeeType())
+                && "OFFSET".equals(rule.getRuleType())
+                && new java.math.BigDecimal("1000.00").compareTo(rule.getFixedAmount()) == 0));
     }
 
     private ReceivableImportPreview preview() throws Exception {

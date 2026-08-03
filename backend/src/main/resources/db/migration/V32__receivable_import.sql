@@ -160,7 +160,9 @@ ALTER TABLE fin_bill
     ADD COLUMN receivable_register_id BIGINT NULL AFTER contract_id,
     ADD COLUMN receivable_rule_id BIGINT NULL AFTER receivable_register_id,
     ADD COLUMN billing_key VARCHAR(160) NULL AFTER code,
-    ADD UNIQUE KEY uk_bill_billing_key (billing_key, deleted),
+    ADD COLUMN billing_active_key VARCHAR(160)
+        GENERATED ALWAYS AS (IF(deleted = 0, billing_key, NULL)) STORED AFTER billing_key,
+    ADD UNIQUE KEY uk_bill_billing_key (billing_active_key),
     ADD KEY idx_bill_receivable (receivable_register_id);
 
 INSERT INTO sys_menu (parent_id, name, type, perm, sort, visible, status, tenant_id, create_by, create_time, version, deleted)

@@ -174,6 +174,21 @@ class VendingImportServiceTest {
     }
 
     @Test
+    void rollbackFailsWhenConditionalDeleteLosesAConcurrentUpdate() throws Exception {
+        byte[] bytes = workbook(VendingImportType.MACHINE,
+                new String[]{"M-01", "一号机", "A栋", "FJ", "在线", "2026-08-01 09:30:00"});
+        VendingImportPreview preview = service.preview(VendingImportType.MACHINE, file("machine.xlsx", bytes));
+        service.confirm(preview.batchId(), "admin");
+        var inserted = org.mockito.ArgumentCaptor.forClass(VendingMachine.class);
+        verify(machineMapper).insert(inserted.capture());
+        VendingMachine current = inserted.getValue();
+        current.setVersion(1);
+        when(machineMapper.selectById(current.getId())).thenReturn(current);
+
+        assertThrows(BizException.class, () -> service.rollback(preview.batchId(), "admin"));
+    }
+
+    @Test
     void duplicateFileHashIsRejectedBeforeAnyBusinessWrite() throws Exception {
         when(batchMapper.selectCount(any())).thenReturn(1L);
         byte[] bytes = workbook(VendingImportType.MACHINE,

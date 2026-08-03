@@ -52,7 +52,7 @@ public class ReceivablePlanService {
     }
 
     private ReceivableRegister requireConfirmed(long registerId) {
-        ReceivableRegister register = registerMapper.selectById(registerId);
+        ReceivableRegister register = registerMapper.selectByIdForUpdate(registerId);
         if (register == null) throw new BizException("应收登记表不存在");
         if (!"CONFIRMED".equals(register.getStatus()) && !"ACTIVE".equals(register.getStatus())) {
             throw new BizException("仅已确认或已生效的应收登记表可生成账单");

@@ -1,6 +1,7 @@
 package com.zhyq.park.receivable.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -231,24 +232,23 @@ public class ReceivableImportService {
     @Transactional
     public void rollback(Long batchId, String rollbackBy) {
         requireBatch(batchId, ImportBatchService.COMPLETED);
-        Long downstreamBills = billMapper.selectCount(new LambdaQueryWrapper<Bill>()
-                .inSql(Bill::getReceivableRegisterId,
-                        "SELECT id FROM fin_receivable_register WHERE source_batch_id=" + batchId + " AND deleted=0"));
-        if (downstreamBills != null && downstreamBills > 0) {
-            throw new BizException("该批次已生成账单或财务后续数据，不能整批撤销");
-        }
-
         List<ImportRow> importedRows = rows(batchId).stream()
                 .filter(row -> ROW_IMPORTED.equals(row.getStatus()) && row.getTargetId() != null)
                 .toList();
-        for (ImportRow row : importedRows) {
-            ReceivableRegister current = registerMapper.selectById(row.getTargetId());
+        Map<Long, ReceivableRegister> lockedRegisters = new HashMap<>();
+        for (Long registerId : importedRows.stream().map(ImportRow::getTargetId).distinct().sorted().toList()) {
+            ReceivableRegister current = registerMapper.selectByIdForUpdate(registerId);
             if (current == null || !batchId.equals(current.getSourceBatchId())) {
                 throw new BizException("应收登记表已被后续批次更新，不能撤销旧批次");
             }
+            lockedRegisters.put(registerId, current);
+        }
+        Long downstreamBills = billMapper.countIncludingDeletedByReceivableSourceBatch(batchId);
+        if (downstreamBills != null && downstreamBills > 0) {
+            throw new BizException("该批次已生成账单或财务后续数据，不能整批撤销");
         }
         for (ImportRow row : importedRows) {
-            ReceivableRegister register = registerMapper.selectById(row.getTargetId());
+            ReceivableRegister register = lockedRegisters.get(row.getTargetId());
             ruleMapper.delete(new LambdaQueryWrapper<ReceivableRule>()
                     .eq(ReceivableRule::getRegisterId, register.getId()));
             depositMapper.delete(new LambdaQueryWrapper<DepositLedger>()
@@ -266,7 +266,17 @@ public class ReceivableImportService {
                 restoreRules(normalized.path("previousRules"), previous.getId());
                 restoreDeposits(normalized.path("previousDeposits"), previous.getId());
             } else {
-                registerMapper.deleteById(register.getId());
+                int deleted = registerMapper.update(null,
+                        new UpdateWrapper<ReceivableRegister>()
+                                .eq("id", register.getId())
+                                .eq("source_batch_id", batchId)
+                                .eq("version", register.getVersion())
+                                .eq("deleted", 0)
+                                .set("deleted", 1)
+                                .setSql("version = version + 1"));
+                if (deleted != 1) {
+                    throw new BizException("应收登记表已被修改，不能自动回滚");
+                }
             }
             row.setStatus(ImportBatchService.ROLLED_BACK);
             rowMapper.updateById(row);
@@ -518,9 +528,14 @@ public class ReceivableImportService {
                 ranges.forEach(range -> persistOffset(register, "RENT", range,
                         monthlyOffset(clause, row.monthlyRent(), range), clause));
             }
+            boolean propertyOffset = containsAny(clause, "抵扣") && mentionsProperty(clause);
+            if (propertyOffset) {
+                ranges.forEach(range -> persistOffset(register, "PROPERTY", range,
+                        monthlyOffset(clause, row.monthlyProperty(), range), clause));
+            }
             boolean rentWaiver = !rentOffset
                     && containsAny(clause, "免租期", "免租金", "无需支付租赁费");
-            boolean propertyWaiver = mentionsProperty(clause)
+            boolean propertyWaiver = !propertyOffset && mentionsProperty(clause)
                     && containsAny(clause, "免缴", "无需支付", "免物业", "免管理费");
             if (rentWaiver) ranges.forEach(range -> persistWaiver(register, "RENT", range, clause));
             if (propertyWaiver) ranges.forEach(range -> persistWaiver(register, "PROPERTY", range, clause));
