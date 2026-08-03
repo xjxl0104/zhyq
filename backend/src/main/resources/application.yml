@@ -22,6 +22,8 @@ spring:
     encoding: UTF-8
 
 zhyq:
+  vending:
+    external-url: ${VENDING_EXTERNAL_URL:https://fanmaiji.top/index?isFrom=login}
   upload:
     path: ${UPLOAD_PATH:./uploads}
     url-prefix: /uploads
