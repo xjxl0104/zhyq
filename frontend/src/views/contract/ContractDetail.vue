@@ -31,6 +31,18 @@
           </el-table-column>
         </el-table>
       </template>
+      <template #tab-receivables>
+        <el-table :data="receivables" border size="small" v-loading="receivablesLoading">
+          <el-table-column prop="internalCode" label="内部编号" min-width="150" />
+          <el-table-column prop="agreementNoRaw" label="协议编号" min-width="150" />
+          <el-table-column prop="tenantNameRaw" label="租户" min-width="150" />
+          <el-table-column prop="spaceNameRaw" label="空间" min-width="130" />
+          <el-table-column prop="monthlyRent" label="月租金" width="120" />
+          <el-table-column prop="monthlyProperty" label="月物业费" width="120" />
+          <el-table-column prop="monthlyTotal" label="月合计" width="120" />
+          <el-table-column prop="status" label="状态" width="100" />
+        </el-table>
+      </template>
     </RecordDetail>
   </div>
 </template>
@@ -42,6 +54,7 @@ import { contractApi } from '@/api/contract'
 import { tenantApi } from '@/api/tenant'
 import { projectApi } from '@/api/building'
 import { billApi } from '@/api/finance'
+import { receivableApi } from '@/api/receivable'
 import RecordDetail from '@/components/RecordDetail.vue'
 
 const route = useRoute()
@@ -51,6 +64,8 @@ const contract = ref(null)
 const rooms = ref([])
 const bills = ref([])
 const billsLoading = ref(false)
+const receivables = ref([])
+const receivablesLoading = ref(false)
 
 const tenants = ref([])
 const projects = ref([])
@@ -106,6 +121,7 @@ const stats = computed(() => {
 
 const tabs = [
   { name: 'rooms', label: '关联房源' },
+  { name: 'receivables', label: '应收与计费' },
   { name: 'bills', label: '关联账单' }
 ]
 
@@ -125,8 +141,21 @@ async function loadDetail() {
     contract.value = res.contract
     rooms.value = res.rooms || []
     loadBills(id)
+    loadReceivables(id)
   } finally {
     loading.value = false
+  }
+}
+
+async function loadReceivables(contractId) {
+  receivablesLoading.value = true
+  try {
+    const res = await receivableApi.page({ pageNo: 1, pageSize: 100, contractId })
+    receivables.value = res.records || []
+  } catch (e) {
+    receivables.value = []
+  } finally {
+    receivablesLoading.value = false
   }
 }
 
