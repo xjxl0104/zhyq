@@ -102,6 +102,7 @@ const routes = [
 
       // 应用中心
       { path: 'app/center', meta: { title: '应用中心' }, component: () => import('@/views/app/AppCenter.vue') },
+      { path: 'app/vending', meta: { title: '自动售货机' }, component: () => import('@/views/app/Vending.vue') },
 
       // 能耗
       { path: 'energy/meter', meta: { title: '智能表计' }, component: () => import('@/views/energy/Meter.vue') },
