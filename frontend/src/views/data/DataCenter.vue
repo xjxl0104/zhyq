@@ -21,6 +21,17 @@
       </el-col>
     </el-row>
 
+    <el-card shadow="never" header="经营收入来源" style="margin-top: 16px">
+      <div class="income-layout">
+        <div class="income-metrics">
+          <div class="income-item"><span>租金及物业应收</span><strong>¥{{ fmtMoney(incomeSources.rentPropertyBilled) }}</strong></div>
+          <div class="income-item"><span>租金及物业实收</span><strong>¥{{ fmtMoney(incomeSources.rentPropertyReceived) }}</strong></div>
+          <div class="income-item vending"><span>售货机销售</span><strong>¥{{ fmtMoney(incomeSources.vendingSales) }}</strong></div>
+        </div>
+        <div ref="sourceRef" class="income-chart"></div>
+      </div>
+    </el-card>
+
     <el-row :gutter="16" style="margin-top: 16px">
       <el-col :span="8">
         <el-card shadow="never" header="合同执行">
@@ -56,13 +67,14 @@ import { ref, reactive, onMounted, nextTick } from 'vue'
 import * as echarts from 'echarts'
 import { dashboardApi } from '@/api/dashboard'
 
-const fin = reactive({}), contract = reactive({}), device = reactive({})
-const roomRef = ref(), trendRef = ref(), woRef = ref()
+const fin = reactive({}), contract = reactive({}), device = reactive({}), incomeSources = reactive({})
+const roomRef = ref(), trendRef = ref(), woRef = ref(), sourceRef = ref()
 const fmtMoney = (v) => Number(v || 0).toLocaleString('zh-CN', { maximumFractionDigits: 0 })
 
 onMounted(async () => {
   const ov = await dashboardApi.overview()
   Object.assign(fin, ov.finance); Object.assign(contract, ov.contract); Object.assign(device, ov.device)
+  Object.assign(incomeSources, ov.incomeSources)
   await nextTick()
 
   const roomData = await dashboardApi.roomStatus()
@@ -89,6 +101,18 @@ onMounted(async () => {
     ]
   })
 
+  echarts.init(sourceRef.value).setOption({
+    tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+    grid: { left: 110, right: 30, top: 12, bottom: 20 },
+    xAxis: { type: 'value', splitLine: { lineStyle: { color: '#f0f2f5' } }, axisLabel: { color: '#9aa1ac' } },
+    yAxis: { type: 'category', data: ['售货机销售', '租费实收', '租费应收'], axisLabel: { color: '#606266' } },
+    series: [{
+      type: 'bar', barWidth: 22,
+      data: [incomeSources.vendingSales || 0, incomeSources.rentPropertyReceived || 0, incomeSources.rentPropertyBilled || 0],
+      itemStyle: { color: (params) => ['#10b981', '#8b5cf6', '#2563eb'][params.dataIndex], borderRadius: [0, 5, 5, 0] }
+    }]
+  })
+
   const wo = await dashboardApi.workOrderCategory()
   echarts.init(woRef.value).setOption({
     tooltip: { trigger: 'axis' },
@@ -105,4 +129,10 @@ onMounted(async () => {
 .mini { display: flex; flex-direction: column; align-items: center; padding: 12px 0; background: #f8fafc; border-radius: 8px; }
 .mv { font-size: 24px; font-weight: 700; color: #2563eb; }
 .ml { font-size: 13px; color: #6b7280; margin-top: 4px; }
+.income-layout { display:grid; grid-template-columns:minmax(360px, 1fr) minmax(420px, 1.4fr); gap:20px; align-items:center; }
+.income-metrics { display:grid; gap:10px; }
+.income-item { display:flex; justify-content:space-between; align-items:center; padding:14px 16px; border-radius:8px; background:#f5f7ff; color:#606266; }
+.income-item strong { color:#2563eb; font-size:20px; }.income-item.vending { background:#f0f9eb; }.income-item.vending strong { color:#10b981; }
+.income-chart { height:220px; }
+@media (max-width: 900px) { .income-layout { grid-template-columns:1fr; }.income-chart { height:200px; } }
 </style>

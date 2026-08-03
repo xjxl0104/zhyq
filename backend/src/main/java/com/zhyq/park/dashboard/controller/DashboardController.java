@@ -63,6 +63,22 @@ public class DashboardController {
         fin.put("received", sum("SELECT COALESCE(SUM(paid_amount),0) FROM fin_bill WHERE deleted=0"));
         m.put("finance", fin);
 
+        // 经营收入来源：租费账单沿用财务权威口径，售货机只统计已受控导入的本地销售副本。
+        Map<String, Object> incomeSources = new LinkedHashMap<>();
+        incomeSources.put("rentPropertyBilled", sum("""
+                SELECT COALESCE(SUM(amount),0) FROM fin_bill
+                WHERE direction=1 AND fee_type IN ('租金','物业费') AND deleted=0
+                """));
+        incomeSources.put("rentPropertyReceived", sum("""
+                SELECT COALESCE(SUM(paid_amount),0) FROM fin_bill
+                WHERE direction=1 AND fee_type IN ('租金','物业费') AND deleted=0
+                """));
+        incomeSources.put("vendingSales", sum("""
+                SELECT COALESCE(SUM(paid_amount),0) FROM ops_vending_sale
+                WHERE order_status NOT IN ('已退款','已取消') AND deleted=0
+                """));
+        m.put("incomeSources", incomeSources);
+
         // 合同执行
         Map<String, Object> contract = new LinkedHashMap<>();
         contract.put("total", count("SELECT COUNT(*) FROM biz_contract WHERE deleted=0"));

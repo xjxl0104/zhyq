@@ -28,7 +28,7 @@ docker compose -f docker-compose.full.yml up -d --build      # 改代码后重�
 
 ## 数据说明
 
-- **表结构 + 演示数据**:Flyway 迁移(V1~V31)在后端首次启动时自动执行,新库开箱即用,无需手工导入。
+- **表结构 + 演示数据**:Flyway 迁移(V1~V33)在后端首次启动时自动执行,新库开箱即用,无需手工导入。
 - **端口 80 被占用**:把 `docker-compose.full.yml` 里 frontend 的 `"80:80"` 改成 `"8080:80"`,访问 http://localhost:8080。
 - **迁移业务数据**(仅当你想保留手工录入的数据):
   ```bash
@@ -59,6 +59,39 @@ docker compose -f docker-compose.full.yml up -d --build
 升级完成后，现有超级管理员需要**退出并重新登录一次**，JWT 才会包含新增管理权限。之后可在“系统管理 → 用户管理”中为用户多选角色（选择 `admin` 即创建超级管理员），并在“系统管理 → 角色管理”中为普通角色配置菜单和按钮权限。角色调整同样在相关用户下次登录时生效。
 
 V31 不删除业务用户或角色，应用代码临时回退到 `ver4.1` 时可保留该迁移产生的唯一索引和权限数据；不要手工删除 Flyway 历史记录。
+
+## ver4.3 升级说明（应收明细与自动售货机）
+
+先备份数据库和宿主机 `uploads`，再准备 `.env`。字段加密密钥必须是 Base64 编码的 32 字节随机值，已上线环境一旦启用后应长期固定保存，丢失密钥将无法解密已导入的完整收款账户：
+
+```bash
+# 生成一次并写入 .env；不要把输出提交到 Git
+openssl rand -base64 32
+
+# .env 示例（填写刚生成的值）
+ZHYQ_FIELD_ENCRYPTION_KEY=<base64-32-byte-key>
+VENDING_EXTERNAL_URL=https://fanmaiji.top/index?isFrom=login
+```
+
+升级并启动：
+
+```bash
+git fetch origin
+git checkout ver4.3
+git pull --ff-only origin ver4.3
+docker compose -f docker-compose.full.yml config
+docker compose -f docker-compose.full.yml up -d --build
+docker compose -f docker-compose.full.yml logs --tail=200 backend
+```
+
+Flyway 将依次执行：
+
+- `V32__receivable_import.sql`：共享导入批次/审计行、应收登记表、计费规则、保证金、加密收款账户，以及账单幂等字段。
+- `V33__vending_integration.sql`：售货机机器、销售、补货、故障、对账五张本地副本表，应用卡片和四项权限。
+
+升级后现有超级管理员需退出并重新登录，使 JWT 获得新增权限。进入“财务 → 应收明细登记表”导入园区基础资料；进入“应用中心 → 自动售货机”使用外部入口或下载五类标准模板。售货机厂商当前没有 API，本版本禁止自动登录、验证码绕过、页面抓取、Cookie/密码保存和反向写回。
+
+应收工作簿导入前必须先预览并绑定租户与空间；完整账户只以 AES-GCM 密文保存。售货机仅接受系统下载的标准模板，厂商原生导出文件在取得真实样例并通过验证前不受支持。详细口径和回滚边界见 `docs/VER4.3.md`。
 
 ## 两套 compose 的区别
 
