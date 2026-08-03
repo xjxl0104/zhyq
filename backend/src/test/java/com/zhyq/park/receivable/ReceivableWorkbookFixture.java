@@ -51,8 +51,8 @@ final class ReceivableWorkbookFixture {
                         i == 0 ? "每日每平方含税0.067元" : "每月每平方含税2元",
                         rent[i], property[i], Integer.parseInt(rent[i]) + Integer.parseInt(property[i]),
                         rentDeposit[i], propertyDeposit[i], "当月30日前收取下个月租金", "2026年5月1日",
-                        "户名：示例企业；开户行：示例银行；账号：62220000000" + (i + 1),
-                        "户名:示例物业;开户行:示例银行;账号:95588000000" + (i + 1),
+                        "户名：示例企业；开户行：示例银行；账号：622200000001",
+                        "户名:示例物业;开户行:示例银行;账号:955880000001",
                         i == 0 ? "历史收款需人工核对" : "", "0"
                 };
                 for (int col = 0; col < values.length; col++) {
