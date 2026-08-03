@@ -87,7 +87,8 @@ public class ReceivableController {
                 hasAuthority(authentication, "finance:receivable:confirm"),
                 hasAuthority(authentication, "finance:receivable:generate"),
                 hasAuthority(authentication, "finance:receivable:export"),
-                hasAuthority(authentication, "finance:receivable:delete")));
+                hasAuthority(authentication, "finance:receivable:delete"),
+                hasAuthority(authentication, "finance:receivable:account:view")));
     }
 
     @Operation(summary = "分页查询应收明细")
@@ -307,5 +308,5 @@ public class ReceivableController {
     public record AccountReveal(Long accountId, String accountNo) {}
     public record ReceivableCapabilities(boolean query, boolean add, boolean edit,
                                          boolean importData, boolean confirm, boolean generate,
-                                         boolean exportData, boolean deleteData) {}
+                                         boolean exportData, boolean deleteData, boolean accountView) {}
 }

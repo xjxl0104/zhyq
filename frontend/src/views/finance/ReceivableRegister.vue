@@ -57,7 +57,7 @@
     </div>
 
     <ReceivableImportDialog v-model="importVisible" @confirmed="afterImport" />
-    <ReceivableDetailDrawer v-model="detailVisible" :register-id="detailId" />
+    <ReceivableDetailDrawer v-model="detailVisible" :register-id="detailId" :can-view-account="capabilities.accountView" />
 
     <el-dialog v-model="editor.visible" :title="editor.form.id ? '编辑应收登记表' : '新增应收登记表'" width="720px">
       <el-form :model="editor.form" label-width="120px">
@@ -92,7 +92,7 @@ const importVisible = ref(false)
 const detailVisible = ref(false)
 const detailId = ref(null)
 const editor = reactive({ visible: false, form: {} })
-const capabilities = ref({ query: false, add: false, edit: false, importData: false, confirm: false, generate: false, exportData: false, deleteData: false })
+const capabilities = ref({ query: false, add: false, edit: false, importData: false, confirm: false, generate: false, exportData: false, deleteData: false, accountView: false })
 const lastCompletedBatch = ref(null)
 const statusMap = { DRAFT: '草稿', PENDING_REVIEW: '待核对', CONFIRMED: '已确认', ACTIVE: '已生效', TERMINATED: '已终止' }
 const statusLabel = (status) => statusMap[status] || status || '-'
