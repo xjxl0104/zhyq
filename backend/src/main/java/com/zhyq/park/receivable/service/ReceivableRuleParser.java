@@ -5,7 +5,9 @@ import org.springframework.stereotype.Component;
 import java.math.BigDecimal;
 import java.time.DateTimeException;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.regex.Matcher;
@@ -15,6 +17,12 @@ import java.util.regex.Pattern;
 public class ReceivableRuleParser {
     private static final Pattern NUMBER = Pattern.compile("(-?\\d+(?:\\.\\d+)?)");
     private static final Pattern ESCALATION = Pattern.compile("每\\s*(\\d+)\\s*年[^%]*?(-?\\d+(?:\\.\\d+)?)\\s*%");
+    private static final Pattern COMPACT_DATE_RANGE = Pattern.compile(
+            "(\\d{8})\\s*[-—~～至]\\s*(\\d{8})");
+    private static final Pattern SEPARATED_DATE_RANGE = Pattern.compile(
+            "(\\d{4})[./年-](\\d{1,2})[./月-](\\d{1,2})日?\\s*(?:至|到|[-—~～])\\s*"
+                    + "(\\d{4})[./年-](\\d{1,2})[./月-](\\d{1,2})日?");
+    private static final Pattern DISCOUNT = Pattern.compile("(\\d+(?:\\.\\d+)?)\\s*折");
 
     public Optional<DateRange> parseContractTerm(String raw) {
         if (raw == null) {
@@ -62,6 +70,41 @@ public class ReceivableRuleParser {
                 Integer.parseInt(matcher.group(1)), new BigDecimal(matcher.group(2)).abs()));
     }
 
+    public List<DateRange> parseDateRanges(String raw) {
+        List<DateRange> ranges = new ArrayList<>();
+        if (raw == null || raw.isBlank()) return ranges;
+        Matcher compact = COMPACT_DATE_RANGE.matcher(raw);
+        while (compact.find()) {
+            addRange(ranges, compact.group(1), compact.group(2));
+        }
+        Matcher separated = SEPARATED_DATE_RANGE.matcher(raw);
+        while (separated.find()) {
+            try {
+                ranges.add(new DateRange(
+                        LocalDate.of(Integer.parseInt(separated.group(1)), Integer.parseInt(separated.group(2)),
+                                Integer.parseInt(separated.group(3))),
+                        LocalDate.of(Integer.parseInt(separated.group(4)), Integer.parseInt(separated.group(5)),
+                                Integer.parseInt(separated.group(6)))));
+            } catch (DateTimeException ignored) {
+                // Invalid source dates remain available in raw_text for review.
+            }
+        }
+        return ranges;
+    }
+
+    public Optional<BigDecimal> parseDiscountRate(String raw) {
+        if (raw == null) return Optional.empty();
+        Matcher matcher = DISCOUNT.matcher(raw);
+        if (!matcher.find()) return Optional.empty();
+        BigDecimal percent = new BigDecimal(matcher.group(1)).multiply(BigDecimal.TEN);
+        return percent.signum() >= 0 && percent.compareTo(new BigDecimal("100")) <= 0
+                ? Optional.of(percent) : Optional.empty();
+    }
+
+    public boolean isYearlyLastMonthWaiver(String raw) {
+        return raw != null && raw.replaceAll("\\s+", "").contains("每年最后一个月免租一个月");
+    }
+
     public Optional<Account> parseAccount(String raw) {
         if (raw == null || raw.isBlank()) {
             return Optional.empty();
@@ -97,6 +140,14 @@ public class ReceivableRuleParser {
                 Integer.parseInt(digits.substring(0, 4)),
                 Integer.parseInt(digits.substring(4, 6)),
                 Integer.parseInt(digits.substring(6, 8)));
+    }
+
+    private static void addRange(List<DateRange> ranges, String start, String end) {
+        try {
+            ranges.add(new DateRange(parseDate(start), parseDate(end)));
+        } catch (DateTimeException ignored) {
+            // Invalid source dates remain available in raw_text for review.
+        }
     }
 
     public record DateRange(LocalDate start, LocalDate end) {}

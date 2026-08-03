@@ -64,6 +64,7 @@ CREATE TABLE fin_collection_account (
 CREATE TABLE fin_receivable_register (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     internal_code VARCHAR(64) NOT NULL,
+    business_key CHAR(64) NOT NULL,
     seq_no INT,
     agreement_no_raw TEXT,
     tenant_name_raw VARCHAR(255) NOT NULL,
@@ -106,7 +107,9 @@ CREATE TABLE fin_receivable_register (
     tenant_id BIGINT NOT NULL DEFAULT 1,
     create_by VARCHAR(32), create_time DATETIME, update_by VARCHAR(32), update_time DATETIME,
     version INT NOT NULL DEFAULT 1, deleted TINYINT NOT NULL DEFAULT 0,
-    UNIQUE KEY uk_receivable_code (internal_code, deleted),
+    active_unique_key TINYINT GENERATED ALWAYS AS (IF(deleted = 0, 1, NULL)) STORED,
+    UNIQUE KEY uk_receivable_code (internal_code, active_unique_key),
+    UNIQUE KEY uk_receivable_business (tenant_id, business_key, active_unique_key),
     KEY idx_receivable_tenant (tenant_ref_id),
     KEY idx_receivable_contract (contract_id),
     KEY idx_receivable_status (status),
@@ -149,7 +152,8 @@ CREATE TABLE fin_deposit_ledger (
     tenant_id BIGINT NOT NULL DEFAULT 1,
     create_by VARCHAR(32), create_time DATETIME, update_by VARCHAR(32), update_time DATETIME,
     version INT NOT NULL DEFAULT 1, deleted TINYINT NOT NULL DEFAULT 0,
-    UNIQUE KEY uk_deposit_ledger (register_id, deposit_type, deleted)
+    active_unique_key TINYINT GENERATED ALWAYS AS (IF(deleted = 0, 1, NULL)) STORED,
+    UNIQUE KEY uk_deposit_ledger (register_id, deposit_type, active_unique_key)
 ) COMMENT '保证金台账';
 
 ALTER TABLE fin_bill

@@ -18,6 +18,7 @@ class V32MigrationContractTest {
                     "CREATE TABLE sys_import_batch",
                     "CREATE TABLE sys_import_row",
                     "CREATE TABLE fin_receivable_register",
+                    "uk_receivable_business",
                     "CREATE TABLE fin_receivable_rule",
                     "CREATE TABLE fin_deposit_ledger",
                     "CREATE TABLE fin_collection_account",

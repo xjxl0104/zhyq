@@ -36,6 +36,7 @@ import java.util.concurrent.atomic.AtomicLong;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -126,6 +127,8 @@ class VendingImportServiceTest {
         VendingSale existing = new VendingSale();
         existing.setId(88L);
         existing.setVersion(3);
+        existing.setProductName("旧商品");
+        existing.setSourceBatchId(5L);
         when(saleMapper.selectOne(any())).thenReturn(existing);
         byte[] bytes = workbook(VendingImportType.SALE,
                 new String[]{"O-01", "1", "M-01", "P-01", "矿泉水", "2", "6", "1", "5",
@@ -138,6 +141,11 @@ class VendingImportServiceTest {
         verify(saleMapper).updateById(any(VendingSale.class));
         assertEquals(10L, storedRows.get(0).getBatchId());
         assertEquals("IMPORTED", storedRows.get(0).getStatus());
+        assertTrue(storedRows.get(0).getRawJson().contains("beforeImage"));
+
+        when(saleMapper.selectById(88L)).thenReturn(existing);
+        service.rollback(preview.batchId(), "admin");
+        verify(saleMapper, org.mockito.Mockito.times(2)).updateById(any(VendingSale.class));
     }
 
     @Test

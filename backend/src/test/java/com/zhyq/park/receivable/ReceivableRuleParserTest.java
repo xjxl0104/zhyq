@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -32,5 +33,24 @@ class ReceivableRuleParserTest {
         assertEquals("示例银行", account.bankName());
         assertEquals("622200000001", account.accountNo());
         assertTrue(parser.parseAccount("只有一串数字622200000001").isEmpty());
+    }
+
+    @Test
+    void parsesAllExplicitWaiverRangesAndChineseDateRanges() {
+        assertEquals(List.of(
+                        new ReceivableRuleParser.DateRange(LocalDate.of(2026, 8, 1), LocalDate.of(2026, 9, 30)),
+                        new ReceivableRuleParser.DateRange(LocalDate.of(2027, 12, 1), LocalDate.of(2027, 12, 31)),
+                        new ReceivableRuleParser.DateRange(LocalDate.of(2028, 12, 1), LocalDate.of(2028, 12, 31))),
+                parser.parseDateRanges("20260801-20260930\n20271201-20271231\n20281201-20281231"));
+        assertEquals(List.of(new ReceivableRuleParser.DateRange(
+                        LocalDate.of(2026, 11, 1), LocalDate.of(2026, 11, 30))),
+                parser.parseDateRanges("2026年11月1日至2026年11月30日"));
+    }
+
+    @Test
+    void parsesSpreadsheetDiscountAndRecurringTerms() {
+        assertEquals(new BigDecimal("50"), parser.parseDiscountRate("租金按5折").orElseThrow());
+        assertEquals(new BigDecimal("70"), parser.parseDiscountRate("租金及物业管理费按7折收取").orElseThrow());
+        assertTrue(parser.isYearlyLastMonthWaiver("每年最后一个月免租一个月"));
     }
 }

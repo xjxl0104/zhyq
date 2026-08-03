@@ -4,6 +4,8 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.zhyq.park.common.exception.BizException;
 import com.zhyq.park.importing.entity.ImportBatch;
 import com.zhyq.park.importing.entity.ImportRow;
@@ -154,11 +156,11 @@ public class VendingImportService {
             }
             Map<String, String> values = readValues(row.getNormalizedJson());
             Long targetId = switch (type) {
-                case MACHINE -> upsertMachine(batch, values);
-                case SALE -> upsertSale(batch, values);
-                case RESTOCK -> upsertRestock(batch, values);
-                case FAULT -> upsertFault(batch, values);
-                case RECONCILIATION -> upsertReconciliation(batch, values);
+                case MACHINE -> upsertMachine(batch, values, row);
+                case SALE -> upsertSale(batch, values, row);
+                case RESTOCK -> upsertRestock(batch, values, row);
+                case FAULT -> upsertFault(batch, values, row);
+                case RECONCILIATION -> upsertReconciliation(batch, values, row);
             };
             row.setStatus(IMPORTED);
             row.setTargetType(type.name());
@@ -176,24 +178,27 @@ public class VendingImportService {
 
     @Transactional
     public void rollback(Long batchId, String rollbackBy) {
-        requireBatch(batchId, ImportBatchService.COMPLETED);
-        machineMapper.selectList(new LambdaQueryWrapper<VendingMachine>()
-                        .eq(VendingMachine::getSourceBatchId, batchId))
-                .forEach(entity -> machineMapper.deleteById(entity.getId()));
-        saleMapper.selectList(new LambdaQueryWrapper<VendingSale>()
-                        .eq(VendingSale::getSourceBatchId, batchId))
-                .forEach(entity -> saleMapper.deleteById(entity.getId()));
-        restockMapper.selectList(new LambdaQueryWrapper<VendingRestock>()
-                        .eq(VendingRestock::getSourceBatchId, batchId))
-                .forEach(entity -> restockMapper.deleteById(entity.getId()));
-        faultMapper.selectList(new LambdaQueryWrapper<VendingFault>()
-                        .eq(VendingFault::getSourceBatchId, batchId))
-                .forEach(entity -> faultMapper.deleteById(entity.getId()));
-        reconciliationMapper.selectList(new LambdaQueryWrapper<VendingReconciliation>()
-                        .eq(VendingReconciliation::getSourceBatchId, batchId))
-                .forEach(entity -> reconciliationMapper.deleteById(entity.getId()));
+        ImportBatch batch = requireBatch(batchId, ImportBatchService.COMPLETED);
+        VendingImportType type = VendingImportType.fromBizType(batch.getBizType());
         for (ImportRow row : rows(batchId)) {
             if (IMPORTED.equals(row.getStatus())) {
+                switch (type) {
+                    case MACHINE -> restoreOrDelete(row, VendingMachine.class,
+                            machineMapper::selectById, machineMapper::updateById,
+                            id -> machineMapper.deleteById(id));
+                    case SALE -> restoreOrDelete(row, VendingSale.class,
+                            saleMapper::selectById, saleMapper::updateById,
+                            id -> saleMapper.deleteById(id));
+                    case RESTOCK -> restoreOrDelete(row, VendingRestock.class,
+                            restockMapper::selectById, restockMapper::updateById,
+                            id -> restockMapper.deleteById(id));
+                    case FAULT -> restoreOrDelete(row, VendingFault.class,
+                            faultMapper::selectById, faultMapper::updateById,
+                            id -> faultMapper.deleteById(id));
+                    case RECONCILIATION -> restoreOrDelete(row, VendingReconciliation.class,
+                            reconciliationMapper::selectById, reconciliationMapper::updateById,
+                            id -> reconciliationMapper.deleteById(id));
+                }
                 row.setStatus(ImportBatchService.ROLLED_BACK);
                 rowMapper.updateById(row);
             }
@@ -227,7 +232,7 @@ public class VendingImportService {
         return result;
     }
 
-    private Long upsertMachine(ImportBatch batch, Map<String, String> row) {
+    private Long upsertMachine(ImportBatch batch, Map<String, String> row, ImportRow importRow) {
         VendingMachine value = new VendingMachine();
         value.setTenantId(batch.getTenantId());
         value.setVendorMachineId(row.get("厂商机器编号"));
@@ -238,11 +243,13 @@ public class VendingImportService {
         value.setLastOnlineTime(dateTimeNullable(row.get("最后在线时间")));
         value.setSourceBatchId(batch.getId());
         VendingMachine existing = findMachine(batch.getTenantId(), value.getVendorMachineId());
-        return persist(value, existing, machineMapper::insert, machineMapper::updateById,
+        PersistOutcome outcome = persist(value, existing, machineMapper::insert, machineMapper::updateById,
                 () -> findMachine(batch.getTenantId(), value.getVendorMachineId()));
+        attachBeforeImage(importRow, outcome.beforeImage());
+        return outcome.targetId();
     }
 
-    private Long upsertSale(ImportBatch batch, Map<String, String> row) {
+    private Long upsertSale(ImportBatch batch, Map<String, String> row, ImportRow importRow) {
         VendingSale value = new VendingSale();
         value.setTenantId(batch.getTenantId());
         value.setVendorOrderId(row.get("厂商订单号"));
@@ -259,11 +266,13 @@ public class VendingImportService {
         value.setOrderStatus(row.get("订单状态"));
         value.setSourceBatchId(batch.getId());
         VendingSale existing = findSale(batch.getTenantId(), value.getVendorOrderId(), value.getLineNo());
-        return persist(value, existing, saleMapper::insert, saleMapper::updateById,
+        PersistOutcome outcome = persist(value, existing, saleMapper::insert, saleMapper::updateById,
                 () -> findSale(batch.getTenantId(), value.getVendorOrderId(), value.getLineNo()));
+        attachBeforeImage(importRow, outcome.beforeImage());
+        return outcome.targetId();
     }
 
-    private Long upsertRestock(ImportBatch batch, Map<String, String> row) {
+    private Long upsertRestock(ImportBatch batch, Map<String, String> row, ImportRow importRow) {
         VendingRestock value = new VendingRestock();
         value.setTenantId(batch.getTenantId());
         value.setVendorRestockId(row.get("厂商补货单号"));
@@ -275,11 +284,13 @@ public class VendingImportService {
         value.setRestockTime(dateTime(row.get("补货时间")));
         value.setSourceBatchId(batch.getId());
         VendingRestock existing = findRestock(batch.getTenantId(), value.getVendorRestockId());
-        return persist(value, existing, restockMapper::insert, restockMapper::updateById,
+        PersistOutcome outcome = persist(value, existing, restockMapper::insert, restockMapper::updateById,
                 () -> findRestock(batch.getTenantId(), value.getVendorRestockId()));
+        attachBeforeImage(importRow, outcome.beforeImage());
+        return outcome.targetId();
     }
 
-    private Long upsertFault(ImportBatch batch, Map<String, String> row) {
+    private Long upsertFault(ImportBatch batch, Map<String, String> row, ImportRow importRow) {
         VendingFault value = new VendingFault();
         value.setTenantId(batch.getTenantId());
         value.setVendorFaultId(row.get("厂商故障编号"));
@@ -291,11 +302,13 @@ public class VendingImportService {
         value.setDescription(blankToNull(row.get("描述")));
         value.setSourceBatchId(batch.getId());
         VendingFault existing = findFault(batch.getTenantId(), value.getVendorFaultId());
-        return persist(value, existing, faultMapper::insert, faultMapper::updateById,
+        PersistOutcome outcome = persist(value, existing, faultMapper::insert, faultMapper::updateById,
                 () -> findFault(batch.getTenantId(), value.getVendorFaultId()));
+        attachBeforeImage(importRow, outcome.beforeImage());
+        return outcome.targetId();
     }
 
-    private Long upsertReconciliation(ImportBatch batch, Map<String, String> row) {
+    private Long upsertReconciliation(ImportBatch batch, Map<String, String> row, ImportRow importRow) {
         VendingReconciliation value = new VendingReconciliation();
         value.setTenantId(batch.getTenantId());
         value.setVendorSettlementId(row.get("厂商结算单号"));
@@ -308,8 +321,10 @@ public class VendingImportService {
         value.setSettlementStatus(row.get("状态"));
         value.setSourceBatchId(batch.getId());
         VendingReconciliation existing = findReconciliation(batch.getTenantId(), value.getVendorSettlementId());
-        return persist(value, existing, reconciliationMapper::insert, reconciliationMapper::updateById,
+        PersistOutcome outcome = persist(value, existing, reconciliationMapper::insert, reconciliationMapper::updateById,
                 () -> findReconciliation(batch.getTenantId(), value.getVendorSettlementId()));
+        attachBeforeImage(importRow, outcome.beforeImage());
+        return outcome.targetId();
     }
 
     private VendingMachine findMachine(Long tenantId, String id) {
@@ -339,7 +354,7 @@ public class VendingImportService {
                 .eq(VendingReconciliation::getVendorSettlementId, id));
     }
 
-    private <T extends com.zhyq.park.common.base.BaseEntity> Long persist(
+    private <T extends com.zhyq.park.common.base.BaseEntity> PersistOutcome persist(
             T value, T existing, Writer<T> insert, Writer<T> update, Finder<T> finder) {
         if (existing != null) {
             value.setId(existing.getId());
@@ -347,13 +362,13 @@ public class VendingImportService {
             if (update.write(value) != 1) {
                 throw new BizException("售货机记录更新失败，请刷新后重试");
             }
-            return value.getId();
+            return new PersistOutcome(value.getId(), existing);
         }
         try {
             if (insert.write(value) != 1) {
                 throw new BizException("售货机记录写入失败");
             }
-            return value.getId();
+            return new PersistOutcome(value.getId(), null);
         } catch (DuplicateKeyException race) {
             T raced = finder.find();
             if (raced == null) {
@@ -364,7 +379,48 @@ public class VendingImportService {
             if (update.write(value) != 1) {
                 throw new BizException("售货机记录并发更新失败");
             }
-            return value.getId();
+            return new PersistOutcome(value.getId(), raced);
+        }
+    }
+
+    private void attachBeforeImage(ImportRow row, Object beforeImage) {
+        if (beforeImage == null) return;
+        ObjectNode raw = readObject(row.getRawJson());
+        raw.set("beforeImage", objectMapper.valueToTree(beforeImage));
+        row.setRawJson(write(raw));
+    }
+
+    private <T extends com.zhyq.park.common.base.BaseEntity> void restoreOrDelete(
+            ImportRow row, Class<T> type, IdFinder<T> finder, Writer<T> updater, IdDeleter deleter) {
+        ObjectNode raw = readObject(row.getRawJson());
+        JsonNode before = raw.get("beforeImage");
+        if (before == null || before.isNull()) {
+            deleter.delete(row.getTargetId());
+            return;
+        }
+        T previous;
+        try {
+            previous = objectMapper.treeToValue(before, type);
+        } catch (JsonProcessingException e) {
+            throw new BizException("售货机导入回滚快照已损坏");
+        }
+        T current = finder.find(row.getTargetId());
+        if (current == null) throw new BizException("售货机导入目标已不存在，不能自动回滚");
+        previous.setId(row.getTargetId());
+        previous.setVersion(current.getVersion());
+        previous.setDeleted(current.getDeleted());
+        if (updater.write(previous) != 1) {
+            throw new BizException("售货机记录已被修改，不能自动回滚");
+        }
+    }
+
+    private ObjectNode readObject(String json) {
+        try {
+            JsonNode node = objectMapper.readTree(json);
+            if (node instanceof ObjectNode object) return object;
+            throw new BizException("导入审计数据结构不正确");
+        } catch (JsonProcessingException e) {
+            throw new BizException("导入审计数据损坏");
         }
     }
 
@@ -473,4 +529,12 @@ public class VendingImportService {
 
     @FunctionalInterface
     private interface Finder<T> { T find(); }
+
+    @FunctionalInterface
+    private interface IdFinder<T> { T find(Long id); }
+
+    @FunctionalInterface
+    private interface IdDeleter { void delete(Long id); }
+
+    private record PersistOutcome(Long targetId, Object beforeImage) {}
 }

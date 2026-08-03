@@ -13,10 +13,12 @@ import com.zhyq.park.importing.entity.ImportBatch;
 import com.zhyq.park.importing.entity.ImportRow;
 import com.zhyq.park.importing.mapper.ImportBatchMapper;
 import com.zhyq.park.importing.mapper.ImportRowMapper;
+import com.zhyq.park.importing.service.ImportFileHasher;
 import com.zhyq.park.receivable.dto.ReceivableBindRequest;
 import com.zhyq.park.receivable.dto.ReceivableDetail;
 import com.zhyq.park.receivable.dto.ReceivableGenerateResult;
 import com.zhyq.park.receivable.dto.ReceivableImportPreview;
+import com.zhyq.park.receivable.dto.ReceivableUpsertRequest;
 import com.zhyq.park.receivable.entity.CollectionAccount;
 import com.zhyq.park.receivable.entity.DepositLedger;
 import com.zhyq.park.receivable.entity.ReceivableRegister;
@@ -52,6 +54,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.nio.charset.StandardCharsets;
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.UUID;
 
@@ -116,12 +119,22 @@ public class ReceivableController {
     @PostMapping
     @PreAuthorize("hasAuthority('finance:receivable:add')")
     @OperationLog(module = "应收明细", action = "新增")
-    public Result<Long> add(@RequestBody ReceivableRegister register) {
-        if (!StringUtils.hasText(register.getInternalCode())) {
-            register.setInternalCode("RR-M-" + UUID.randomUUID().toString().replace("-", ""));
-        }
-        if (!StringUtils.hasText(register.getStatus())) register.setStatus("DRAFT");
-        if (register.getSourceVersion() == null) register.setSourceVersion(1);
+    public Result<Long> add(@RequestBody ReceivableUpsertRequest request) {
+        validateEditable(request, false);
+        ReceivableRegister register = new ReceivableRegister();
+        String manualKey = UUID.randomUUID().toString().replace("-", "");
+        register.setInternalCode("RR-M-" + manualKey);
+        register.setBusinessKey(ImportFileHasher.sha256(("manual|" + manualKey)
+                .getBytes(StandardCharsets.UTF_8)));
+        register.setStatus("DRAFT");
+        register.setSourceVersion(1);
+        register.setChargeArea(BigDecimal.ZERO);
+        register.setActualArea(BigDecimal.ZERO);
+        register.setSharedArea(BigDecimal.ZERO);
+        register.setContractRentTotal(BigDecimal.ZERO);
+        register.setRentDeposit(BigDecimal.ZERO);
+        register.setPropertyDeposit(BigDecimal.ZERO);
+        copyEditable(request, register);
         registerMapper.insert(register);
         return Result.ok(register.getId());
     }
@@ -129,8 +142,17 @@ public class ReceivableController {
     @PutMapping
     @PreAuthorize("hasAuthority('finance:receivable:edit')")
     @OperationLog(module = "应收明细", action = "修改")
-    public Result<Void> update(@RequestBody ReceivableRegister register) {
-        registerMapper.updateById(register);
+    public Result<Void> update(@RequestBody ReceivableUpsertRequest request) {
+        validateEditable(request, true);
+        ReceivableRegister register = registerMapper.selectById(request.id());
+        if (register == null) throw new BizException("应收登记表不存在");
+        if (!List.of("DRAFT", "PENDING_REVIEW").contains(register.getStatus())) {
+            throw new BizException("已确认或已生效的应收登记表不能通过普通编辑修改");
+        }
+        copyEditable(request, register);
+        if (registerMapper.updateById(register) != 1) {
+            throw new BizException("应收登记表已被修改，请刷新后重试");
+        }
         return Result.ok();
     }
 
@@ -141,6 +163,10 @@ public class ReceivableController {
         Long bills = billMapper.selectCount(new LambdaQueryWrapper<Bill>()
                 .eq(Bill::getReceivableRegisterId, id));
         if (bills != null && bills > 0) throw new BizException("已生成账单的应收登记表不能删除");
+        ruleMapper.delete(new LambdaQueryWrapper<ReceivableRule>()
+                .eq(ReceivableRule::getRegisterId, id));
+        depositMapper.delete(new LambdaQueryWrapper<DepositLedger>()
+                .eq(DepositLedger::getRegisterId, id));
         registerMapper.deleteById(id);
         return Result.ok();
     }
@@ -210,6 +236,40 @@ public class ReceivableController {
     private static String username() {
         var auth = SecurityContextHolder.getContext().getAuthentication();
         return auth == null ? "system" : auth.getName();
+    }
+
+    private static void validateEditable(ReceivableUpsertRequest request, boolean requireId) {
+        if (request == null || (requireId && request.id() == null)) {
+            throw new BizException("应收登记参数不完整");
+        }
+        if (!StringUtils.hasText(request.tenantNameRaw()) || !StringUtils.hasText(request.spaceNameRaw())) {
+            throw new BizException("租户和楼层/空间不能为空");
+        }
+        BigDecimal rent = zero(request.monthlyRent());
+        BigDecimal property = zero(request.monthlyProperty());
+        if (rent.signum() < 0 || property.signum() < 0 || zero(request.monthlyTotal()).signum() < 0) {
+            throw new BizException("月度金额不能为负数");
+        }
+        if (rent.add(property).compareTo(zero(request.monthlyTotal())) != 0) {
+            throw new BizException("月合计必须等于月租金与月物业费之和");
+        }
+    }
+
+    private static void copyEditable(ReceivableUpsertRequest request, ReceivableRegister target) {
+        target.setAgreementNoRaw(request.agreementNoRaw());
+        target.setTenantNameRaw(request.tenantNameRaw().trim());
+        target.setSpaceNameRaw(request.spaceNameRaw().trim());
+        target.setMonthlyRent(zero(request.monthlyRent()));
+        target.setMonthlyProperty(zero(request.monthlyProperty()));
+        target.setMonthlyTotal(zero(request.monthlyTotal()));
+        target.setTenantRefId(request.tenantRefId());
+        target.setSpaceId(request.spaceId());
+        target.setRoomId(request.roomId());
+        target.setContractId(request.contractId());
+    }
+
+    private static BigDecimal zero(BigDecimal value) {
+        return value == null ? BigDecimal.ZERO : value;
     }
 
     public record AccountReveal(Long accountId, String accountNo) {}

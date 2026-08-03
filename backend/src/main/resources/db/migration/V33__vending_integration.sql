@@ -14,7 +14,8 @@ CREATE TABLE ops_vending_machine (
     tenant_id BIGINT NOT NULL DEFAULT 1,
     create_by VARCHAR(32), create_time DATETIME, update_by VARCHAR(32), update_time DATETIME,
     version INT NOT NULL DEFAULT 1, deleted TINYINT NOT NULL DEFAULT 0,
-    UNIQUE KEY uk_vending_machine (tenant_id, vendor_machine_id, deleted),
+    active_unique_key TINYINT GENERATED ALWAYS AS (IF(deleted = 0, 1, NULL)) STORED,
+    UNIQUE KEY uk_vending_machine (tenant_id, vendor_machine_id, active_unique_key),
     KEY idx_vending_machine_batch (source_batch_id),
     KEY idx_vending_machine_status (running_status)
 ) COMMENT '自动售货机本地副本';
@@ -37,7 +38,8 @@ CREATE TABLE ops_vending_sale (
     tenant_id BIGINT NOT NULL DEFAULT 1,
     create_by VARCHAR(32), create_time DATETIME, update_by VARCHAR(32), update_time DATETIME,
     version INT NOT NULL DEFAULT 1, deleted TINYINT NOT NULL DEFAULT 0,
-    UNIQUE KEY uk_vending_sale (tenant_id, vendor_order_id, line_no, deleted),
+    active_unique_key TINYINT GENERATED ALWAYS AS (IF(deleted = 0, 1, NULL)) STORED,
+    UNIQUE KEY uk_vending_sale (tenant_id, vendor_order_id, line_no, active_unique_key),
     KEY idx_vending_sale_batch (source_batch_id),
     KEY idx_vending_sale_time (payment_time),
     KEY idx_vending_sale_machine (vendor_machine_id)
@@ -56,7 +58,8 @@ CREATE TABLE ops_vending_restock (
     tenant_id BIGINT NOT NULL DEFAULT 1,
     create_by VARCHAR(32), create_time DATETIME, update_by VARCHAR(32), update_time DATETIME,
     version INT NOT NULL DEFAULT 1, deleted TINYINT NOT NULL DEFAULT 0,
-    UNIQUE KEY uk_vending_restock (tenant_id, vendor_restock_id, deleted),
+    active_unique_key TINYINT GENERATED ALWAYS AS (IF(deleted = 0, 1, NULL)) STORED,
+    UNIQUE KEY uk_vending_restock (tenant_id, vendor_restock_id, active_unique_key),
     KEY idx_vending_restock_batch (source_batch_id),
     KEY idx_vending_restock_time (restock_time)
 ) COMMENT '自动售货机补货记录';
@@ -74,7 +77,8 @@ CREATE TABLE ops_vending_fault (
     tenant_id BIGINT NOT NULL DEFAULT 1,
     create_by VARCHAR(32), create_time DATETIME, update_by VARCHAR(32), update_time DATETIME,
     version INT NOT NULL DEFAULT 1, deleted TINYINT NOT NULL DEFAULT 0,
-    UNIQUE KEY uk_vending_fault (tenant_id, vendor_fault_id, deleted),
+    active_unique_key TINYINT GENERATED ALWAYS AS (IF(deleted = 0, 1, NULL)) STORED,
+    UNIQUE KEY uk_vending_fault (tenant_id, vendor_fault_id, active_unique_key),
     KEY idx_vending_fault_batch (source_batch_id),
     KEY idx_vending_fault_status (fault_status)
 ) COMMENT '自动售货机故障记录';
@@ -93,7 +97,8 @@ CREATE TABLE ops_vending_reconciliation (
     tenant_id BIGINT NOT NULL DEFAULT 1,
     create_by VARCHAR(32), create_time DATETIME, update_by VARCHAR(32), update_time DATETIME,
     version INT NOT NULL DEFAULT 1, deleted TINYINT NOT NULL DEFAULT 0,
-    UNIQUE KEY uk_vending_reconciliation (tenant_id, vendor_settlement_id, deleted),
+    active_unique_key TINYINT GENERATED ALWAYS AS (IF(deleted = 0, 1, NULL)) STORED,
+    UNIQUE KEY uk_vending_reconciliation (tenant_id, vendor_settlement_id, active_unique_key),
     KEY idx_vending_reconciliation_batch (source_batch_id),
     KEY idx_vending_reconciliation_period (period_start, period_end)
 ) COMMENT '自动售货机对账记录';

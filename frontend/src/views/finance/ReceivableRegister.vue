@@ -58,7 +58,7 @@
       <el-form :model="editor.form" label-width="120px">
         <el-row :gutter="16">
           <el-col :span="12"><el-form-item label="协议编号"><el-input v-model="editor.form.agreementNoRaw" /></el-form-item></el-col>
-          <el-col :span="12"><el-form-item label="状态"><el-select v-model="editor.form.status"><el-option label="草稿" value="DRAFT" /><el-option label="已确认" value="CONFIRMED" /></el-select></el-form-item></el-col>
+          <el-col :span="12"><el-form-item label="状态"><el-input model-value="草稿（由系统控制）" disabled /></el-form-item></el-col>
           <el-col :span="12"><el-form-item label="租户"><el-input v-model="editor.form.tenantNameRaw" /></el-form-item></el-col>
           <el-col :span="12"><el-form-item label="楼层/空间"><el-input v-model="editor.form.spaceNameRaw" /></el-form-item></el-col>
           <el-col :span="8"><el-form-item label="月租金"><el-input-number v-model="editor.form.monthlyRent" :precision="2" /></el-form-item></el-col>
@@ -101,7 +101,7 @@ async function load() {
 }
 function reset() { Object.assign(query, { pageNo: 1, tenantName: '', spaceName: '', agreementNo: '', status: '' }); load() }
 function openDetail(row) { detailId.value = row.id; detailVisible.value = true }
-function openEditor(row) { editor.form = row ? { ...row } : { status: 'DRAFT', monthlyRent: 0, monthlyProperty: 0, monthlyTotal: 0 }; editor.visible = true }
+function openEditor(row) { editor.form = row ? { ...row } : { monthlyRent: 0, monthlyProperty: 0, monthlyTotal: 0 }; editor.visible = true }
 async function saveEditor() { editor.form.id ? await receivableApi.update(editor.form) : await receivableApi.add(editor.form); editor.visible = false; ElMessage.success('保存成功'); load() }
 async function generate(row) { await ElMessageBox.confirm('将按已确认规则生成分账账单，是否继续？'); const result = await receivableApi.generate(row.id); ElMessage.success(`已生成 ${result?.inserted || 0} 条，跳过 ${result?.skipped || 0} 条`) }
 async function remove(row) { await receivableApi.remove(row.id); ElMessage.success('删除成功'); load() }

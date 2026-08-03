@@ -21,6 +21,7 @@ class V33MigrationContractTest {
                     "CREATE TABLE ops_vending_restock",
                     "CREATE TABLE ops_vending_fault",
                     "CREATE TABLE ops_vending_reconciliation",
+                    "active_unique_key",
                     "自动售货机",
                     "/app/vending",
                     "vending:query",

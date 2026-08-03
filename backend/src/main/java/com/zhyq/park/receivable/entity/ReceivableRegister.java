@@ -13,6 +13,7 @@ import java.time.LocalDate;
 @TableName("fin_receivable_register")
 public class ReceivableRegister extends BaseEntity {
     private String internalCode;
+    private String businessKey;
     private Integer seqNo;
     private String agreementNoRaw;
     private String tenantNameRaw;

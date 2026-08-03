@@ -29,6 +29,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.ArgumentCaptor;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
@@ -63,6 +64,7 @@ class ReceivableImportServiceTest {
     @Mock private BillMapper billMapper;
 
     private final List<ImportRow> storedRows = new ArrayList<>();
+    private final List<ReceivableRule> storedRules = new ArrayList<>();
     private ImportBatch storedBatch;
     private ReceivableImportService service;
 
@@ -73,8 +75,7 @@ class ReceivableImportServiceTest {
                 Base64.getEncoder().encodeToString(new byte[32]));
         service = new ReceivableImportService(
                 new ReceivableWorkbookParser(), new ReceivableRuleParser(), batchService,
-                batchMapper, rowMapper, fileStorageService, fileMapper,
-                new ObjectMapper().findAndRegisterModules(), registerMapper, ruleMapper,
+                batchMapper, rowMapper, new ObjectMapper().findAndRegisterModules(), registerMapper, ruleMapper,
                 depositMapper, accountMapper, billMapper, encryption);
 
         when(batchMapper.selectCount(any())).thenReturn(0L);
@@ -111,7 +112,10 @@ class ReceivableImportServiceTest {
             ((ReceivableRegister) invocation.getArgument(0)).setId(registerIds.getAndIncrement());
             return 1;
         });
-        when(ruleMapper.insert(any(ReceivableRule.class))).thenReturn(1);
+        when(ruleMapper.insert(any(ReceivableRule.class))).thenAnswer(invocation -> {
+            storedRules.add(invocation.getArgument(0));
+            return 1;
+        });
         when(depositMapper.insert(any(DepositLedger.class))).thenReturn(1);
         when(accountMapper.selectOne(any())).thenReturn(null);
         AtomicLong accountIds = new AtomicLong(2000);
@@ -130,6 +134,9 @@ class ReceivableImportServiceTest {
         assertEquals(10, storedRows.size()); // 9 business rows + audited totals row
         assertTrue(storedRows.get(0).getRawJson().contains("****"));
         assertTrue(!storedRows.get(0).getRawJson().contains("622200000001"));
+        assertEquals(null, storedBatch.getFileId(), "敏感源工作簿不得通过通用文件服务落盘");
+        verify(fileStorageService, never()).store(any());
+        verify(fileMapper, never()).insert(any(SysFile.class));
         verify(registerMapper, never()).insert(any(ReceivableRegister.class));
         assertThrows(BizException.class, () -> service.confirm(preview.batchId(), "admin"));
     }
@@ -149,6 +156,11 @@ class ReceivableImportServiceTest {
         verify(registerMapper, times(9)).insert(any(ReceivableRegister.class));
         verify(depositMapper, times(18)).insert(any(DepositLedger.class));
         verify(accountMapper, times(2)).insert(any(CollectionAccount.class));
+        assertTrue(storedRules.stream().anyMatch(rule -> "WAIVER".equals(rule.getRuleType())));
+        assertTrue(storedRules.stream().anyMatch(rule -> "DISCOUNT".equals(rule.getRuleType())
+                && new java.math.BigDecimal("50").compareTo(rule.getDiscountRate()) == 0));
+        assertTrue(storedRules.stream().anyMatch(rule -> "RECURRING_WAIVER".equals(rule.getRuleType())));
+        assertTrue(storedRules.stream().noneMatch(rule -> "SOURCE_CONDITION".equals(rule.getRuleType())));
     }
 
     @Test
@@ -162,6 +174,40 @@ class ReceivableImportServiceTest {
         when(billMapper.selectCount(any())).thenReturn(1L);
 
         assertThrows(BizException.class, () -> service.rollback(preview.batchId(), "admin"));
+    }
+
+    @Test
+    void correctedWorkbookUpdatesStableRegisterInsteadOfDuplicatingIt() throws Exception {
+        ReceivableImportPreview preview = preview();
+        for (int i = 0; i < preview.rows().size(); i++) {
+            service.bindRow(preview.batchId(), new ReceivableBindRequest(
+                    preview.rows().get(i).rowId(), 300L + i, 400L + i, null, 500L + i));
+        }
+        ReceivableRegister existing = new ReceivableRegister();
+        existing.setId(77L);
+        existing.setTenantId(1L);
+        existing.setInternalCode("RR-STABLE");
+        existing.setStatus("CONFIRMED");
+        existing.setSourceVersion(3);
+        existing.setBusinessKey(storedRows.get(0).getRowFingerprint());
+        when(registerMapper.selectOne(any())).thenReturn(existing, null, null, null, null, null, null, null, null);
+        when(registerMapper.updateById(any(ReceivableRegister.class))).thenReturn(1);
+        when(ruleMapper.selectList(any())).thenReturn(List.of());
+        when(depositMapper.selectList(any())).thenReturn(List.of());
+
+        service.confirm(preview.batchId(), "admin");
+
+        verify(registerMapper, times(8)).insert(any(ReceivableRegister.class));
+        verify(registerMapper).updateById(any(ReceivableRegister.class));
+        assertEquals(4, existing.getSourceVersion());
+        assertEquals(preview.batchId(), existing.getSourceBatchId());
+
+        when(registerMapper.selectById(77L)).thenReturn(existing);
+        service.rollback(preview.batchId(), "admin");
+        ArgumentCaptor<ReceivableRegister> restored = ArgumentCaptor.forClass(ReceivableRegister.class);
+        verify(registerMapper, times(2)).updateById(restored.capture());
+        assertEquals(3, restored.getAllValues().get(1).getSourceVersion());
+        assertEquals("RR-STABLE", restored.getAllValues().get(1).getInternalCode());
     }
 
     private ReceivableImportPreview preview() throws Exception {
