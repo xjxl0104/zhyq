@@ -33,8 +33,8 @@
     <div class="table-card">
       <el-table :data="list" v-loading="loading" border stripe height="calc(100vh - 300px)" @row-dblclick="openDetail">
         <el-table-column v-for="column in receivableColumns" :key="column.prop"
-          :prop="column.prop" :label="column.label" :width="column.width"
-          :fixed="column.fixed" :align="column.align" show-overflow-tooltip>
+          :prop="column.prop" :label="column.label" :min-width="column.minWidth"
+          :fixed="column.fixed" :align="column.align" resizable show-overflow-tooltip>
           <template #default="{ row }">{{ formatReceivableCell(row, column) }}</template>
         </el-table-column>
         <el-table-column label="状态" width="100" fixed="right">
