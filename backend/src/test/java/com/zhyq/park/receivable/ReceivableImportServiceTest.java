@@ -5,6 +5,7 @@ import com.zhyq.park.common.exception.BizException;
 import com.zhyq.park.file.entity.SysFile;
 import com.zhyq.park.file.mapper.SysFileMapper;
 import com.zhyq.park.file.service.FileStorageService;
+import com.zhyq.park.finance.entity.Bill;
 import com.zhyq.park.finance.mapper.BillMapper;
 import com.zhyq.park.importing.entity.ImportBatch;
 import com.zhyq.park.importing.entity.ImportRow;
@@ -176,6 +177,26 @@ class ReceivableImportServiceTest {
                 && new java.math.BigDecimal("60000").compareTo(rule.getFixedAmount()) == 0));
         assertTrue(storedRules.stream().noneMatch(rule -> "WAIVER".equals(rule.getRuleType())
                 && rule.getRawText() != null && rule.getRawText().contains("抵扣")));
+    }
+
+    @Test
+    void confirmWithNullContractRegistersButGeneratesNoBillDrivingRulesOrDeposits() throws Exception {
+        ReceivableImportPreview preview = preview();
+        // 全部行绑定租户+房间但合同留空(contractId=null)
+        for (int i = 0; i < preview.rows().size(); i++) {
+            service.bindRow(preview.batchId(), new ReceivableBindRequest(
+                    preview.rows().get(i).rowId(), 300L + i, 400L + i, null, null));
+        }
+
+        int imported = service.confirm(preview.batchId(), "admin");
+
+        // 登记照常入库
+        assertEquals(9, imported);
+        verify(registerMapper, times(9)).insert(any(ReceivableRegister.class));
+        // 合同为空 → 不落规则/保证金,后续无法生成任何账单(账单由这些规则/保证金驱动)
+        assertTrue(storedRules.isEmpty(), "合同为空的登记不应产生任何计费规则");
+        verify(depositMapper, never()).insert(any(DepositLedger.class));
+        verify(billMapper, never()).insert(any(Bill.class));
     }
 
     @Test

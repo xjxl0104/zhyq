@@ -14,6 +14,7 @@ import com.zhyq.park.receivable.service.FieldEncryptionService;
 import com.zhyq.park.receivable.service.ReceivableExportService;
 import com.zhyq.park.receivable.service.ReceivableImportService;
 import com.zhyq.park.receivable.service.ReceivablePlanService;
+import com.zhyq.park.receivable.service.ReceivableProvisionService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -39,7 +40,8 @@ class ReceivableControllerMutationTest {
     void setUp() {
         controller = new ReceivableController(registers, rules, deposits, bills,
                 mock(CollectionAccountMapper.class), mock(ReceivableImportService.class),
-                mock(ReceivablePlanService.class), mock(ReceivableExportService.class),
+                mock(ReceivablePlanService.class), mock(ReceivableProvisionService.class),
+                mock(ReceivableExportService.class),
                 mock(FieldEncryptionService.class), mock(ImportBatchMapper.class),
                 mock(ImportRowMapper.class));
         when(registers.insert(any(ReceivableRegister.class))).thenAnswer(invocation -> {

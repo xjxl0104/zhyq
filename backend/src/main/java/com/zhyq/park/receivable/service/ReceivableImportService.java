@@ -214,8 +214,12 @@ public class ReceivableImportService {
                         .eq(DepositLedger::getRegisterId, register.getId()));
                 importRow.setNormalizedJson(write(normalized));
             }
-            persistRules(register, rowData);
-            persistDeposits(register, rowData);
+            // 合同为空:仅登记入库,不落规则/保证金 → 后续不生成任何账单(账单由这些规则/保证金驱动)。
+            // 合同非空:保持既有账单生成逻辑不变。
+            if (contractId != null) {
+                persistRules(register, rowData);
+                persistDeposits(register, rowData);
+            }
 
             importRow.setStatus(ROW_IMPORTED);
             importRow.setTargetType("RECEIVABLE_REGISTER");

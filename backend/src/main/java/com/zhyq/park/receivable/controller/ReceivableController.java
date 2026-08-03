@@ -19,6 +19,8 @@ import com.zhyq.park.receivable.dto.ReceivableBindRequest;
 import com.zhyq.park.receivable.dto.ReceivableDetail;
 import com.zhyq.park.receivable.dto.ReceivableGenerateResult;
 import com.zhyq.park.receivable.dto.ReceivableImportPreview;
+import com.zhyq.park.receivable.dto.ReceivableProvisionPreview;
+import com.zhyq.park.receivable.dto.ReceivableProvisionRequest;
 import com.zhyq.park.receivable.dto.ReceivableUpsertRequest;
 import com.zhyq.park.receivable.entity.CollectionAccount;
 import com.zhyq.park.receivable.entity.DepositLedger;
@@ -32,6 +34,7 @@ import com.zhyq.park.receivable.service.FieldEncryptionService;
 import com.zhyq.park.receivable.service.ReceivableExportService;
 import com.zhyq.park.receivable.service.ReceivableImportService;
 import com.zhyq.park.receivable.service.ReceivablePlanService;
+import com.zhyq.park.receivable.service.ReceivableProvisionService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
@@ -71,6 +74,7 @@ public class ReceivableController {
     private final CollectionAccountMapper accountMapper;
     private final ReceivableImportService importService;
     private final ReceivablePlanService planService;
+    private final ReceivableProvisionService provisionService;
     private final ReceivableExportService exportService;
     private final FieldEncryptionService encryptionService;
     private final ImportBatchMapper batchMapper;
@@ -201,6 +205,22 @@ public class ReceivableController {
                              @RequestBody ReceivableBindRequest body) {
         importService.bindRow(batchId, new ReceivableBindRequest(
                 rowId, body.tenantRefId(), body.spaceId(), body.roomId(), body.contractId()));
+        return Result.ok();
+    }
+
+    @GetMapping("/import/{batchId}/provision/preview")
+    @PreAuthorize("hasAuthority('finance:receivable:import')")
+    @OperationLog(module = "应收明细", action = "补建主数据预览", saveParams = false)
+    public Result<ReceivableProvisionPreview> provisionPreview(@PathVariable Long batchId) {
+        return Result.ok(provisionService.preview(batchId));
+    }
+
+    @PostMapping("/import/{batchId}/provision")
+    @PreAuthorize("hasAuthority('finance:receivable:import')")
+    @OperationLog(module = "应收明细", action = "补建主数据")
+    public Result<Void> provision(@PathVariable Long batchId,
+                                  @RequestBody ReceivableProvisionRequest body) {
+        provisionService.provision(batchId, body);
         return Result.ok();
     }
 

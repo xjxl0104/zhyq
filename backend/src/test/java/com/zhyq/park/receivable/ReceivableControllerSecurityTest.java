@@ -13,6 +13,7 @@ import com.zhyq.park.receivable.service.FieldEncryptionService;
 import com.zhyq.park.receivable.service.ReceivableExportService;
 import com.zhyq.park.receivable.service.ReceivableImportService;
 import com.zhyq.park.receivable.service.ReceivablePlanService;
+import com.zhyq.park.receivable.service.ReceivableProvisionService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -45,6 +46,7 @@ class ReceivableControllerSecurityTest {
         @Bean CollectionAccountMapper accountMapper() { return mock(CollectionAccountMapper.class); }
         @Bean ReceivableImportService importService() { return mock(ReceivableImportService.class); }
         @Bean ReceivablePlanService planService() { return mock(ReceivablePlanService.class); }
+        @Bean ReceivableProvisionService provisionService() { return mock(ReceivableProvisionService.class); }
         @Bean ReceivableExportService exportService() { return mock(ReceivableExportService.class); }
         @Bean FieldEncryptionService encryptionService() { return mock(FieldEncryptionService.class); }
         @Bean ImportBatchMapper batchMapper() { return mock(ImportBatchMapper.class); }
@@ -53,10 +55,11 @@ class ReceivableControllerSecurityTest {
                 ReceivableRegisterMapper registers, ReceivableRuleMapper rules,
                 DepositLedgerMapper deposits, BillMapper bills, CollectionAccountMapper accounts,
                 ReceivableImportService imports, ReceivablePlanService plans,
+                ReceivableProvisionService provisions,
                 ReceivableExportService exports, FieldEncryptionService encryption,
                 ImportBatchMapper batches, ImportRowMapper rows) {
             return new ReceivableController(registers, rules, deposits, bills, accounts,
-                    imports, plans, exports, encryption, batches, rows);
+                    imports, plans, provisions, exports, encryption, batches, rows);
         }
     }
 
