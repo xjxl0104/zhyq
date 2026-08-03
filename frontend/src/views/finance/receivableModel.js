@@ -46,3 +46,17 @@ export function canConfirmReceivableImport(preview) {
   if (!preview || Number(preview.invalidRows || 0) > 0 || preview.totalsReconciled === false) return false
   return !(preview.rows || []).some(row => ['INVALID', 'NEEDS_BINDING', 'PENDING_BINDING'].includes(row.status))
 }
+
+const nullablePositiveId = (value) => {
+  const number = Number(value)
+  return Number.isInteger(number) && number > 0 ? number : null
+}
+
+export function buildReceivableBinding(row) {
+  return {
+    tenantRefId: nullablePositiveId(row?.tenantRefId),
+    spaceId: nullablePositiveId(row?.spaceId),
+    roomId: nullablePositiveId(row?.roomId),
+    contractId: nullablePositiveId(row?.contractId)
+  }
+}

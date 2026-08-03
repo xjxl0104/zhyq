@@ -10,6 +10,7 @@ import com.zhyq.park.common.result.Result;
 import com.zhyq.park.finance.entity.Bill;
 import com.zhyq.park.finance.mapper.BillMapper;
 import com.zhyq.park.importing.entity.ImportBatch;
+import com.zhyq.park.importing.dto.ImportBatchSummary;
 import com.zhyq.park.importing.entity.ImportRow;
 import com.zhyq.park.importing.mapper.ImportBatchMapper;
 import com.zhyq.park.importing.mapper.ImportRowMapper;
@@ -74,6 +75,20 @@ public class ReceivableController {
     private final FieldEncryptionService encryptionService;
     private final ImportBatchMapper batchMapper;
     private final ImportRowMapper importRowMapper;
+
+    @GetMapping("/capabilities")
+    public Result<ReceivableCapabilities> capabilities() {
+        var authentication = SecurityContextHolder.getContext().getAuthentication();
+        return Result.ok(new ReceivableCapabilities(
+                hasAuthority(authentication, "finance:receivable:query"),
+                hasAuthority(authentication, "finance:receivable:add"),
+                hasAuthority(authentication, "finance:receivable:edit"),
+                hasAuthority(authentication, "finance:receivable:import"),
+                hasAuthority(authentication, "finance:receivable:confirm"),
+                hasAuthority(authentication, "finance:receivable:generate"),
+                hasAuthority(authentication, "finance:receivable:export"),
+                hasAuthority(authentication, "finance:receivable:delete")));
+    }
 
     @Operation(summary = "分页查询应收明细")
     @GetMapping("/page")
@@ -203,6 +218,17 @@ public class ReceivableController {
         return Result.ok();
     }
 
+    @GetMapping("/import/batches")
+    @PreAuthorize("hasAuthority('finance:receivable:confirm')")
+    public Result<List<ImportBatchSummary>> batches() {
+        return Result.ok(batchMapper.selectList(new LambdaQueryWrapper<ImportBatch>()
+                        .eq(ImportBatch::getBizType, "rent_receivable")
+                        .orderByDesc(ImportBatch::getCreateTime)
+                        .orderByDesc(ImportBatch::getId)
+                        .last("LIMIT 20"))
+                .stream().map(ImportBatchSummary::from).toList());
+    }
+
     @PostMapping("/{id}/generate")
     @PreAuthorize("hasAuthority('finance:receivable:generate')")
     @OperationLog(module = "应收明细", action = "生成账单")
@@ -236,6 +262,12 @@ public class ReceivableController {
     private static String username() {
         var auth = SecurityContextHolder.getContext().getAuthentication();
         return auth == null ? "system" : auth.getName();
+    }
+
+    private static boolean hasAuthority(org.springframework.security.core.Authentication authentication,
+                                        String authority) {
+        return authentication != null && authentication.getAuthorities().stream()
+                .anyMatch(item -> authority.equals(item.getAuthority()));
     }
 
     private static void validateEditable(ReceivableUpsertRequest request, boolean requireId) {
@@ -273,4 +305,7 @@ public class ReceivableController {
     }
 
     public record AccountReveal(Long accountId, String accountNo) {}
+    public record ReceivableCapabilities(boolean query, boolean add, boolean edit,
+                                         boolean importData, boolean confirm, boolean generate,
+                                         boolean exportData, boolean deleteData) {}
 }

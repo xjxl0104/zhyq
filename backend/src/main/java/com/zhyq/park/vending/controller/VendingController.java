@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.zhyq.park.common.audit.OperationLog;
 import com.zhyq.park.common.result.PageResult;
 import com.zhyq.park.common.result.Result;
+import com.zhyq.park.importing.dto.ImportBatchSummary;
 import com.zhyq.park.vending.dto.VendingExcludeRowsRequest;
 import com.zhyq.park.vending.dto.VendingImportPreview;
 import com.zhyq.park.vending.entity.VendingFault;
@@ -45,6 +46,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.Map;
+import java.util.List;
 
 @Tag(name = "园区运营-自动售货机")
 @RestController
@@ -80,6 +82,22 @@ public class VendingController {
     @OperationLog(module = "自动售货机", action = "读取厂商入口", saveParams = false)
     public Result<ExternalConfig> config() {
         return Result.ok(new ExternalConfig(externalUrl, false, false));
+    }
+
+    @GetMapping("/capabilities")
+    public Result<VendingCapabilities> capabilities() {
+        var authentication = SecurityContextHolder.getContext().getAuthentication();
+        return Result.ok(new VendingCapabilities(
+                hasAuthority(authentication, "vending:query"),
+                hasAuthority(authentication, "vending:import"),
+                hasAuthority(authentication, "vending:open"),
+                hasAuthority(authentication, "vending:config")));
+    }
+
+    @GetMapping("/import/batches")
+    @PreAuthorize("hasAuthority('vending:import')")
+    public Result<List<ImportBatchSummary>> batches() {
+        return Result.ok(importService.recentBatches());
     }
 
     @PostMapping("/open-audit")
@@ -216,7 +234,14 @@ public class VendingController {
         return authentication == null ? "system" : authentication.getName();
     }
 
+    private static boolean hasAuthority(org.springframework.security.core.Authentication authentication,
+                                        String authority) {
+        return authentication != null && authentication.getAuthorities().stream()
+                .anyMatch(item -> authority.equals(item.getAuthority()));
+    }
+
     public record ExternalConfig(String externalUrl, boolean apiAvailable, boolean nativeFormatSupported) {}
+    public record VendingCapabilities(boolean query, boolean importData, boolean open, boolean config) {}
     public record ConfigurationStatus(boolean secureExternalUrl, boolean apiAvailable, boolean nativeFormatSupported) {}
     public record VendingStats(long machineCount, long onlineCount, long openFaultCount, BigDecimal todaySales) {}
 }

@@ -13,8 +13,8 @@
       <el-table :data="preview.rows" border height="390">
         <el-table-column prop="sourceRow" label="Excel行" width="80" /><el-table-column prop="tenantName" label="租户" min-width="150" />
         <el-table-column prop="spaceName" label="空间" min-width="130" /><el-table-column prop="rentAccountMasked" label="租金账户" min-width="200" show-overflow-tooltip />
-        <el-table-column label="主数据绑定" min-width="300">
-          <template #default="{ row }"><div class="binding"><el-input v-model="row.tenantRefId" placeholder="租户ID" /><el-input v-model="row.spaceId" placeholder="空间ID" /><el-button type="primary" :disabled="!positiveId(row.tenantRefId) || !positiveId(row.spaceId)" @click="bind(row)">绑定</el-button></div></template>
+        <el-table-column label="主数据绑定" min-width="560">
+          <template #default="{ row }"><div class="binding"><el-input v-model="row.tenantRefId" placeholder="租户ID" /><el-input v-model="row.spaceId" placeholder="空间ID（选填）" /><el-input v-model="row.roomId" placeholder="房间ID（选填）" /><el-input v-model="row.contractId" placeholder="合同ID" /><el-button type="primary" :disabled="!canBind(row)" @click="bind(row)">绑定</el-button></div></template>
         </el-table-column>
         <el-table-column prop="errorMessage" label="状态/错误" min-width="180"><template #default="{ row }"><el-tag :type="row.status === 'VALID' ? 'success' : 'warning'">{{ row.status }}</el-tag> {{ row.errorMessage }}</template></el-table-column>
       </el-table>
@@ -31,7 +31,7 @@
 import { computed, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { receivableApi } from '@/api/receivable'
-import { canConfirmReceivableImport } from '../receivableModel'
+import { buildReceivableBinding, canConfirmReceivableImport } from '../receivableModel'
 const props = defineProps({ modelValue: Boolean }); const emit = defineEmits(['update:modelValue', 'confirmed'])
 const stage = ref(0); const file = ref(null); const preview = ref(null); const loading = ref(false)
 const totalCards = computed(() => {
@@ -42,12 +42,13 @@ function onFile(uploadFile) { file.value = uploadFile.raw }
 async function uploadPreview() { loading.value = true; try { preview.value = await receivableApi.preview(file.value); preview.value.totalsReconciled = true; stage.value = 1 } finally { loading.value = false } }
 async function bind(row) {
   const hasStructuralError = row.status === 'INVALID'
-  await receivableApi.bind(preview.value.batchId, row.rowId, { tenantRefId: Number(row.tenantRefId), spaceId: Number(row.spaceId) })
+  await receivableApi.bind(preview.value.batchId, row.rowId, buildReceivableBinding(row))
   if (!hasStructuralError) { row.status = 'VALID'; row.errorMessage = '' }
   preview.value.invalidRows = preview.value.rows.filter(item => item.status !== 'VALID').length
   ElMessage.success('绑定成功')
 }
 function positiveId(value) { return Number.isInteger(Number(value)) && Number(value) > 0 }
+function canBind(row) { return positiveId(row.tenantRefId) && (positiveId(row.spaceId) || positiveId(row.roomId)) && positiveId(row.contractId) }
 async function confirm() { loading.value = true; try { const count = await receivableApi.confirm(preview.value.batchId); stage.value = 2; ElMessage.success(`成功导入 ${count} 条`); emit('confirmed'); close() } finally { loading.value = false } }
 function close() { emit('update:modelValue', false); stage.value = 0; file.value = null; preview.value = null }
 </script>

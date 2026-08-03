@@ -6,10 +6,15 @@
         <p>以园区租金及物业管理费基础资料为权威口径</p>
       </div>
       <div class="toolbar">
-        <el-button @click="downloadExport">导出 Excel</el-button>
-        <el-button type="primary" @click="importVisible = true">导入工作簿</el-button>
-        <el-button type="success" @click="openEditor()">新增</el-button>
+        <el-button v-if="capabilities.exportData" @click="downloadExport">导出 Excel</el-button>
+        <el-button v-if="capabilities.importData" type="primary" @click="importVisible = true">导入工作簿</el-button>
+        <el-button v-if="capabilities.add" type="success" @click="openEditor()">新增</el-button>
       </div>
+    </div>
+
+    <div v-if="capabilities.confirm && lastCompletedBatch" class="batch-bar">
+      <span>最近确认导入：批次 #{{ lastCompletedBatch.id }}，{{ lastCompletedBatch.importedRows || 0 }} 行</span>
+      <el-button link type="danger" @click="rollbackLastBatch">撤销该批次</el-button>
     </div>
 
     <el-form :inline="true" :model="query" class="filter-bar">
@@ -38,9 +43,9 @@
         <el-table-column label="操作" width="250" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click="openDetail(row)">详情</el-button>
-            <el-button link type="primary" @click="openEditor(row)">编辑</el-button>
-            <el-button link type="success" @click="generate(row)">生成账单</el-button>
-            <el-popconfirm title="确认删除该登记表?" @confirm="remove(row)">
+            <el-button v-if="capabilities.edit && ['DRAFT', 'PENDING_REVIEW'].includes(row.status)" link type="primary" @click="openEditor(row)">编辑</el-button>
+            <el-button v-if="capabilities.generate" link type="success" @click="generate(row)">生成账单</el-button>
+            <el-popconfirm v-if="capabilities.deleteData" title="确认删除该登记表?" @confirm="remove(row)">
               <template #reference><el-button link type="danger">删除</el-button></template>
             </el-popconfirm>
           </template>
@@ -51,7 +56,7 @@
         :page-sizes="[20, 50, 100]" @change="load" />
     </div>
 
-    <ReceivableImportDialog v-model="importVisible" @confirmed="load" />
+    <ReceivableImportDialog v-model="importVisible" @confirmed="afterImport" />
     <ReceivableDetailDrawer v-model="detailVisible" :register-id="detailId" />
 
     <el-dialog v-model="editor.visible" :title="editor.form.id ? '编辑应收登记表' : '新增应收登记表'" width="720px">
@@ -87,6 +92,8 @@ const importVisible = ref(false)
 const detailVisible = ref(false)
 const detailId = ref(null)
 const editor = reactive({ visible: false, form: {} })
+const capabilities = ref({ query: false, add: false, edit: false, importData: false, confirm: false, generate: false, exportData: false, deleteData: false })
+const lastCompletedBatch = ref(null)
 const statusMap = { DRAFT: '草稿', PENDING_REVIEW: '待核对', CONFIRMED: '已确认', ACTIVE: '已生效', TERMINATED: '已终止' }
 const statusLabel = (status) => statusMap[status] || status || '-'
 const statusType = (status) => status === 'ACTIVE' || status === 'CONFIRMED' ? 'success' : status === 'PENDING_REVIEW' ? 'warning' : 'info'
@@ -99,6 +106,18 @@ async function load() {
     total.value = data?.total || 0
   } finally { loading.value = false }
 }
+async function loadBatches() {
+  if (!capabilities.value.confirm) return
+  const batches = await receivableApi.batches()
+  lastCompletedBatch.value = (batches || []).find(batch => batch.status === 'COMPLETED') || null
+}
+function afterImport() { load(); loadBatches() }
+async function rollbackLastBatch() {
+  await ElMessageBox.confirm('仅在尚未生成账单或后续财务数据时可以撤销。是否继续？')
+  await receivableApi.rollback(lastCompletedBatch.value.id)
+  ElMessage.success('导入批次已撤销')
+  await Promise.all([load(), loadBatches()])
+}
 function reset() { Object.assign(query, { pageNo: 1, tenantName: '', spaceName: '', agreementNo: '', status: '' }); load() }
 function openDetail(row) { detailId.value = row.id; detailVisible.value = true }
 function openEditor(row) { editor.form = row ? { ...row } : { monthlyRent: 0, monthlyProperty: 0, monthlyTotal: 0 }; editor.visible = true }
@@ -110,12 +129,19 @@ async function downloadExport() {
   const url = URL.createObjectURL(response.data)
   const link = document.createElement('a'); link.href = url; link.download = '应收明细登记表.xlsx'; link.click(); URL.revokeObjectURL(url)
 }
-onMounted(load)
+onMounted(async () => {
+  capabilities.value = await receivableApi.capabilities() || capabilities.value
+  const tasks = []
+  if (capabilities.value.query) tasks.push(load())
+  if (capabilities.value.confirm) tasks.push(loadBatches())
+  await Promise.allSettled(tasks)
+})
 </script>
 
 <style scoped>
 .page-header { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:16px; }
 .page-header h2 { margin:0 0 6px; }.page-header p { margin:0; color:var(--el-text-color-secondary); }
 .toolbar { display:flex; gap:8px; }.filter-bar,.table-card { padding:16px; background:#fff; border-radius:8px; margin-bottom:12px; }
+.batch-bar { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; padding:10px 14px; border:1px solid #e1f3d8; border-radius:8px; background:#f0f9eb; color:#529b2e; }
 .pager { margin-top:16px; justify-content:flex-end; }
 </style>

@@ -9,6 +9,7 @@ const endpoints = {
 }
 
 export const vendingApi = {
+  capabilities: () => request.get('/vending/capabilities'),
   config: () => request.get('/vending/config'),
   configurationStatus: () => request.get('/vending/config/status'),
   openAudit: () => request.post('/vending/open-audit'),
@@ -22,5 +23,6 @@ export const vendingApi = {
   },
   exclude: (batchId, data) => request.put(`/vending/import/${batchId}/exclude`, data),
   confirm: (batchId) => request.post(`/vending/import/${batchId}/confirm`),
-  rollback: (batchId) => request.post(`/vending/import/${batchId}/rollback`)
+  rollback: (batchId) => request.post(`/vending/import/${batchId}/rollback`),
+  batches: () => request.get('/vending/import/batches')
 }

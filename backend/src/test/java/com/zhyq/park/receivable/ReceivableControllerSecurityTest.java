@@ -27,6 +27,8 @@ import org.springframework.test.context.junit.jupiter.SpringExtension;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -77,6 +79,10 @@ class ReceivableControllerSecurityTest {
     @WithMockUser(authorities = "finance:receivable:query")
     void exactQueryPermissionIsAllowed() {
         assertDoesNotThrow(() -> controller.get(1L));
+        var capabilities = controller.capabilities().getData();
+        assertTrue(capabilities.query());
+        assertFalse(capabilities.importData());
+        assertFalse(capabilities.confirm());
     }
 
     @Test

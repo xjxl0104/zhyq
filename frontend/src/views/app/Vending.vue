@@ -7,8 +7,8 @@
         <p>安全进入厂商系统，并在智慧园区内沉淀可审计的经营数据。</p>
       </div>
       <div class="hero-actions">
-        <el-button @click="importVisible = true">导入标准数据</el-button>
-        <el-button type="primary" @click="openVendor">打开厂商系统</el-button>
+        <el-button v-if="capabilities.importData" @click="importVisible = true">导入标准数据</el-button>
+        <el-button v-if="capabilities.open" type="primary" @click="openVendor">打开厂商系统</el-button>
       </div>
     </div>
 
@@ -17,19 +17,19 @@
       <el-alert title="仅支持智慧园区标准模板" description="厂商原生导出格式需取得真实样例并验证后才能支持。" type="warning" :closable="false" show-icon />
     </div>
 
-    <el-row :gutter="14" class="stats-row">
+    <el-row v-if="capabilities.query" :gutter="14" class="stats-row">
       <el-col :xs="12" :sm="6"><div class="stat-card"><span>机器总数</span><strong>{{ stats.machineCount || 0 }}</strong></div></el-col>
       <el-col :xs="12" :sm="6"><div class="stat-card"><span>在线机器</span><strong>{{ stats.onlineCount || 0 }}</strong></div></el-col>
       <el-col :xs="12" :sm="6"><div class="stat-card"><span>未恢复故障</span><strong>{{ stats.openFaultCount || 0 }}</strong></div></el-col>
       <el-col :xs="12" :sm="6"><div class="stat-card"><span>今日销售额</span><strong>¥{{ money(stats.todaySales) }}</strong></div></el-col>
     </el-row>
 
-    <div v-if="lastConfirmedBatchId" class="batch-bar">
+    <div v-if="capabilities.importData && lastConfirmedBatchId" class="batch-bar">
       <span>最近确认批次 #{{ lastConfirmedBatchId }} 已写入本地数据</span>
       <el-button link type="danger" @click="rollbackLastBatch">撤销该批次</el-button>
     </div>
 
-    <div class="data-card">
+    <div v-if="capabilities.query" class="data-card">
       <div class="data-title"><strong>本地经营数据</strong><span>数据来自经人工确认的标准模板</span></div>
       <el-tabs v-model="activeType" @tab-change="changeType">
         <el-tab-pane v-for="type in vendingTypes" :key="type.name" :label="type.label" :name="type.name" />
@@ -44,6 +44,7 @@
         :total="total" v-model:current-page="query.pageNo" v-model:page-size="query.pageSize"
         :page-sizes="[20, 50, 100]" @change="loadPage" />
     </div>
+    <el-alert v-else title="当前账号未分配售货机本地数据查询权限" type="info" :closable="false" show-icon />
 
     <VendingImportDialog v-model="importVisible" :initial-type="activeType" @confirmed="afterConfirmed" />
   </div>
@@ -63,6 +64,7 @@ const records = ref([])
 const total = ref(0)
 const query = reactive({ pageNo: 1, pageSize: 20 })
 const config = ref({ externalUrl: '', apiAvailable: false, nativeFormatSupported: false })
+const capabilities = ref({ query: false, importData: false, open: false, config: false })
 const stats = ref({})
 const lastConfirmedBatchId = ref(null)
 const activeDefinition = computed(() => vendingTypes.find(type => type.name === activeType.value) || vendingTypes[0])
@@ -93,6 +95,13 @@ function afterConfirmed(result) {
   lastConfirmedBatchId.value = result.batchId
   loadPage()
   vendingApi.stats().then(data => { stats.value = data || {} })
+  loadBatches()
+}
+
+async function loadBatches() {
+  if (!capabilities.value.importData) return
+  const batches = await vendingApi.batches()
+  lastConfirmedBatchId.value = (batches || []).find(batch => batch.status === 'COMPLETED')?.id || null
 }
 
 async function rollbackLastBatch() {
@@ -101,13 +110,19 @@ async function rollbackLastBatch() {
   lastConfirmedBatchId.value = null
   ElMessage.success('批次已撤销')
   loadPage()
+  loadBatches()
 }
 
 onMounted(async () => {
-  const [externalConfig, summary] = await Promise.all([vendingApi.config(), vendingApi.stats()])
-  config.value = externalConfig || config.value
-  stats.value = summary || {}
-  await loadPage()
+  capabilities.value = await vendingApi.capabilities() || capabilities.value
+  const tasks = []
+  if (capabilities.value.open) tasks.push(vendingApi.config().then(value => { config.value = value || config.value }))
+  if (capabilities.value.query) {
+    tasks.push(vendingApi.stats().then(value => { stats.value = value || {} }))
+    tasks.push(loadPage())
+  }
+  if (capabilities.value.importData) tasks.push(loadBatches())
+  await Promise.allSettled(tasks)
 })
 </script>
 

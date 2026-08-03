@@ -22,6 +22,8 @@ import org.springframework.test.context.junit.jupiter.SpringExtension;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.mockito.Mockito.mock;
 
 @ExtendWith(SpringExtension.class)
@@ -65,6 +67,10 @@ class VendingControllerSecurityTest {
     void exactQueryPermissionOnlyAllowsQueries() {
         assertDoesNotThrow(() -> controller.stats());
         assertThrows(AccessDeniedException.class, () -> controller.config());
+        var capabilities = controller.capabilities().getData();
+        assertTrue(capabilities.query());
+        assertFalse(capabilities.open());
+        assertFalse(capabilities.importData());
     }
 
     @Test

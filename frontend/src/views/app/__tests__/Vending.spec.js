@@ -13,6 +13,8 @@ import { vendingApi } from '@/api/vending'
 vi.mock('@/api/vending', () => ({
   vendingApi: {
     config: vi.fn(),
+    capabilities: vi.fn(),
+    batches: vi.fn(),
     configurationStatus: vi.fn(),
     openAudit: vi.fn(),
     stats: vi.fn(),
@@ -27,6 +29,8 @@ vi.mock('@/api/vending', () => ({
 
 describe('自动售货机整合页', () => {
   beforeEach(() => {
+    vendingApi.capabilities.mockResolvedValue({ query: true, importData: true, open: true, config: true })
+    vendingApi.batches.mockResolvedValue([])
     vendingApi.config.mockResolvedValue({
       externalUrl: 'https://fanmaiji.top/index?isFrom=login',
       apiAvailable: false,
@@ -59,5 +63,17 @@ describe('自动售货机整合页', () => {
     expect(canConfirmVendingImport({ validRows: 1, invalidRows: 1 })).toBe(false)
     expect(canConfirmVendingImport({ validRows: 0, invalidRows: 0 })).toBe(false)
     expect(canConfirmVendingImport({ validRows: 2, invalidRows: 0 })).toBe(true)
+  })
+
+  it('查询权限用户不会触发无权的厂商入口或导入请求', async () => {
+    vendingApi.capabilities.mockResolvedValue({ query: true, importData: false, open: false, config: false })
+    vendingApi.config.mockClear()
+    const wrapper = mount(Vending, { global: { plugins: [ElementPlus] } })
+    await flushPromises()
+
+    expect(vendingApi.config).not.toHaveBeenCalled()
+    expect(vendingApi.stats).toHaveBeenCalled()
+    expect(wrapper.text()).not.toContain('打开厂商系统')
+    expect(wrapper.text()).not.toContain('导入标准数据')
   })
 })

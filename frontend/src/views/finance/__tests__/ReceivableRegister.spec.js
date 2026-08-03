@@ -3,12 +3,14 @@ import ElementPlus from 'element-plus'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import ReceivableRegister from '../ReceivableRegister.vue'
-import { canConfirmReceivableImport, receivableColumns } from '../receivableModel'
+import { buildReceivableBinding, canConfirmReceivableImport, receivableColumns } from '../receivableModel'
 import { receivableApi } from '@/api/receivable'
 
 vi.mock('@/api/receivable', () => ({
   receivableApi: {
     page: vi.fn(),
+    capabilities: vi.fn(),
+    batches: vi.fn(),
     remove: vi.fn(),
     generate: vi.fn()
   }
@@ -16,6 +18,8 @@ vi.mock('@/api/receivable', () => ({
 
 describe('应收明细登记表', () => {
   beforeEach(() => {
+    receivableApi.capabilities.mockResolvedValue({ query: true, add: true, edit: true, importData: true, confirm: true, generate: true, exportData: true, deleteData: true })
+    receivableApi.batches.mockResolvedValue([])
     receivableApi.page.mockResolvedValue({
       records: [{
         id: 1,
@@ -56,5 +60,23 @@ describe('应收明细登记表', () => {
       totalsReconciled: true,
       rows: [{ status: 'VALID' }]
     })).toBe(true)
+  })
+
+  it('导入绑定会同时提交租户、空间、房间和合同主数据', () => {
+    expect(buildReceivableBinding({
+      tenantRefId: '11', spaceId: '12', roomId: '13', contractId: '14'
+    })).toEqual({ tenantRefId: 11, spaceId: 12, roomId: 13, contractId: 14 })
+    expect(buildReceivableBinding({
+      tenantRefId: '11', spaceId: '', roomId: '13', contractId: ''
+    })).toEqual({ tenantRefId: 11, spaceId: null, roomId: 13, contractId: null })
+  })
+
+  it('查询权限账号不会看到新增、导入和导出操作', async () => {
+    receivableApi.capabilities.mockResolvedValue({ query: true, add: false, edit: false, importData: false, confirm: false, generate: false, exportData: false, deleteData: false })
+    const wrapper = mount(ReceivableRegister, { global: { plugins: [ElementPlus] } })
+    await flushPromises()
+    expect(wrapper.text()).not.toContain('导入工作簿')
+    expect(wrapper.text()).not.toContain('新增')
+    expect(wrapper.text()).not.toContain('导出 Excel')
   })
 })

@@ -8,6 +8,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.zhyq.park.common.exception.BizException;
 import com.zhyq.park.importing.entity.ImportBatch;
+import com.zhyq.park.importing.dto.ImportBatchSummary;
 import com.zhyq.park.importing.entity.ImportRow;
 import com.zhyq.park.importing.mapper.ImportBatchMapper;
 import com.zhyq.park.importing.mapper.ImportRowMapper;
@@ -74,6 +75,15 @@ public class VendingImportService {
     private final VendingRestockMapper restockMapper;
     private final VendingFaultMapper faultMapper;
     private final VendingReconciliationMapper reconciliationMapper;
+
+    public List<ImportBatchSummary> recentBatches() {
+        return batchMapper.selectList(new LambdaQueryWrapper<ImportBatch>()
+                        .likeRight(ImportBatch::getBizType, "vending_")
+                        .orderByDesc(ImportBatch::getCreateTime)
+                        .orderByDesc(ImportBatch::getId)
+                        .last("LIMIT 20"))
+                .stream().map(ImportBatchSummary::from).toList();
+    }
 
     @Transactional(rollbackFor = Exception.class)
     public VendingImportPreview preview(VendingImportType type, MultipartFile file) {

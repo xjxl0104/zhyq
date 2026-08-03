@@ -1,6 +1,7 @@
 import request from '@/utils/request'
 
 export const receivableApi = {
+  capabilities: () => request.get('/finance/receivable/capabilities'),
   page: (params) => request.get('/finance/receivable/page', { params }),
   get: (id) => request.get(`/finance/receivable/${id}`),
   add: (data) => request.post('/finance/receivable', data),
@@ -15,6 +16,7 @@ export const receivableApi = {
     `/finance/receivable/import/${batchId}/rows/${rowId}/binding`, data),
   confirm: (batchId) => request.post(`/finance/receivable/import/${batchId}/confirm`),
   rollback: (batchId) => request.post(`/finance/receivable/import/${batchId}/rollback`),
+  batches: () => request.get('/finance/receivable/import/batches'),
   generate: (id) => request.post(`/finance/receivable/${id}/generate`),
   revealAccount: (id) => request.get(`/finance/receivable/accounts/${id}/reveal`),
   export: () => request.get('/finance/receivable/export', { responseType: 'blob' })

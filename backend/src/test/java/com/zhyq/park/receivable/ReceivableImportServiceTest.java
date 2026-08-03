@@ -164,6 +164,18 @@ class ReceivableImportServiceTest {
     }
 
     @Test
+    void bindingRequiresContractAsWellAsTenantAndSpaceOrRoom() throws Exception {
+        ReceivableImportPreview preview = preview();
+        Long rowId = preview.rows().get(0).rowId();
+
+        service.bindRow(preview.batchId(), new ReceivableBindRequest(rowId, 300L, 400L, null, null));
+
+        ImportRow row = storedRows.stream().filter(item -> rowId.equals(item.getId())).findFirst().orElseThrow();
+        assertEquals("NEEDS_BINDING", row.getStatus());
+        assertTrue(row.getErrorMessage().contains("合同"));
+    }
+
+    @Test
     void rollbackRejectsBatchWithGeneratedBills() throws Exception {
         ReceivableImportPreview preview = preview();
         for (int i = 0; i < preview.rows().size(); i++) {
