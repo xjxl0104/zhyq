@@ -21,6 +21,7 @@
     <el-container>
       <el-header class="navbar">
         <div class="nav-left">
+          <ProjectSwitcher @switched="onProjectSwitched" />
           <span class="crumb">{{ currentTitle }}</span>
         </div>
         <div class="actions">
@@ -48,30 +49,58 @@
       </el-header>
       <TagsView />
       <el-main>
-        <router-view v-slot="{ Component }">
+        <router-view v-if="ready" v-slot="{ Component }">
           <transition name="fade-slide" mode="out-in">
-            <keep-alive><component :is="Component" :key="route.fullPath" /></keep-alive>
+            <keep-alive v-if="alive"><component :is="Component" :key="route.fullPath" /></keep-alive>
           </transition>
         </router-view>
+        <div v-else class="layout-loading" v-loading="true" style="height: 60vh"></div>
       </el-main>
     </el-container>
   </el-container>
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, ref, onMounted, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useRoute, useRouter } from 'vue-router'
 import { menuTree } from './menu'
 import request from '@/utils/request'
 import { useThemeStore } from '@/stores/theme'
+import { useProjectStore } from '@/stores/project'
+import { useTagsStore } from '@/stores/tags'
 import TagsView from './TagsView.vue'
 import MenuItem from './MenuItem.vue'
+import ProjectSwitcher from './ProjectSwitcher.vue'
 
 const route = useRoute()
 const router = useRouter()
 const theme = useThemeStore()
+const projectStore = useProjectStore()
+const tagsStore = useTagsStore()
 const collapsed = ref(false)
+
+const ready = ref(false) // init 门闸
+const alive = ref(true)  // keep-alive 拨断开关
+
+onMounted(async () => {
+  try {
+    await projectStore.init()
+  } catch (e) {
+    // 项目列表拉取失败不应卡死整个后台;放行渲染,切换器显示"暂无项目"
+    console.error('项目初始化失败', e)
+  } finally {
+    ready.value = true
+  }
+})
+
+// 切换项目:清标签 + 拨断 keep-alive 重挂当前页
+async function onProjectSwitched() {
+  tagsStore.closeAll()
+  alive.value = false
+  await nextTick()
+  alive.value = true
+}
 const activePath = computed(() => route.path)
 const currentTitle = computed(() => route.meta.title || '')
 const uname = ref(localStorage.getItem('zhyq_user') || '管理员')
@@ -81,6 +110,7 @@ async function onUserCmd(cmd) {
     try { await request.post('/auth/logout') } catch (e) { /* token 已失效也照常退 */ }
     localStorage.removeItem('zhyq_token')
     localStorage.removeItem('zhyq_user')
+    projectStore.reset()
     router.push('/login')
   }
 }
