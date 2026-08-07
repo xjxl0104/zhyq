@@ -59,15 +59,21 @@ INSERT INTO route_module_mapping (route, module, module_name, is_core, enabled) 
 ('/workflow/**', 'workflow', '工作流', 0, 1);
 
 -- 权限种子数据：BI 与建议管理
-INSERT INTO sys_menu (menu_name, parent_id, order_num, path, menu_type, perms, icon, visible, status, create_by, create_time) VALUES
-('使用度统计', 0, 90, '', 0, '', 'DataLine', 1, 1, 'admin', NOW()),
-('管理层视图', (SELECT id FROM sys_menu WHERE menu_name = '使用度统计' LIMIT 1), 1, 'bi/admin', 1, 'bi:admin:view', '', 1, 1, 'admin', NOW()),
-('产品团队视图', (SELECT id FROM sys_menu WHERE menu_name = '使用度统计' LIMIT 1), 2, 'bi/product', 1, 'bi:product:view', '', 1, 1, 'admin', NOW()),
-('补跑管理', (SELECT id FROM sys_menu WHERE menu_name = '使用度统计' LIMIT 1), 3, '', 2, 'bi:admin:manage', '', 0, 1, 'admin', NOW()),
-('建议与反馈', 0, 91, '', 0, '', 'ChatDotRound', 1, 1, 'admin', NOW()),
-('我的建议', (SELECT id FROM sys_menu WHERE menu_name = '建议与反馈' LIMIT 1), 1, 'suggestion/mine', 1, '', '', 1, 1, 'admin', NOW()),
-('建议管理', (SELECT id FROM sys_menu WHERE menu_name = '建议与反馈' LIMIT 1), 2, 'suggestion/manage', 1, 'suggestion:manage', '', 1, 1, 'admin', NOW());
+INSERT INTO sys_menu (name, parent_id, sort, path, type, perm, icon, visible, status, create_by, create_time) VALUES
+('使用度统计', 0, 90, '', 0, '', 'DataLine', 1, 1, 'admin', NOW());
+SET @bi_parent = LAST_INSERT_ID();
+INSERT INTO sys_menu (name, parent_id, sort, path, type, perm, icon, visible, status, create_by, create_time) VALUES
+('管理层视图', @bi_parent, 1, 'bi/admin', 1, 'bi:admin:view', '', 1, 1, 'admin', NOW()),
+('产品团队视图', @bi_parent, 2, 'bi/product', 1, 'bi:product:view', '', 1, 1, 'admin', NOW()),
+('补跑管理', @bi_parent, 3, '', 2, 'bi:admin:manage', '', 0, 1, 'admin', NOW());
+
+INSERT INTO sys_menu (name, parent_id, sort, path, type, perm, icon, visible, status, create_by, create_time) VALUES
+('建议与反馈', 0, 91, '', 0, '', 'ChatDotRound', 1, 1, 'admin', NOW());
+SET @fb_parent = LAST_INSERT_ID();
+INSERT INTO sys_menu (name, parent_id, sort, path, type, perm, icon, visible, status, create_by, create_time) VALUES
+('我的建议', @fb_parent, 1, 'suggestion/mine', 1, '', '', 1, 1, 'admin', NOW()),
+('建议管理', @fb_parent, 2, 'suggestion/manage', 1, 'suggestion:manage', '', 1, 1, 'admin', NOW());
 
 -- 给管理员角色分配新权限
 INSERT INTO sys_role_menu (role_id, menu_id)
-SELECT 1, id FROM sys_menu WHERE perms IN ('bi:admin:view', 'bi:admin:manage', 'bi:product:view', 'suggestion:manage');
+SELECT 1, id FROM sys_menu WHERE perm IN ('bi:admin:view', 'bi:admin:manage', 'bi:product:view', 'suggestion:manage');
