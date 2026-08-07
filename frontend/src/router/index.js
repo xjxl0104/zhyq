@@ -128,6 +128,14 @@ const routes = [
       { path: 'data/section', meta: { title: '剖面图' }, component: () => import('@/views/data/SectionView.vue') },
       { path: 'data/report', meta: { title: '报表统计' }, component: () => import('@/views/data/ReportIndex.vue') },
 
+      // 建议与反馈
+      { path: 'suggestion/mine', meta: { title: '我的建议' }, component: () => import('@/views/suggestion/MySuggestions.vue') },
+      { path: 'suggestion/manage', meta: { title: '建议管理' }, component: () => import('@/views/suggestion/SuggestionManage.vue') },
+
+      // BI 使用度统计
+      { path: 'bi/admin', meta: { title: '使用度统计(管理层)' }, component: () => import('@/views/bi/BiAdmin.vue') },
+      { path: 'bi/product', meta: { title: '使用度统计(产品)' }, component: () => import('@/views/bi/BiProduct.vue') },
+
       // 系统管理
       { path: 'system/user', meta: { title: '用户管理' }, component: () => import('@/views/system/User.vue') },
       { path: 'system/role', meta: { title: '角色管理' }, component: () => import('@/views/system/Role.vue') },

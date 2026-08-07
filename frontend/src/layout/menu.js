@@ -157,6 +157,18 @@ export const menuTree = [
     ]
   },
   {
+    title: '使用度统计', icon: 'DataAnalysis', children: [
+      { title: '管理层视图', path: '/bi/admin' },
+      { title: '产品团队视图', path: '/bi/product' }
+    ]
+  },
+  {
+    title: '建议与反馈', icon: 'ChatDotRound', children: [
+      { title: '我的建议', path: '/suggestion/mine' },
+      { title: '建议管理', path: '/suggestion/manage' }
+    ]
+  },
+  {
     title: '系统管理', icon: 'Setting', children: [
       { title: '用户管理', path: '/system/user' },
       { title: '角色管理', path: '/system/role' },

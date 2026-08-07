@@ -55,6 +55,7 @@
           </transition>
         </router-view>
         <div v-else class="layout-loading" v-loading="true" style="height: 60vh"></div>
+        <FeedbackFab />
       </el-main>
     </el-container>
   </el-container>
@@ -72,6 +73,7 @@ import { useTagsStore } from '@/stores/tags'
 import TagsView from './TagsView.vue'
 import MenuItem from './MenuItem.vue'
 import ProjectSwitcher from './ProjectSwitcher.vue'
+import FeedbackFab from '@/views/suggestion/FeedbackFab.vue'
 
 const route = useRoute()
 const router = useRouter()
