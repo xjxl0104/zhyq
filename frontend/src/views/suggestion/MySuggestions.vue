@@ -1,7 +1,10 @@
 <template>
   <div class="page-container">
     <div class="table-card">
-      <div class="toolbar"><h3 style="margin:0">我的建议</h3></div>
+      <div class="toolbar">
+        <h3 style="margin:0">我的建议</h3>
+        <el-button type="primary" @click="showSubmit = true"><el-icon><Plus /></el-icon>新建意见</el-button>
+      </div>
       <el-table :data="list" v-loading="loading" border stripe>
         <el-table-column type="index" label="#" width="55" />
         <el-table-column prop="title" label="标题" min-width="160" show-overflow-tooltip />
@@ -50,12 +53,51 @@
         </div>
       </template>
     </el-dialog>
+
+    <!-- 新建意见弹窗 -->
+    <el-dialog v-model="showSubmit" title="新建意见" width="540px" :close-on-click-modal="false">
+      <el-form :model="submitForm" :rules="submitRules" ref="submitFormRef" label-width="80px">
+        <el-form-item label="类型" prop="type">
+          <el-radio-group v-model="submitForm.type">
+            <el-radio :value="1">Bug</el-radio>
+            <el-radio :value="2">建议</el-radio>
+            <el-radio :value="3">其他</el-radio>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item label="标题" prop="title">
+          <el-input v-model="submitForm.title" maxlength="50" show-word-limit placeholder="简要描述" />
+        </el-form-item>
+        <el-form-item label="详细说明">
+          <el-input v-model="submitForm.content" type="textarea" :rows="4" placeholder="可选" />
+        </el-form-item>
+        <el-form-item label="截图">
+          <el-upload
+            :action="uploadUrl"
+            :headers="uploadHeaders"
+            list-type="picture-card"
+            :file-list="fileList"
+            :limit="5"
+            :on-success="onUploadSuccess"
+            accept="image/png,image/jpeg"
+          >
+            <el-icon><Plus /></el-icon>
+          </el-upload>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="showSubmit = false">取消</el-button>
+        <el-button type="primary" :loading="submitting" @click="doSubmit">提交</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
+import { ElMessage } from 'element-plus'
+import { Plus } from '@element-plus/icons-vue'
 import { suggestionApi } from '@/api/suggestion'
+import { uploadUrl } from '@/api/file'
 
 const typeMap = { 1: 'Bug', 2: '建议', 3: '其他' }
 const statusMap = { 1: '待处理', 2: '已确认', 3: '处理中', 4: '已解决', 5: '已采纳', 6: '已关闭' }
@@ -67,6 +109,37 @@ const total = ref(0)
 const page = ref(1)
 const detailVisible = ref(false)
 const detail = ref(null)
+
+const showSubmit = ref(false)
+const submitting = ref(false)
+const submitFormRef = ref(null)
+const fileList = ref([])
+const uploadedFileIds = ref([])
+const uploadHeaders = { Authorization: `Bearer ${localStorage.getItem('token') || ''}` }
+const submitForm = reactive({ type: 2, title: '', content: '' })
+const submitRules = {
+  type: [{ required: true, message: '请选择类型' }],
+  title: [{ required: true, message: '请输入标题' }]
+}
+
+function onUploadSuccess(res) {
+  if (res.code === 200 && res.data) uploadedFileIds.value.push(res.data.id)
+}
+
+async function doSubmit() {
+  await submitFormRef.value.validate()
+  submitting.value = true
+  try {
+    await suggestionApi.submit({ ...submitForm, sourceUrl: window.location.href, fileIds: uploadedFileIds.value })
+    ElMessage.success('提交成功')
+    showSubmit.value = false
+    submitForm.type = 2; submitForm.title = ''; submitForm.content = ''
+    fileList.value = []; uploadedFileIds.value = []
+    load()
+  } catch (e) {
+    ElMessage.error(e?.response?.data?.message || '提交失败')
+  } finally { submitting.value = false }
+}
 
 async function load() {
   loading.value = true

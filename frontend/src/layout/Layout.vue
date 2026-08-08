@@ -2,8 +2,8 @@
   <el-container class="app-wrapper">
     <el-aside :width="collapsed ? '68px' : '224px'" class="sidebar">
       <div class="logo" :class="{ mini: collapsed }">
-        <div class="logo-mark"><el-icon><OfficeBuilding /></el-icon></div>
-        <span v-show="!collapsed" class="logo-text">智慧园区</span>
+        <img src="/favicon.ico" class="logo-icon" alt="logo" />
+        <span v-show="!collapsed" class="logo-text">澳乐智慧园区系统</span>
       </div>
       <el-scrollbar class="menu-scroll">
         <el-menu :default-active="activePath" router unique-opened :collapse="collapsed"
@@ -152,7 +152,9 @@ function openAssistant() {
   overflow: hidden;
 }
 .logo.mini { padding: 0; justify-content: center; }
-.logo-mark {
+.logo-icon {
+  width: 28px; height: 28px; border-radius: 6px;
+}
   width: 32px; height: 32px; flex-shrink: 0;
   border-radius: 9px;
   background: linear-gradient(135deg, #6366f1, #4f46e5);
