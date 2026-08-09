@@ -63,6 +63,7 @@
           </template>
         </el-table-column>
         <el-table-column prop="accessTime" label="通行时刻" width="180" />
+        <el-table-column prop="approver" label="审批人" width="100" />
       </el-table>
       <el-pagination class="pager" background layout="total, prev, pager, next, sizes"
                      :total="total" v-model:current-page="query.pageNo"
@@ -99,6 +100,7 @@
         <el-form-item label="通行时刻">
           <el-date-picker v-model="form.accessTime" type="datetime" value-format="YYYY-MM-DD HH:mm:ss" style="width: 200px" />
         </el-form-item>
+        <el-form-item label="审批人"><el-input v-model="form.approver" placeholder="审批人姓名" style="width: 200px" /></el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
@@ -118,7 +120,7 @@ const timeRange = ref([])
 
 const blank = () => ({
   gateCode: '', spaceId: null, personType: 'staff', personRef: '',
-  direction: 1, result: 1, accessTime: ''
+  direction: 1, result: 1, accessTime: '', approver: ''
 })
 const rules = {
   gateCode: [{ required: true, message: '请输入门/闸机编号', trigger: 'blur' }],

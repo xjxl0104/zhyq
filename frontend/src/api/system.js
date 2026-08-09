@@ -3,6 +3,7 @@ import request from '@/utils/request'
 // 用户
 export const userApi = {
   page: (params) => request.get('/system/user/page', { params }),
+  list: () => request.get('/system/user/list'),
   get: (id) => request.get(`/system/user/${id}`),
   add: (data) => request.post('/system/user', data),
   update: (data) => request.put('/system/user', data),

@@ -22,6 +22,7 @@ public class AccVisitor extends BaseEntity {
     private Long spaceId;
     private LocalDateTime visitTime;
     private Integer status;
+    private String approver;
     private String plateNo;
     private String remark;
 }

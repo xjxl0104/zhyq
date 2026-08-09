@@ -44,6 +44,7 @@
           </template>
         </el-table-column>
         <el-table-column prop="plateNo" label="随车车牌" width="110" />
+        <el-table-column prop="approver" label="审批人" width="100" />
         <el-table-column prop="remark" label="备注" min-width="130" show-overflow-tooltip />
         <el-table-column label="操作" width="200" fixed="right">
           <template #default="{ row }">
@@ -73,6 +74,7 @@
           <el-date-picker v-model="form.visitTime" type="datetime" value-format="YYYY-MM-DD HH:mm:ss" style="width: 200px" />
         </el-form-item>
         <el-form-item label="随车车牌"><el-input v-model="form.plateNo" placeholder="选填" /></el-form-item>
+        <el-form-item label="审批人"><el-input v-model="form.approver" placeholder="审批人姓名" /></el-form-item>
         <el-form-item label="备注">
           <el-input v-model="form.remark" type="textarea" :rows="2" />
         </el-form-item>
@@ -93,7 +95,7 @@ import { useCrudPage } from '@/composables/useCrudPage'
 
 const formRef = ref()
 const blank = () => ({
-  name: '', phone: '', hostUser: '', spaceId: null, visitTime: '', plateNo: '', remark: ''
+  name: '', phone: '', hostUser: '', spaceId: null, visitTime: '', plateNo: '', remark: '', approver: ''
 })
 const rules = {
   name: [{ required: true, message: '请输入访客姓名', trigger: 'blur' }],

@@ -23,4 +23,5 @@ public class AccAccessRecord extends BaseEntity {
     private Integer direction;
     private Integer result;
     private LocalDateTime accessTime;
+    private String approver;
 }

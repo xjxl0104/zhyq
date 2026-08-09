@@ -77,6 +77,7 @@
         <el-table-column prop="createTime" label="创建时间" width="170" />
         <el-table-column label="操作" width="260" fixed="right">
           <template #default="{ row }">
+            <el-button v-if="[1,2,3].includes(row.status)" link type="primary" @click="openEdit(row)">修改</el-button>
             <el-button v-if="row.status === 1" link type="primary" @click="openDispatch(row)">派单</el-button>
             <el-button v-if="row.status === 2" link type="primary" @click="doAccept(row)">接单</el-button>
             <el-button v-if="row.status === 3" link type="warning" @click="doArrive(row)">到场</el-button>
@@ -127,8 +128,10 @@
         <el-form-item label="工单号">
           <el-input :model-value="dispatchDialog.row?.code" disabled />
         </el-form-item>
-        <el-form-item label="处理人" prop="assignee">
-          <el-input v-model="dispatchForm.assignee" placeholder="请输入处理人" />
+        <el-form-item label="责任人" prop="assignee">
+          <el-select v-model="dispatchForm.assignee" filterable placeholder="请选择责任人" style="width: 100%">
+            <el-option v-for="u in staffList" :key="u.id" :label="u.nickname || u.username" :value="u.nickname || u.username" />
+          </el-select>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -188,9 +191,10 @@ import { reactive, ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { workOrderApi } from '@/api/property'
 import { fileApi } from '@/api/file'
+import { userApi } from '@/api/system'
 import FileUpload from '@/components/FileUpload.vue'
 
-const orderTypes = ['报修', '巡检', '告警']
+const orderTypes = ['报修', '巡检', '告警', '其他']
 const urgencyMap = {
   1: { label: '低', type: 'info' },
   2: { label: '中', type: 'warning' },
@@ -248,8 +252,21 @@ function openDialog() {
   Object.assign(form, defaultForm())
   attachFiles.value = []
 }
+function openEdit(row) {
+  dialog.visible = true
+  dialog.title = '修改工单'
+  Object.assign(form, defaultForm(), row)
+  attachFiles.value = []
+}
 async function submit() {
   await formRef.value.validate()
+  if (form.id) {
+    await workOrderApi.update(form)
+    ElMessage.success('修改成功')
+    dialog.visible = false
+    refresh()
+    return
+  }
   const newId = await workOrderApi.add(form)
   const pendingIds = (attachFiles.value || []).filter(f => f && f.id && !f.bizId).map(f => f.id)
   if (newId && pendingIds.length) {
@@ -264,7 +281,11 @@ async function submit() {
 const dispatchFormRef = ref()
 const dispatchDialog = reactive({ visible: false, row: null })
 const dispatchForm = reactive({ assignee: '' })
-const dispatchRules = { assignee: [{ required: true, message: '请输入处理人', trigger: 'blur' }] }
+const dispatchRules = { assignee: [{ required: true, message: '请选择责任人', trigger: 'change' }] }
+const staffList = ref([])
+async function loadStaff() {
+  try { staffList.value = await userApi.list() || [] } catch (e) { /* 无权限或失败则下拉为空,不阻断 */ }
+}
 function openDispatch(row) {
   dispatchDialog.visible = true
   dispatchDialog.row = row
@@ -333,7 +354,7 @@ async function openDetail(row) {
   detailDialog.visible = true
 }
 
-onMounted(refresh)
+onMounted(() => { refresh(); loadStaff() })
 </script>
 
 <style scoped>
