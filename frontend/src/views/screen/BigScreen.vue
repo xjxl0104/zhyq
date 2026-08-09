@@ -1,89 +1,92 @@
 <template>
   <div class="screen">
-    <div class="screen-header">
+    <div class="screen-bg"></div>
+    <header class="screen-header">
       <div class="hd-side">
+        <span class="hd-pill"><i class="pulse"></i>系统运行中</span>
         <span class="hd-time">{{ now }}</span>
       </div>
-      <h1 class="hd-title">智慧园区一体化监控大屏</h1>
+      <h1 class="hd-title">智慧园区一体化监控中心</h1>
       <div class="hd-side right">
-        <span class="hd-item">在线设备 {{ device.online }}/{{ device.total }}</span>
+        <span class="hd-pill"><i class="pulse ok"></i>在线设备 {{ device.online || 0 }}/{{ device.total || 0 }}</span>
         <span class="hd-back" @click="goBack">返回后台</span>
       </div>
-    </div>
+    </header>
 
     <div class="screen-body">
       <!-- 左列 -->
       <div class="col">
-        <div class="panel">
+        <section class="panel">
           <div class="panel-title">经营核心指标</div>
           <div class="kpi-grid">
-            <div class="kpi"><div class="kpi-v">{{ room.rentRate }}%</div><div class="kpi-l">出租率</div></div>
-            <div class="kpi"><div class="kpi-v">{{ room.rented }}</div><div class="kpi-l">在租房间</div></div>
-            <div class="kpi"><div class="kpi-v">{{ other.tenantTotal }}</div><div class="kpi-l">在租租客</div></div>
-            <div class="kpi"><div class="kpi-v">¥{{ fmtW(fin.received) }}</div><div class="kpi-l">累计实收(万)</div></div>
+            <div class="kpi"><div class="kpi-v">{{ room.rentRate || 0 }}<i>%</i></div><div class="kpi-l">出租率</div></div>
+            <div class="kpi"><div class="kpi-v">{{ room.rented || 0 }}</div><div class="kpi-l">在租房间</div></div>
+            <div class="kpi"><div class="kpi-v">{{ other.tenantTotal || 0 }}</div><div class="kpi-l">在租租客</div></div>
+            <div class="kpi"><div class="kpi-v"><i>¥</i>{{ fmtW(fin.received) }}<i>万</i></div><div class="kpi-l">累计实收</div></div>
           </div>
-        </div>
-        <div class="panel">
+        </section>
+        <section class="panel">
           <div class="panel-title">房源状态分布</div>
           <div ref="roomRef" class="chart"></div>
-        </div>
-        <div class="panel">
+        </section>
+        <section class="panel">
           <div class="panel-title">合同执行</div>
           <div class="bar-list">
-            <div class="bar-row"><span>执行中</span><el-progress :percentage="pct(contract.executing, contract.total)" color="#22d3ee" /></div>
-            <div class="bar-row"><span>已退租</span><el-progress :percentage="pct(contract.terminated, contract.total)" color="#94a3b8" /></div>
-            <div class="bar-row"><span>已到期</span><el-progress :percentage="pct(contract.expired, contract.total)" color="#f59e0b" /></div>
+            <div class="bar-row"><span>执行中</span><el-progress :percentage="pct(contract.executing, contract.total)" :stroke-width="10" color="#22d3ee" /></div>
+            <div class="bar-row"><span>已退租</span><el-progress :percentage="pct(contract.terminated, contract.total)" :stroke-width="10" color="#64748b" /></div>
+            <div class="bar-row"><span>已到期</span><el-progress :percentage="pct(contract.expired, contract.total)" :stroke-width="10" color="#f59e0b" /></div>
           </div>
-        </div>
+        </section>
       </div>
 
       <!-- 中列 -->
       <div class="col center">
-        <div class="panel big">
+        <section class="panel big">
           <div class="center-metrics">
-            <div class="cm"><div class="cm-v">¥{{ fmtW(fin.dueReceivable) }}</div><div class="cm-l">到期应收(万)</div></div>
-            <div class="cm"><div class="cm-v danger">¥{{ fmtW(fin.overdue) }}</div><div class="cm-l">逾期欠款(万)</div></div>
-            <div class="cm"><div class="cm-v">{{ contract.total }}</div><div class="cm-l">合同总数</div></div>
+            <div class="cm"><div class="cm-v"><i>¥</i>{{ fmtW(fin.dueReceivable) }}<i>万</i></div><div class="cm-l">到期应收</div></div>
+            <div class="cm hero"><div class="cm-v danger"><i>¥</i>{{ fmtW(fin.overdue) }}<i>万</i></div><div class="cm-l">逾期欠款</div></div>
+            <div class="cm"><div class="cm-v">{{ contract.total || 0 }}</div><div class="cm-l">合同总数</div></div>
           </div>
+          <div class="panel-title inline">营收趋势 · 应收 vs 实收</div>
           <div ref="trendRef" class="chart-lg"></div>
-        </div>
-        <div class="panel">
+        </section>
+        <section class="panel">
           <div class="panel-title">工单分类统计</div>
           <div ref="woRef" class="chart"></div>
-        </div>
+        </section>
       </div>
 
       <!-- 右列 -->
       <div class="col">
-        <div class="panel">
+        <section class="panel">
           <div class="panel-title">设备接入监测</div>
           <div class="kpi-grid">
-            <div class="kpi"><div class="kpi-v ok">{{ device.online }}</div><div class="kpi-l">在线设备</div></div>
-            <div class="kpi"><div class="kpi-v off">{{ device.offline }}</div><div class="kpi-l">离线设备</div></div>
-            <div class="kpi"><div class="kpi-v warn">{{ device.alarm }}</div><div class="kpi-l">活跃告警</div></div>
-            <div class="kpi"><div class="kpi-v">{{ other.workOrderOpen }}</div><div class="kpi-l">进行中工单</div></div>
+            <div class="kpi"><div class="kpi-v ok">{{ device.online || 0 }}</div><div class="kpi-l">在线设备</div></div>
+            <div class="kpi"><div class="kpi-v off">{{ device.offline || 0 }}</div><div class="kpi-l">离线设备</div></div>
+            <div class="kpi"><div class="kpi-v warn">{{ device.alarm || 0 }}</div><div class="kpi-l">活跃告警</div></div>
+            <div class="kpi"><div class="kpi-v">{{ other.workOrderOpen || 0 }}</div><div class="kpi-l">进行中工单</div></div>
           </div>
-        </div>
-        <div class="panel">
+        </section>
+        <section class="panel">
           <div class="panel-title">实时告警</div>
           <div class="alarm-list">
-            <div class="alarm-row" v-for="a in alarms" :key="a.id">
+            <div class="alarm-row" v-for="a in alarms" :key="a.id" :class="a.level === 3 ? 'high' : 'mid'">
               <span class="dot" :class="a.level === 3 ? 'high' : 'mid'"></span>
               <span class="alarm-txt">{{ a.content }}</span>
               <span class="alarm-loc">{{ a.location }}</span>
             </div>
             <el-empty v-if="!alarms.length" description="暂无告警" :image-size="50" />
           </div>
-        </div>
-        <div class="panel">
+        </section>
+        <section class="panel">
           <div class="panel-title">招商线索转化</div>
           <div class="funnel">
             <div class="fn-row" v-for="f in funnel" :key="f.label">
               <span class="fn-l">{{ f.label }}</span>
-              <div class="fn-bar" :style="{ width: f.w + '%' }">{{ f.value }}</div>
+              <div class="fn-track"><div class="fn-bar" :style="{ width: f.w + '%' }"><span>{{ f.value }}</span></div></div>
             </div>
           </div>
-        </div>
+        </section>
       </div>
     </div>
   </div>
@@ -173,11 +176,14 @@ async function loadRoomChart() {
   try {
     const roomData = await dashboardApi.roomStatus()
     chartOf('room', roomRef.value).setOption({
-      tooltip: { trigger: 'item' },
-      legend: { bottom: 0, textStyle: { color: PALETTE.axisLabel }, type: 'scroll' },
+      color: ['#22d3ee', '#60a5fa', '#34d399', '#fbbf24', '#a78bfa', '#fb7185'],
+      tooltip: { trigger: 'item', backgroundColor: 'rgba(8,18,34,.92)', borderColor: PALETTE.axisLine, textStyle: { color: '#e6f0fa' } },
+      legend: { bottom: 0, textStyle: { color: PALETTE.axisLabel }, type: 'scroll', icon: 'circle', itemWidth: 8, itemHeight: 8 },
       series: [{
-        type: 'pie', radius: ['38%', '62%'], center: ['50%', '42%'], data: roomData,
-        label: { color: PALETTE.label, formatter: '{b}\n{c}' }
+        type: 'pie', radius: ['46%', '68%'], center: ['50%', '42%'], data: roomData,
+        itemStyle: { borderColor: '#0a1526', borderWidth: 3, borderRadius: 6 },
+        label: { color: PALETTE.label, formatter: '{b}\n{c}' },
+        emphasis: { scaleSize: 6, itemStyle: { shadowBlur: 18, shadowColor: 'rgba(34,211,238,.5)' } }
       }]
     })
   } catch (e) {}
@@ -187,14 +193,18 @@ async function loadTrendChart() {
   try {
     const trend = await dashboardApi.revenueTrend()
     chartOf('trend', trendRef.value).setOption({
-      tooltip: { trigger: 'axis' },
-      legend: { data: ['应收', '实收'], textStyle: { color: PALETTE.axisLabel }, top: 0 },
-      grid: { left: 70, right: 30, top: 40, bottom: 30 },
-      xAxis: { type: 'category', data: trend.months, ...darkAxis },
+      tooltip: { trigger: 'axis', backgroundColor: 'rgba(8,18,34,.92)', borderColor: PALETTE.axisLine, textStyle: { color: '#e6f0fa' } },
+      legend: { data: ['应收', '实收'], textStyle: { color: PALETTE.axisLabel }, top: 0, icon: 'roundRect', itemWidth: 12, itemHeight: 8 },
+      grid: { left: 60, right: 24, top: 40, bottom: 28 },
+      xAxis: { type: 'category', data: trend.months, boundaryGap: true, ...darkAxis },
       yAxis: { type: 'value', ...darkAxis },
       series: [
-        { name: '应收', type: 'bar', data: trend.receivable, itemStyle: { color: PALETTE.sky }, barWidth: '30%' },
-        { name: '实收', type: 'line', data: trend.received, smooth: true, itemStyle: { color: PALETTE.cyan }, lineStyle: { width: 3 } }
+        { name: '应收', type: 'bar', data: trend.receivable, barWidth: '32%',
+          itemStyle: { borderRadius: [4,4,0,0], color: new echarts.graphic.LinearGradient(0,0,0,1,[{offset:0,color:'rgba(96,165,250,.9)'},{offset:1,color:'rgba(96,165,250,.15)'}]) } },
+        { name: '实收', type: 'line', data: trend.received, smooth: true, symbol: 'circle', symbolSize: 7,
+          itemStyle: { color: PALETTE.cyan, borderColor: '#0a1526', borderWidth: 2 },
+          lineStyle: { width: 3, shadowBlur: 12, shadowColor: 'rgba(34,211,238,.6)' },
+          areaStyle: { color: new echarts.graphic.LinearGradient(0,0,0,1,[{offset:0,color:'rgba(34,211,238,.28)'},{offset:1,color:'rgba(34,211,238,0)'}]) } }
       ]
     })
   } catch (e) {}
@@ -204,12 +214,13 @@ async function loadWoChart() {
   try {
     const wo = await dashboardApi.workOrderCategory()
     chartOf('wo', woRef.value).setOption({
-      tooltip: { trigger: 'axis' },
+      tooltip: { trigger: 'axis', backgroundColor: 'rgba(8,18,34,.92)', borderColor: PALETTE.axisLine, textStyle: { color: '#e6f0fa' } },
       grid: { left: 40, right: 20, top: 20, bottom: 30 },
       xAxis: { type: 'category', data: wo.map(x => x.name), ...darkAxis },
       yAxis: { type: 'value', ...darkAxis },
-      series: [{ type: 'bar', data: wo.map(x => x.value), barWidth: '40%',
-        itemStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{ offset: 0, color: PALETTE.cyan }, { offset: 1, color: PALETTE.deepBlue }]) } }]
+      series: [{ type: 'bar', data: wo.map(x => x.value), barWidth: '44%',
+        itemStyle: { borderRadius: [4,4,0,0], color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{ offset: 0, color: PALETTE.cyan }, { offset: 1, color: PALETTE.deepBlue }]) },
+        emphasis: { itemStyle: { shadowBlur: 14, shadowColor: 'rgba(34,211,238,.5)' } } }]
     })
   } catch (e) {}
 }
@@ -239,66 +250,154 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+/* ===== 设计令牌:深空指挥中心 ===== */
 .screen {
-  height: 100vh; background: #0a1929; color: #e2e8f0; overflow: hidden;
+  --bg-0: #060d1a;          /* 最底 */
+  --bg-1: #0a1526;          /* 面板底 */
+  --line: rgba(56,120,180,.28);
+  --line-strong: rgba(56,189,248,.55);
+  --accent: #38bdf8;        /* 主青蓝 */
+  --accent-2: #22d3ee;
+  --accent-3: #60a5fa;
+  --ok: #34d399; --warn: #fbbf24; --danger: #fb7185;
+  --text: #e6f0fa; --text-dim: #7f9cb8; --text-mute: #4f6785;
+  position: relative;
+  height: 100vh; overflow: hidden; color: var(--text);
   display: flex; flex-direction: column;
-  background-image: radial-gradient(circle at 50% 0%, rgba(34,211,238,0.08), transparent 60%);
+  background: var(--bg-0);
+  font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
 }
+/* 背景:径向光晕 + 细网格纹理 */
+.screen-bg {
+  position: absolute; inset: 0; z-index: 0; pointer-events: none;
+  background:
+    radial-gradient(1200px 500px at 50% -8%, rgba(56,189,248,.14), transparent 62%),
+    radial-gradient(900px 500px at 100% 100%, rgba(96,165,250,.08), transparent 60%),
+    linear-gradient(rgba(56,120,180,.05) 1px, transparent 1px) 0 0/40px 40px,
+    linear-gradient(90deg, rgba(56,120,180,.05) 1px, transparent 1px) 0 0/40px 40px;
+}
+.screen-header, .screen-body { position: relative; z-index: 1; }
+
+/* ===== 顶栏 ===== */
 .screen-header {
-  height: 64px; display: flex; align-items: center; justify-content: space-between;
-  padding: 0 24px; border-bottom: 1px solid #1e3a5f;
+  height: 72px; display: flex; align-items: center; justify-content: space-between;
+  padding: 0 28px;
+  border-bottom: 1px solid var(--line);
+  background: linear-gradient(180deg, rgba(56,189,248,.06), transparent);
 }
 .hd-title {
-  font-size: 26px; font-weight: 700; margin: 0; letter-spacing: 4px;
-  background: linear-gradient(90deg, #22d3ee, #60a5fa); -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
+  font-size: 28px; font-weight: 800; margin: 0; letter-spacing: 6px; white-space: nowrap;
+  background: linear-gradient(90deg, #7dd3fc, #e0f2fe 50%, #7dd3fc);
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  text-shadow: 0 0 24px rgba(56,189,248,.35);
 }
-.hd-side { flex: 1; display: flex; align-items: center; gap: 16px; font-size: 14px; color: #94a3b8; }
+.hd-side { flex: 1; display: flex; align-items: center; gap: 16px; font-size: 14px; }
 .hd-side.right { justify-content: flex-end; }
-.hd-back { cursor: pointer; color: #22d3ee; border: 1px solid #22d3ee; padding: 4px 12px; border-radius: 4px; }
-.hd-back:hover { background: rgba(34,211,238,0.15); }
-.screen-body { flex: 1; display: grid; grid-template-columns: 1fr 1.3fr 1fr; gap: 16px; padding: 16px; overflow: hidden; }
-.col { display: flex; flex-direction: column; gap: 16px; }
+.hd-time { color: var(--text-dim); font-variant-numeric: tabular-nums; letter-spacing: 1px; }
+.hd-pill {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 5px 12px; border-radius: 999px; font-size: 13px; color: var(--text-dim);
+  background: rgba(56,189,248,.07); border: 1px solid var(--line);
+}
+.hd-pill .pulse { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 8px var(--accent); animation: pulse 1.6s infinite; }
+.hd-pill .pulse.ok { background: var(--ok); box-shadow: 0 0 8px var(--ok); }
+@keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.35;transform:scale(.7)} }
+.hd-back {
+  cursor: pointer; color: var(--accent); border: 1px solid var(--line-strong);
+  padding: 6px 16px; border-radius: 6px; transition: all .2s; font-size: 13px;
+}
+.hd-back:hover { background: rgba(56,189,248,.16); box-shadow: 0 0 16px rgba(56,189,248,.3); }
+
+/* ===== 主体栅格 ===== */
+.screen-body { flex: 1; display: grid; grid-template-columns: 1fr 1.32fr 1fr; gap: 18px; padding: 18px 20px; overflow: hidden; }
+.col { display: flex; flex-direction: column; gap: 18px; min-height: 0; }
+
+/* ===== 面板:切角 + 渐变发丝边 + 内发光 ===== */
 .panel {
-  background: rgba(16,42,67,0.5); border: 1px solid #1e3a5f; border-radius: 8px;
-  padding: 14px 16px; flex: 1; display: flex; flex-direction: column;
-  box-shadow: inset 0 0 20px rgba(34,211,238,0.05);
+  position: relative; flex: 1; display: flex; flex-direction: column; min-height: 0;
+  padding: 16px 18px;
+  background: linear-gradient(180deg, rgba(16,32,56,.72), rgba(8,18,34,.72));
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  box-shadow: inset 0 1px 0 rgba(120,200,255,.06), 0 8px 30px rgba(0,0,0,.35);
+  clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 14px 100%, 0 calc(100% - 14px));
 }
-.panel.big { flex: 1.4; }
+/* 左上 / 右下 角标高亮 */
+.panel::before, .panel::after {
+  content: ''; position: absolute; width: 16px; height: 16px; pointer-events: none;
+}
+.panel::before { top: -1px; left: -1px; border-top: 2px solid var(--accent); border-left: 2px solid var(--accent); }
+.panel::after { bottom: -1px; right: -1px; border-bottom: 2px solid var(--accent); border-right: 2px solid var(--accent); }
+.panel.big { flex: 1.5; }
 .panel-title {
-  font-size: 15px; font-weight: 600; color: #7dd3fc; margin-bottom: 10px;
-  padding-left: 10px; border-left: 3px solid #22d3ee;
+  position: relative; font-size: 15px; font-weight: 700; color: #bfe6ff; margin-bottom: 12px;
+  padding-left: 12px; letter-spacing: 1px;
 }
+.panel-title::before {
+  content: ''; position: absolute; left: 0; top: 2px; bottom: 2px; width: 3px;
+  background: linear-gradient(180deg, var(--accent), var(--accent-3)); border-radius: 2px;
+  box-shadow: 0 0 8px var(--accent);
+}
+.panel-title.inline { margin: 6px 0 4px; }
+/* ===== KPI 卡 ===== */
 .kpi-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; flex: 1; align-content: center; }
-.kpi { text-align: center; padding: 8px; background: rgba(34,211,238,0.06); border-radius: 6px; }
-.kpi-v { font-size: 28px; font-weight: 700; color: #22d3ee; }
-.kpi-v.ok { color: #4ade80; } .kpi-v.off { color: #94a3b8; } .kpi-v.warn { color: #fbbf24; }
-.kpi-l { font-size: 13px; color: #94a3b8; margin-top: 4px; }
+.kpi {
+  position: relative; text-align: center; padding: 14px 8px; border-radius: 4px;
+  background: linear-gradient(180deg, rgba(56,189,248,.09), rgba(56,189,248,.02));
+  border: 1px solid var(--line); overflow: hidden;
+}
+.kpi::before { content:''; position:absolute; left:0; top:0; bottom:0; width:2px; background: var(--accent); opacity:.7; }
+.kpi-v { font-size: 30px; font-weight: 800; color: var(--accent-2); line-height: 1.1; font-variant-numeric: tabular-nums; text-shadow: 0 0 16px rgba(34,211,238,.35); }
+.kpi-v i { font-size: 14px; font-style: normal; font-weight: 600; color: var(--text-dim); margin: 0 1px; }
+.kpi-v.ok { color: var(--ok); text-shadow: 0 0 16px rgba(52,211,153,.35); }
+.kpi-v.off { color: var(--text-dim); text-shadow: none; }
+.kpi-v.warn { color: var(--warn); text-shadow: 0 0 16px rgba(251,191,36,.35); }
+.kpi-l { font-size: 13px; color: var(--text-dim); margin-top: 6px; letter-spacing: 1px; }
+
 .chart { flex: 1; min-height: 200px; }
 .chart-lg { flex: 1; min-height: 260px; }
-.center-metrics { display: flex; justify-content: space-around; padding: 8px 0 16px; }
-.cm { text-align: center; }
-.cm-v { font-size: 30px; font-weight: 700; color: #22d3ee; }
-.cm-v.danger { color: #f87171; }
-.cm-l { font-size: 13px; color: #94a3b8; margin-top: 4px; }
-.bar-list { display: flex; flex-direction: column; gap: 14px; justify-content: center; flex: 1; }
+
+/* ===== 中央核心指标 ===== */
+.center-metrics { display: flex; justify-content: space-around; gap: 12px; padding: 6px 0 14px; }
+.cm { flex: 1; text-align: center; padding: 12px 6px; border-radius: 4px; background: rgba(56,189,248,.05); border: 1px solid var(--line); }
+.cm.hero { background: rgba(251,113,133,.08); border-color: rgba(251,113,133,.3); }
+.cm-v { font-size: 32px; font-weight: 800; color: var(--accent-2); font-variant-numeric: tabular-nums; text-shadow: 0 0 18px rgba(34,211,238,.35); }
+.cm-v i { font-size: 15px; font-style: normal; font-weight: 600; color: var(--text-dim); margin: 0 2px; }
+.cm-v.danger { color: var(--danger); text-shadow: 0 0 18px rgba(251,113,133,.4); }
+.cm-l { font-size: 13px; color: var(--text-dim); margin-top: 6px; letter-spacing: 1px; }
+
+/* ===== 合同执行进度 ===== */
+.bar-list { display: flex; flex-direction: column; gap: 18px; justify-content: center; flex: 1; }
 .bar-row { display: flex; align-items: center; gap: 12px; }
-.bar-row > span { width: 56px; font-size: 13px; color: #cbd5e1; }
+.bar-row > span { width: 56px; font-size: 13px; color: var(--text); }
 .bar-row :deep(.el-progress) { flex: 1; }
-.bar-row :deep(.el-progress__text) { color: #cbd5e1 !important; }
-.alarm-list { flex: 1; display: flex; flex-direction: column; gap: 10px; overflow: hidden; }
-.alarm-row { display: flex; align-items: center; gap: 8px; font-size: 13px; padding: 6px 8px; background: rgba(248,113,113,0.08); border-radius: 4px; }
-.dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
-.dot.high { background: #f87171; box-shadow: 0 0 8px #f87171; }
-.dot.mid { background: #fbbf24; box-shadow: 0 0 8px #fbbf24; }
-.alarm-txt { flex: 1; color: #e2e8f0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.alarm-loc { color: #64748b; font-size: 12px; }
-.funnel { display: flex; flex-direction: column; gap: 8px; flex: 1; justify-content: center; }
-.fn-row { display: flex; align-items: center; gap: 10px; }
-.fn-l { width: 56px; font-size: 13px; color: #cbd5e1; }
-.fn-bar {
-  background: linear-gradient(90deg, #0ea5e9, #22d3ee); color: #042f2e; font-weight: 600;
-  padding: 6px 10px; border-radius: 4px; font-size: 13px; text-align: right; min-width: 40px;
-  transition: width .6s;
+.bar-row :deep(.el-progress-bar__outer) { background: rgba(56,120,180,.18) !important; }
+.bar-row :deep(.el-progress__text) { color: var(--text) !important; font-weight: 600; }
+
+/* ===== 实时告警 ===== */
+.alarm-list { flex: 1; display: flex; flex-direction: column; gap: 9px; overflow: hidden; }
+.alarm-row {
+  display: flex; align-items: center; gap: 9px; font-size: 13px; padding: 9px 11px; border-radius: 4px;
+  border-left: 2px solid transparent;
 }
+.alarm-row.high { background: rgba(251,113,133,.1); border-left-color: var(--danger); }
+.alarm-row.mid { background: rgba(251,191,36,.08); border-left-color: var(--warn); }
+.dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.dot.high { background: var(--danger); box-shadow: 0 0 10px var(--danger); animation: pulse 1.4s infinite; }
+.dot.mid { background: var(--warn); box-shadow: 0 0 10px var(--warn); }
+.alarm-txt { flex: 1; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.alarm-loc { color: var(--text-mute); font-size: 12px; }
+
+/* ===== 招商漏斗 ===== */
+.funnel { display: flex; flex-direction: column; gap: 14px; flex: 1; justify-content: center; }
+.fn-row { display: flex; align-items: center; gap: 12px; }
+.fn-l { width: 56px; font-size: 13px; color: var(--text); }
+.fn-track { flex: 1; height: 26px; background: rgba(56,120,180,.14); border-radius: 4px; overflow: hidden; }
+.fn-bar {
+  height: 100%; display: flex; align-items: center; justify-content: flex-end;
+  background: linear-gradient(90deg, var(--accent-3), var(--accent-2));
+  border-radius: 4px; min-width: 42px; transition: width .8s cubic-bezier(.16,1,.3,1);
+  box-shadow: 0 0 16px rgba(34,211,238,.4);
+}
+.fn-bar span { color: #04222e; font-weight: 700; font-size: 13px; padding-right: 10px; }
 </style>
