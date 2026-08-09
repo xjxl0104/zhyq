@@ -2,7 +2,7 @@
   <el-container class="app-wrapper">
     <el-aside :width="collapsed ? '68px' : '224px'" class="sidebar">
       <div class="logo" :class="{ mini: collapsed }">
-        <img src="/favicon.ico" class="logo-icon" alt="logo" />
+        <el-icon class="logo-icon"><OfficeBuilding /></el-icon>
         <span v-show="!collapsed" class="logo-text">澳乐智慧园区系统</span>
       </div>
       <el-scrollbar class="menu-scroll">
@@ -153,14 +153,7 @@ function openAssistant() {
 }
 .logo.mini { padding: 0; justify-content: center; }
 .logo-icon {
-  width: 28px; height: 28px; border-radius: 6px;
-}
-  width: 32px; height: 32px; flex-shrink: 0;
-  border-radius: 9px;
-  background: linear-gradient(135deg, #6366f1, #4f46e5);
-  display: flex; align-items: center; justify-content: center;
-  color: #fff; font-size: 18px;
-  box-shadow: 0 3px 8px rgba(79, 70, 229, 0.3);
+  font-size: 26px; color: var(--brand); flex-shrink: 0;
 }
 .logo-text {
   font-size: 18px; font-weight: 700; color: var(--text-title);

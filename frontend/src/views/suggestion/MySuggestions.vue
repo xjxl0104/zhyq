@@ -83,6 +83,19 @@
             <el-icon><Plus /></el-icon>
           </el-upload>
         </el-form-item>
+        <el-form-item label="附件">
+          <el-upload
+            :action="uploadUrl"
+            :headers="uploadHeaders"
+            :file-list="attachList"
+            :limit="5"
+            :on-success="onAttachSuccess"
+            :on-exceed="() => ElMessage.warning('最多上传5个附件')"
+          >
+            <el-button type="primary" plain><el-icon><Plus /></el-icon>上传附件</el-button>
+            <template #tip><div class="el-upload__tip">支持任意格式，单个≤10MB，最多5个</div></template>
+          </el-upload>
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="showSubmit = false">取消</el-button>
@@ -114,6 +127,7 @@ const showSubmit = ref(false)
 const submitting = ref(false)
 const submitFormRef = ref(null)
 const fileList = ref([])
+const attachList = ref([])
 const uploadedFileIds = ref([])
 const uploadHeaders = { Authorization: `Bearer ${localStorage.getItem('token') || ''}` }
 const submitForm = reactive({ type: 2, title: '', content: '' })
@@ -126,6 +140,10 @@ function onUploadSuccess(res) {
   if (res.code === 200 && res.data) uploadedFileIds.value.push(res.data.id)
 }
 
+function onAttachSuccess(res) {
+  if (res.code === 200 && res.data) uploadedFileIds.value.push(res.data.id)
+}
+
 async function doSubmit() {
   await submitFormRef.value.validate()
   submitting.value = true
@@ -134,7 +152,7 @@ async function doSubmit() {
     ElMessage.success('提交成功')
     showSubmit.value = false
     submitForm.type = 2; submitForm.title = ''; submitForm.content = ''
-    fileList.value = []; uploadedFileIds.value = []
+    fileList.value = []; attachList.value = []; uploadedFileIds.value = []
     load()
   } catch (e) {
     ElMessage.error(e?.response?.data?.message || '提交失败')
