@@ -5,24 +5,8 @@
         <h3 style="margin:0">我的建议</h3>
         <el-button type="primary" @click="showSubmit = true"><el-icon><Plus /></el-icon>新建意见</el-button>
       </div>
-      <el-table :data="list" v-loading="loading" border stripe>
-        <el-table-column type="index" label="#" width="55" />
-        <el-table-column prop="title" label="标题" min-width="160" show-overflow-tooltip />
-        <el-table-column label="类型" width="80">
-          <template #default="{ row }">{{ typeMap[row.type] }}</template>
-        </el-table-column>
-        <el-table-column label="状态" width="100">
-          <template #default="{ row }">
-            <el-tag :type="statusStyle[row.status]">{{ statusMap[row.status] }}</el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column prop="createTime" label="提交时间" width="170" />
-        <el-table-column label="操作" width="80">
-          <template #default="{ row }">
-            <el-button link type="primary" @click="viewDetail(row.id)">详情</el-button>
-          </template>
-        </el-table-column>
-      </el-table>
+      <SuggestionWall v-loading="loading" :items="list" :type-map="typeMap" :status-map="statusMap"
+                      @open="row => viewDetail(row.id)" />
       <el-pagination class="pager" background layout="total, prev, pager, next"
                      :total="total" v-model:current-page="page" :page-size="20" @change="load" />
     </div>
@@ -111,6 +95,7 @@ import { ElMessage } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import { suggestionApi } from '@/api/suggestion'
 import { uploadUrl } from '@/api/file'
+import SuggestionWall from './SuggestionWall.vue'
 
 const typeMap = { 1: 'Bug', 2: '建议', 3: '其他' }
 const statusMap = { 1: '待处理', 2: '已确认', 3: '处理中', 4: '已解决', 5: '已采纳', 6: '已关闭' }

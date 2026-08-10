@@ -19,26 +19,15 @@
       </el-form>
     </div>
     <div class="table-card">
-      <el-table :data="list" v-loading="loading" border stripe>
-        <el-table-column type="index" width="55" />
-        <el-table-column prop="title" label="标题" min-width="160" show-overflow-tooltip />
-        <el-table-column label="类型" width="80">
-          <template #default="{ row }">{{ typeMap[row.type] }}</template>
-        </el-table-column>
-        <el-table-column label="状态" width="100">
-          <template #default="{ row }">
-            <el-tag :type="statusStyle[row.status]">{{ statusMap[row.status] }}</el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column prop="createTime" label="提交时间" width="170" />
-        <el-table-column label="操作" width="200" fixed="right">
-          <template #default="{ row }">
-            <el-button link type="primary" @click="openDetail(row.id)">详情</el-button>
-            <el-button v-if="row.status < 4" link type="warning" @click="openStatusDialog(row)">流转</el-button>
-            <el-button v-if="row.status <= 3" link @click="openAssignDialog(row)">指派</el-button>
-          </template>
-        </el-table-column>
-      </el-table>
+      <SuggestionWall v-loading="loading" :items="list" :type-map="typeMap" :status-map="statusMap"
+                      @open="row => openDetail(row.id)">
+        <template #actions="{ item }">
+          <span class="note-actions" @click.stop>
+            <el-button v-if="item.status < 4" link type="warning" size="small" @click="openStatusDialog(item)">流转</el-button>
+            <el-button v-if="item.status <= 3" link size="small" @click="openAssignDialog(item)">指派</el-button>
+          </span>
+        </template>
+      </SuggestionWall>
       <el-pagination class="pager" background layout="total, prev, pager, next, sizes"
                      :total="total" v-model:current-page="query.page"
                      v-model:page-size="query.size" :page-sizes="[10,20,50]" @change="load" />
@@ -107,6 +96,7 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { suggestionApi } from '@/api/suggestion'
+import SuggestionWall from './SuggestionWall.vue'
 
 const typeMap = { 1: 'Bug', 2: '建议', 3: '其他' }
 const statusMap = { 1: '待处理', 2: '已确认', 3: '处理中', 4: '已解决', 5: '已采纳', 6: '已关闭' }
