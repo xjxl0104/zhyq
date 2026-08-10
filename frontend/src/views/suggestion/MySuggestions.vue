@@ -148,14 +148,14 @@ async function load() {
   loading.value = true
   try {
     const res = await suggestionApi.mine({ page: page.value, size: 20 })
-    list.value = res.data.records
-    total.value = res.data.total
+    list.value = res.records || []
+    total.value = res.total || 0
   } finally { loading.value = false }
 }
 
 async function viewDetail(id) {
   const res = await suggestionApi.mineDetail(id)
-  detail.value = res.data
+  detail.value = res
   detailVisible.value = true
 }
 

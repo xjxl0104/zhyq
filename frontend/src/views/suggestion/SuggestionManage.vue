@@ -122,8 +122,8 @@ async function load() {
   loading.value = true
   try {
     const res = await suggestionApi.manageList(query)
-    list.value = res.data.records
-    total.value = res.data.total
+    list.value = res.records || []
+    total.value = res.total || 0
   } finally { loading.value = false }
 }
 
@@ -131,7 +131,7 @@ function resetQuery() { query.status = null; query.type = null; query.page = 1; 
 
 async function openDetail(id) {
   const res = await suggestionApi.manageDetail(id)
-  detail.value = res.data
+  detail.value = res
   detailVisible.value = true
 }
 

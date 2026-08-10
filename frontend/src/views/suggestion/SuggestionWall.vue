@@ -45,38 +45,35 @@ function tiltOf(i) {
 </script>
 
 <style scoped>
-/* 软木板背景 */
+/* 扁平化背景:干净浅灰面 */
 .wall {
-  display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: 26px 22px; padding: 28px 24px; min-height: 60vh; border-radius: 10px;
-  background:
-    radial-gradient(circle at 30% 20%, rgba(255,255,255,.06), transparent 60%),
-    repeating-linear-gradient(45deg, #c9a06a 0 3px, #c19758 3px 6px);
-  background-color: #bd9455;
-  box-shadow: inset 0 0 60px rgba(80,50,10,.35);
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 22px 20px; padding: 24px; min-height: 60vh; border-radius: 12px;
+  background: #f4f5f7;
 }
-/* 便利贴 */
+/* 便利贴:扁平、无渐变、细边、轻投影 */
 .note {
   position: relative; padding: 16px 16px 12px; min-height: 150px;
   display: flex; flex-direction: column; cursor: pointer;
-  color: #3a3320; font-family: "PingFang SC", "Microsoft YaHei", sans-serif;
+  color: #3a3320; border-radius: 10px;
+  font-family: "PingFang SC", "Microsoft YaHei", sans-serif;
   transform: rotate(var(--tilt, 0deg));
-  box-shadow: 0 6px 14px rgba(0,0,0,.28);
-  transition: transform .18s ease, box-shadow .18s ease;
+  box-shadow: 0 2px 8px rgba(30,40,60,.08);
+  transition: transform .16s ease, box-shadow .16s ease;
 }
 .note:hover {
-  transform: rotate(0deg) translateY(-6px) scale(1.03);
-  box-shadow: 0 16px 30px rgba(0,0,0,.4); z-index: 2;
+  transform: rotate(0deg) translateY(-4px);
+  box-shadow: 0 10px 22px rgba(30,40,60,.16); z-index: 2;
 }
-.c-yellow { background: #fdf389; } .c-pink { background: #ff9fb2; }
-.c-green { background: #b6ec9a; } .c-blue { background: #a5d8ff; }
-.c-purple { background: #d7bbff; }
-/* 图钉 */
+/* 扁平柔和色块 */
+.c-yellow { background: #fef3c7; } .c-pink { background: #fbd5de; }
+.c-green { background: #d1f0d5; } .c-blue { background: #cfe6fb; }
+.c-purple { background: #e4d8fb; }
+/* 扁平圆点标记(替代拟物图钉) */
 .pin {
-  position: absolute; top: -9px; left: 50%; transform: translateX(-50%);
-  width: 16px; height: 16px; border-radius: 50%;
-  background: radial-gradient(circle at 35% 30%, #ff7a7a, #c0392b);
-  box-shadow: 0 2px 4px rgba(0,0,0,.4), inset 0 -2px 3px rgba(0,0,0,.25);
+  position: absolute; top: 12px; right: 12px;
+  width: 8px; height: 8px; border-radius: 50%;
+  background: rgba(0,0,0,.18);
 }
 .note-head { display: flex; justify-content: space-between; align-items: center; margin-top: 4px; }
 .note-type { font-size: 12px; font-weight: 700; padding: 2px 8px; background: rgba(0,0,0,.1); border-radius: 4px; }
