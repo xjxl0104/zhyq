@@ -6,3 +6,4 @@
 - [zhyq ver4.0 生产化改造](zhyq-ver4-prod-hardening.md) — ver4.0=生产化+云端部署;3.2/3.3 已做,剩 3.4 RBAC 做完提 ver4.0
 - [zhyq 3.4 RBAC 进度](zhyq-rbac-34-progress.md) — 敏感模块方法级权限已交付 PR #1(base prod-hardening)
 - [zhyq 附件铺开](zhyq-attachment-rollout.md) — 核心业务新增页接入统一附件上传;方案B先传后回填;底座已就绪
+- [zhyq ver4.3→6.3 交付](zhyq-ver43-to-ver63.md) — 账户补全/项目切换/自动建档/大屏/工单门禁/便利贴/BI图表 脉络 + 5个关键坑 + 部署/自动部署状态
