@@ -112,8 +112,12 @@ public class BiController {
     @GetMapping("/product/flow-analysis")
     @PreAuthorize("hasAuthority('bi:product:view')")
     public Result<Map<String, Object>> flowAnalysis() {
+        // 表无 flow_started/flow_completed 列,用核心操作数与闭环率折算:
+        // 发起数 = SUM(total_core_actions);完成数 = SUM(ROUND(total_core_actions * flow_close_rate))
         String started = """
-            SELECT SUM(flow_started) AS total_started, SUM(flow_completed) AS total_completed
+            SELECT
+              COALESCE(SUM(total_core_actions), 0) AS total_started,
+              COALESCE(SUM(ROUND(total_core_actions * COALESCE(flow_close_rate, 0))), 0) AS total_completed
             FROM user_period_metrics
             WHERE period_type = 2
               AND period_start = (SELECT MAX(period_start) FROM user_period_metrics WHERE period_type = 2)

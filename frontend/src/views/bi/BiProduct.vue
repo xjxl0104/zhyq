@@ -47,13 +47,13 @@ onMounted(async () => {
     biApi.moduleUsage(), biApi.flowAnalysis(), biApi.feedbackBoard()
   ])
 
-  flow.value = fl.data || {}
-  feedbackData.value = fb.data || []
+  flow.value = fl || {}
+  feedbackData.value = fb || []
 
   await nextTick()
-  if (moduleChartRef.value && mod.data?.length) {
+  if (moduleChartRef.value && mod?.length) {
     const { setOption } = useChart(moduleChartRef.value)
-    const data = mod.data
+    const data = mod
     setOption({
       tooltip: { trigger: 'axis' },
       xAxis: { type: 'category', data: data.map(d => d.module), axisLabel: { rotate: 30 } },

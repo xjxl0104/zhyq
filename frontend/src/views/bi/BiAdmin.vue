@@ -79,7 +79,7 @@ const ratio = computed(() => {
 async function drillDown(row) {
   drillDept.value = row.dept_name
   const res = await biApi.deptDetail(row.dept_id)
-  drillList.value = res.data
+  drillList.value = res || []
   drillVisible.value = true
 }
 
@@ -87,13 +87,13 @@ onMounted(async () => {
   const [ns, dept, trend] = await Promise.all([
     biApi.northStar(), biApi.deptRadar(), biApi.trend(1)
   ])
-  northStar.value = ns.data || {}
-  deptList.value = dept.data || []
+  northStar.value = ns || {}
+  deptList.value = dept || []
 
   await nextTick()
-  if (trendChartRef.value && trend.data?.length) {
+  if (trendChartRef.value && trend?.length) {
     const { setOption } = useChart(trendChartRef.value)
-    const data = [...trend.data].reverse()
+    const data = [...trend].reverse()
     setOption({
       tooltip: { trigger: 'axis' },
       xAxis: { type: 'category', data: data.map(d => d.period_start) },
