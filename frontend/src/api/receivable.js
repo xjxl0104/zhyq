@@ -3,6 +3,7 @@ import request from '@/utils/request'
 export const receivableApi = {
   capabilities: () => request.get('/finance/receivable/capabilities'),
   page: (params) => request.get('/finance/receivable/page', { params }),
+  monthlySummary: (params) => request.get('/finance/receivable/monthly-summary', { params }),
   get: (id) => request.get(`/finance/receivable/${id}`),
   add: (data) => request.post('/finance/receivable', data),
   update: (data) => request.put('/finance/receivable', data),

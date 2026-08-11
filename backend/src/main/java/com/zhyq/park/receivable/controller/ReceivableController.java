@@ -35,6 +35,7 @@ import com.zhyq.park.receivable.service.ReceivableExportService;
 import com.zhyq.park.receivable.service.ReceivableImportService;
 import com.zhyq.park.receivable.service.ReceivablePlanService;
 import com.zhyq.park.receivable.service.ReceivableProvisionService;
+import com.zhyq.park.receivable.service.ReceivableCalculator;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
@@ -59,6 +60,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.nio.charset.StandardCharsets;
 import java.math.BigDecimal;
+import java.time.YearMonth;
 import java.util.List;
 import java.util.UUID;
 
@@ -79,6 +81,7 @@ public class ReceivableController {
     private final FieldEncryptionService encryptionService;
     private final ImportBatchMapper batchMapper;
     private final ImportRowMapper importRowMapper;
+    private final ReceivableCalculator calculator;
 
     @GetMapping("/capabilities")
     public Result<ReceivableCapabilities> capabilities() {
@@ -115,6 +118,46 @@ public class ReceivableController {
                 .orderByAsc(ReceivableRegister::getSeqNo).orderByDesc(ReceivableRegister::getId);
         IPage<ReceivableRegister> page = registerMapper.selectPage(new Page<>(pageNo, pageSize), query);
         return Result.ok(PageResult.of(page.getTotal(), page.getRecords()));
+    }
+
+    @Operation(summary = "月度应收汇总（按月计算每条登记表的实际应收金额，含递增/减免/折扣）")
+    @GetMapping("/monthly-summary")
+    @PreAuthorize("hasAuthority('finance:receivable:query')")
+    public Result<MonthlySummaryResponse> monthlySummary(
+            @RequestParam String month,
+            @RequestParam(required = false) String tenantName,
+            @RequestParam(required = false) String status) {
+        YearMonth period = YearMonth.parse(month);
+        LambdaQueryWrapper<ReceivableRegister> qw = new LambdaQueryWrapper<ReceivableRegister>()
+                .like(StringUtils.hasText(tenantName), ReceivableRegister::getTenantNameRaw, tenantName)
+                .eq(StringUtils.hasText(status), ReceivableRegister::getStatus, status)
+                .and(w -> w
+                        .le(ReceivableRegister::getContractStartDate, period.atEndOfMonth())
+                        .ge(ReceivableRegister::getContractEndDate, period.atDay(1)))
+                .orderByAsc(ReceivableRegister::getSeqNo);
+        List<ReceivableRegister> registers = registerMapper.selectList(qw);
+
+        BigDecimal totalRent = BigDecimal.ZERO;
+        BigDecimal totalProperty = BigDecimal.ZERO;
+        List<MonthlyLineItem> items = new java.util.ArrayList<>();
+
+        for (ReceivableRegister reg : registers) {
+            List<ReceivableRule> rules = ruleMapper.selectList(new LambdaQueryWrapper<ReceivableRule>()
+                    .eq(ReceivableRule::getRegisterId, reg.getId())
+                    .eq(ReceivableRule::getStatus, "ACTIVE"));
+            BigDecimal rent = calculator.amountForMonth(reg, rules, "RENT", period);
+            BigDecimal property = calculator.amountForMonth(reg, rules, "PROPERTY", period);
+            BigDecimal total = rent.add(property);
+            totalRent = totalRent.add(rent);
+            totalProperty = totalProperty.add(property);
+            items.add(new MonthlyLineItem(
+                    reg.getId(), reg.getTenantNameRaw(), reg.getSpaceNameRaw(),
+                    reg.getAgreementNoRaw(), reg.getStatus(),
+                    rent, property, total,
+                    reg.getContractStartDate(), reg.getContractEndDate()));
+        }
+        return Result.ok(new MonthlySummaryResponse(
+                month, items.size(), totalRent, totalProperty, totalRent.add(totalProperty), items));
     }
 
     @Operation(summary = "应收明细详情")
@@ -329,4 +372,11 @@ public class ReceivableController {
     public record ReceivableCapabilities(boolean query, boolean add, boolean edit,
                                          boolean importData, boolean confirm, boolean generate,
                                          boolean exportData, boolean deleteData, boolean accountView) {}
+    public record MonthlyLineItem(Long id, String tenantName, String spaceName,
+                                  String agreementNo, String status,
+                                  BigDecimal monthlyRent, BigDecimal monthlyProperty, BigDecimal monthlyTotal,
+                                  java.time.LocalDate contractStart, java.time.LocalDate contractEnd) {}
+    public record MonthlySummaryResponse(String month, int count,
+                                         BigDecimal totalRent, BigDecimal totalProperty, BigDecimal grandTotal,
+                                         List<MonthlyLineItem> items) {}
 }
