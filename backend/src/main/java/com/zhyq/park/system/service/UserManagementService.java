@@ -7,9 +7,11 @@ import com.zhyq.park.system.dto.SysUserSaveRequest;
 import com.zhyq.park.system.dto.UserRoleLabel;
 import com.zhyq.park.system.entity.SysRole;
 import com.zhyq.park.system.entity.SysUser;
+import com.zhyq.park.system.entity.SysUserMenu;
 import com.zhyq.park.system.entity.SysUserRole;
 import com.zhyq.park.system.mapper.SysRoleMapper;
 import com.zhyq.park.system.mapper.SysUserMapper;
+import com.zhyq.park.system.mapper.SysUserMenuMapper;
 import com.zhyq.park.system.mapper.SysUserRoleMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -33,6 +35,7 @@ public class UserManagementService {
     private final SysUserMapper userMapper;
     private final SysRoleMapper roleMapper;
     private final SysUserRoleMapper userRoleMapper;
+    private final SysUserMenuMapper userMenuMapper;
     private final PasswordEncoder passwordEncoder;
     private final CurrentUserContext currentUserContext;
 
@@ -48,6 +51,7 @@ public class UserManagementService {
         user.setPassword(passwordEncoder.encode(request.getPassword()));
         userMapper.insert(user);
         replaceRoles(user.getId(), roles);
+        replaceMenus(user.getId(), request.getMenuIds());
         return user.getId();
     }
 
@@ -77,6 +81,7 @@ public class UserManagementService {
         }
         userMapper.updateById(existing);
         replaceRoles(existing.getId(), roles);
+        replaceMenus(existing.getId(), request.getMenuIds());
     }
 
     @Transactional(rollbackFor = Exception.class)
@@ -92,11 +97,19 @@ public class UserManagementService {
         }
         userRoleMapper.delete(new LambdaQueryWrapper<SysUserRole>()
                 .eq(SysUserRole::getUserId, id));
+        userMenuMapper.delete(new LambdaQueryWrapper<SysUserMenu>()
+                .eq(SysUserMenu::getUserId, id));
         userMapper.deleteById(id);
     }
 
     public SysUserDetailResponse get(Long id) {
-        return new SysUserDetailResponse(requireUser(id), userRoleMapper.selectRoleIdsByUserId(id));
+        SysUser user = requireUser(id);
+        List<Long> roleIds = userRoleMapper.selectRoleIdsByUserId(id);
+        List<Long> menuIds = userMenuMapper.selectList(
+                new LambdaQueryWrapper<SysUserMenu>().eq(SysUserMenu::getUserId, id)
+                        .select(SysUserMenu::getMenuId))
+                .stream().map(SysUserMenu::getMenuId).toList();
+        return new SysUserDetailResponse(user, roleIds, menuIds);
     }
 
     public void fillRoleNames(List<SysUser> users) {
@@ -157,7 +170,7 @@ public class UserManagementService {
                 .distinct()
                 .toList();
         if (ids.isEmpty()) {
-            throw new BizException("请至少选择一个角色");
+            return List.of();
         }
         List<SysRole> roles = roleMapper.selectBatchIds(ids);
         if (roles.size() != ids.size()
@@ -223,5 +236,15 @@ public class UserManagementService {
                         LinkedHashMap::new))
                 .values()
                 .forEach(role -> userRoleMapper.insert(new SysUserRole(null, userId, role.getId())));
+    }
+
+    private void replaceMenus(Long userId, List<Long> menuIds) {
+        userMenuMapper.delete(new LambdaQueryWrapper<SysUserMenu>()
+                .eq(SysUserMenu::getUserId, userId));
+        if (menuIds == null || menuIds.isEmpty()) {
+            return;
+        }
+        menuIds.stream().distinct()
+                .forEach(menuId -> userMenuMapper.insert(new SysUserMenu(null, userId, menuId)));
     }
 }

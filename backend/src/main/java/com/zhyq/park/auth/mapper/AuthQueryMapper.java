@@ -14,15 +14,22 @@ import java.util.List;
 @Mapper
 public interface AuthQueryMapper {
 
-    /** 用户的权限标识集合(sys_menu.perm),经 用户-角色-菜单 关联,去空去重 */
+    /** 用户的权限标识集合(sys_menu.perm),经 用户-角色-菜单 关联 + 用户直接菜单,去空去重 */
     @Select("""
             SELECT DISTINCT m.perm
-            FROM sys_user_role ur
-            JOIN sys_role r ON r.id = ur.role_id AND r.deleted = 0 AND r.status = 1
-            JOIN sys_role_menu rm ON rm.role_id = r.id
-            JOIN sys_menu m ON m.id = rm.menu_id AND m.deleted = 0 AND m.status = 1
-            WHERE ur.user_id = #{userId}
-              AND m.perm IS NOT NULL AND m.perm <> ''
+            FROM (
+                SELECT rm.menu_id
+                FROM sys_user_role ur
+                JOIN sys_role r ON r.id = ur.role_id AND r.deleted = 0 AND r.status = 1
+                JOIN sys_role_menu rm ON rm.role_id = r.id
+                WHERE ur.user_id = #{userId}
+                UNION
+                SELECT um.menu_id
+                FROM sys_user_menu um
+                WHERE um.user_id = #{userId}
+            ) combined
+            JOIN sys_menu m ON m.id = combined.menu_id AND m.deleted = 0 AND m.status = 1
+            WHERE m.perm IS NOT NULL AND m.perm <> ''
             """)
     List<String> selectPermsByUserId(@Param("userId") Long userId);
 
@@ -34,4 +41,20 @@ public interface AuthQueryMapper {
             WHERE ur.user_id = #{userId}
             """)
     List<String> selectRoleCodesByUserId(@Param("userId") Long userId);
+
+    /** 用户可见的菜单 ID 集合 = 角色菜单 ∪ 用户直接菜单 */
+    @Select("""
+            SELECT DISTINCT menu_id FROM (
+                SELECT rm.menu_id
+                FROM sys_user_role ur
+                JOIN sys_role r ON r.id = ur.role_id AND r.deleted = 0 AND r.status = 1
+                JOIN sys_role_menu rm ON rm.role_id = r.id
+                WHERE ur.user_id = #{userId}
+                UNION
+                SELECT um.menu_id
+                FROM sys_user_menu um
+                WHERE um.user_id = #{userId}
+            ) combined
+            """)
+    List<Long> selectMenuIdsByUserId(@Param("userId") Long userId);
 }

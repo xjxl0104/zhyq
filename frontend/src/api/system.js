@@ -1,5 +1,10 @@
 import request from '@/utils/request'
 
+// 认证
+export const authApi = {
+  myMenuIds: () => request.get('/auth/my-menu-ids')
+}
+
 // 用户
 export const userApi = {
   page: (params) => request.get('/system/user/page', { params }),

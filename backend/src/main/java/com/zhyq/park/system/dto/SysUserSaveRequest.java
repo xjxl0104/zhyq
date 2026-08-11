@@ -20,4 +20,5 @@ public class SysUserSaveRequest {
     private Integer status;
     private String remark;
     private List<Long> roleIds;
+    private List<Long> menuIds;
 }

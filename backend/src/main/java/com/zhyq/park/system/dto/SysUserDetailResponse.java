@@ -11,4 +11,5 @@ import java.util.List;
 public class SysUserDetailResponse {
     private SysUser user;
     private List<Long> roleIds;
+    private List<Long> menuIds;
 }

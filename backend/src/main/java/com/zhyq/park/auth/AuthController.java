@@ -9,6 +9,8 @@ import com.zhyq.park.system.mapper.SysUserMapper;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
 
@@ -70,5 +72,23 @@ public class AuthController {
     public Result<Void> logout() {
         // JWT 无状态,服务端不持有 token;前端清除本地 token 完成登出
         return Result.ok();
+    }
+
+    @Operation(summary = "获取当前用户可见菜单 ID(角色菜单 ∪ 直接菜单)")
+    @GetMapping("/my-menu-ids")
+    public Result<List<Long>> myMenuIds() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        String username = auth.getName();
+        SysUser user = userMapper.selectOne(new LambdaQueryWrapper<SysUser>()
+                .eq(SysUser::getUsername, username).last("limit 1"));
+        if (user == null) {
+            return Result.ok(List.of());
+        }
+        // admin 角色拥有全部菜单
+        List<String> roleCodes = authQueryMapper.selectRoleCodesByUserId(user.getId());
+        if (roleCodes.contains("admin")) {
+            return Result.ok(List.of(-1L));
+        }
+        return Result.ok(authQueryMapper.selectMenuIdsByUserId(user.getId()));
     }
 }
