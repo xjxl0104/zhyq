@@ -3,8 +3,9 @@
     <!-- 统计卡片 -->
     <div class="stat-row">
       <div class="stat-card">
+        <!-- 取 pendingDispatch 而非 pending:后端已把 pending 改为"在办合计"口径 -->
         <div class="stat-label">待派单</div>
-        <div class="stat-value warning">{{ stats.pending || 0 }}</div>
+        <div class="stat-value warning">{{ stats.pendingDispatch || 0 }}</div>
       </div>
       <div class="stat-card">
         <div class="stat-label">处理中</div>
@@ -111,6 +112,22 @@
             <el-radio :value="3">高</el-radio>
           </el-radio-group>
         </el-form-item>
+        <el-form-item label="责任单位">
+          <el-select
+            v-model="form.responsibleUnitId"
+            filterable
+            clearable
+            placeholder="选择承接该工单的单位(可不填)"
+            style="width: 100%"
+          >
+            <el-option
+              v-for="u in unitOptions"
+              :key="u.id"
+              :label="u.serviceScope ? `${u.name}（${u.serviceScope}）` : u.name"
+              :value="u.id"
+            />
+          </el-select>
+        </el-form-item>
         <el-form-item label="联系人"><el-input v-model="form.contact" /></el-form-item>
         <el-form-item label="联系电话"><el-input v-model="form.contactPhone" /></el-form-item>
         <el-form-item label="备注"><el-input v-model="form.remark" type="textarea" /></el-form-item>
@@ -171,6 +188,18 @@
         </el-descriptions-item>
         <el-descriptions-item label="到场时间">{{ detail.order?.arriveTime || '-' }}</el-descriptions-item>
         <el-descriptions-item label="完成时间">{{ detail.order?.finishTime || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="责任单位">{{ unitName(detail.order?.responsibleUnitId) }}</el-descriptions-item>
+        <el-descriptions-item label="来源">
+          <span>{{ detail.order?.source || '手工新建' }}</span>
+          <!-- sourceType+sourceId 打通后才能反查源记录;存量数据只有类型没有 id -->
+          <el-button
+            v-if="sourceLink(detail.order)"
+            link
+            type="primary"
+            style="margin-left: 8px"
+            @click="gotoSource(detail.order)"
+          >查看来源记录</el-button>
+        </el-descriptions-item>
       </el-descriptions>
       <el-divider content-position="left">流转记录</el-divider>
       <el-timeline v-if="detail.logs?.length">
@@ -188,11 +217,15 @@
 
 <script setup>
 import { reactive, ref, onMounted } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { workOrderApi } from '@/api/property'
+import { workOrderApi, responsibleUnitApi } from '@/api/property'
 import { fileApi } from '@/api/file'
 import { userApi } from '@/api/system'
 import FileUpload from '@/components/FileUpload.vue'
+
+const router = useRouter()
+const route = useRoute()
 
 const orderTypes = ['报修', '巡检', '告警', '其他']
 const urgencyMap = {
@@ -240,7 +273,35 @@ function reset() {
 // 新增工单
 const formRef = ref()
 const dialog = reactive({ visible: false, title: '' })
-const defaultForm = () => ({ id: null, title: '', orderType: '报修', location: '', category: '', urgency: 2, contact: '', contactPhone: '', remark: '' })
+const defaultForm = () => ({ id: null, title: '', orderType: '报修', location: '', category: '', urgency: 2, contact: '', contactPhone: '', remark: '', responsibleUnitId: null })
+// 责任单位下拉:只取启用中的
+const unitOptions = ref([])
+function unitName(id) {
+  if (!id) return '-'
+  return unitOptions.value.find((u) => u.id === id)?.name || `#${id}`
+}
+
+// 来源反查:巡检/巡更转来的工单可跳回源记录
+const SOURCE_ROUTES = {
+  INSPECTION_PLAN: '/property/inspection',
+  PATROL: '/property/patrol',
+  CHECK: '/property/check-clean',
+  FEEDBACK: '/property/feedback'
+}
+function sourceLink(order) {
+  return order?.sourceType && order?.sourceId && SOURCE_ROUTES[order.sourceType]
+}
+function gotoSource(order) {
+  const path = SOURCE_ROUTES[order.sourceType]
+  if (path) router.push({ path, query: { highlightId: order.sourceId } })
+}
+async function loadUnitOptions() {
+  try {
+    unitOptions.value = await responsibleUnitApi.options()
+  } catch {
+    unitOptions.value = []   // 取不到不阻塞建单流程
+  }
+}
 const form = reactive(defaultForm())
 const attachFiles = ref([])
 const rules = {
@@ -354,7 +415,14 @@ async function openDetail(row) {
   detailDialog.visible = true
 }
 
-onMounted(() => { refresh(); loadStaff() })
+onMounted(() => {
+  // 支持从工单汇总页点状态卡片跳进来时带上筛选
+  const s = Number(route.query.status)
+  if (s >= 1 && s <= 7) query.status = s
+  refresh()
+  loadStaff()
+  loadUnitOptions()
+})
 </script>
 
 <style scoped>

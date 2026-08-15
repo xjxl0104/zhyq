@@ -22,8 +22,7 @@
       </el-form-item>
       <el-form-item label="截图">
         <el-upload
-          :action="uploadUrl"
-          :headers="uploadHeaders"
+          :http-request="doUpload"
           list-type="picture-card"
           :file-list="fileList"
           :limit="5"
@@ -49,15 +48,13 @@ import { ref, reactive, onMounted, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { ChatDotRound, Plus } from '@element-plus/icons-vue'
 import { suggestionApi } from '@/api/suggestion'
-import { uploadUrl } from '@/api/file'
+import { fileApi } from '@/api/file'
 
 const visible = ref(false)
 const submitting = ref(false)
 const formRef = ref(null)
 const fileList = ref([])
 const uploadedFileIds = ref([])
-
-const uploadHeaders = { Authorization: `Bearer ${localStorage.getItem('token') || ''}` }
 
 const form = reactive({ type: 1, title: '', content: '' })
 const rules = {
@@ -73,9 +70,19 @@ function beforeUpload(file) {
   return true
 }
 
-function onUploadSuccess(res) {
-  if (res.code === 200 && res.data) {
-    uploadedFileIds.value.push(res.data.id)
+// 走 axios 实例复用 token 拦截器: el-upload 的 action 是浏览器原生直传,
+// 绕过拦截器拿不到 token, 会被 Spring Security 401 挡在 controller 之外
+async function doUpload(option) {
+  try {
+    const fd = new FormData()
+    fd.append('file', option.file)
+    const res = await fileApi.upload(fd)   // 拦截器已拆包, res 即 SysFile
+    if (!res?.id) throw new Error('上传响应缺少文件 id')
+    uploadedFileIds.value.push(res.id)
+    option.onSuccess(res)
+  } catch (e) {
+    ElMessage.error(e?.response?.data?.message || e?.message || '上传失败')
+    option.onError(e)
   }
 }
 
@@ -116,15 +123,13 @@ function handlePaste(e) {
       if (file && uploadedFileIds.value.length < 5) {
         const formData = new FormData()
         formData.append('file', file, `screenshot_${Date.now()}.png`)
-        fetch('/api/file/upload', {
-          method: 'POST',
-          headers: { Authorization: uploadHeaders.Authorization },
-          body: formData
-        }).then(r => r.json()).then(res => {
-          if (res.code === 200 && res.data) {
-            uploadedFileIds.value.push(res.data.id)
-            fileList.value.push({ name: res.data.originalName, url: `/api/file/download/${res.data.id}` })
-          }
+        // 同样走 fileApi 而非裸 fetch, 复用拦截器的 token 与错误处理
+        fileApi.upload(formData).then(res => {
+          if (!res?.id) return
+          uploadedFileIds.value.push(res.id)
+          fileList.value.push({ name: res.originalName, url: `/api/file/download/${res.id}` })
+        }).catch(err => {
+          ElMessage.error(err?.response?.data?.message || '截图上传失败')
         })
       }
     }

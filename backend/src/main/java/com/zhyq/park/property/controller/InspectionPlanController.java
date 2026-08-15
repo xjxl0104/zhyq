@@ -10,6 +10,7 @@ import com.zhyq.park.property.entity.InspectionPlan;
 import com.zhyq.park.property.entity.WorkOrder;
 import com.zhyq.park.property.mapper.InspectionPlanMapper;
 import com.zhyq.park.property.mapper.WorkOrderMapper;
+import com.zhyq.park.property.model.WorkOrderSource;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
@@ -94,6 +95,9 @@ public class InspectionPlanController {
         wo.setUrgency(2);
         wo.setStatus(1);
         wo.setSource("巡检计划");
+        // 写来源主键,否则工单反查不到是哪个巡检计划生成的
+        wo.setSourceType(WorkOrderSource.INSPECTION_PLAN);
+        wo.setSourceId(plan.getId());
         workOrderMapper.insert(wo);
         Map<String, Object> m = new HashMap<>();
         m.put("id", wo.getId());

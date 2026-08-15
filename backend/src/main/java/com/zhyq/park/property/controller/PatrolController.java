@@ -10,6 +10,7 @@ import com.zhyq.park.property.entity.Patrol;
 import com.zhyq.park.property.entity.WorkOrder;
 import com.zhyq.park.property.mapper.PatrolMapper;
 import com.zhyq.park.property.mapper.WorkOrderMapper;
+import com.zhyq.park.property.model.WorkOrderSource;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
@@ -103,6 +104,9 @@ public class PatrolController {
         wo.setUrgency(3);
         wo.setStatus(1);
         wo.setSource("安防巡更");
+        // 写来源主键,否则工单反查不到是哪条巡更记录生成的
+        wo.setSourceType(WorkOrderSource.PATROL);
+        wo.setSourceId(patrol.getId());
         workOrderMapper.insert(wo);
         return Result.ok(wo.getCode());
     }

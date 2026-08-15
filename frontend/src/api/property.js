@@ -4,7 +4,9 @@ import request from '@/utils/request'
 export const workOrderApi = {
   page: (params) => request.get('/property/workorder/page', { params }),
   get: (id) => request.get(`/property/workorder/${id}`),
-  stats: () => request.get('/property/workorder/stats'),
+  stats: (params) => request.get('/property/workorder/stats', { params }),
+  // 汇总总览:按状态/来源/分类/紧急度聚合 + SLA 达成率 + 近 N 天趋势
+  summary: (params) => request.get('/property/workorder/summary', { params }),
   add: (data) => request.post('/property/workorder', data),
   update: (data) => request.put('/property/workorder', data),
   remove: (id) => request.delete(`/property/workorder/${id}`),
@@ -14,6 +16,25 @@ export const workOrderApi = {
   finish: (id, data) => request.post(`/property/workorder/${id}/finish`, data || {}),
   verify: (id, data) => request.post(`/property/workorder/${id}/verify`, data || {}),
   close: (id, data) => request.post(`/property/workorder/${id}/close`, data || {})
+}
+
+// 责任单位主数据(工单/报修的承接方)
+export const responsibleUnitApi = {
+  page: (params) => request.get('/property/responsible-unit/page', { params }),
+  options: (params) => request.get('/property/responsible-unit/options', { params }),
+  add: (data) => request.post('/property/responsible-unit', data),
+  update: (id, data) => request.put(`/property/responsible-unit/${id}`, data),
+  remove: (id) => request.delete(`/property/responsible-unit/${id}`),
+  // 导入前只解析不落库,先让用户看错误
+  preview: (formData, params) => request.post('/property/responsible-unit/import/preview', formData, {
+    params,
+    headers: { 'Content-Type': 'multipart/form-data' }
+  }),
+  import: (formData, params) => request.post('/property/responsible-unit/import', formData, {
+    params,
+    headers: { 'Content-Type': 'multipart/form-data' }
+  }),
+  template: () => request.get('/property/responsible-unit/template', { responseType: 'blob' })
 }
 
 // 会议室

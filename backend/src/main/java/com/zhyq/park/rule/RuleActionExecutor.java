@@ -9,6 +9,7 @@ import com.zhyq.park.common.event.DomainEvent;
 import com.zhyq.park.common.event.DomainEvent.AlarmRaised;
 import com.zhyq.park.property.entity.WorkOrder;
 import com.zhyq.park.property.mapper.WorkOrderMapper;
+import com.zhyq.park.property.model.WorkOrderSource;
 import com.zhyq.park.property.service.WorkOrderService;
 import com.zhyq.park.rule.entity.Rule;
 import lombok.RequiredArgsConstructor;
@@ -65,6 +66,9 @@ public class RuleActionExecutor {
         wo.setTitle(StrUtil.isBlank(title) ? "IoT告警工单" : title);
         wo.setSpaceId(event.spaceId());
         wo.setSourceAlarmId(alarmId);
+        // 同时写通用来源列,使汇总页能用统一口径反查所有来源
+        wo.setSourceType(WorkOrderSource.ALARM);
+        wo.setSourceId(alarmId);
         wo.setSource("规则引擎");
         wo.setStatus(WorkOrderService.ST_PENDING_DISPATCH);
         wo.setAssignee(PLACEHOLDER_ASSIGNEE);

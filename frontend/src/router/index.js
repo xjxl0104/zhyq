@@ -51,7 +51,9 @@ const routes = [
       { path: 'finance/setting', meta: { title: '财务设置' }, component: () => import('@/views/finance/Setting.vue') },
 
       // 物业
+      { path: 'property/workorder-summary', meta: { title: '工单汇总' }, component: () => import('@/views/property/WorkOrderSummary.vue') },
       { path: 'property/workorder', meta: { title: '物业报修' }, component: () => import('@/views/property/WorkOrder.vue') },
+      { path: 'property/responsible-unit', meta: { title: '责任单位' }, component: () => import('@/views/property/ResponsibleUnit.vue') },
       { path: 'property/meeting', meta: { title: '会议室预约' }, component: () => import('@/views/property/Meeting.vue') },
       { path: 'property/asset', meta: { title: '资产管理' }, component: () => import('@/views/property/Asset.vue') },
       { path: 'property/inspection', meta: { title: '设备巡检' }, component: () => import('@/views/property/Inspection.vue') },

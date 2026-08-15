@@ -34,13 +34,19 @@ public class WorkOrder extends BaseEntity {
     private Integer urgency;
     /** 工单状态 */
     private Integer status;
-    /** 来源 */
+    /** 来源(展示用文本,如 '巡检计划'/'安防巡更') */
     private String source;
+    /** 来源类型,见 WorkOrderSource 常量;与 sourceId 配对用于反查源记录 */
+    private String sourceType;
+    /** 来源记录主键 */
+    private Long sourceId;
     private String contact;
     private String contactPhone;
     private String images;
     /** 处理人 */
     private String assignee;
+    /** 责任单位 id,引用 pm_responsible_unit */
+    private Long responsibleUnitId;
     /** 响应SLA(分钟) */
     private Integer slaRespondMin;
     /** 解决SLA(分钟) */

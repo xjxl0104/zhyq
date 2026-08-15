@@ -56,12 +56,12 @@
         </el-form-item>
         <el-form-item label="截图">
           <el-upload
-            :action="uploadUrl"
-            :headers="uploadHeaders"
+            :http-request="doImageUpload"
             list-type="picture-card"
             :file-list="fileList"
-            :limit="5"
-            :on-success="onUploadSuccess"
+            :limit="3"
+            :before-upload="beforeImageUpload"
+            :on-exceed="() => ElMessage.warning('最多上传3张截图')"
             accept="image/png,image/jpeg"
           >
             <el-icon><Plus /></el-icon>
@@ -69,15 +69,14 @@
         </el-form-item>
         <el-form-item label="附件">
           <el-upload
-            :action="uploadUrl"
-            :headers="uploadHeaders"
+            :http-request="doAttachUpload"
             :file-list="attachList"
-            :limit="5"
-            :on-success="onAttachSuccess"
-            :on-exceed="() => ElMessage.warning('最多上传5个附件')"
+            :limit="2"
+            :before-upload="beforeAttachUpload"
+            :on-exceed="() => ElMessage.warning('最多上传2个附件')"
           >
             <el-button type="primary" plain><el-icon><Plus /></el-icon>上传附件</el-button>
-            <template #tip><div class="el-upload__tip">支持任意格式，单个≤10MB，最多5个</div></template>
+            <template #tip><div class="el-upload__tip">支持 pdf/doc/docx/xls/xlsx/txt/zip 等，单个≤20MB；截图与附件合计最多5个</div></template>
           </el-upload>
         </el-form-item>
       </el-form>
@@ -94,7 +93,7 @@ import { ref, reactive, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import { suggestionApi } from '@/api/suggestion'
-import { uploadUrl } from '@/api/file'
+import { fileApi } from '@/api/file'
 import SuggestionWall from './SuggestionWall.vue'
 
 const typeMap = { 1: 'Bug', 2: '建议', 3: '其他' }
@@ -114,20 +113,59 @@ const submitFormRef = ref(null)
 const fileList = ref([])
 const attachList = ref([])
 const uploadedFileIds = ref([])
-const uploadHeaders = { Authorization: `Bearer ${localStorage.getItem('token') || ''}` }
 const submitForm = reactive({ type: 2, title: '', content: '' })
 const submitRules = {
   type: [{ required: true, message: '请选择类型' }],
   title: [{ required: true, message: '请输入标题' }]
 }
 
-function onUploadSuccess(res) {
-  if (res.code === 200 && res.data) uploadedFileIds.value.push(res.data.id)
+// 后端 FileStorageService 的扩展名白名单与大小上限,前端先挡一道,避免传完才报错
+const IMAGE_EXT = ['png', 'jpg', 'jpeg']
+const ATTACH_EXT = ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'txt', 'csv', 'zip', 'rar', '7z']
+const MAX_SIZE = 20 * 1024 * 1024
+
+function checkFile(file, exts) {
+  const ext = (file.name.split('.').pop() || '').toLowerCase()
+  if (!exts.includes(ext)) {
+    ElMessage.error(`不支持的格式 .${ext}，仅支持 ${exts.join('/')}`)
+    return false
+  }
+  if (file.size > MAX_SIZE) {
+    ElMessage.error('单个文件不能超过 20MB')
+    return false
+  }
+  // 后端校验截图与附件合计最多 5 个,这里同步拦一道
+  if (uploadedFileIds.value.length >= 5) {
+    ElMessage.error('截图与附件合计最多 5 个')
+    return false
+  }
+  return true
 }
 
-function onAttachSuccess(res) {
-  if (res.code === 200 && res.data) uploadedFileIds.value.push(res.data.id)
+const beforeImageUpload = (file) => checkFile(file, IMAGE_EXT)
+const beforeAttachUpload = (file) => checkFile(file, ATTACH_EXT)
+
+// 用 :http-request 走 axios 实例,复用 request.js 的 token 拦截器。
+// 不能用 el-upload 的 action: 那是浏览器原生直传,绕过拦截器拿不到 token
+async function uploadViaApi(option) {
+  const fd = new FormData()
+  fd.append('file', option.file)
+  try {
+    const res = await fileApi.upload(fd)
+    if (res?.id) {
+      uploadedFileIds.value.push(res.id)
+      option.onSuccess(res)
+    } else {
+      throw new Error('上传响应缺少文件 id')
+    }
+  } catch (e) {
+    ElMessage.error(e?.response?.data?.message || e?.message || '上传失败')
+    option.onError(e)
+  }
 }
+
+const doImageUpload = uploadViaApi
+const doAttachUpload = uploadViaApi
 
 async function doSubmit() {
   await submitFormRef.value.validate()

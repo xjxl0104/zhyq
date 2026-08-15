@@ -12,6 +12,7 @@ import com.zhyq.park.property.mapper.WorkOrderLogMapper;
 import com.zhyq.park.property.mapper.WorkOrderMapper;
 import com.zhyq.park.property.service.SlaEscalationJob;
 import com.zhyq.park.property.service.WorkOrderService;
+import com.zhyq.park.property.service.WorkOrderSummaryService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
@@ -34,6 +35,7 @@ public class WorkOrderController {
     private final WorkOrderLogMapper workOrderLogMapper;
     private final WorkOrderService workOrderService;
     private final SlaEscalationJob slaEscalationJob;
+    private final WorkOrderSummaryService summaryService;
     private final ApplicationEventPublisher eventPublisher;
 
     @Operation(summary = "分页查询工单")
@@ -169,20 +171,18 @@ public class WorkOrderController {
 
     @Operation(summary = "工单统计")
     @GetMapping("/stats")
-    public Result<Map<String, Object>> stats() {
-        long pending = workOrderMapper.selectCount(
-                new LambdaQueryWrapper<WorkOrder>().eq(WorkOrder::getStatus, WorkOrderService.ST_PENDING_DISPATCH));
-        long processing = workOrderMapper.selectCount(
-                new LambdaQueryWrapper<WorkOrder>().eq(WorkOrder::getStatus, WorkOrderService.ST_PROCESSING));
-        long done = workOrderMapper.selectCount(
-                new LambdaQueryWrapper<WorkOrder>().eq(WorkOrder::getStatus, WorkOrderService.ST_DONE));
-        long total = workOrderMapper.selectCount(new LambdaQueryWrapper<>());
-        Map<String, Object> m = new HashMap<>();
-        m.put("pending", pending);
-        m.put("processing", processing);
-        m.put("done", done);
-        m.put("total", total);
-        return Result.ok(m);
+    public Result<Map<String, Object>> stats(@RequestParam(required = false) Long projectId) {
+        // 原实现只统计状态 1/3/5, 漏了 2/4/6/7, 三个数之和不等于 total。
+        // 改为一次查出按状态分组的全量计数, 保证各口径可加总。
+        Map<Integer, Long> byStatus = summaryService.countByStatus(projectId);
+        return Result.ok(summaryService.toStatsMap(byStatus));
+    }
+
+    @Operation(summary = "工单汇总总览:按状态/来源/分类/紧急度聚合 + SLA 达成率")
+    @GetMapping("/summary")
+    public Result<Map<String, Object>> summary(@RequestParam(required = false) Long projectId,
+                                               @RequestParam(required = false) Integer days) {
+        return Result.ok(summaryService.summary(projectId, days == null ? 30 : days));
     }
 
     private static String operatorOf(Map<String, Object> body) {

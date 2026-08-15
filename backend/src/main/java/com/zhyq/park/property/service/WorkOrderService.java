@@ -33,6 +33,11 @@ public class WorkOrderService {
     public static final int ST_PENDING_VERIFY = 4;    // 待验收
     public static final int ST_DONE = 5;              // 已完成
     public static final int ST_CLOSED = 6;            // 已关闭
+    public static final int ST_TIMEOUT = 7;           // 已超时(建表注释已定义,原先缺常量)
+
+    /** 未结束(在办)状态:汇总页与首页"待处理"口径统一取这四个 */
+    public static final Set<Integer> ST_OPEN = Set.of(
+            ST_PENDING_DISPATCH, ST_PENDING_ACCEPT, ST_PROCESSING, ST_PENDING_VERIFY);
 
     // SLA 超时状态
     public static final int SLA_RESP_TIMEOUT = 1;     // 响应超时

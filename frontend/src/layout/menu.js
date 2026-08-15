@@ -72,7 +72,9 @@ export const menuTree = [
     title: '物业服务', icon: 'Tools', children: [
       {
         title: '物业', icon: 'Tools', children: [
+          { title: '工单汇总', path: '/property/workorder-summary' },
           { title: '物业报修', path: '/property/workorder' },
+          { title: '责任单位', path: '/property/responsible-unit' },
           { title: '会议室预约', path: '/property/meeting' },
           { title: '设备巡检', path: '/property/inspection' },
           { title: '安防巡更', path: '/property/patrol' },
