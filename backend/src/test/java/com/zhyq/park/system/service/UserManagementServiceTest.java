@@ -9,6 +9,7 @@ import com.zhyq.park.system.entity.SysUser;
 import com.zhyq.park.system.entity.SysUserRole;
 import com.zhyq.park.system.mapper.SysRoleMapper;
 import com.zhyq.park.system.mapper.SysUserMapper;
+import com.zhyq.park.system.mapper.SysUserMenuMapper;
 import com.zhyq.park.system.mapper.SysUserRoleMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -46,6 +47,8 @@ class UserManagementServiceTest {
     @Mock
     private SysUserRoleMapper userRoleMapper;
     @Mock
+    private SysUserMenuMapper userMenuMapper;
+    @Mock
     private CurrentUserContext currentUserContext;
 
     private final PasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
@@ -54,7 +57,7 @@ class UserManagementServiceTest {
     @BeforeEach
     void setUp() {
         service = new UserManagementService(
-                userMapper, roleMapper, userRoleMapper, passwordEncoder, currentUserContext);
+                userMapper, roleMapper, userRoleMapper, userMenuMapper, passwordEncoder, currentUserContext);
     }
 
     @Test

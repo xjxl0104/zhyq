@@ -10,6 +10,7 @@ import com.zhyq.park.receivable.mapper.ReceivableRegisterMapper;
 import com.zhyq.park.receivable.mapper.ReceivableRuleMapper;
 import com.zhyq.park.receivable.entity.CollectionAccount;
 import com.zhyq.park.receivable.service.FieldEncryptionService;
+import com.zhyq.park.receivable.service.ReceivableCalculator;
 import com.zhyq.park.receivable.service.ReceivableExportService;
 import com.zhyq.park.receivable.service.ReceivableImportService;
 import com.zhyq.park.receivable.service.ReceivablePlanService;
@@ -51,15 +52,17 @@ class ReceivableControllerSecurityTest {
         @Bean FieldEncryptionService encryptionService() { return mock(FieldEncryptionService.class); }
         @Bean ImportBatchMapper batchMapper() { return mock(ImportBatchMapper.class); }
         @Bean ImportRowMapper importRowMapper() { return mock(ImportRowMapper.class); }
+        @Bean ReceivableCalculator calculator() { return mock(ReceivableCalculator.class); }
         @Bean ReceivableController controller(
                 ReceivableRegisterMapper registers, ReceivableRuleMapper rules,
                 DepositLedgerMapper deposits, BillMapper bills, CollectionAccountMapper accounts,
                 ReceivableImportService imports, ReceivablePlanService plans,
                 ReceivableProvisionService provisions,
                 ReceivableExportService exports, FieldEncryptionService encryption,
-                ImportBatchMapper batches, ImportRowMapper rows) {
+                ImportBatchMapper batches, ImportRowMapper rows,
+                ReceivableCalculator calculator) {
             return new ReceivableController(registers, rules, deposits, bills, accounts,
-                    imports, plans, provisions, exports, encryption, batches, rows);
+                    imports, plans, provisions, exports, encryption, batches, rows, calculator);
         }
     }
 

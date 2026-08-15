@@ -11,6 +11,7 @@ import com.zhyq.park.receivable.mapper.DepositLedgerMapper;
 import com.zhyq.park.receivable.mapper.ReceivableRegisterMapper;
 import com.zhyq.park.receivable.mapper.ReceivableRuleMapper;
 import com.zhyq.park.receivable.service.FieldEncryptionService;
+import com.zhyq.park.receivable.service.ReceivableCalculator;
 import com.zhyq.park.receivable.service.ReceivableExportService;
 import com.zhyq.park.receivable.service.ReceivableImportService;
 import com.zhyq.park.receivable.service.ReceivablePlanService;
@@ -43,7 +44,7 @@ class ReceivableControllerMutationTest {
                 mock(ReceivablePlanService.class), mock(ReceivableProvisionService.class),
                 mock(ReceivableExportService.class),
                 mock(FieldEncryptionService.class), mock(ImportBatchMapper.class),
-                mock(ImportRowMapper.class));
+                mock(ImportRowMapper.class), mock(ReceivableCalculator.class));
         when(registers.insert(any(ReceivableRegister.class))).thenAnswer(invocation -> {
             ((ReceivableRegister) invocation.getArgument(0)).setId(99L);
             return 1;

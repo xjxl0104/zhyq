@@ -101,7 +101,7 @@ class SysUserControllerSecurityTest {
     void userDetailsDelegateToManagementService() {
         SysUser user = new SysUser();
         user.setId(7L);
-        when(service.get(7L)).thenReturn(new SysUserDetailResponse(user, List.of(1L, 2L)));
+        when(service.get(7L)).thenReturn(new SysUserDetailResponse(user, List.of(1L, 2L), List.of(3L)));
 
         assertDoesNotThrow(() -> controller.get(7L));
         verify(service).get(7L);
