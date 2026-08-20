@@ -6,7 +6,7 @@
 
 ```bash
 # 1. 把整个 zhyq 文件夹拷过去(或 git clone)
-# 2. 进目录一键起
+# 2. 进目录一键起ssss
 cd zhyq
 docker compose -f docker-compose.full.yml up -d --build
 ```
