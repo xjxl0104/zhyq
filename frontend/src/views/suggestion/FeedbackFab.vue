@@ -124,10 +124,12 @@ function handlePaste(e) {
         const formData = new FormData()
         formData.append('file', file, `screenshot_${Date.now()}.png`)
         // 同样走 fileApi 而非裸 fetch, 复用拦截器的 token 与错误处理
-        fileApi.upload(formData).then(res => {
+        fileApi.upload(formData).then(async res => {
           if (!res?.id) return
           uploadedFileIds.value.push(res.id)
-          fileList.value.push({ name: res.originalName, url: `/api/file/download/${res.id}` })
+          // 缩略图不能用 /api/file/download 裸路径:原生 img 不带 token → 401 图裂。
+          // 粘贴的图本来就在手上,直接用本地 blob 免去一次往返。
+          fileList.value.push({ name: res.originalName, url: URL.createObjectURL(file) })
         }).catch(err => {
           ElMessage.error(err?.response?.data?.message || '截图上传失败')
         })

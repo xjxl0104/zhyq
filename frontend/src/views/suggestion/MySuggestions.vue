@@ -22,8 +22,8 @@
         <div v-if="detail.images.length" style="margin-top:12px">
           <p style="font-weight:500;margin-bottom:8px">截图</p>
           <el-image v-for="img in detail.images" :key="img.id"
-            :src="`/api/file/download/${img.fileId}`"
-            :preview-src-list="detail.images.map(i => `/api/file/download/${i.fileId}`)"
+            :src="srcFor(img.fileId)"
+            :preview-src-list="detail.images.map(i => srcFor(i.fileId)).filter(Boolean)"
             style="width:80px;height:80px;margin-right:8px" fit="cover" />
         </div>
         <div v-if="detail.logs.length" style="margin-top:16px">
@@ -89,12 +89,16 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import { suggestionApi } from '@/api/suggestion'
 import { fileApi } from '@/api/file'
+import { useAuthImage } from '@/utils/authImage'
 import SuggestionWall from './SuggestionWall.vue'
+
+// 截图预览必须走鉴权下载换 blob:裸 <img src> 不带 token,会 401 图裂
+const { srcFor, resolveAll, revokeAll } = useAuthImage()
 
 const typeMap = { 1: 'Bug', 2: '建议', 3: '其他' }
 const statusMap = { 1: '待处理', 2: '已确认', 3: '处理中', 4: '已解决', 5: '已采纳', 6: '已关闭' }
@@ -195,7 +199,9 @@ async function viewDetail(id) {
   const res = await suggestionApi.mineDetail(id)
   detail.value = res
   detailVisible.value = true
+  await resolveAll((res.images || []).map(i => i.fileId))
 }
 
 onMounted(load)
+onUnmounted(revokeAll)
 </script>

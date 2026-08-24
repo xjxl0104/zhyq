@@ -46,8 +46,8 @@
         </el-descriptions>
         <div v-if="detail.images.length" style="margin-top:12px">
           <el-image v-for="img in detail.images" :key="img.id"
-            :src="`/api/file/download/${img.fileId}`"
-            :preview-src-list="detail.images.map(i => `/api/file/download/${i.fileId}`)"
+            :src="srcFor(img.fileId)"
+            :preview-src-list="detail.images.map(i => srcFor(i.fileId)).filter(Boolean)"
             style="width:100px;height:100px;margin-right:8px" fit="cover" />
         </div>
         <el-timeline style="margin-top:16px">
@@ -93,10 +93,14 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { suggestionApi } from '@/api/suggestion'
+import { useAuthImage } from '@/utils/authImage'
 import SuggestionWall from './SuggestionWall.vue'
+
+// 同 MySuggestions:裸 <img src> 无 token 会 401,必须换 blob
+const { srcFor, resolveAll, revokeAll } = useAuthImage()
 
 const typeMap = { 1: 'Bug', 2: '建议', 3: '其他' }
 const statusMap = { 1: '待处理', 2: '已确认', 3: '处理中', 4: '已解决', 5: '已采纳', 6: '已关闭' }
@@ -133,6 +137,7 @@ async function openDetail(id) {
   const res = await suggestionApi.manageDetail(id)
   detail.value = res
   detailVisible.value = true
+  await resolveAll((res.images || []).map(i => i.fileId))
 }
 
 function openStatusDialog(row) {
@@ -163,4 +168,5 @@ async function doAssign() {
 }
 
 onMounted(load)
+onUnmounted(revokeAll)
 </script>
