@@ -94,6 +94,54 @@ public class WorkflowController {
                 .orderByAsc(WfNode::getSeq)));
     }
 
+    // ==================== 流程定义/节点配置 ====================
+
+    @Operation(summary = "新增流程定义")
+    @PostMapping("/definition")
+    public Result<Long> addDefinition(@RequestBody WfDefinition definition) {
+        definition.setId(null);
+        if (definition.getStatus() == null) {
+            definition.setStatus(1);
+        }
+        definitionMapper.insert(definition);
+        return Result.ok(definition.getId());
+    }
+
+    @Operation(summary = "编辑流程定义(名称/启用状态)")
+    @PutMapping("/definition")
+    public Result<Void> updateDefinition(@RequestBody WfDefinition definition) {
+        definitionMapper.updateById(definition);
+        return Result.ok();
+    }
+
+    @Operation(summary = "删除流程定义(连同其节点)")
+    @DeleteMapping("/definition/{id}")
+    public Result<Void> removeDefinition(@PathVariable Long id) {
+        nodeMapper.delete(new LambdaQueryWrapper<WfNode>().eq(WfNode::getDefinitionId, id));
+        definitionMapper.deleteById(id);
+        return Result.ok();
+    }
+
+    /**
+     * 整体保存某流程定义的审批节点:全删再按数组顺序重建,seq 按下标重排。
+     * 已在途的审批实例按 seq 找节点,重建后 seq 语义不变,不影响其继续流转。
+     */
+    @Operation(summary = "保存流程节点(整体替换,按数组顺序重排 seq)")
+    @PutMapping("/definition/{definitionId}/nodes")
+    public Result<Void> saveNodes(@PathVariable Long definitionId, @RequestBody List<WfNode> nodes) {
+        nodeMapper.delete(new LambdaQueryWrapper<WfNode>().eq(WfNode::getDefinitionId, definitionId));
+        if (nodes != null) {
+            int seq = 1;
+            for (WfNode node : nodes) {
+                node.setId(null);
+                node.setDefinitionId(definitionId);
+                node.setSeq(seq++);
+                nodeMapper.insert(node);
+            }
+        }
+        return Result.ok();
+    }
+
     // ==================== 实例/任务查询 ====================
 
     @Operation(summary = "审批实例分页")

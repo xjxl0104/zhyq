@@ -152,7 +152,16 @@ export const menuTree = [
           { title: '文章管理', path: '/oa/article' },
           { title: '考勤管理', path: '/oa/attendance' },
           { title: '公文管理', path: '/oa/document' },
-          { title: '流程管理', path: '/oa/flow' }
+          { title: '流程管理', path: '/oa/flow' },
+          {
+            title: '采购管理', icon: 'ShoppingCart', children: [
+              { title: '年度采购计划', path: '/pur/plan-year' },
+              { title: '月度采购计划', path: '/pur/plan-month' },
+              { title: '临时采购计划', path: '/pur/plan-temp' },
+              { title: '采购申请', path: '/pur/request' },
+              { title: '采购流程设置', path: '/pur/flow' }
+            ]
+          }
         ]
       },
       { title: '应用中心', path: '/app/center' }
