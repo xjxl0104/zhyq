@@ -43,7 +43,7 @@
           </el-select>
         </el-form-item>
         <el-form-item>
-          <el-button type="primary" @click="load"><el-icon><Search /></el-icon>查询</el-button>
+          <el-button type="primary" @click="search"><el-icon><Search /></el-icon>查询</el-button>
           <el-button @click="reset">重置</el-button>
         </el-form-item>
       </el-form>
@@ -51,10 +51,16 @@
 
     <!-- 表格区 -->
     <div class="table-card">
+      <HighlightNotice
+        :visible="isHighlighting"
+        :highlight-id="highlightId"
+        label="工单"
+        @clear="clearHighlight"
+      />
       <div class="toolbar">
         <el-button type="primary" @click="openDialog()"><el-icon><Plus /></el-icon>新增工单</el-button>
       </div>
-      <el-table :data="list" v-loading="loading" border stripe>
+      <el-table :data="list" v-loading="loading" border stripe :row-class-name="rowClass">
         <el-table-column type="index" label="#" width="55" />
         <el-table-column prop="code" label="工单号" min-width="150" />
         <el-table-column prop="title" label="标题" min-width="140" show-overflow-tooltip />
@@ -223,6 +229,8 @@ import { workOrderApi, responsibleUnitApi } from '@/api/property'
 import { fileApi } from '@/api/file'
 import { userApi } from '@/api/system'
 import FileUpload from '@/components/FileUpload.vue'
+import HighlightNotice from '@/components/HighlightNotice.vue'
+import { SOURCE_ROUTES, useHighlightFilter } from '@/composables/useSourceLink'
 
 const router = useRouter()
 const route = useRoute()
@@ -247,7 +255,7 @@ const loading = ref(false)
 const list = ref([])
 const total = ref(0)
 const stats = reactive({ pending: 0, processing: 0, done: 0, total: 0 })
-const query = reactive({ pageNo: 1, pageSize: 10, code: '', orderType: null, status: null, urgency: null })
+const query = reactive({ pageNo: 1, pageSize: 10, code: '', orderType: null, status: null, urgency: null, id: null })
 
 async function load() {
   loading.value = true
@@ -259,6 +267,11 @@ async function load() {
     loading.value = false
   }
 }
+
+// 反向定位:从源记录的「关联工单」抽屉点进来时筛出那一条。
+// immediate:false — 本页 onMounted 已有 refresh(),避免请求两次
+const { highlightId, isHighlighting, clearHighlight, rowClass, applyHighlight } =
+  useHighlightFilter(query, load, { immediate: false })
 async function loadStats() {
   Object.assign(stats, await workOrderApi.stats())
 }
@@ -266,7 +279,9 @@ async function refresh() {
   await Promise.all([load(), loadStats()])
 }
 function reset() {
-  Object.assign(query, { pageNo: 1, code: '', orderType: null, status: null, urgency: null })
+  // id 一并清掉,否则从源记录跳来后点重置会仍被定位条件锁住
+  Object.assign(query, { pageNo: 1, code: '', orderType: null, status: null, urgency: null, id: null })
+  highlightId.value = null
   load()
 }
 
@@ -281,13 +296,8 @@ function unitName(id) {
   return unitOptions.value.find((u) => u.id === id)?.name || `#${id}`
 }
 
-// 来源反查:巡检/巡更转来的工单可跳回源记录
-const SOURCE_ROUTES = {
-  INSPECTION_PLAN: '/property/inspection',
-  PATROL: '/property/patrol',
-  CHECK: '/property/check-clean',
-  FEEDBACK: '/property/feedback'
-}
+// 来源反查:巡检/巡更/三检/投诉/告警转来的工单可跳回源记录。
+// 路由映射与源页面共用 useSourceLink 里那一份,别在这儿另写一套。
 function sourceLink(order) {
   return order?.sourceType && order?.sourceId && SOURCE_ROUTES[order.sourceType]
 }
@@ -419,6 +429,8 @@ onMounted(() => {
   // 支持从工单汇总页点状态卡片跳进来时带上筛选
   const s = Number(route.query.status)
   if (s >= 1 && s <= 7) query.status = s
+  // 从源记录「关联工单」跳来时按 id 定位,先落条件再取数
+  applyHighlight()
   refresh()
   loadStaff()
   loadUnitOptions()
@@ -439,4 +451,6 @@ onMounted(() => {
 .stat-value.warning { color: #ea9a13; }
 .stat-value.danger { color: #e5484d; }
 .pager { margin-top: 16px; justify-content: flex-end; }
+/* 定位到的行加底色。scoped 样式进不到 el-table 内部,要 :deep */
+:deep(.source-highlight-row) > td { background: var(--el-color-warning-light-9) !important; }
 </style>

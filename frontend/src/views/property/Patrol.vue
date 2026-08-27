@@ -32,7 +32,7 @@
           <el-input v-model="query.patroller" placeholder="请输入巡更人" clearable style="width: 140px" />
         </el-form-item>
         <el-form-item>
-          <el-button type="primary" @click="load"><el-icon><Search /></el-icon>查询</el-button>
+          <el-button type="primary" @click="search"><el-icon><Search /></el-icon>查询</el-button>
           <el-button @click="reset">重置</el-button>
         </el-form-item>
       </el-form>
@@ -40,10 +40,16 @@
 
     <!-- 表格区 -->
     <div class="table-card">
+      <HighlightNotice
+        :visible="isHighlighting"
+        :highlight-id="highlightId"
+        label="巡更记录"
+        @clear="clearHighlight"
+      />
       <div class="toolbar">
         <el-button type="primary" @click="openDialog()"><el-icon><Plus /></el-icon>新增巡更</el-button>
       </div>
-      <el-table :data="list" v-loading="loading" border stripe>
+      <el-table :data="list" v-loading="loading" border stripe :row-class-name="rowClass">
         <el-table-column type="index" label="#" width="55" />
         <el-table-column prop="routeName" label="路线" min-width="140" show-overflow-tooltip />
         <el-table-column prop="point" label="点位" min-width="120" show-overflow-tooltip />
@@ -55,12 +61,15 @@
           </template>
         </el-table-column>
         <el-table-column prop="remark" label="备注" min-width="160" show-overflow-tooltip />
-        <el-table-column label="操作" width="180" fixed="right">
+        <el-table-column label="操作" width="250" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click="openDialog(row)">编辑</el-button>
             <el-popconfirm v-if="row.result === '异常'" title="确认转为工单?" @confirm="doToWorkOrder(row)">
               <template #reference><el-button link type="warning">转工单</el-button></template>
             </el-popconfirm>
+            <el-badge v-if="countOf(row.id)" :value="countOf(row.id)" class="order-badge">
+              <el-button link type="success" @click="openRelated(row)">关联工单</el-button>
+            </el-badge>
             <el-popconfirm title="确认删除?" @confirm="remove(row.id)">
               <template #reference><el-button link type="danger">删除</el-button></template>
             </el-popconfirm>
@@ -96,6 +105,14 @@
         <el-button type="primary" @click="submit">确定</el-button>
       </template>
     </el-dialog>
+
+    <RelatedOrderDrawer
+      v-model:visible="drawer.visible"
+      :loading="drawer.loading"
+      :list="drawer.list"
+      source-type="PATROL"
+      @goto="gotoOrder"
+    />
   </div>
 </template>
 
@@ -105,12 +122,15 @@ import { ElMessage } from 'element-plus'
 import { patrolApi } from '@/api/property'
 import { fileApi } from '@/api/file'
 import FileUpload from '@/components/FileUpload.vue'
+import HighlightNotice from '@/components/HighlightNotice.vue'
+import RelatedOrderDrawer from '@/components/RelatedOrderDrawer.vue'
+import { useHighlightFilter, useRelatedOrders } from '@/composables/useSourceLink'
 
 const loading = ref(false)
 const list = ref([])
 const total = ref(0)
 const stats = reactive({ total: 0, normal: 0, abnormal: 0 })
-const query = reactive({ pageNo: 1, pageSize: 10, routeName: '', result: null, patroller: '' })
+const query = reactive({ pageNo: 1, pageSize: 10, routeName: '', result: null, patroller: '', id: null })
 
 async function load() {
   loading.value = true
@@ -118,10 +138,17 @@ async function load() {
     const res = await patrolApi.page(query)
     list.value = res.records
     total.value = res.total
+    loadCounts(res.records)
   } finally {
     loading.value = false
   }
 }
+
+// 工单来源联动:正向接收工单跳来的定位,反向查本行派生的工单
+// immediate:false — 本页 onMounted 已有 refresh(),定位时机交给它,避免请求两次
+const { highlightId, isHighlighting, clearHighlight, rowClass, applyHighlight } =
+  useHighlightFilter(query, load, { immediate: false })
+const { countOf, loadCounts, drawer, openRelated, gotoOrder } = useRelatedOrders('PATROL')
 async function loadStats() {
   Object.assign(stats, await patrolApi.stats())
 }
@@ -129,7 +156,9 @@ async function refresh() {
   await Promise.all([load(), loadStats()])
 }
 function reset() {
-  Object.assign(query, { pageNo: 1, routeName: '', result: null, patroller: '' })
+  // id 一并清掉,否则从工单跳来后点重置会仍被定位条件锁住
+  Object.assign(query, { pageNo: 1, routeName: '', result: null, patroller: '', id: null })
+  highlightId.value = null
   load()
 }
 
@@ -176,7 +205,11 @@ async function doToWorkOrder(row) {
   refresh()
 }
 
-onMounted(refresh)
+onMounted(() => {
+  // 先落定位条件再取数,顺序反了会先查全量再被覆盖
+  applyHighlight()
+  refresh()
+})
 </script>
 
 <style scoped>
@@ -191,4 +224,8 @@ onMounted(refresh)
 .stat-value.success { color: #16a34a; }
 .stat-value.danger { color: #e5484d; }
 .pager { margin-top: 16px; justify-content: flex-end; }
+/* 徽标默认会把数字盖在按钮文字上,右移一点 */
+.order-badge :deep(.el-badge__content) { transform: translate(6px, -6px); }
+/* 定位到的行加底色。scoped 样式进不到 el-table 内部,要 :deep */
+:deep(.source-highlight-row) > td { background: var(--el-color-warning-light-9) !important; }
 </style>

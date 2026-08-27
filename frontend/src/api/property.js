@@ -7,6 +7,16 @@ export const workOrderApi = {
   stats: (params) => request.get('/property/workorder/stats', { params }),
   // 汇总总览:按状态/来源/分类/紧急度聚合 + SLA 达成率 + 近 N 天趋势
   summary: (params) => request.get('/property/workorder/summary', { params }),
+  // 按来源反查:源记录(巡检/巡更/三检/投诉/告警) → 派生工单列表。
+  // projectId 不用显式传,request.js 拦截器会按当前项目自动注入
+  bySource: (sourceType, sourceId) =>
+    request.get('/property/workorder/by-source', { params: { sourceType, sourceId } }),
+  // 批量统计一页源记录各自的工单数,避免列表逐行请求。
+  // 逗号拼接而非数组:axios 默认会序列化成 sourceIds[]=1&sourceIds[]=2,Spring 绑定不上。
+  countBySource: (sourceType, sourceIds) =>
+    request.get('/property/workorder/count-by-source', {
+      params: { sourceType, sourceIds: sourceIds.join(',') }
+    }),
   add: (data) => request.post('/property/workorder', data),
   update: (data) => request.put('/property/workorder', data),
   remove: (id) => request.delete(`/property/workorder/${id}`),

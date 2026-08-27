@@ -42,9 +42,11 @@ public class FeedbackController {
                                              @RequestParam(defaultValue = "10") int pageSize,
                                              @RequestParam(required = false) String ftype,
                                              @RequestParam(required = false) Integer status,
-                                             @RequestParam(required = false) String title) {
+                                             @RequestParam(required = false) String title,
+                                             @RequestParam(required = false) Long id) {
         LambdaQueryWrapper<Feedback> qw = new LambdaQueryWrapper<>();
-        qw.eq(StringUtils.hasText(ftype), Feedback::getFtype, ftype)
+        qw.eq(id != null, Feedback::getId, id)
+          .eq(StringUtils.hasText(ftype), Feedback::getFtype, ftype)
           .eq(status != null, Feedback::getStatus, status)
           .like(StringUtils.hasText(title), Feedback::getTitle, title)
           .orderByDesc(Feedback::getId);

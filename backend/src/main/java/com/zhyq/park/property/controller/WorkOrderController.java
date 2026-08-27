@@ -4,9 +4,11 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.zhyq.park.common.event.DomainEvent;
+import com.zhyq.park.common.exception.BizException;
 import com.zhyq.park.common.result.PageResult;
 import com.zhyq.park.common.result.Result;
 import com.zhyq.park.property.entity.WorkOrder;
+import com.zhyq.park.property.model.WorkOrderSource;
 import com.zhyq.park.property.entity.WorkOrderLog;
 import com.zhyq.park.property.mapper.WorkOrderLogMapper;
 import com.zhyq.park.property.mapper.WorkOrderMapper;
@@ -24,12 +26,22 @@ import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 @Tag(name = "物业-报修工单")
 @RestController
 @RequestMapping("/property/workorder")
 @RequiredArgsConstructor
 public class WorkOrderController {
+
+    /**
+     * count-by-source 单次 IN 的上限, 与前端最大页长(50)对齐并留余量。
+     * 前端页长若调大(如做导出), 这里要跟着改。
+     */
+    private static final int MAX_COUNT_BY_SOURCE_IDS = 100;
+
+    /** 单条源记录反查工单的返回上限, 防脏数据把整表拉进内存 */
+    private static final int MAX_ORDERS_PER_SOURCE = 500;
 
     private final WorkOrderMapper workOrderMapper;
     private final WorkOrderLogMapper workOrderLogMapper;
@@ -46,9 +58,11 @@ public class WorkOrderController {
                                               @RequestParam(required = false) String orderType,
                                               @RequestParam(required = false) Integer status,
                                               @RequestParam(required = false) Integer urgency,
-                                              @RequestParam(required = false) Long projectId) {
+                                              @RequestParam(required = false) Long projectId,
+                                              @RequestParam(required = false) Long id) {
         LambdaQueryWrapper<WorkOrder> qw = new LambdaQueryWrapper<>();
-        qw.like(StringUtils.hasText(code), WorkOrder::getCode, code)
+        qw.eq(id != null, WorkOrder::getId, id)
+          .like(StringUtils.hasText(code), WorkOrder::getCode, code)
           .eq(StringUtils.hasText(orderType), WorkOrder::getOrderType, orderType)
           .eq(status != null, WorkOrder::getStatus, status)
           .eq(urgency != null, WorkOrder::getUrgency, urgency)
@@ -160,6 +174,64 @@ public class WorkOrderController {
     public Result<Void> close(@PathVariable Long id, @RequestBody(required = false) Map<String, Object> body) {
         workOrderService.close(id, operatorOf(body), body == null ? null : strOf(body.get("content")));
         return Result.ok();
+    }
+
+    @Operation(summary = "按来源反查工单列表(源记录 → 派生工单)")
+    @GetMapping("/by-source")
+    public Result<List<WorkOrder>> bySource(@RequestParam String sourceType,
+                                            @RequestParam Long sourceId,
+                                            @RequestParam(required = false) Long projectId) {
+        if (!WorkOrderSource.isQueryable(sourceType)) {
+            throw new BizException("不支持的来源类型:" + sourceType);
+        }
+        List<WorkOrder> list = workOrderMapper.selectList(
+                new LambdaQueryWrapper<WorkOrder>()
+                        .eq(WorkOrder::getSourceType, sourceType)
+                        .eq(WorkOrder::getSourceId, sourceId)
+                        // 与本文件 page() 保持一致的项目隔离口径。
+                        // projectId 由前端拦截器自动注入(见 utils/request.js)
+                        .eq(projectId != null, WorkOrder::getProjectId, projectId)
+                        .orderByDesc(WorkOrder::getId)
+                        // 一条源记录理论上可反复转单, 没有业务硬上限。
+                        // 正常个位数, 加个兜底防脏数据(重复点击/脚本)把整表拉进内存。
+                        .last("LIMIT " + MAX_ORDERS_PER_SOURCE));
+        return Result.ok(list);
+    }
+
+    /**
+     * 源页面列表要在每行显示"已派生 N 个工单", 逐行请求会 N+1。
+     * 这里一次查一页的 id 集合, 返回 sourceId → 工单数。
+     */
+    @Operation(summary = "按来源批量统计工单数(供源记录列表显示徽标)")
+    @GetMapping("/count-by-source")
+    public Result<Map<Long, Long>> countBySource(@RequestParam String sourceType,
+                                                  // 前端逗号拼接传入(sourceIds=1,2,3), 靠 Spring 的
+                                                  // StringToCollection 转换器绑定。不能让 axios 按数组序列化
+                                                  // (会变成 sourceIds[]=1&sourceIds[]=2, 这边绑不上)。
+                                                  // 改前端序列化方式时这里会一起坏, 见 api/property.js 对应注释。
+                                                  @RequestParam List<Long> sourceIds,
+                                                  @RequestParam(required = false) Long projectId) {
+        if (!WorkOrderSource.isQueryable(sourceType)) {
+            throw new BizException("不支持的来源类型:" + sourceType);
+        }
+        if (sourceIds == null || sourceIds.isEmpty()) {
+            return Result.ok(Map.of());
+        }
+        // 上限兜底:sourceIds 来自前端一页的行数, 正常 ≤50。
+        // 不限长的话一个超长 IN 会打挂 SQL。
+        if (sourceIds.size() > MAX_COUNT_BY_SOURCE_IDS) {
+            throw new BizException("单次最多查询 " + MAX_COUNT_BY_SOURCE_IDS + " 条来源记录");
+        }
+        List<WorkOrder> list = workOrderMapper.selectList(
+                new LambdaQueryWrapper<WorkOrder>()
+                        .select(WorkOrder::getSourceId)
+                        .eq(WorkOrder::getSourceType, sourceType)
+                        .in(WorkOrder::getSourceId, sourceIds)
+                        // 与 bySource/page 同口径, 否则徽标数会把别的项目的工单算进来
+                        .eq(projectId != null, WorkOrder::getProjectId, projectId));
+        Map<Long, Long> counts = list.stream()
+                .collect(Collectors.groupingBy(WorkOrder::getSourceId, Collectors.counting()));
+        return Result.ok(counts);
     }
 
     @Operation(summary = "手动触发SLA超时扫描(调试/运维工具,复用定时任务同一逻辑)")

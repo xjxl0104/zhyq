@@ -39,9 +39,11 @@ public class InspectionPlanController {
                                                    @RequestParam(defaultValue = "10") int pageSize,
                                                    @RequestParam(required = false) String name,
                                                    @RequestParam(required = false) String cycle,
-                                                   @RequestParam(required = false) Integer status) {
+                                                   @RequestParam(required = false) Integer status,
+                                                   @RequestParam(required = false) Long id) {
         LambdaQueryWrapper<InspectionPlan> qw = new LambdaQueryWrapper<>();
-        qw.like(StringUtils.hasText(name), InspectionPlan::getName, name)
+        qw.eq(id != null, InspectionPlan::getId, id)
+          .like(StringUtils.hasText(name), InspectionPlan::getName, name)
           .eq(StringUtils.hasText(cycle), InspectionPlan::getCycle, cycle)
           .eq(status != null, InspectionPlan::getStatus, status)
           .orderByDesc(InspectionPlan::getId);

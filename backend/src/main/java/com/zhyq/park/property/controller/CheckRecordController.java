@@ -29,9 +29,11 @@ public class CheckRecordController {
                                                 @RequestParam(defaultValue = "10") int pageSize,
                                                 @RequestParam(required = false) String ctype,
                                                 @RequestParam(required = false) Integer status,
-                                                @RequestParam(required = false) String location) {
+                                                @RequestParam(required = false) String location,
+                                                @RequestParam(required = false) Long id) {
         LambdaQueryWrapper<CheckRecord> qw = new LambdaQueryWrapper<>();
-        qw.eq(StringUtils.hasText(ctype), CheckRecord::getCtype, ctype)
+        qw.eq(id != null, CheckRecord::getId, id)
+          .eq(StringUtils.hasText(ctype), CheckRecord::getCtype, ctype)
           .eq(status != null, CheckRecord::getStatus, status)
           .like(StringUtils.hasText(location), CheckRecord::getLocation, location)
           .orderByDesc(CheckRecord::getId);

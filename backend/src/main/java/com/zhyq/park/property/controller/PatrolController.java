@@ -35,9 +35,11 @@ public class PatrolController {
                                            @RequestParam(defaultValue = "10") int pageSize,
                                            @RequestParam(required = false) String routeName,
                                            @RequestParam(required = false) String result,
-                                           @RequestParam(required = false) String patroller) {
+                                           @RequestParam(required = false) String patroller,
+                                           @RequestParam(required = false) Long id) {
         LambdaQueryWrapper<Patrol> qw = new LambdaQueryWrapper<>();
-        qw.like(StringUtils.hasText(routeName), Patrol::getRouteName, routeName)
+        qw.eq(id != null, Patrol::getId, id)
+          .like(StringUtils.hasText(routeName), Patrol::getRouteName, routeName)
           .eq(StringUtils.hasText(result), Patrol::getResult, result)
           .like(StringUtils.hasText(patroller), Patrol::getPatroller, patroller)
           .orderByDesc(Patrol::getId);

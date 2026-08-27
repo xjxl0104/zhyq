@@ -37,3 +37,9 @@ credentials.json
 # ---- 运行时上传文件 ----
 backend/uploads/
 uploads/
+
+# ---- 服务器本地运维脚本 ----
+# 只存在于服务器 /opt/zhyq,内含部署路径与 webhook 密钥,仓库公开故不入库。
+# 正规带 HMAC 校验的 webhook 实现见 backend common/event/HmacWebhookDispatcher.java
+deploy.sh
+webhook-listener.sh

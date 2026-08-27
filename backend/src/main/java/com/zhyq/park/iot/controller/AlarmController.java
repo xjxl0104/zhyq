@@ -29,9 +29,11 @@ public class AlarmController {
     public Result<PageResult<Alarm>> page(@RequestParam(defaultValue = "1") int pageNo,
                                           @RequestParam(defaultValue = "10") int pageSize,
                                           @RequestParam(required = false) Integer status,
-                                          @RequestParam(required = false) Integer level) {
+                                          @RequestParam(required = false) Integer level,
+                                          @RequestParam(required = false) Long id) {
         LambdaQueryWrapper<Alarm> qw = new LambdaQueryWrapper<>();
-        qw.eq(status != null, Alarm::getStatus, status)
+        qw.eq(id != null, Alarm::getId, id)
+          .eq(status != null, Alarm::getStatus, status)
           .eq(level != null, Alarm::getLevel, level)
           .orderByDesc(Alarm::getId);
         IPage<Alarm> p = alarmMapper.selectPage(new Page<>(pageNo, pageSize), qw);
