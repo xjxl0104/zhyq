@@ -110,3 +110,38 @@
 | templateUpdate | system:message:edit |
 | templateDelete, recordDelete | system:message:delete |
 | send | system:message:send |
+
+## pur — 采购管理(ver6.6 补,随 PR #4 并入)
+> 迁移:V41__pur_workflow_perms_seed.sql(非 V30)。
+
+### PurPlanController `/pur/plan`
+| 方法 | perm |
+|---|---|
+| page, list, get/{id} | pur:plan:query |
+| add | pur:plan:add |
+| update | pur:plan:edit |
+| remove | pur:plan:delete |
+
+### PurRequestController `/pur/request`
+| 方法 | perm |
+|---|---|
+| page, get/{id} | pur:request:query |
+| add | pur:request:add |
+| update | pur:request:edit |
+| remove | pur:request:delete |
+| submit | pur:request:submit |
+| complete | pur:request:complete |
+| cancel | pur:request:cancel |
+
+## workflow — 审批链(ver6.6 补)
+> 流程定义/节点是合同、采购等多 bizType 共用的「谁能审批」配置,
+> 能改即可把审批人指向自己实现自审,故按管理级单独设点。
+> 运行时接口(start / task approve / reject / my / instance)本次未收口,
+> 属存量问题:收口需先定审批人角色口径。
+
+### WorkflowController `/workflow`
+| 方法 | perm |
+|---|---|
+| definitionPage, nodes | workflow:definition:manage |
+| addDefinition, updateDefinition, removeDefinition, saveNodes | workflow:definition:manage |
+| start, approve, reject, myTasks, instancePage, instanceTasks | (未收口,见上) |

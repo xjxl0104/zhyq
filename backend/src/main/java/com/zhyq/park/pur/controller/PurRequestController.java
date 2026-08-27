@@ -11,6 +11,7 @@ import com.zhyq.park.pur.service.PurRequestService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 
@@ -24,6 +25,7 @@ public class PurRequestController {
     private final PurRequestService requestService;
 
     @Operation(summary = "分页查询采购申请")
+    @PreAuthorize("hasAuthority('pur:request:query')")
     @GetMapping("/page")
     public Result<PageResult<PurRequest>> page(@RequestParam(defaultValue = "1") int pageNo,
                                                @RequestParam(defaultValue = "10") int pageSize,
@@ -42,18 +44,21 @@ public class PurRequestController {
     }
 
     @Operation(summary = "采购申请详情(含明细)")
+    @PreAuthorize("hasAuthority('pur:request:query')")
     @GetMapping("/{id}")
     public Result<PurRequest> get(@PathVariable Long id) {
         return Result.ok(requestService.detail(id));
     }
 
     @Operation(summary = "新增采购申请(含明细,自动生成单号、汇总金额,初始为草稿)")
+    @PreAuthorize("hasAuthority('pur:request:add')")
     @PostMapping
     public Result<Long> add(@RequestBody PurRequest request) {
         return Result.ok(requestService.create(request));
     }
 
     @Operation(summary = "编辑采购申请(仅草稿/已驳回可编辑,整单替换明细)")
+    @PreAuthorize("hasAuthority('pur:request:edit')")
     @PutMapping
     public Result<Void> update(@RequestBody PurRequest request) {
         requestService.update(request);
@@ -61,6 +66,7 @@ public class PurRequestController {
     }
 
     @Operation(summary = "提交审批(草稿/已驳回→审批中,发起审批链)")
+    @PreAuthorize("hasAuthority('pur:request:submit')")
     @PostMapping("/{id}/submit")
     public Result<Void> submit(@PathVariable Long id) {
         requestService.submit(id);
@@ -68,6 +74,7 @@ public class PurRequestController {
     }
 
     @Operation(summary = "标记完成(到货入库确认)")
+    @PreAuthorize("hasAuthority('pur:request:complete')")
     @PostMapping("/{id}/complete")
     public Result<Void> complete(@PathVariable Long id) {
         requestService.complete(id);
@@ -75,6 +82,7 @@ public class PurRequestController {
     }
 
     @Operation(summary = "取消采购申请")
+    @PreAuthorize("hasAuthority('pur:request:cancel')")
     @PostMapping("/{id}/cancel")
     public Result<Void> cancel(@PathVariable Long id) {
         requestService.cancel(id);
@@ -82,6 +90,7 @@ public class PurRequestController {
     }
 
     @Operation(summary = "删除采购申请(审批中/已通过/已完成不可删)")
+    @PreAuthorize("hasAuthority('pur:request:delete')")
     @DeleteMapping("/{id}")
     public Result<Void> remove(@PathVariable Long id) {
         requestService.remove(id);

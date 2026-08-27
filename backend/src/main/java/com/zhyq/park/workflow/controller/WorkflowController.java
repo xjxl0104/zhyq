@@ -18,6 +18,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 
@@ -25,8 +26,12 @@ import java.util.List;
 
 /**
  * 审批链工作流接口:发起/通过/驳回、我的待办,以及流程定义/节点/实例/任务的基础查询。
- * 流程配置本期先用 SQL 维护(见 V18 样例定义),这里提供查询与运行时操作。
  * 无 /api 前缀(全局 context-path 已是 /api)。
+ *
+ * 权限口径(ver6.6 补):本类此前无任何 @PreAuthorize,仅靠 SecurityConfig
+ * 的 anyRequest().authenticated() 兜底,即任何登录用户可调。流程定义/节点
+ * 是合同、采购等多个 bizType 共用的审批链配置,能改它就等于能改"谁能审批",
+ * 可把审批人指向自己实现自审,故配置类接口一律要 workflow:definition:manage。
  */
 @Tag(name = "审批链工作流")
 @RestController
@@ -72,7 +77,10 @@ public class WorkflowController {
 
     // ==================== 流程定义/节点查询 ====================
 
+    // 定义/节点的读接口也一并收口:全项目只有 FlowConfig.vue(流程配置页)读它们,
+    // 与写接口同页同权限位,不牵连运行时审批(task/instance 系列保持原样)。
     @Operation(summary = "流程定义分页")
+    @PreAuthorize("hasAuthority('workflow:definition:manage')")
     @GetMapping("/definition/page")
     public Result<PageResult<WfDefinition>> definitionPage(@RequestParam(defaultValue = "1") int pageNo,
                                                            @RequestParam(defaultValue = "10") int pageSize,
@@ -87,6 +95,7 @@ public class WorkflowController {
     }
 
     @Operation(summary = "某流程定义的节点列表(按 seq 升序)")
+    @PreAuthorize("hasAuthority('workflow:definition:manage')")
     @GetMapping("/definition/{definitionId}/nodes")
     public Result<List<WfNode>> nodes(@PathVariable Long definitionId) {
         return Result.ok(nodeMapper.selectList(new LambdaQueryWrapper<WfNode>()
@@ -97,6 +106,7 @@ public class WorkflowController {
     // ==================== 流程定义/节点配置 ====================
 
     @Operation(summary = "新增流程定义")
+    @PreAuthorize("hasAuthority('workflow:definition:manage')")
     @PostMapping("/definition")
     public Result<Long> addDefinition(@RequestBody WfDefinition definition) {
         definition.setId(null);
@@ -108,6 +118,7 @@ public class WorkflowController {
     }
 
     @Operation(summary = "编辑流程定义(名称/启用状态)")
+    @PreAuthorize("hasAuthority('workflow:definition:manage')")
     @PutMapping("/definition")
     public Result<Void> updateDefinition(@RequestBody WfDefinition definition) {
         definitionMapper.updateById(definition);
@@ -115,6 +126,7 @@ public class WorkflowController {
     }
 
     @Operation(summary = "删除流程定义(连同其节点)")
+    @PreAuthorize("hasAuthority('workflow:definition:manage')")
     @DeleteMapping("/definition/{id}")
     public Result<Void> removeDefinition(@PathVariable Long id) {
         nodeMapper.delete(new LambdaQueryWrapper<WfNode>().eq(WfNode::getDefinitionId, id));
@@ -127,6 +139,7 @@ public class WorkflowController {
      * 已在途的审批实例按 seq 找节点,重建后 seq 语义不变,不影响其继续流转。
      */
     @Operation(summary = "保存流程节点(整体替换,按数组顺序重排 seq)")
+    @PreAuthorize("hasAuthority('workflow:definition:manage')")
     @PutMapping("/definition/{definitionId}/nodes")
     public Result<Void> saveNodes(@PathVariable Long definitionId, @RequestBody List<WfNode> nodes) {
         nodeMapper.delete(new LambdaQueryWrapper<WfNode>().eq(WfNode::getDefinitionId, definitionId));
