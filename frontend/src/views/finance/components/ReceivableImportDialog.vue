@@ -2,7 +2,9 @@
   <el-dialog :model-value="modelValue" title="导入应收明细登记表" width="980px" @close="close">
     <el-steps :active="stage" align-center finish-status="success"><el-step title="选择文件" /><el-step title="预览与绑定" /><el-step title="补建主数据" /><el-step title="确认入库" /></el-steps>
     <div v-if="stage === 0" class="upload-stage">
-      <el-upload drag :auto-upload="false" accept=".xlsx,.xls" :limit="1" :on-change="onFile"><div>拖拽或点击选择园区应收明细工作簿</div></el-upload>
+      <GlassSurface variant="upload" class="import-surface">
+        <el-upload drag :auto-upload="false" accept=".xlsx,.xls" :limit="1" :on-change="onFile"><div>拖拽或点击选择园区应收明细工作簿</div></el-upload>
+      </GlassSurface>
       <el-alert title="系统读取 Excel 缓存值，不执行公式；完整账号仅加密保存。" type="info" :closable="false" />
     </div>
     <div v-else-if="stage === 2 && provision" class="provision-stage">
@@ -55,6 +57,7 @@ import { computed, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { receivableApi } from '@/api/receivable'
 import { buildReceivableBinding, canConfirmReceivableImport } from '../receivableModel'
+import GlassSurface from '@/components/GlassSurface.vue'
 const props = defineProps({ modelValue: Boolean }); const emit = defineEmits(['update:modelValue', 'confirmed'])
 const stage = ref(0); const file = ref(null); const preview = ref(null); const provision = ref(null); const loading = ref(false)
 const totalCards = computed(() => {
@@ -101,4 +104,4 @@ async function doProvision() {
 async function confirm() { loading.value = true; try { const count = await receivableApi.confirm(preview.value.batchId); stage.value = 3; ElMessage.success(`成功导入 ${count} 条`); emit('confirmed'); close() } finally { loading.value = false } }
 function close() { emit('update:modelValue', false); stage.value = 0; file.value = null; preview.value = null; provision.value = null }
 </script>
-<style scoped>.upload-stage,.preview-stage,.provision-stage{margin-top:24px}.upload-stage{display:grid;gap:16px}.provision-stage h4{margin:16px 0 8px}.totals{margin-bottom:16px}.binding{display:flex;gap:6px}</style>
+<style scoped>.upload-stage,.preview-stage,.provision-stage{margin-top:24px}.upload-stage{display:grid;gap:16px}.provision-stage h4{margin:16px 0 8px}.totals{margin-bottom:16px}.binding{display:flex;gap:6px}.import-surface :deep(.el-upload),.import-surface :deep(.el-upload-dragger){width:100%}</style>

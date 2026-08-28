@@ -55,29 +55,33 @@
           <el-input v-model="submitForm.content" type="textarea" :rows="4" placeholder="可选" />
         </el-form-item>
         <el-form-item label="截图">
-          <el-upload
-            :http-request="doImageUpload"
-            list-type="picture-card"
-            :file-list="fileList"
-            :limit="3"
-            :before-upload="beforeImageUpload"
-            :on-exceed="() => ElMessage.warning('最多上传3张截图')"
-            accept="image/png,image/jpeg"
-          >
-            <el-icon><Plus /></el-icon>
-          </el-upload>
+          <GlassSurface variant="upload" class="suggestion-upload-surface">
+            <el-upload
+              :http-request="doImageUpload"
+              list-type="picture-card"
+              :file-list="fileList"
+              :limit="3"
+              :before-upload="beforeImageUpload"
+              :on-exceed="() => ElMessage.warning('最多上传3张截图')"
+              accept="image/png,image/jpeg"
+            >
+              <el-icon><Plus /></el-icon>
+            </el-upload>
+          </GlassSurface>
         </el-form-item>
         <el-form-item label="附件">
-          <el-upload
-            :http-request="doAttachUpload"
-            :file-list="attachList"
-            :limit="2"
-            :before-upload="beforeAttachUpload"
-            :on-exceed="() => ElMessage.warning('最多上传2个附件')"
-          >
-            <el-button type="primary" plain><el-icon><Plus /></el-icon>上传附件</el-button>
-            <template #tip><div class="el-upload__tip">支持 pdf/doc/docx/xls/xlsx/txt/zip 等，单个≤20MB；截图与附件合计最多5个</div></template>
-          </el-upload>
+          <GlassSurface variant="upload" class="suggestion-upload-surface">
+            <el-upload
+              :http-request="doAttachUpload"
+              :file-list="attachList"
+              :limit="2"
+              :before-upload="beforeAttachUpload"
+              :on-exceed="() => ElMessage.warning('最多上传2个附件')"
+            >
+              <el-button type="primary" plain><el-icon><Plus /></el-icon>上传附件</el-button>
+              <template #tip><div class="el-upload__tip">支持 pdf/doc/docx/xls/xlsx/txt/zip 等，单个≤20MB；截图与附件合计最多5个</div></template>
+            </el-upload>
+          </GlassSurface>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -96,6 +100,7 @@ import { suggestionApi } from '@/api/suggestion'
 import { fileApi } from '@/api/file'
 import { useAuthImage } from '@/utils/authImage'
 import SuggestionWall from './SuggestionWall.vue'
+import GlassSurface from '@/components/GlassSurface.vue'
 
 // 截图预览必须走鉴权下载换 blob:裸 <img src> 不带 token,会 401 图裂
 const { srcFor, resolveAll, revokeAll } = useAuthImage()
@@ -205,3 +210,7 @@ async function viewDetail(id) {
 onMounted(load)
 onUnmounted(revokeAll)
 </script>
+
+<style scoped>
+.suggestion-upload-surface { width: 100%; }
+</style>

@@ -109,23 +109,25 @@
         </template>
       </el-alert>
 
-      <el-upload
-        drag
-        :auto-upload="false"
-        :limit="1"
-        :on-change="onFileChange"
-        :on-exceed="onExceed"
-        :file-list="fileList"
-        accept=".xls,.xlsx"
-      >
-        <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
-        <div class="el-upload__text">拖拽文件到此处，或<em>点击选择</em></div>
-        <template #tip>
-          <div class="el-upload__tip">
-            仅支持 xls/xlsx。请先<el-button link type="primary" @click="downloadTemplate">下载模板</el-button>按表头填写
-          </div>
-        </template>
-      </el-upload>
+      <GlassSurface variant="upload" class="import-surface">
+        <el-upload
+          drag
+          :auto-upload="false"
+          :limit="1"
+          :on-change="onFileChange"
+          :on-exceed="onExceed"
+          :file-list="fileList"
+          accept=".xls,.xlsx"
+        >
+          <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
+          <div class="el-upload__text">拖拽文件到此处，或<em>点击选择</em></div>
+          <template #tip>
+            <div class="el-upload__tip">
+              仅支持 xls/xlsx。请先<el-button link type="primary" @click="downloadTemplate">下载模板</el-button>按表头填写
+            </div>
+          </template>
+        </el-upload>
+      </GlassSurface>
 
       <div v-if="previewed" class="preview-box">
         <div class="preview-head">
@@ -157,6 +159,7 @@ import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, Plus, Upload, UploadFilled } from '@element-plus/icons-vue'
 import { responsibleUnitApi } from '@/api/property'
+import GlassSurface from '@/components/GlassSurface.vue'
 
 const UNIT_TYPES = ['内部部门', '外部供应商', '物业', '施工方']
 const TYPE_TAG = { 内部部门: 'primary', 外部供应商: 'warning', 物业: 'success', 施工方: 'info' }
@@ -344,6 +347,10 @@ onMounted(load)
 }
 .mb12 {
   margin-bottom: 12px;
+}
+.import-surface :deep(.el-upload),
+.import-surface :deep(.el-upload-dragger) {
+  width: 100%;
 }
 .preview-box {
   margin-top: 14px;

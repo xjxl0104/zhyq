@@ -21,19 +21,20 @@
         <el-input v-model="form.content" type="textarea" :rows="4" placeholder="可选，补充说明" />
       </el-form-item>
       <el-form-item label="截图">
-        <el-upload
-          :http-request="doUpload"
-          list-type="picture-card"
-          :file-list="fileList"
-          :limit="5"
-          :before-upload="beforeUpload"
-          :on-success="onUploadSuccess"
-          :on-exceed="() => ElMessage.warning('最多上传5张')"
-          accept="image/png,image/jpeg"
-        >
-          <el-icon><Plus /></el-icon>
-          <template #tip><div class="el-upload__tip">支持 jpg/png，单张≤5MB，最多5张。可 Ctrl+V 粘贴截图</div></template>
-        </el-upload>
+        <GlassSurface variant="upload" class="feedback-upload-surface">
+          <el-upload
+            :http-request="doUpload"
+            list-type="picture-card"
+            :file-list="fileList"
+            :limit="5"
+            :before-upload="beforeUpload"
+            :on-exceed="() => ElMessage.warning('最多上传5张')"
+            accept="image/png,image/jpeg"
+          >
+            <el-icon><Plus /></el-icon>
+            <template #tip><div class="el-upload__tip">支持 jpg/png，单张≤5MB，最多5张。可 Ctrl+V 粘贴截图</div></template>
+          </el-upload>
+        </GlassSurface>
       </el-form-item>
     </el-form>
     <template #footer>
@@ -49,6 +50,7 @@ import { ElMessage } from 'element-plus'
 import { ChatDotRound, Plus } from '@element-plus/icons-vue'
 import { suggestionApi } from '@/api/suggestion'
 import { fileApi } from '@/api/file'
+import GlassSurface from '@/components/GlassSurface.vue'
 
 const visible = ref(false)
 const submitting = ref(false)
@@ -152,4 +154,5 @@ onUnmounted(() => document.removeEventListener('paste', handlePaste))
   height: 48px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
+.feedback-upload-surface { width: 100%; }
 </style>

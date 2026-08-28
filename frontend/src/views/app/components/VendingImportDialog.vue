@@ -13,9 +13,11 @@
           <el-button class="template-button" @click="downloadTemplate">下载标准模板</el-button>
         </el-form-item>
         <el-form-item label="标准文件">
-          <el-upload drag :auto-upload="false" accept=".xlsx,.xls" :limit="1" :on-change="onFile">
-            <div>拖拽或点击选择已按标准模板整理的文件</div>
-          </el-upload>
+          <GlassSurface variant="upload" class="import-surface">
+            <el-upload drag :auto-upload="false" accept=".xlsx,.xls" :limit="1" :on-change="onFile">
+              <div>拖拽或点击选择已按标准模板整理的文件</div>
+            </el-upload>
+          </GlassSurface>
         </el-form-item>
       </el-form>
       <el-alert title="本版本不解析厂商原生导出文件；请勿上传账号、密码、Cookie 或页面抓取内容。" type="warning" :closable="false" show-icon />
@@ -59,6 +61,7 @@ import { ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { vendingApi } from '@/api/vending'
 import { canConfirmVendingImport, vendingTypes } from '../vendingModel'
+import GlassSurface from '@/components/GlassSurface.vue'
 
 const props = defineProps({ modelValue: Boolean, initialType: { type: String, default: 'MACHINE' } })
 const emit = defineEmits(['update:modelValue', 'confirmed'])
@@ -131,4 +134,7 @@ function close() {
 .template-button { margin-left:12px; }
 .summary-row { display:flex; gap:10px; margin-bottom:14px; }
 .exclude-bar { display:flex; gap:10px; margin:14px 0; }
+.import-surface { width: 100%; }
+.import-surface :deep(.el-upload),
+.import-surface :deep(.el-upload-dragger) { width: 100%; }
 </style>

@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { uploadUrl, fileApi } from '@/api/file'
+import GlassSurface from '@/components/GlassSurface.vue'
 
 const props = defineProps({
   modelValue: { type: Array, default: () => [] },
@@ -71,22 +72,24 @@ async function onPreview(uploadFile) {
 </script>
 
 <template>
-  <el-upload
-    :action="uploadUrl"
-    :headers="headers"
-    :data="uploadData"
-    :file-list="fileList"
-    :accept="accept"
-    :on-success="onSuccess"
-    :on-error="onError"
-    :before-upload="beforeUpload"
-    :on-remove="onRemove"
-    :on-preview="onPreview"
-    multiple
-  >
-    <el-button type="primary">选择文件</el-button>
-    <template #tip>
-      <div class="el-upload__tip">支持 jpg/png/pdf/doc/xls/dwg 等,单个不超过 20MB;点击文件名下载</div>
-    </template>
-  </el-upload>
+  <GlassSurface variant="upload">
+    <el-upload
+      :action="uploadUrl"
+      :headers="headers"
+      :data="uploadData"
+      :file-list="fileList"
+      :accept="accept"
+      :on-success="onSuccess"
+      :on-error="onError"
+      :before-upload="beforeUpload"
+      :on-remove="onRemove"
+      :on-preview="onPreview"
+      multiple
+    >
+      <el-button type="primary">选择文件</el-button>
+      <template #tip>
+        <div class="el-upload__tip">支持 jpg/png/pdf/doc/xls/dwg 等,单个不超过 20MB;点击文件名下载</div>
+      </template>
+    </el-upload>
+  </GlassSurface>
 </template>
