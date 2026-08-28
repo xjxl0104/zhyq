@@ -56,6 +56,7 @@ let resizeObserver = null
 let mediaQuery = null
 let particleTimer = null
 let particleSequence = 0
+let pendingBurst = false
 const animationFrames = new Set()
 
 const indicatorStyle = computed(() => ({
@@ -150,9 +151,14 @@ function measureActive({ burst = false } = {}) {
 }
 
 async function scheduleMeasure(options = {}) {
+  pendingBurst = pendingBurst || Boolean(options.burst)
   clearFrames()
   await nextTick()
-  requestFrame(() => requestFrame(() => measureActive(options)))
+  requestFrame(() => requestFrame(() => {
+    const burst = pendingBurst
+    pendingBurst = false
+    measureActive({ burst })
+  }))
 }
 
 function handleReflow() {
@@ -191,6 +197,7 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  pendingBurst = false
   clearFrames()
   clearParticles()
   resizeObserver?.disconnect()

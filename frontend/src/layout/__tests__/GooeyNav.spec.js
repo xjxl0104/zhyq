@@ -85,6 +85,8 @@ describe('GooeyNav', () => {
     }
 
     await wrapper.setProps({ activePath: '/building/project' })
+    await flushPromises()
+    resizeObservers[0].callback()
     await settle()
 
     expect(wrapper.attributes('style')).toContain('--gooey-y: 112px')
