@@ -35,6 +35,6 @@ function goCreate() {
 </script>
 
 <style scoped>
-.project-switcher { width: 180px; margin-right: 12px; }
-.project-empty { color: var(--el-text-color-secondary); cursor: pointer; margin-right: 12px; }
+.project-switcher { width: 180px; }
+.project-empty { color: var(--el-text-color-secondary); cursor: pointer; }
 </style>

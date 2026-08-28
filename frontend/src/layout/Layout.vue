@@ -21,16 +21,10 @@
     <el-container>
       <el-header class="navbar">
         <div class="nav-left">
-          <ProjectSwitcher @switched="onProjectSwitched" />
           <span class="crumb">{{ currentTitle }}</span>
         </div>
         <div class="actions">
-          <el-icon class="theme-btn" @click="openAssistant" title="AI 助手">
-            <MagicStick />
-          </el-icon>
-          <el-icon class="theme-btn" @click="theme.toggle()" :title="theme.isDark ? '切换亮色' : '切换暗色'">
-            <Moon v-if="!theme.isDark" /><Sunny v-else />
-          </el-icon>
+          <ProjectSwitcher @switched="onProjectSwitched" />
           <button class="screen-btn" @click="openScreen">
             <el-icon><Monitor /></el-icon><span>监控大屏</span>
           </button>
@@ -47,7 +41,6 @@
           </el-dropdown>
         </div>
       </el-header>
-      <TagsView />
       <el-main>
         <router-view v-if="ready" v-slot="{ Component }">
           <transition name="fade-slide" mode="out-in">
@@ -63,23 +56,17 @@
 
 <script setup>
 import { computed, ref, onMounted, nextTick } from 'vue'
-import { ElMessage } from 'element-plus'
 import { useRoute, useRouter } from 'vue-router'
 import { menuTree } from './menu'
 import request from '@/utils/request'
-import { useThemeStore } from '@/stores/theme'
 import { useProjectStore } from '@/stores/project'
-import { useTagsStore } from '@/stores/tags'
-import TagsView from './TagsView.vue'
 import MenuItem from './MenuItem.vue'
 import ProjectSwitcher from './ProjectSwitcher.vue'
 import FeedbackFab from '@/views/suggestion/FeedbackFab.vue'
 
 const route = useRoute()
 const router = useRouter()
-const theme = useThemeStore()
 const projectStore = useProjectStore()
-const tagsStore = useTagsStore()
 const collapsed = ref(false)
 
 const ready = ref(false) // init 门闸
@@ -96,9 +83,8 @@ onMounted(async () => {
   }
 })
 
-// 切换项目:清标签 + 拨断 keep-alive 重挂当前页
+// 切换项目：拨断 keep-alive，重挂当前页并刷新项目上下文数据。
 async function onProjectSwitched() {
-  tagsStore.closeAll()
   alive.value = false
   await nextTick()
   alive.value = true
@@ -124,10 +110,6 @@ function onClick(c) {
 }
 function openScreen() {
   window.open(router.resolve('/screen').href, '_blank')
-}
-// AI 助手扩展点位:后端 /api/agent/chat 已预留,本轮仅占位入口,接 agent 时在此挂载对话面板
-function openAssistant() {
-  ElMessage.info('AI 助手入口已预留,功能开发中')
 }
 </script>
 
@@ -215,11 +197,6 @@ function openAssistant() {
 .crumb { font-size: 16px; font-weight: 600; color: var(--text-title); }
 
 .actions { display: flex; align-items: center; gap: 18px; }
-.theme-btn {
-  font-size: 22px; color: var(--text-secondary); cursor: pointer;
-  padding: 7px; border-radius: 7px; transition: all .15s;
-}
-.theme-btn:hover { background: var(--bg-hover); color: var(--brand); }
 .screen-btn {
   display: flex; align-items: center; gap: 6px;
   border: none; cursor: pointer;

@@ -4,13 +4,14 @@ import ElementPlus from 'element-plus'
 // 组件会把 el.pagination.total 这类 i18n key 原样显示出来
 import zhCn from 'element-plus/es/locale/lang/zh-cn.mjs'
 import 'element-plus/dist/index.css'
-import 'element-plus/theme-chalk/dark/css-vars.css'
 import * as ElementPlusIconsVue from '@element-plus/icons-vue'
 import { createPinia } from 'pinia'
 import App from './App.vue'
 import router from './router'
 import './styles/index.scss'
-import { useThemeStore } from './stores/theme'
+import { resetToLightTheme } from './utils/lightTheme'
+
+resetToLightTheme()
 
 const app = createApp(App)
 for (const [key, component] of Object.entries(ElementPlusIconsVue)) {
@@ -19,8 +20,5 @@ for (const [key, component] of Object.entries(ElementPlusIconsVue)) {
 app.use(createPinia())
 app.use(router)
 app.use(ElementPlus, { locale: zhCn })
-
-// 应用持久化的主题(暗/亮)——store 初始化时即 toggle <html>.dark
-useThemeStore()
 
 app.mount('#app')
