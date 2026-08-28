@@ -6,15 +6,17 @@
         <span v-show="!collapsed" class="logo-text">澳乐智慧园区系统</span>
       </div>
       <el-scrollbar class="menu-scroll">
-        <el-menu :default-active="activePath" router unique-opened :collapse="collapsed"
-                 :collapse-transition="false" class="side-menu">
-          <MenuItem
-            v-for="item in menuTree"
-            :key="item.title"
-            :item="item"
-            @leaf="onClick"
-          />
-        </el-menu>
+        <GooeyNav :active-path="activePath">
+          <el-menu :default-active="activePath" router unique-opened :collapse="collapsed"
+                   :collapse-transition="false" class="side-menu">
+            <MenuItem
+              v-for="item in menuTree"
+              :key="item.title"
+              :item="item"
+              @leaf="onClick"
+            />
+          </el-menu>
+        </GooeyNav>
       </el-scrollbar>
     </el-aside>
 
@@ -60,6 +62,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { menuTree } from './menu'
 import request from '@/utils/request'
 import { useProjectStore } from '@/stores/project'
+import GooeyNav from './GooeyNav.vue'
 import MenuItem from './MenuItem.vue'
 import ProjectSwitcher from './ProjectSwitcher.vue'
 import FeedbackFab from '@/views/suggestion/FeedbackFab.vue'
@@ -142,6 +145,7 @@ function openScreen() {
   letter-spacing: 1px; white-space: nowrap;
 }
 .menu-scroll { flex: 1; }
+.menu-scroll :deep(.el-scrollbar__view) { min-height: 100%; }
 
 .side-menu {
   border-right: none;
@@ -175,6 +179,17 @@ function openScreen() {
   font-weight: 600;
 }
 .side-menu :deep(.el-menu-item.is-active .el-icon) { color: var(--brand); }
+.menu-scroll :deep(.gooey-nav--ready .el-menu-item.is-active) {
+  background: transparent;
+  color: #fff;
+  text-shadow: 0 1px 1px rgb(49 46 129 / 24%);
+}
+.menu-scroll :deep(.gooey-nav--ready .el-menu-item.is-active .el-icon) { color: #fff; }
+.side-menu :deep(.el-menu-item:focus-visible),
+.side-menu :deep(.el-sub-menu__title:focus-visible) {
+  outline: 2px solid #818cf8;
+  outline-offset: -2px;
+}
 .side-menu :deep(.el-sub-menu .el-menu) { padding-left: 0; }
 .side-menu :deep(.el-sub-menu .el-menu-item) {
   min-width: auto;

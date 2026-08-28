@@ -1,4 +1,4 @@
-import { shallowMount } from '@vue/test-utils'
+import { mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import Layout from '../Layout.vue'
 
@@ -20,7 +20,7 @@ vi.mock('vue-router', () => ({
 const passthrough = { template: '<div><slot /></div>' }
 
 function mountLayout() {
-  return shallowMount(Layout, {
+  return mount(Layout, {
     global: {
       stubs: {
         'el-container': passthrough,
@@ -69,5 +69,12 @@ describe('Layout navigation chrome', () => {
 
     expect(wrapper.find('.tags-view-stub').exists()).toBe(false)
     expect(wrapper.findAll('.theme-btn')).toHaveLength(0)
+  })
+
+  it('keeps the existing menu inside the gooey selection layer', () => {
+    const wrapper = mountLayout()
+
+    expect(wrapper.find('.gooey-nav').exists()).toBe(true)
+    expect(wrapper.find('.gooey-nav .side-menu').exists()).toBe(true)
   })
 })
