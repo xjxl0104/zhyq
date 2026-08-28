@@ -1,7 +1,7 @@
 <template>
   <div class="page-container">
     <!-- 我的常用 -->
-    <div class="fav-card">
+    <GlassSurface variant="card" class="fav-card">
       <div class="section-title">
         <el-icon class="title-icon"><StarFilled /></el-icon>
         <span>我的常用</span>
@@ -18,10 +18,10 @@
         </div>
       </div>
       <el-empty v-else description="暂无常用应用,点击下方应用卡片右上角星标添加" :image-size="60" />
-    </div>
+    </GlassSurface>
 
     <!-- 全部应用 -->
-    <div class="app-card">
+    <GlassSurface variant="card" class="app-card">
       <div class="app-header">
         <div class="section-title">
           <el-icon class="title-icon"><Grid /></el-icon>
@@ -56,7 +56,7 @@
         </div>
         <el-empty v-if="!loading && !apps.length" description="没有找到匹配的应用" class="grid-empty" />
       </div>
-    </div>
+    </GlassSurface>
   </div>
 </template>
 
@@ -65,6 +65,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { appApi } from '@/api/app'
+import GlassSurface from '@/components/GlassSurface.vue'
 
 const router = useRouter()
 const loading = ref(false)
@@ -128,11 +129,9 @@ onMounted(() => {
 
 <style scoped>
 .fav-card, .app-card {
-  background: #fff;
-  border-radius: 8px;
+  border-radius: 14px;
   padding: 16px 20px;
   margin-bottom: 16px;
-  box-shadow: 0 1px 4px rgba(0, 21, 41, 0.06);
 }
 .section-title {
   display: flex;

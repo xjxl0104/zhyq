@@ -2,12 +2,12 @@
   <div class="dashboard">
     <!-- 待办指标卡:可点击直达处置页 -->
     <div class="stat-grid">
-      <div class="metric" v-for="m in metrics" :key="m.key" :style="{ '--m-color': m.color }"
-           @click="$router.push(m.to)">
+      <GlassSurface variant="card" class="metric" v-for="m in metrics" :key="m.key"
+                    :style="{ '--m-color': m.color }" @click="$router.push(m.to)">
         <div class="metric-num" :style="{ color: m.color }">{{ wb[m.key] ?? 0 }}</div>
         <div class="metric-label">{{ m.label }}</div>
         <el-icon class="metric-go"><ArrowRight /></el-icon>
-      </div>
+      </GlassSurface>
     </div>
 
     <el-row :gutter="16" style="margin-top: 16px">
@@ -17,10 +17,10 @@
           <template #header><div class="card-head"><span>经营概览</span></div></template>
           <el-row :gutter="16">
             <el-col :span="6" v-for="o in overviewCards" :key="o.label">
-              <div class="ov-card">
+              <GlassSurface variant="card" class="ov-card">
                 <div class="ov-num">{{ o.value }}</div>
                 <div class="ov-label">{{ o.label }}</div>
-              </div>
+              </GlassSurface>
             </el-col>
           </el-row>
           <div ref="trendRef" style="height: 300px; margin-top: 16px"></div>
@@ -83,6 +83,7 @@ import { dashboardApi } from '@/api/dashboard'
 import { todoApi } from '@/api/todo'
 import request from '@/utils/request'
 import { useChart } from '@/composables/useChart'
+import GlassSurface from '@/components/GlassSurface.vue'
 
 const wb = reactive({})
 // 每个指标卡映射到对应处置页,变"展示型"为"行动型"
@@ -163,8 +164,6 @@ onMounted(load)
 .dashboard { padding: 20px; }
 .stat-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 14px; }
 .metric {
-  background: var(--bg-card);
-  border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 20px 14px; text-align: center;
   position: relative; overflow: hidden; cursor: pointer;
@@ -187,7 +186,6 @@ onMounted(load)
 .metric-label { color: var(--text-secondary); font-size: 13px; margin-top: 7px; }
 .card-head { display: flex; justify-content: space-between; align-items: center; font-weight: 600; color: var(--text-title); }
 .ov-card {
-  background: var(--bg-subtle); border: 1px solid var(--border);
   border-radius: var(--radius-sm); padding: 18px 16px; text-align: center;
 }
 .ov-num { font-size: 23px; font-weight: 700; color: var(--brand); letter-spacing: -0.5px; }
