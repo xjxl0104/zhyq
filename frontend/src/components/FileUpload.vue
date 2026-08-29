@@ -86,7 +86,10 @@ async function onPreview(uploadFile) {
   >
     <el-button type="primary">选择文件</el-button>
     <template #tip>
-      <div class="el-upload__tip">支持 jpg/png/pdf/doc/xls/dwg 等,单个不超过 20MB;点击文件名下载</div>
+      <div class="el-upload__tip">
+        支持各种格式(文档/表格/图片/图纸/压缩包/音视频等),可执行与脚本类文件除外;
+        单个不超过 20MB;点击文件名下载
+      </div>
     </template>
   </el-upload>
 </template>
