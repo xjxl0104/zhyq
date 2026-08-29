@@ -101,6 +101,7 @@ async function onUserCmd(cmd) {
     try { await request.post('/auth/logout') } catch (e) { /* token 已失效也照常退 */ }
     localStorage.removeItem('zhyq_token')
     localStorage.removeItem('zhyq_user')
+    localStorage.removeItem('zhyq_username')
     projectStore.reset()
     router.push('/login')
   }

@@ -26,6 +26,11 @@ request.interceptors.request.use((config) => {
       } else if (
         config.data &&
         typeof config.data === 'object' &&
+        // 数组请求体必须原样发出:{ projectId, ...[a,b] } 会把数组摊成
+        // { projectId, "0":a, "1":b },后端 @RequestBody List<T> 反序列化直接失败
+        // (Cannot deserialize ArrayList from Object value)。审批流程「保存节点」即因此报 500。
+        // 数组本就没有可挂 projectId 的位置,跳过注入即可。
+        !Array.isArray(config.data) &&
         !(config.data instanceof FormData)
       ) {
         config.data = { projectId: pid, ...config.data }

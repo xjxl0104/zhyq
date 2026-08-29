@@ -17,12 +17,38 @@ class FileStorageServiceTest {
     }
 
     @Test
-    void isAllowed_acceptsWhitelistRejectsExecutable() {
+    void isAllowed_acceptsAnyFormatRejectsExecutable() {
         assertTrue(FileStorageService.isAllowed("png"));
         assertTrue(FileStorageService.isAllowed("dwg"));
         assertFalse(FileStorageService.isAllowed("exe"));
         assertFalse(FileStorageService.isAllowed("jsp"));
         assertFalse(FileStorageService.isAllowed(""));
+    }
+
+    /** 预算/采购申请要能传「各种格式」:原白名单外的常见办公与归档格式现在都应放行。 */
+    @Test
+    void isAllowed_acceptsFormatsOutsideOldWhitelist() {
+        assertTrue(FileStorageService.isAllowed("csv"));
+        assertTrue(FileStorageService.isAllowed("wps"));
+        assertTrue(FileStorageService.isAllowed("et"));
+        assertTrue(FileStorageService.isAllowed("ofd"));
+        assertTrue(FileStorageService.isAllowed("rar"));
+        assertTrue(FileStorageService.isAllowed("7z"));
+        assertTrue(FileStorageService.isAllowed("mp4"));
+        assertTrue(FileStorageService.isAllowed("md"));
+    }
+
+    /** 放行归放行,可执行与内嵌脚本类型仍必须拦下。 */
+    @Test
+    void isAllowed_stillBlocksScriptAndMarkupTypes() {
+        assertFalse(FileStorageService.isAllowed("bat"));
+        assertFalse(FileStorageService.isAllowed("sh"));
+        assertFalse(FileStorageService.isAllowed("js"));
+        assertFalse(FileStorageService.isAllowed("php"));
+        assertFalse(FileStorageService.isAllowed("jar"));
+        assertFalse(FileStorageService.isAllowed("html"));
+        assertFalse(FileStorageService.isAllowed("svg"));
+        assertFalse(FileStorageService.isAllowed("lnk"));
     }
 
     @Test

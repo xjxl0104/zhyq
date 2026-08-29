@@ -73,12 +73,14 @@ const routes = [
       // 资产管理(#20,台账+签出签入/报废/维修/盘点)
       { path: 'am/asset', meta: { title: '资产管理' }, component: () => import('@/views/am/Asset.vue') },
 
-      // 采购管理(办公下:计划→申请→审批链;一组件多路由靠 meta.planType 区分计划类型)
-      { path: 'pur/plan-year', meta: { title: '年度采购计划', planType: 1 }, component: () => import('@/views/pur/Plan.vue') },
-      { path: 'pur/plan-month', meta: { title: '月度采购计划', planType: 2 }, component: () => import('@/views/pur/Plan.vue') },
-      { path: 'pur/plan-temp', meta: { title: '临时采购计划', planType: 3 }, component: () => import('@/views/pur/Plan.vue') },
-      { path: 'pur/request', meta: { title: '采购申请' }, component: () => import('@/views/pur/Request.vue') },
-      { path: 'pur/flow', meta: { title: '采购流程设置' }, component: () => import('@/views/pur/FlowConfig.vue') },
+      // 预算管理(园区运营下,与办公同级):预算(附件+预算申请审批) + 采购计划(计划下提采购申请)
+      // 取代原「办公 → 采购管理」:采购计划/申请沿用 pur 后端接口,页面并入本板块
+      // 一组件多路由:年度/月度靠 meta.budgetType / meta.planType 区分
+      { path: 'budget/annual', meta: { title: '年度预算', budgetType: 1 }, component: () => import('@/views/budget/Budget.vue') },
+      { path: 'budget/monthly', meta: { title: '月度预算', budgetType: 2 }, component: () => import('@/views/budget/Budget.vue') },
+      { path: 'budget/plan-year', meta: { title: '年度采购计划', planType: 1 }, component: () => import('@/views/budget/PurPlan.vue') },
+      { path: 'budget/plan-month', meta: { title: '月度采购计划', planType: 2 }, component: () => import('@/views/budget/PurPlan.vue') },
+      { path: 'budget/flow', meta: { title: '审批流程' }, component: () => import('@/views/budget/FlowConfig.vue') },
 
       // 便捷通行(#21,门禁记录/访客登记/停车)
       { path: 'acc/access', meta: { title: '门禁通行记录' }, component: () => import('@/views/acc/Access.vue') },
