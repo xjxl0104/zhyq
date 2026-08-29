@@ -256,7 +256,12 @@ async function persist() {
   // 先传后回填:把新上传(bizId 为空)的附件关联到本预算
   const pendingIds = (attachFiles.value || []).filter((f) => f && f.id && !f.bizId).map((f) => f.id)
   if (pendingIds.length > 0) {
-    try { await fileApi.attach(BIZ_TYPE, budgetId, pendingIds) } catch (e) { /* 忽略,不阻断保存 */ }
+    // 回填失败不阻断保存,但必须告警:静默吞掉会让用户看到"已保存"却找不到附件
+    try {
+      await fileApi.attach(BIZ_TYPE, budgetId, pendingIds)
+    } catch (e) {
+      ElMessage.warning('预算已保存,但附件关联失败,请在编辑里重新上传')
+    }
   }
   return budgetId
 }
