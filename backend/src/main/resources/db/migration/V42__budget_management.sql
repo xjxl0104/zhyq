@@ -53,16 +53,31 @@ INSERT INTO wf_definition (biz_type, name, status, tenant_id, create_by, create_
 SELECT 'budget', '预算申请审批流', 1, 1, 'system', NOW(), 1, 0 FROM DUAL
 WHERE NOT EXISTS (SELECT 1 FROM wf_definition d WHERE d.biz_type = 'budget' AND d.deleted = 0);
 
--- 节点只在该定义还没有任何节点时铺一次,避免重复执行时把审批链插成 6 步
+-- 节点只在该定义还没有任何节点时铺一次,避免重复执行时把审批链插成 6 步。
+-- 审批人用 sys_role 里**真实存在**的角色码(V8 种子:park_manager/finance/admin),
+-- 不再沿用 V18/V40 的 dept_manager/finance_director/gm —— 那几个码在 sys_role 里没有对应角色,
+-- 导致 wf_task.assignee 落到一个没人持有的值上,「我的待办」按登录名永远筛不到,开箱即是死流程。
 INSERT INTO wf_node (definition_id, seq, name, approver_type, approver_value, tenant_id, create_by, create_time, version, deleted)
 SELECT d.id, n.seq, n.nm, 'role', n.av, 1, 'system', NOW(), 1, 0
 FROM (SELECT id FROM wf_definition WHERE biz_type='budget' AND deleted=0 ORDER BY id DESC LIMIT 1) d
 CROSS JOIN (
-    SELECT 1 AS seq, '部门负责人审批' AS nm, 'dept_manager' AS av
-    UNION ALL SELECT 2, '财务负责人审批', 'finance_director'
-    UNION ALL SELECT 3, '总经理审批', 'gm'
+    SELECT 1 AS seq, '园区负责人审批' AS nm, 'park_manager' AS av
+    UNION ALL SELECT 2, '财务审批', 'finance'
+    UNION ALL SELECT 3, '管理员终审', 'admin'
 ) n
 WHERE NOT EXISTS (SELECT 1 FROM wf_node w WHERE w.definition_id = d.id AND w.deleted = 0);
+
+-- 顺带把 V40 采购审批流里同样不存在的角色码修正为真实角色。
+-- 不改 V40 本身:它已随 ver6.6 发布,改文件会导致已部署库的 Flyway 校验和不匹配。
+-- 加 approver_value 条件:只动仍是占位码的行,不覆盖任何人在「审批流程」页手工配过的审批人。
+UPDATE wf_node w
+JOIN wf_definition d ON d.id = w.definition_id AND d.biz_type = 'procurement' AND d.deleted = 0
+SET w.approver_value = CASE w.approver_value
+        WHEN 'dept_manager' THEN 'park_manager'
+        WHEN 'pur_manager'  THEN 'admin'
+    END
+WHERE w.deleted = 0 AND w.approver_type = 'role'
+  AND w.approver_value IN ('dept_manager', 'pur_manager');
 
 -- V40 的采购审批流改名,与板块口径一致(仍是 biz_type='procurement')
 UPDATE wf_definition SET name = '采购申请审批流' WHERE biz_type = 'procurement' AND name = '采购审批流' AND deleted = 0;
