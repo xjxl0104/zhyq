@@ -22,7 +22,10 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * 审批链工作流接口:发起/通过/驳回、我的待办,以及流程定义/节点/实例/任务的基础查询。
@@ -180,6 +183,39 @@ public class WorkflowController {
                 .eq(WfTask::getInstanceId, instanceId)
                 .orderByAsc(WfTask::getSeq)));
     }
+
+    /**
+     * 我的待办(带单据信息):在 wf_task 基础上补上所属实例的 bizType/bizId,
+     * 让审批人不用先猜实例就知道自己在审什么单据。单据标题由前端按 bizType 回查各自业务接口,
+     * 以免 workflow 反向依赖 budget/pur 等业务模块(依赖方向保持单向)。
+     *
+     * <p>权限口径:与同组运行时接口(/task/my、/instance/**)一致,暂不加 @PreAuthorize。
+     * 本接口只是 /task/my 的展示增强,不新增可读数据 —— 它返回的 bizType/bizId 同一登录用户
+     * 本就能从 /instance/page 拿到。运行时接口整体收口是 ver6.6 明确留下的存量项
+     * (需先定审批人角色口径),不在本次范围,收口时本接口应与它们一并处理。</p>
+     */
+    @Operation(summary = "我的待办(含单据类型与单据ID);assignee 为空则返回全部待审")
+    @GetMapping("/task/my-pending")
+    public Result<List<PendingTask>> myPendingTasks(@RequestParam(required = false) String assignee) {
+        List<WfTask> tasks = workflowService.myTasks(assignee);
+        if (tasks.isEmpty()) {
+            return Result.ok(List.of());
+        }
+        List<Long> instanceIds = tasks.stream().map(WfTask::getInstanceId).distinct().toList();
+        Map<Long, WfInstance> instances = instanceMapper.selectBatchIds(instanceIds).stream()
+                .collect(Collectors.toMap(WfInstance::getId, i -> i));
+        return Result.ok(tasks.stream().map(t -> {
+            WfInstance inst = instances.get(t.getInstanceId());
+            return new PendingTask(t.getId(), t.getInstanceId(), t.getSeq(), t.getAssignee(),
+                    t.getCreateTime(),
+                    inst == null ? null : inst.getBizType(),
+                    inst == null ? null : inst.getBizId());
+        }).toList());
+    }
+
+    /** 待办任务视图:任务本身 + 所属实例的单据类型/单据ID。 */
+    public record PendingTask(Long taskId, Long instanceId, Integer seq, String assignee,
+                              LocalDateTime createTime, String bizType, Long bizId) {}
 
     /** 审批意见入参。 */
     @Data

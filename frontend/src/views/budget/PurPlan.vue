@@ -22,16 +22,19 @@
 
     <div class="table-card">
       <div class="toolbar">
-        <span class="section-title">{{ planTypeLabel }}</span>
-        <el-button type="primary" @click="openDialog()"><el-icon><Plus /></el-icon>新增计划</el-button>
+        <span class="section-title">
+          {{ planTypeLabel }}
+          <span class="hint">— 点「采购申请」为该计划提报采购单,附件与审批人在申请里设置</span>
+        </span>
+        <el-button type="primary" @click="openDialog()"><el-icon><Plus /></el-icon>新增{{ planTypeLabel }}</el-button>
       </div>
       <el-table :data="list" v-loading="loading" border stripe>
         <el-table-column type="index" label="#" width="55" />
         <el-table-column prop="planNo" label="计划编号" min-width="140" />
         <el-table-column prop="title" label="计划名称" min-width="180" show-overflow-tooltip />
-        <el-table-column prop="period" :label="periodLabel" width="110" />
+        <el-table-column prop="period" :label="periodLabel" width="100" />
         <el-table-column prop="department" label="申请部门" width="110" />
-        <el-table-column prop="applicant" label="制定人" width="100" />
+        <el-table-column prop="applicant" label="制定人" width="90" />
         <el-table-column label="预算金额" width="120" align="right">
           <template #default="{ row }">{{ row.budgetAmount != null ? `¥${row.budgetAmount}` : '-' }}</template>
         </el-table-column>
@@ -43,8 +46,9 @@
           </template>
         </el-table-column>
         <el-table-column prop="remark" label="备注" min-width="140" show-overflow-tooltip />
-        <el-table-column label="操作" width="140" fixed="right">
+        <el-table-column label="操作" width="200" fixed="right">
           <template #default="{ row }">
+            <el-button link type="primary" @click="openRequests(row)">采购申请</el-button>
             <el-button link type="primary" @click="openDialog(row)">编辑</el-button>
             <el-popconfirm title="确认删除该计划?" @confirm="doRemove(row)">
               <template #reference><el-button link type="danger">删除</el-button></template>
@@ -57,17 +61,15 @@
                      v-model:page-size="query.pageSize" :page-sizes="[10,20,50]" @change="load" />
     </div>
 
-    <el-dialog v-model="dialogVisible" :title="form.id ? '编辑计划' : '新增计划'" width="560px">
+    <el-dialog v-model="dialogVisible" :title="`${form.id ? '编辑' : '新增'}${planTypeLabel}`" width="560px">
       <el-form :model="form" label-width="90px" ref="formRef" :rules="rules">
         <el-form-item label="计划名称" prop="title">
-          <el-input v-model="form.title" placeholder="如:2026年度办公物资采购计划" />
+          <el-input v-model="form.title" :placeholder="titlePlaceholder" />
         </el-form-item>
         <el-form-item :label="periodLabel" prop="period">
           <el-date-picker v-if="planType === 1" v-model="form.period" type="year" value-format="YYYY"
                           :placeholder="periodPlaceholder" style="width: 100%" />
-          <el-date-picker v-else-if="planType === 2" v-model="form.period" type="month" value-format="YYYY-MM"
-                          :placeholder="periodPlaceholder" style="width: 100%" />
-          <el-date-picker v-else v-model="form.period" type="date" value-format="YYYY-MM-DD"
+          <el-date-picker v-else v-model="form.period" type="month" value-format="YYYY-MM"
                           :placeholder="periodPlaceholder" style="width: 100%" />
         </el-form-item>
         <el-form-item label="申请部门"><el-input v-model="form.department" /></el-form-item>
@@ -87,6 +89,8 @@
         <el-button type="primary" @click="submit">确定</el-button>
       </template>
     </el-dialog>
+
+    <PurRequestDrawer v-model="requestDrawerVisible" :plan="currentPlan" />
   </div>
 </template>
 
@@ -95,13 +99,16 @@ import { reactive, ref, computed, watch, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { purPlanApi } from '@/api/pur'
+import PurRequestDrawer from './PurRequestDrawer.vue'
 
 const route = useRoute()
-// 一组件多路由:年度/月度/临时三个菜单共用本页,靠 route.meta.planType 区分
+// 一组件多路由:年度采购计划/月度采购计划共用本页,靠 route.meta.planType 区分
 const planType = computed(() => route.meta.planType || 1)
-const planTypeLabel = computed(() => ({ 1: '年度采购计划', 2: '月度采购计划', 3: '临时采购计划' }[planType.value]))
-const periodLabel = computed(() => ({ 1: '年度', 2: '月份', 3: '日期' }[planType.value]))
-const periodPlaceholder = computed(() => ({ 1: '如 2026', 2: '如 2026-03', 3: '如 2026-03-15' }[planType.value]))
+const planTypeLabel = computed(() => ({ 1: '年度采购计划', 2: '月度采购计划' }[planType.value]))
+const periodLabel = computed(() => ({ 1: '年度', 2: '月份' }[planType.value]))
+const periodPlaceholder = computed(() => ({ 1: '如 2026', 2: '如 2026-03' }[planType.value]))
+const titlePlaceholder = computed(() =>
+  ({ 1: '如:2026年度办公物资采购计划', 2: '如:2026年3月物业维护采购计划' }[planType.value]))
 
 const statusMap = {
   1: { label: '草稿', type: 'info' },
@@ -128,7 +135,7 @@ async function load() {
 function search() { query.pageNo = 1; load() }
 function reset() { query.title = ''; query.period = ''; query.status = null; search() }
 
-// 切换年度/月度/临时菜单时,同一组件复用需重新加载
+// 切换年度/月度菜单时,同一组件复用需重新加载
 watch(planType, () => { reset() })
 
 const formRef = ref()
@@ -168,11 +175,20 @@ async function doRemove(row) {
   await load()
 }
 
+// 计划下的采购申请
+const requestDrawerVisible = ref(false)
+const currentPlan = ref(null)
+function openRequests(row) {
+  currentPlan.value = row
+  requestDrawerVisible.value = true
+}
+
 onMounted(load)
 </script>
 
 <style scoped>
 .section-title { font-size: 15px; font-weight: 600; color: #303133; }
+.hint { font-size: 13px; font-weight: 400; color: #909399; }
 .toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
 .pager { margin-top: 16px; justify-content: flex-end; }
 </style>

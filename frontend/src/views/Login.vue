@@ -47,6 +47,8 @@ async function submit() {
     const data = await request.post('/auth/login', form)
     localStorage.setItem('zhyq_token', data.token)
     localStorage.setItem('zhyq_user', data.nickname || data.username)
+    // 审批待办按 wf_task.assignee(用户名)过滤,需要原始登录名而非昵称
+    localStorage.setItem('zhyq_username', data.username || '')
     ElMessage.success('欢迎回来,' + (data.nickname || data.username))
     router.push('/dashboard')
   } finally {
