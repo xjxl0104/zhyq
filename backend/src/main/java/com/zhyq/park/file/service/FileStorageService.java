@@ -11,10 +11,25 @@ import java.util.Set;
 @org.springframework.stereotype.Service
 public class FileStorageService {
 
-    public static final Set<String> ALLOWED_EXT = Set.of(
-        "jpg","jpeg","png","gif","webp",
-        "pdf","doc","docx","xls","xlsx","ppt","pptx",
-        "dwg","dxf","txt","zip");
+    /**
+     * 可执行/脚本类扩展名黑名单。预算计划与采购申请要能上传「各种格式」的文件,
+     * 原先 16 项白名单挡得太死(wps/et/csv/rar/ofd/mp4 都传不上),故改为「除危险类型外一律放行」。
+     * 上传件只经 /file/download 以 attachment 方式下发、不被服务端执行,
+     * 但仍拦下这些一旦被误点或误暴露即可执行的类型,避免把上传目录变成投毒面。
+     */
+    public static final Set<String> BLOCKED_EXT = Set.of(
+        // 可执行与安装包
+        "exe","msi","com","scr","cpl","dll","sys","app","dmg","pkg","deb","rpm","bin","elf",
+        // 脚本与批处理
+        "bat","cmd","ps1","psm1","vbs","vbe","js","mjs","jse","wsf","wsh","sh","bash","zsh","py","pl","rb",
+        // 服务端可执行页面(万一被静态目录暴露)
+        "jsp","jspx","php","php3","php4","php5","phtml","asp","aspx","cer","asa","cgi",
+        // 可带字节码/可执行的容器
+        "jar","war","ear","class","apk","ipa",
+        // 内嵌脚本的网页与帮助文档
+        "html","htm","xhtml","shtml","svg","hta","chm",
+        // 快捷方式/系统配置
+        "lnk","url","desktop","reg","inf","scf");
 
     private static final DateTimeFormatter YM = DateTimeFormatter.ofPattern("yyyy/MM");
 
@@ -25,8 +40,12 @@ public class FileStorageService {
         return originalName.substring(dot + 1).toLowerCase();
     }
 
+    /**
+     * 是否允许上传:除黑名单里的可执行/脚本类型外一律放行(办公、图纸、影音、压缩包等任意格式)。
+     * 空扩展名同样拒绝 — 无扩展名既判不出类型,下载时也给不出正确的 Content-Type。
+     */
     public static boolean isAllowed(String ext) {
-        return ext != null && ALLOWED_EXT.contains(ext);
+        return ext != null && !ext.isBlank() && !BLOCKED_EXT.contains(ext);
     }
 
     public static String newStoredName(String originalName, String uuid) {
@@ -70,7 +89,8 @@ public class FileStorageService {
             file.getOriginalFilename() == null ? "" : file.getOriginalFilename());
         String ext = extOf(original);
         if (!isAllowed(ext)) {
-            throw new com.zhyq.park.common.exception.BizException("不允许的文件类型: " + ext);
+            throw new com.zhyq.park.common.exception.BizException(
+                ext.isBlank() ? "文件缺少扩展名,无法识别类型" : "出于安全考虑不允许上传该类型文件: " + ext);
         }
         String uuid = java.util.UUID.randomUUID().toString().replace("-", "");
         String stored = newStoredName(original, uuid);
