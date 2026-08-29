@@ -16,13 +16,18 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.concurrent.ThreadLocalRandom;
 
 @Tag(name = "采购管理-采购计划")
 @RestController
 @RequestMapping("/pur/plan")
 @RequiredArgsConstructor
 public class PurPlanController {
+
+    private static final DateTimeFormatter NO_FMT = DateTimeFormatter.ofPattern("yyyyMMdd");
 
     private final PurPlanMapper planMapper;
 
@@ -66,12 +71,23 @@ public class PurPlanController {
     @PostMapping
     public Result<Long> add(@RequestBody PurPlan plan) {
         plan.setId(null);
+        // 编号一律服务端生成:pur_plan.plan_no 是 NOT NULL 且无默认值,而前端表单没有这一项,
+        // 此前不生成 → 每次新增都以 "Field 'plan_no' doesn't have a default value" 失败。
+        // 口径对齐 PurRequestService.genRequestNo。
+        plan.setPlanNo(genPlanNo());
         // status 一律服务端定为草稿:入参带 status 就能直接建出"已完成"计划。
         // tenantId / 审计字段由 MyMetaObjectHandler 填充, 不接受入参。
         plan.setStatus(1);
         plan.setTenantId(null);
         planMapper.insert(plan);
         return Result.ok(plan.getId());
+    }
+
+    /** 采购计划编号:PP-yyyyMMdd-随机三位,与采购申请单号(PR-)同一形制。 */
+    static String genPlanNo() {
+        String date = LocalDateTime.now().format(NO_FMT);
+        int rand = ThreadLocalRandom.current().nextInt(100, 1000);
+        return "PP-" + date + "-" + rand;
     }
 
     /**
