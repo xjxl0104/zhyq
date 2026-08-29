@@ -169,10 +169,6 @@ onMounted(load)
   position: relative; overflow: hidden; cursor: pointer;
   transition: border-color .18s, transform .18s;
 }
-.metric::before {
-  content: ""; position: absolute; top: 0; left: 0; right: 0; height: 3px;
-  background: var(--m-color, var(--brand)); opacity: .9;
-}
 .metric:hover { border-color: var(--border-strong); transform: translateY(-2px); }
 .metric:hover .metric-go { opacity: .6; }
 .metric-go {

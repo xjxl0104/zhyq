@@ -102,7 +102,7 @@ import { useAuthImage } from '@/utils/authImage'
 import SuggestionWall from './SuggestionWall.vue'
 import GlassSurface from '@/components/GlassSurface.vue'
 
-// 截图预览必须走鉴权下载换 blob:裸 <img src> 不带 token,会 401 图裂
+// 截图预览必须走鉴权下载换 blob：直接使用文件地址不带 token，会返回 401。
 const { srcFor, resolveAll, revokeAll } = useAuthImage()
 
 const typeMap = { 1: 'Bug', 2: '建议', 3: '其他' }

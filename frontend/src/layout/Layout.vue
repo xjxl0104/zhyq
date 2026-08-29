@@ -123,7 +123,6 @@ function openScreen() {
 .sidebar {
   background: #fff;
   border-right: 1px solid var(--border);
-  transition: width .22s ease;
   display: flex;
   flex-direction: column;
 }
