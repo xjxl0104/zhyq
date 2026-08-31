@@ -119,5 +119,5 @@ onBeforeUnmount(() => {
 .stroke-brand svg { display: block; width: 100%; height: 36px; }
 .stroke-brand text { font-family: inherit; font-size: 128px; font-weight: 800; letter-spacing: -4px; user-select: none; }
 .stroke-brand__outline { stroke: #8b5cf6; stroke-linejoin: round; stroke-linecap: round; }
-.stroke-brand__fill { fill: #25223b; stroke: none; }
+.stroke-brand__fill { fill: #eef2ff; stroke: none; }
 </style>

@@ -31,6 +31,7 @@
 
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, useId, watch } from 'vue'
+import { useReducedMotion } from '@/composables/useReducedMotion'
 
 // The supplied React Bits particle trajectory, timing and two-element animation
 // are retained. The slot adapter leaves Element Plus routing and keyboard use intact.
@@ -47,13 +48,12 @@ const props = defineProps({
 const filterId = `gooey-${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`
 const root = ref(null)
 const ready = ref(false)
-const reducedMotion = ref(false)
+const reducedMotion = useReducedMotion()
 const particles = ref([])
 const geometry = ref({ x: 0, y: 0, width: 0, height: 0 })
 const burstGeometry = ref({ x: 0, y: 0, width: 0, height: 0 })
 const burstSequence = ref(0)
 let resizeObserver
-let mediaQuery
 let particleTimer
 let observedItem
 let highlightedItem
@@ -205,10 +205,9 @@ function handleReflow(event) {
   if (event?.target?.closest?.('.gooey-nav__effect')) return
   scheduleMeasure()
 }
-function handleMotionPreference(event) {
-  reducedMotion.value = event.matches
-  if (event.matches) clearParticles()
-}
+watch(reducedMotion, reduced => {
+  if (reduced) clearParticles()
+})
 watch(() => props.activePath, (path, previous) => {
   hoveredItem = null
   focusedItem = null
@@ -221,9 +220,6 @@ watch(() => props.collapsed, () => {
   scheduleMeasure()
 })
 onMounted(() => {
-  mediaQuery = window.matchMedia('(prefers-reduced-motion: reduce)')
-  reducedMotion.value = mediaQuery.matches
-  mediaQuery.addEventListener?.('change', handleMotionPreference)
   root.value.addEventListener('scroll', handleReflow, true)
   root.value.addEventListener('transitionend', handleReflow)
   window.addEventListener('resize', handleReflow)
@@ -243,14 +239,14 @@ onBeforeUnmount(() => {
   root.value?.removeEventListener('scroll', handleReflow, true)
   root.value?.removeEventListener('transitionend', handleReflow)
   window.removeEventListener('resize', handleReflow)
-  mediaQuery?.removeEventListener?.('change', handleMotionPreference)
 })
 </script>
 
 <style scoped>
 .gooey-nav {
-  --gooey-fill: #312e81;
-  --color-1: #6d5ce7;
+  /* 深靛侧栏上的白药丸(React Bits 原版配色):压住的项文字翻转成深靛 */
+  --gooey-fill: #f6f7ff;
+  --color-1: #c7d2fe;
   --color-2: #a78bfa;
   --color-3: #818cf8;
   --color-4: #f1b66a;
@@ -269,7 +265,13 @@ onBeforeUnmount(() => {
   height: var(--gooey-height);
   border-radius: 10px;
   background: var(--gooey-fill);
+  box-shadow: 0 4px 18px rgba(19, 17, 41, .45), 0 0 22px rgba(165, 180, 252, .18);
   transform: translate3d(var(--gooey-x), var(--gooey-y), 0);
+  /* 弹性滑动:hover/路由切换时药丸在项之间滑动跟随(reduced motion 时已有 none 覆盖) */
+  transition:
+    transform .38s cubic-bezier(.3, 1.35, .55, 1),
+    width .38s cubic-bezier(.3, 1.35, .55, 1),
+    height .38s cubic-bezier(.3, 1.35, .55, 1);
 }
 .gooey-nav__burst { position: absolute; pointer-events: none; }
 .gooey-nav__pulse {

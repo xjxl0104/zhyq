@@ -303,3 +303,14 @@ body {
 /* 链接按钮悬浮微移 */
 .el-button.is-link { transition: transform .12s; }
 .el-button.is-link:hover { transform: translateY(-1px); }
+
+/* 折叠侧栏的弹出子菜单:跟随深靛侧栏(popup 挂在 body 上,只能全局覆盖) */
+.el-menu--popup {
+  --el-menu-bg-color: #1e1b4b;
+  --el-menu-text-color: #a5a3c2;
+  --el-menu-hover-bg-color: rgba(255, 255, 255, 0.06);
+  --el-menu-hover-text-color: #fff;
+  --el-menu-active-color: #c7d2fe;
+  border: 1px solid rgba(129, 140, 248, 0.25);
+  border-radius: 10px;
+}
