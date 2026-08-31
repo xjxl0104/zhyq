@@ -180,7 +180,7 @@ class ReceivableImportServiceTest {
     }
 
     @Test
-    void confirmWithNullContractRegistersButGeneratesNoBillDrivingRulesOrDeposits() throws Exception {
+    void confirmWithNullContractStillPersistsAuthoritativeRulesAndDeposits() throws Exception {
         ReceivableImportPreview preview = preview();
         // 全部行绑定租户+房间但合同留空(contractId=null)
         for (int i = 0; i < preview.rows().size(); i++) {
@@ -193,9 +193,10 @@ class ReceivableImportServiceTest {
         // 登记照常入库
         assertEquals(9, imported);
         verify(registerMapper, times(9)).insert(any(ReceivableRegister.class));
-        // 合同为空 → 不落规则/保证金,后续无法生成任何账单(账单由这些规则/保证金驱动)
-        assertTrue(storedRules.isEmpty(), "合同为空的登记不应产生任何计费规则");
-        verify(depositMapper, never()).insert(any(DepositLedger.class));
+        // 登记明细本身是权威合同资料，正式合同 ID 留空也必须保存免租等规则与保证金。
+        assertTrue(storedRules.stream().anyMatch(rule -> "WAIVER".equals(rule.getRuleType())));
+        verify(depositMapper, times(18)).insert(any(DepositLedger.class));
+        // 导入确认只保存登记和规则，账单仍由用户点击“生成账单”明确触发。
         verify(billMapper, never()).insert(any(Bill.class));
     }
 

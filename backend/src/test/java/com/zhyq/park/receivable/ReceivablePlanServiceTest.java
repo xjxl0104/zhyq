@@ -50,7 +50,6 @@ class ReceivablePlanServiceTest {
     void createsSeparateRentPropertyAndTwoDepositBills() {
         when(registerMapper.selectByIdForUpdate(7L)).thenReturn(register("CONFIRMED"));
         when(ruleMapper.selectList(any())).thenReturn(rules());
-        when(billMapper.selectCount(any())).thenReturn(0L);
         when(billMapper.insert(any(Bill.class))).thenReturn(1);
 
         ReceivableGenerateResult result = service.generate(7L);
@@ -68,16 +67,23 @@ class ReceivablePlanServiceTest {
     }
 
     @Test
-    void secondGenerationSkipsExistingBillingKeys() {
+    void secondGenerationSynchronizesExistingUnpaidBills() {
         when(registerMapper.selectByIdForUpdate(7L)).thenReturn(register("CONFIRMED"));
         when(ruleMapper.selectList(any())).thenReturn(rules());
-        when(billMapper.selectCount(any())).thenReturn(1L);
+        Bill existing = new Bill();
+        existing.setId(99L);
+        existing.setPaidAmount(BigDecimal.ZERO);
+        existing.setStatus(3);
+        when(billMapper.selectOne(any())).thenReturn(existing);
+        when(billMapper.updateById(any(Bill.class))).thenReturn(1);
 
         ReceivableGenerateResult result = service.generate(7L);
 
-        assertEquals(4, result.skipped());
+        assertEquals(4, result.updated());
+        assertEquals(0, result.skipped());
         assertEquals(0, result.inserted());
         verify(billMapper, never()).insert(any(Bill.class));
+        verify(billMapper, times(4)).updateById(any(Bill.class));
     }
 
     @Test
@@ -92,13 +98,17 @@ class ReceivablePlanServiceTest {
     }
 
     @Test
-    void rejectsBillGenerationWhenContractIsNull() {
+    void generatesBillsFromConfirmedRegisterWhenFormalContractIsNotLinked() {
         ReceivableRegister noContract = register("CONFIRMED");
         noContract.setContractId(null);
         when(registerMapper.selectByIdForUpdate(7L)).thenReturn(noContract);
+        when(ruleMapper.selectList(any())).thenReturn(rules());
+        when(billMapper.insert(any(Bill.class))).thenReturn(1);
 
-        assertThrows(BizException.class, () -> service.generate(7L));
-        verify(billMapper, never()).insert(any(Bill.class));
+        ReceivableGenerateResult result = service.generate(7L);
+
+        assertEquals(4, result.inserted());
+        verify(billMapper, times(4)).insert(any(Bill.class));
     }
 
     private static ReceivableRegister register(String status) {

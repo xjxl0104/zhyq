@@ -52,5 +52,6 @@ class ReceivableRuleParserTest {
         assertEquals(new BigDecimal("50"), parser.parseDiscountRate("租金按5折").orElseThrow());
         assertEquals(new BigDecimal("70"), parser.parseDiscountRate("租金及物业管理费按7折收取").orElseThrow());
         assertTrue(parser.isYearlyLastMonthWaiver("每年最后一个月免租一个月"));
+        assertEquals(2, parser.parseMonthCount("免租期 2个月").orElseThrow());
     }
 }

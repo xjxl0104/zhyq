@@ -7,6 +7,10 @@ import com.zhyq.park.common.result.PageResult;
 import com.zhyq.park.common.result.Result;
 import com.zhyq.park.finance.entity.Bill;
 import com.zhyq.park.finance.mapper.BillMapper;
+import com.zhyq.park.receivable.entity.ReceivableRegister;
+import com.zhyq.park.receivable.mapper.ReceivableRegisterMapper;
+import com.zhyq.park.tenant.entity.BizTenant;
+import com.zhyq.park.tenant.mapper.BizTenantMapper;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
@@ -17,6 +21,9 @@ import org.springframework.web.bind.annotation.*;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.HashMap;
+import java.util.Collections;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 import java.util.List;
 import java.util.Map;
 
@@ -27,6 +34,8 @@ import java.util.Map;
 public class BillController {
 
     private final BillMapper billMapper;
+    private final ReceivableRegisterMapper receivableRegisterMapper;
+    private final BizTenantMapper bizTenantMapper;
 
     @Operation(summary = "分页查询账单")
     @PreAuthorize("hasAuthority('finance:bill:query')")
@@ -51,6 +60,7 @@ public class BillController {
           .le(Boolean.TRUE.equals(onlyDue), Bill::getDueDate, LocalDate.now())
           .orderByDesc(Bill::getId);
         IPage<Bill> p = billMapper.selectPage(new Page<>(pageNo, pageSize), qw);
+        enrich(p.getRecords());
         return Result.ok(PageResult.of(p.getTotal(), p.getRecords()));
     }
 
@@ -95,6 +105,7 @@ public class BillController {
                      .or(o -> o.lt(Bill::getDueDate, today).in(Bill::getStatus, 3, 4)))
           .orderByDesc(Bill::getDueDate);
         IPage<Bill> p = billMapper.selectPage(new Page<>(pageNo, pageSize), qw);
+        enrich(p.getRecords());
         return Result.ok(PageResult.of(p.getTotal(), p.getRecords()));
     }
 
@@ -143,7 +154,9 @@ public class BillController {
     @PreAuthorize("hasAuthority('finance:bill:query')")
     @GetMapping("/{id}")
     public Result<Bill> get(@PathVariable Long id) {
-        return Result.ok(billMapper.selectById(id));
+        Bill bill = billMapper.selectById(id);
+        enrich(bill == null ? List.of() : List.of(bill));
+        return Result.ok(bill);
     }
 
     @Operation(summary = "新增账单")
@@ -172,5 +185,28 @@ public class BillController {
 
     private static BigDecimal nz(BigDecimal v) {
         return v == null ? BigDecimal.ZERO : v;
+    }
+
+    private void enrich(List<Bill> bills) {
+        if (bills == null || bills.isEmpty()) return;
+        List<Long> registerIds = bills.stream().map(Bill::getReceivableRegisterId)
+                .filter(java.util.Objects::nonNull).distinct().toList();
+        Map<Long, ReceivableRegister> registers = registerIds.isEmpty()
+                ? Collections.emptyMap()
+                : receivableRegisterMapper.selectBatchIds(registerIds).stream()
+                .collect(Collectors.toMap(ReceivableRegister::getId, Function.identity()));
+        List<Long> tenantIds = bills.stream().map(Bill::getTenantRefId)
+                .filter(java.util.Objects::nonNull).distinct().toList();
+        Map<Long, BizTenant> tenants = tenantIds.isEmpty()
+                ? Collections.emptyMap()
+                : bizTenantMapper.selectBatchIds(tenantIds).stream()
+                .collect(Collectors.toMap(BizTenant::getId, Function.identity()));
+        for (Bill bill : bills) {
+            ReceivableRegister register = registers.get(bill.getReceivableRegisterId());
+            BizTenant tenant = tenants.get(bill.getTenantRefId());
+            bill.setTenantName(register != null && StringUtils.hasText(register.getTenantNameRaw())
+                    ? register.getTenantNameRaw() : tenant == null ? null : tenant.getName());
+            bill.setAgreementNo(register == null ? null : register.getAgreementNoRaw());
+        }
     }
 }

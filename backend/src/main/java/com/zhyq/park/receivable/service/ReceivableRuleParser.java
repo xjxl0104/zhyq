@@ -24,6 +24,7 @@ public class ReceivableRuleParser {
                     + "(\\d{4})[./年-](\\d{1,2})[./月-](\\d{1,2})日?");
     private static final Pattern DISCOUNT = Pattern.compile("(\\d+(?:\\.\\d+)?)\\s*折");
     private static final Pattern CURRENCY_AMOUNT = Pattern.compile("(\\d+(?:\\.\\d+)?)\\s*元");
+    private static final Pattern MONTH_COUNT = Pattern.compile("(\\d+)\\s*个?月");
 
     public Optional<DateRange> parseContractTerm(String raw) {
         if (raw == null) {
@@ -104,6 +105,14 @@ public class ReceivableRuleParser {
 
     public boolean isYearlyLastMonthWaiver(String raw) {
         return raw != null && raw.replaceAll("\\s+", "").contains("每年最后一个月免租一个月");
+    }
+
+    public Optional<Integer> parseMonthCount(String raw) {
+        if (raw == null) return Optional.empty();
+        Matcher matcher = MONTH_COUNT.matcher(raw);
+        if (!matcher.find()) return Optional.empty();
+        int months = Integer.parseInt(matcher.group(1));
+        return months > 0 ? Optional.of(months) : Optional.empty();
     }
 
     public Optional<BigDecimal> parseCurrencyAmount(String raw) {
