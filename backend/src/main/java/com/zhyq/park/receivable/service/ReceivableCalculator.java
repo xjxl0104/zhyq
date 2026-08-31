@@ -75,8 +75,9 @@ public class ReceivableCalculator {
                 BigDecimal.valueOf(period.lengthOfMonth()), 12, RoundingMode.HALF_UP);
         BigDecimal amount = BigDecimal.ZERO;
         for (LocalDate day = activeStart; !day.isAfter(activeEnd); day = day.plusDays(1)) {
+            LocalDate current = day; // lambda 只能捕获 effectively-final 变量
             BigDecimal daily = applyEscalation(dailyBase, contractStart, day, rules);
-            if (rules.stream().anyMatch(rule -> isWaived(rule, day))) continue;
+            if (rules.stream().anyMatch(rule -> isWaived(rule, current))) continue;
             for (ReceivableRule rule : rules) {
                 if (!appliesToDate(rule, day) || !"DISCOUNT".equals(rule.getRuleType())
                         || rule.getDiscountRate() == null) continue;
