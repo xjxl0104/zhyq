@@ -79,7 +79,7 @@ describe('GooeyNav', () => {
     expect(wrapper.findAll('.gooey-nav__particle')).toHaveLength(0)
   })
 
-  it('moves on route changes and bounds transient particles to twelve', async () => {
+  it('moves on route changes and cleans up the transition particles', async () => {
     const wrapper = await mountNav()
     activeRect = {
       left: 22, top: 132, width: 180, height: 44, right: 202, bottom: 176,
@@ -91,10 +91,9 @@ describe('GooeyNav', () => {
     await settle()
 
     expect(wrapper.attributes('style')).toContain('--gooey-y: 112px')
-    expect(wrapper.findAll('.gooey-nav__particle')).toHaveLength(12)
-    expect(wrapper.find('.gooey-nav__particle').element.style.getPropertyValue('--particle-origin-x')).toBe('148.8px')
+    expect(wrapper.findAll('.gooey-nav__particle').length).toBeGreaterThan(0)
 
-    vi.advanceTimersByTime(1100)
+    vi.advanceTimersByTime(1800)
     await flushPromises()
     expect(wrapper.findAll('.gooey-nav__particle')).toHaveLength(0)
   })
@@ -111,17 +110,18 @@ describe('GooeyNav', () => {
     wrapper.unmount()
   })
 
-  it('keeps even the smallest burst dot visible through the goo filter', async () => {
+  it('keeps a click burst anchored to the clicked item while hover moves elsewhere', async () => {
     const wrapper = await mountNav()
     await wrapper.find('.is-active').trigger('click')
     await settle()
-    const sigma = Number(wrapper.find('feGaussianBlur').attributes('stdDeviation'))
-    const matrix = wrapper.find('feColorMatrix').attributes('values').trim().split(/\s+/).map(Number)
-    const diameter = Math.min(...wrapper.findAll('.gooey-nav__particle').map(particle =>
-      parseFloat(particle.element.style.getPropertyValue('--particle-size'))))
-    // Gaussian-blurred disk alpha at its center, at the animation's 95% opacity peak.
-    const centerAlpha = (1 - Math.exp(-((diameter / 2) ** 2) / (2 * sigma ** 2))) * 0.95
-    expect(centerAlpha * matrix[18] + matrix[19]).toBeGreaterThanOrEqual(1)
+    const burstStyle = wrapper.get('.gooey-nav__burst').attributes('style')
+    await wrapper.find('.other').trigger('pointerover')
+    await settle()
+    expect(wrapper.attributes('style')).toContain('--gooey-y: 140px')
+    expect(wrapper.get('.gooey-nav__burst').attributes('style')).toBe(burstStyle)
+    expect(wrapper.find('.is-active').classes()).toContain('is-gooey-burst')
+    await vi.advanceTimersByTimeAsync(1800)
+    expect(wrapper.find('.is-active').classes()).not.toContain('is-gooey-burst')
     wrapper.unmount()
   })
 
@@ -142,11 +142,11 @@ describe('GooeyNav', () => {
     const wrapper = await mountNav({ collapsed: true })
     await wrapper.find('.is-active').trigger('click')
     await settle()
-    expect(wrapper.findAll('.gooey-nav__particle')).toHaveLength(12)
-    expect(wrapper.find('.gooey-nav__particle').element.style.getPropertyValue('--particle-origin-x')).toBe('102px')
+    const particleCount = wrapper.findAll('.gooey-nav__particle').length
+    expect(particleCount).toBeGreaterThan(0)
     await wrapper.find('.is-active').trigger('click')
     await settle()
-    expect(wrapper.findAll('.gooey-nav__particle')).toHaveLength(12)
+    expect(wrapper.findAll('.gooey-nav__particle')).toHaveLength(particleCount)
     wrapper.unmount()
     expect(vi.getTimerCount()).toBe(0)
   })

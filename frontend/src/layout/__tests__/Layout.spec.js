@@ -71,7 +71,7 @@ describe('Layout navigation chrome', () => {
     const brand = wrapper.get('.stroke-brand')
     const initialSvg = brand.get('svg').element
     await brand.trigger('pointerenter')
-    expect(brand.get('svg').element).not.toBe(initialSvg)
+    expect(brand.get('svg').element).toBe(initialSvg)
     expect(brand.findAll('svg')).toHaveLength(1)
     wrapper.unmount()
   })

@@ -119,15 +119,16 @@ function openScreen() {
 <style scoped>
 .app-wrapper { height: 100vh; }
 
-/* —— 侧栏:浅色高级风 —— */
+/* —— 侧栏 —— */
 .sidebar {
-  background: linear-gradient(160deg, #fafaff, #f0effb 55%, #f8f7ff);
+  background: #fafafe;
   border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
 }
 .logo {
   height: 60px;
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   padding: 0 16px;
@@ -179,6 +180,18 @@ function openScreen() {
 .menu-scroll :deep(.gooey-nav--ready .el-sub-menu__title:hover) {
   background: transparent;
   color: #312e81;
+}
+.menu-scroll :deep(.gooey-nav--ready .el-menu-item.is-gooey-target),
+.menu-scroll :deep(.gooey-nav--ready .el-sub-menu__title.is-gooey-target),
+.menu-scroll :deep(.gooey-nav--ready .el-menu-item.is-gooey-target .el-icon),
+.menu-scroll :deep(.gooey-nav--ready .el-sub-menu__title.is-gooey-target .el-icon),
+.menu-scroll :deep(.gooey-nav--ready .el-menu-item.is-gooey-burst),
+.menu-scroll :deep(.gooey-nav--ready .el-sub-menu__title.is-gooey-burst),
+.menu-scroll :deep(.gooey-nav--ready .el-menu-item.is-gooey-burst .el-icon),
+.menu-scroll :deep(.gooey-nav--ready .el-sub-menu__title.is-gooey-burst .el-icon) {
+  color: #fff;
+  background: transparent;
+  transition: none;
 }
 .side-menu :deep(.el-menu-item:focus-visible),
 .side-menu :deep(.el-sub-menu__title:focus-visible) {
