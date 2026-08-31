@@ -42,6 +42,13 @@
             <el-option label="付款" :value="2" />
           </el-select>
         </el-form-item>
+        <!-- 来源筛选:区分"由应收明细登记表生成"的账单与历史/演示账单。
+             登记表账单才带协议编号与登记明细口径的租客名 -->
+        <el-form-item label="来源">
+          <el-select v-model="query.source" placeholder="全部" clearable style="width: 150px">
+            <el-option v-for="s in sources" :key="s" :label="s" :value="s" />
+          </el-select>
+        </el-form-item>
         <el-form-item label="只看到期">
           <el-switch v-model="query.onlyDue" />
         </el-form-item>
@@ -80,6 +87,13 @@
           <template #default="{ row }">{{ row.agreementNo || '-' }}</template>
         </el-table-column>
         <el-table-column prop="feeType" label="费用类型" width="100" />
+        <el-table-column prop="source" label="来源" width="110">
+          <template #default="{ row }">
+            <el-tag :type="row.source === '应收登记表' ? 'success' : 'info'" effect="plain">
+              {{ row.source || '-' }}
+            </el-tag>
+          </template>
+        </el-table-column>
         <el-table-column label="应收" width="120" align="right">
           <template #default="{ row }">¥{{ money(row.amount) }}</template>
         </el-table-column>
@@ -201,6 +215,8 @@ import { ElMessage } from 'element-plus'
 import { billApi, paymentApi, invoiceApi } from '@/api/finance'
 
 const feeTypes = ['租金', '物业费', '保证金', '能源费', '服务费', '一次性']
+// 账单来源。'应收登记表' = 由应收明细登记表生成(带协议编号与登记明细口径的租客名)
+const sources = ['应收登记表', '合同计划', '抄表', '人工', '商城', '预约', '工单', '接口']
 const payMethods = ['现金', '转账', 'POS', '微信', '支付宝', '聚合']
 const statusMap = {
   1: { label: '草稿', type: 'info' },
@@ -222,7 +238,7 @@ const loading = ref(false)
 const list = ref([])
 const total = ref(0)
 const stats = reactive({ receivable: 0, received: 0, needReceive: 0, lateFee: 0, overdueCount: 0 })
-const query = reactive({ pageNo: 1, pageSize: 10, code: '', feeType: null, status: null, direction: null, billId: null, onlyDue: false })
+const query = reactive({ pageNo: 1, pageSize: 10, code: '', feeType: null, status: null, direction: null, source: null, billId: null, onlyDue: false })
 
 const router = useRouter()
 // 从流水/收据/发票/收款通知点「关联账单」跳来时,url 上带 billId,把列表筛成那一张
@@ -260,7 +276,7 @@ async function loadStats() {
   Object.assign(stats, res)
 }
 function reset() {
-  Object.assign(query, { pageNo: 1, code: '', feeType: null, status: null, direction: null, billId: null, onlyDue: false })
+  Object.assign(query, { pageNo: 1, code: '', feeType: null, status: null, direction: null, source: null, billId: null, onlyDue: false })
   locatedBillId.value = null
   load()
 }

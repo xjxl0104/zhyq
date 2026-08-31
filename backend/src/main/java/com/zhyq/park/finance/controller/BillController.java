@@ -48,6 +48,9 @@ public class BillController {
                                          @RequestParam(required = false) Integer direction,
                                          @RequestParam(required = false) Integer status,
                                          @RequestParam(required = false) String feeType,
+                                         // 来源:'应收登记表' 的账单才带协议编号与登记明细口径的租客名,
+                                         // 与历史/演示账单(合同计划等)区分开
+                                         @RequestParam(required = false) String source,
                                          // 从流水/收据/发票/收款通知点「关联账单」跳过来时按 id 定位那一张
                                          @RequestParam(required = false) Long billId,
                                          @RequestParam(required = false) Boolean onlyDue) {
@@ -59,6 +62,7 @@ public class BillController {
           .eq(direction != null, Bill::getDirection, direction)
           .eq(status != null, Bill::getStatus, status)
           .eq(StringUtils.hasText(feeType), Bill::getFeeType, feeType)
+          .eq(StringUtils.hasText(source), Bill::getSource, source)
           // 隐藏未到期:仅显示应收日<=今天的账单
           .le(Boolean.TRUE.equals(onlyDue), Bill::getDueDate, LocalDate.now())
           .orderByDesc(Bill::getId);
