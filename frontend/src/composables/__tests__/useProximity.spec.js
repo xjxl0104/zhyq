@@ -128,6 +128,27 @@ describe('useProximity DOM driver', () => {
     host.remove()
   })
 
+  it('refresh restarts the settled loop so a disabled flip decays stale values', async () => {
+    const host = makeHost(1)
+    let disabled = false
+    const prox = useProximity({ container: { value: host }, itemSelector: '.item', radius: 100, smoothing: 1, disabled: () => disabled })
+    const item = host.querySelector('.item')
+
+    prox.onPointerMove({ clientX: 0 })
+    await nextFrame()
+    await nextFrame()
+    expect(item.style.getPropertyValue('--effect')).toBe('1.0000')
+
+    // 循环已停,禁用后残留 1.0;refresh 重新驱动一帧衰减归零
+    disabled = true
+    prox.refresh()
+    await nextFrame()
+    await nextFrame()
+    expect(item.style.getPropertyValue('--effect')).toBe('0.0000')
+    prox.dispose()
+    host.remove()
+  })
+
   it('cancels pending frames on dispose', async () => {
     const host = makeHost(1)
     const prox = useProximity({ container: { value: host }, itemSelector: '.item', smoothing: 1 })

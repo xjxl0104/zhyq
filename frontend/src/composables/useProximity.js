@@ -90,5 +90,7 @@ export function useProximity({ container, itemSelector, radius = 140, smoothing 
   }
 
   if (getCurrentInstance()) onBeforeUnmount(dispose)
-  return { onPointerMove, onPointerLeave, dispose }
+  // refresh:不改指针状态,只重启一帧循环——用于容器滚动或 disabled 翻转后
+  // 重新校准/衰减已写入的 --effect(循环可能已在目标值上自停)。
+  return { onPointerMove, onPointerLeave, refresh: ensureLoop, dispose }
 }

@@ -118,6 +118,6 @@ onBeforeUnmount(() => {
 .stroke-brand { display: block; width: 100%; line-height: 0; }
 .stroke-brand svg { display: block; width: 100%; height: 36px; }
 .stroke-brand text { font-family: inherit; font-size: 128px; font-weight: 800; letter-spacing: -4px; user-select: none; }
-.stroke-brand__outline { stroke: #8b5cf6; stroke-linejoin: round; stroke-linecap: round; }
-.stroke-brand__fill { fill: #eef2ff; stroke: none; }
+.stroke-brand__outline { stroke: #d7d7e0; stroke-linejoin: round; stroke-linecap: round; }
+.stroke-brand__fill { fill: #f5f5f7; stroke: none; }
 </style>

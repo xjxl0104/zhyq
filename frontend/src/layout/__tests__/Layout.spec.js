@@ -116,7 +116,7 @@ describe('Layout navigation chrome', () => {
     expect(block.get('.crumb').text()).toBe('工作台')
   })
 
-  it('bursts gooey particles from the monitor button and opens the screen', async () => {
+  it('opens the monitoring screen without click particle chrome', async () => {
     const open = vi.fn()
     vi.stubGlobal('open', open)
     const wrapper = mountLayout()
@@ -124,18 +124,8 @@ describe('Layout navigation chrome', () => {
     await wrapper.get('.screen-btn').trigger('click')
 
     expect(open).toHaveBeenCalledWith('/screen', '_blank')
-    expect(wrapper.findAll('.navbar-burst__particle')).toHaveLength(10)
-    wrapper.unmount()
-  })
-
-  it('skips the burst when reduced motion is requested', async () => {
-    vi.stubGlobal('open', vi.fn())
-    vi.stubGlobal('matchMedia', () => ({ matches: true, addEventListener() {}, removeEventListener() {} }))
-    const wrapper = mountLayout()
-
-    await wrapper.get('.screen-btn').trigger('click')
-
     expect(wrapper.find('.navbar-burst').exists()).toBe(false)
+    expect(wrapper.find('.navbar-burst__filter').exists()).toBe(false)
     wrapper.unmount()
   })
 
@@ -146,11 +136,18 @@ describe('Layout navigation chrome', () => {
     expect(wrapper.findAll('.theme-btn')).toHaveLength(0)
   })
 
-  it('keeps the existing menu inside the gooey selection layer', () => {
+  it('renders the menu directly without the gooey selection layer', () => {
     const wrapper = mountLayout()
 
-    expect(wrapper.find('.gooey-nav').exists()).toBe(true)
-    expect(wrapper.find('.gooey-nav .side-menu').exists()).toBe(true)
+    expect(wrapper.find('.gooey-nav').exists()).toBe(false)
+    expect(wrapper.find('.side-menu').exists()).toBe(true)
+  })
+
+  it('mounts the brand inline in the unified top bar without a framed logo box', () => {
+    const wrapper = mountLayout()
+
+    expect(wrapper.find('.navbar .stroke-brand').exists()).toBe(true)
+    expect(wrapper.find('.logo').exists()).toBe(false)
   })
 
   it('hands each top-level menu group its index for numbering', () => {
