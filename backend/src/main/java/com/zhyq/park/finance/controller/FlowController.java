@@ -7,6 +7,7 @@ import com.zhyq.park.common.result.PageResult;
 import com.zhyq.park.common.result.Result;
 import com.zhyq.park.finance.entity.Flow;
 import com.zhyq.park.finance.mapper.FlowMapper;
+import com.zhyq.park.finance.service.FinanceViewEnricher;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
@@ -20,6 +21,7 @@ import org.springframework.web.bind.annotation.*;
 public class FlowController {
 
     private final FlowMapper flowMapper;
+    private final FinanceViewEnricher viewEnricher;
 
     @Operation(summary = "分页查询流水")
     @PreAuthorize("hasAuthority('finance:flow:query')")
@@ -33,6 +35,30 @@ public class FlowController {
           .eq(billId != null, Flow::getBillId, billId)
           .orderByDesc(Flow::getId);
         IPage<Flow> p = flowMapper.selectPage(new Page<>(pageNo, pageSize), qw);
+        enrichFlow(p.getRecords());
         return Result.ok(PageResult.of(p.getTotal(), p.getRecords()));
+    }
+
+    /**
+     * 填上关联账单号、租客名与费用类型。
+     *
+     * <p>本页此前只显示 {@code billId} —— 一个裸数字,既看不出是哪个租客的钱,
+     * 也没法和账单页对上账。口径与所有账单页共用 {@link FinanceViewEnricher}。</p>
+     */
+    private void enrichFlow(java.util.List<Flow> rows) {
+        if (rows == null || rows.isEmpty()) {
+            return;
+        }
+        java.util.Map<Long, FinanceViewEnricher.BillView> views = viewEnricher.resolveBillViews(
+                rows.stream().map(Flow::getBillId).toList());
+        for (Flow row : rows) {
+            FinanceViewEnricher.BillView v = views.get(row.getBillId());
+            if (v == null) {
+                continue;
+            }
+            row.setBillCode(v.billCode());
+            row.setTenantName(v.tenantName());
+            row.setFeeType(v.feeType());
+        }
     }
 }

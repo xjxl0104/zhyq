@@ -7,10 +7,7 @@ import com.zhyq.park.common.result.PageResult;
 import com.zhyq.park.common.result.Result;
 import com.zhyq.park.finance.entity.Bill;
 import com.zhyq.park.finance.mapper.BillMapper;
-import com.zhyq.park.receivable.entity.ReceivableRegister;
-import com.zhyq.park.receivable.mapper.ReceivableRegisterMapper;
-import com.zhyq.park.tenant.entity.BizTenant;
-import com.zhyq.park.tenant.mapper.BizTenantMapper;
+import com.zhyq.park.finance.service.FinanceViewEnricher;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
@@ -20,12 +17,12 @@ import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.Collections;
-import java.util.function.Function;
-import java.util.stream.Collectors;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 @Tag(name = "财务-账单")
 @RestController
@@ -33,9 +30,11 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class BillController {
 
+    /** 可收款的账单状态:待收付(3)/部分结清(4)/逾期(6),与 PaymentService 的收款校验同口径 */
+    private static final List<Integer> PAYABLE_STATUS = List.of(3, 4, 6);
+
     private final BillMapper billMapper;
-    private final ReceivableRegisterMapper receivableRegisterMapper;
-    private final BizTenantMapper bizTenantMapper;
+    private final FinanceViewEnricher viewEnricher;
 
     @Operation(summary = "分页查询账单")
     @PreAuthorize("hasAuthority('finance:bill:query')")
@@ -48,9 +47,12 @@ public class BillController {
                                          @RequestParam(required = false) Integer direction,
                                          @RequestParam(required = false) Integer status,
                                          @RequestParam(required = false) String feeType,
+                                         // 从流水/收据/发票/收款通知点「关联账单」跳过来时按 id 定位那一张
+                                         @RequestParam(required = false) Long billId,
                                          @RequestParam(required = false) Boolean onlyDue) {
         LambdaQueryWrapper<Bill> qw = new LambdaQueryWrapper<>();
-        qw.like(StringUtils.hasText(code), Bill::getCode, code)
+        qw.eq(billId != null, Bill::getId, billId)
+          .like(StringUtils.hasText(code), Bill::getCode, code)
           .eq(contractId != null, Bill::getContractId, contractId)
           .eq(tenantRefId != null, Bill::getTenantRefId, tenantRefId)
           .eq(direction != null, Bill::getDirection, direction)
@@ -107,6 +109,49 @@ public class BillController {
         IPage<Bill> p = billMapper.selectPage(new Page<>(pageNo, pageSize), qw);
         enrich(p.getRecords());
         return Result.ok(PageResult.of(p.getTotal(), p.getRecords()));
+    }
+
+    /**
+     * 收银台的租客下拉。
+     *
+     * <p>只列still欠着钱的租客,并带上欠款笔数与合计。收银台原先拉的是全部租客档案
+     * ({@code /tenant/info/list}),里面绝大多数没有任何未结账单 —— 收银员得挨个点开试,
+     * 试到有账单的那个为止。而且档案里的名字与登记明细可能不是一个口径。</p>
+     */
+    @Operation(summary = "收银台:有未结账单的租客(含欠款汇总)")
+    @PreAuthorize("hasAuthority('finance:bill:query')")
+    @GetMapping("/payable-tenants")
+    public Result<List<Map<String, Object>>> payableTenants(@RequestParam(required = false) Long projectId) {
+        LambdaQueryWrapper<Bill> qw = new LambdaQueryWrapper<Bill>()
+                .eq(Bill::getDirection, 1)
+                .in(Bill::getStatus, PAYABLE_STATUS)
+                .eq(projectId != null, Bill::getProjectId, projectId)
+                .isNotNull(Bill::getTenantRefId);
+        List<Bill> bills = billMapper.selectList(qw);
+        // 只留真正还有欠款的(状态是待收付但已被收满的边角数据不该出现在收银台)
+        List<Bill> outstanding = bills.stream()
+                .filter(b -> nz(b.getAmount()).subtract(nz(b.getPaidAmount())).signum() > 0)
+                .toList();
+        viewEnricher.enrichBills(outstanding);
+
+        Map<Long, List<Bill>> byTenant = outstanding.stream()
+                .collect(Collectors.groupingBy(Bill::getTenantRefId, LinkedHashMap::new, Collectors.toList()));
+        List<Map<String, Object>> out = new ArrayList<>();
+        byTenant.forEach((tenantRefId, rows) -> {
+            BigDecimal owe = rows.stream()
+                    .map(b -> nz(b.getAmount()).subtract(nz(b.getPaidAmount())))
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("tenantRefId", tenantRefId);
+            item.put("tenantName", rows.stream().map(Bill::getTenantName)
+                    .filter(StringUtils::hasText).findFirst().orElse("租客 #" + tenantRefId));
+            item.put("billCount", rows.size());
+            item.put("owe", owe);
+            out.add(item);
+        });
+        // 欠得多的排前面,收银员通常先处理大额
+        out.sort((a, b) -> ((BigDecimal) b.get("owe")).compareTo((BigDecimal) a.get("owe")));
+        return Result.ok(out);
     }
 
     @Operation(summary = "计算滞纳金(遍历逾期未结清的应收账单)")
@@ -187,26 +232,12 @@ public class BillController {
         return v == null ? BigDecimal.ZERO : v;
     }
 
+    /**
+     * 填租客名与协议编号。实现搬到了 {@link FinanceViewEnricher} —— 流水/收据/发票/收款通知
+     * 也要按同一口径展示,口径留在这个控制器里private着,别的页面就只能各写各的
+     * (它们此前就是这么显示裸 bill_id 的)。
+     */
     private void enrich(List<Bill> bills) {
-        if (bills == null || bills.isEmpty()) return;
-        List<Long> registerIds = bills.stream().map(Bill::getReceivableRegisterId)
-                .filter(java.util.Objects::nonNull).distinct().toList();
-        Map<Long, ReceivableRegister> registers = registerIds.isEmpty()
-                ? Collections.emptyMap()
-                : receivableRegisterMapper.selectBatchIds(registerIds).stream()
-                .collect(Collectors.toMap(ReceivableRegister::getId, Function.identity()));
-        List<Long> tenantIds = bills.stream().map(Bill::getTenantRefId)
-                .filter(java.util.Objects::nonNull).distinct().toList();
-        Map<Long, BizTenant> tenants = tenantIds.isEmpty()
-                ? Collections.emptyMap()
-                : bizTenantMapper.selectBatchIds(tenantIds).stream()
-                .collect(Collectors.toMap(BizTenant::getId, Function.identity()));
-        for (Bill bill : bills) {
-            ReceivableRegister register = registers.get(bill.getReceivableRegisterId());
-            BizTenant tenant = tenants.get(bill.getTenantRefId());
-            bill.setTenantName(register != null && StringUtils.hasText(register.getTenantNameRaw())
-                    ? register.getTenantNameRaw() : tenant == null ? null : tenant.getName());
-            bill.setAgreementNo(register == null ? null : register.getAgreementNoRaw());
-        }
+        viewEnricher.enrichBills(bills);
     }
 }

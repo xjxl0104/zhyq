@@ -6,6 +6,8 @@ export const billApi = {
   get: (id) => request.get(`/finance/bill/${id}`),
   stats: () => request.get('/finance/bill/stats'),
   overdue: (params) => request.get('/finance/bill/overdue', { params }),
+  // 收银台专用:只返回还欠着钱的租客,带欠款笔数与合计
+  payableTenants: () => request.get('/finance/bill/payable-tenants'),
   calcLateFee: () => request.post('/finance/bill/calcLateFee'),
   add: (data) => request.post('/finance/bill', data),
   update: (data) => request.put('/finance/bill', data),

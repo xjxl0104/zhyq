@@ -7,6 +7,7 @@ import com.zhyq.park.common.result.PageResult;
 import com.zhyq.park.common.result.Result;
 import com.zhyq.park.finance.entity.Invoice;
 import com.zhyq.park.finance.mapper.InvoiceMapper;
+import com.zhyq.park.finance.service.FinanceViewEnricher;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
@@ -21,6 +22,7 @@ import org.springframework.web.bind.annotation.*;
 public class InvoiceController {
 
     private final InvoiceMapper invoiceMapper;
+    private final FinanceViewEnricher viewEnricher;
 
     @Operation(summary = "分页查询发票")
     @PreAuthorize("hasAuthority('finance:invoice:query')")
@@ -36,6 +38,7 @@ public class InvoiceController {
           .eq(status != null, Invoice::getStatus, status)
           .orderByDesc(Invoice::getId);
         IPage<Invoice> p = invoiceMapper.selectPage(new Page<>(pageNo, pageSize), qw);
+        enrichInvoice(p.getRecords());
         return Result.ok(PageResult.of(p.getTotal(), p.getRecords()));
     }
 
@@ -68,5 +71,28 @@ public class InvoiceController {
     public Result<Void> delete(@PathVariable Long id) {
         invoiceMapper.deleteById(id);
         return Result.ok();
+    }
+
+    /**
+     * 填上关联账单号、租客名与费用类型。
+     *
+     * <p>本页此前只显示 {@code billId} —— 一个裸数字,既看不出是哪个租客的钱,
+     * 也没法和账单页对上账。口径与所有账单页共用 {@link FinanceViewEnricher}。</p>
+     */
+    private void enrichInvoice(java.util.List<Invoice> rows) {
+        if (rows == null || rows.isEmpty()) {
+            return;
+        }
+        java.util.Map<Long, FinanceViewEnricher.BillView> views = viewEnricher.resolveBillViews(
+                rows.stream().map(Invoice::getBillId).toList());
+        for (Invoice row : rows) {
+            FinanceViewEnricher.BillView v = views.get(row.getBillId());
+            if (v == null) {
+                continue;
+            }
+            row.setBillCode(v.billCode());
+            row.setTenantName(v.tenantName());
+            row.setFeeType(v.feeType());
+        }
     }
 }

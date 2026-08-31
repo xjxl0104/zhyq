@@ -54,6 +54,19 @@
 
     <!-- 表格区 -->
     <div class="table-card">
+      <!-- 从流水/收据/发票/收款通知跳来时的定位提示。不给提示的话用户会以为账单只剩一条 -->
+      <el-alert
+        v-if="locatedBillId"
+        type="info"
+        :closable="false"
+        show-icon
+        style="margin-bottom: 12px"
+      >
+        <template #title>
+          仅显示关联账单 #{{ locatedBillId }}
+          <el-button link type="primary" @click="clearLocate">显示全部账单</el-button>
+        </template>
+      </el-alert>
       <div class="toolbar">
         <el-button type="warning" @click="calcLateFee"><el-icon><Money /></el-icon>计算滞纳金</el-button>
       </div>
@@ -183,6 +196,7 @@
 
 <script setup>
 import { reactive, ref, onMounted } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { billApi, paymentApi, invoiceApi } from '@/api/finance'
 
@@ -208,7 +222,28 @@ const loading = ref(false)
 const list = ref([])
 const total = ref(0)
 const stats = reactive({ receivable: 0, received: 0, needReceive: 0, lateFee: 0, overdueCount: 0 })
-const query = reactive({ pageNo: 1, pageSize: 10, code: '', feeType: null, status: null, direction: null, onlyDue: false })
+const query = reactive({ pageNo: 1, pageSize: 10, code: '', feeType: null, status: null, direction: null, billId: null, onlyDue: false })
+
+const router = useRouter()
+// 从流水/收据/发票/收款通知点「关联账单」跳来时,url 上带 billId,把列表筛成那一张
+const route = useRoute()
+const locatedBillId = ref(null)
+function applyRouteLocate() {
+  const raw = Number(route.query.billId)
+  if (!Number.isFinite(raw) || raw <= 0) return
+  query.billId = raw
+  query.pageNo = 1
+  locatedBillId.value = raw
+}
+function clearLocate() {
+  query.billId = null
+  locatedBillId.value = null
+  query.pageNo = 1
+  const rest = { ...route.query }
+  delete rest.billId
+  router.replace({ path: route.path, query: rest })
+  load()
+}
 
 async function load() {
   loading.value = true
@@ -225,7 +260,8 @@ async function loadStats() {
   Object.assign(stats, res)
 }
 function reset() {
-  Object.assign(query, { pageNo: 1, code: '', feeType: null, status: null, direction: null, onlyDue: false })
+  Object.assign(query, { pageNo: 1, code: '', feeType: null, status: null, direction: null, billId: null, onlyDue: false })
+  locatedBillId.value = null
   load()
 }
 async function refresh() {
@@ -299,7 +335,11 @@ async function remove(id) {
   refresh()
 }
 
-onMounted(refresh)
+onMounted(() => {
+  // 先落定位条件再取数,顺序反了会先查全量再被覆盖
+  applyRouteLocate()
+  refresh()
+})
 </script>
 
 <style scoped>

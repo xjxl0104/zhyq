@@ -7,7 +7,14 @@
       <el-table :data="list" v-loading="loading" border stripe>
         <el-table-column type="index" label="#" width="55" />
         <el-table-column prop="code" label="账单号" min-width="150" />
-        <el-table-column prop="tenantRefId" label="对方租客" width="100" />
+        <!-- 与所有账单页同一口径:后端已按登记明细优先填好 tenantName。
+             这里原先渲染的是 tenantRefId,界面上就是一个裸数字"2",看不出是谁 -->
+        <el-table-column prop="tenantName" label="对方租客" min-width="160">
+          <template #default="{ row }">{{ row.tenantName || `租客 #${row.tenantRefId || '-'}` }}</template>
+        </el-table-column>
+        <el-table-column prop="agreementNo" label="协议编号" min-width="140">
+          <template #default="{ row }">{{ row.agreementNo || '-' }}</template>
+        </el-table-column>
         <el-table-column prop="feeType" label="费用类型" width="100" />
         <el-table-column label="应收" width="120" align="right">
           <template #default="{ row }">¥{{ money(row.amount) }}</template>

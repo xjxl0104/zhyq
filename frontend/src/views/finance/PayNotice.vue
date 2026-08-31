@@ -28,7 +28,21 @@
       <el-table :data="list" v-loading="loading" border stripe>
         <el-table-column type="index" label="#" width="55" />
         <el-table-column prop="noticeNo" label="通知单号" min-width="180" />
-        <el-table-column prop="billId" label="账单ID" width="90" />
+        <!-- 联动:后端按登记明细口径填好租客名与账单号,点账单号跳到所有账单页定位该单 -->
+        <el-table-column prop="tenantName" label="对方租客" min-width="160">
+          <template #default="{ row }">{{ row.tenantName || '-' }}</template>
+        </el-table-column>
+        <el-table-column prop="billCode" label="关联账单" min-width="160">
+          <template #default="{ row }">
+            <el-button v-if="row.billId" link type="primary" @click="gotoBill(row.billId)">
+              {{ row.billCode || `#${row.billId}` }}
+            </el-button>
+            <span v-else>-</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="feeType" label="费用类型" width="100">
+          <template #default="{ row }">{{ row.feeType || '-' }}</template>
+        </el-table-column>
         <el-table-column label="欠款金额" width="140" align="right">
           <template #default="{ row }"><span class="owe">¥{{ money(row.amount) }}</span></template>
         </el-table-column>
@@ -81,8 +95,18 @@
 
 <script setup>
 import { reactive, ref, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { payNoticeApi } from '@/api/finance'
+
+
+const router = useRouter()
+
+// 联动:从流水/收据/发票/通知点进所有账单页并定位到那一张账单。
+// 走 query 而不是弹窗,用户可以在账单页继续做收款/开票等后续动作。
+function gotoBill(billId) {
+  router.push({ path: '/finance/bill', query: { billId } })
+}
 
 const loading = ref(false)
 const list = ref([])

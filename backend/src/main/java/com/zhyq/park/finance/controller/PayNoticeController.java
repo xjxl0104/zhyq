@@ -10,6 +10,7 @@ import com.zhyq.park.finance.entity.Bill;
 import com.zhyq.park.finance.entity.PayNotice;
 import com.zhyq.park.finance.mapper.BillMapper;
 import com.zhyq.park.finance.mapper.PayNoticeMapper;
+import com.zhyq.park.finance.service.FinanceViewEnricher;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
@@ -31,6 +32,7 @@ import java.util.Map;
 public class PayNoticeController {
 
     private final PayNoticeMapper noticeMapper;
+    private final FinanceViewEnricher viewEnricher;
     private final BillMapper billMapper;
 
     private static final int ST_PENDING = 1; // 待发送
@@ -48,6 +50,7 @@ public class PayNoticeController {
           .eq(billId != null, PayNotice::getBillId, billId)
           .orderByDesc(PayNotice::getId);
         IPage<PayNotice> p = noticeMapper.selectPage(new Page<>(pageNo, pageSize), qw);
+        enrichPayNotice(p.getRecords());
         return Result.ok(PageResult.of(p.getTotal(), p.getRecords()));
     }
 
@@ -114,5 +117,28 @@ public class PayNoticeController {
 
     private static BigDecimal nz(BigDecimal v) {
         return v == null ? BigDecimal.ZERO : v;
+    }
+
+    /**
+     * 填上关联账单号、租客名与费用类型。
+     *
+     * <p>本页此前只显示 {@code billId} —— 一个裸数字,既看不出是哪个租客的钱,
+     * 也没法和账单页对上账。口径与所有账单页共用 {@link FinanceViewEnricher}。</p>
+     */
+    private void enrichPayNotice(java.util.List<PayNotice> rows) {
+        if (rows == null || rows.isEmpty()) {
+            return;
+        }
+        java.util.Map<Long, FinanceViewEnricher.BillView> views = viewEnricher.resolveBillViews(
+                rows.stream().map(PayNotice::getBillId).toList());
+        for (PayNotice row : rows) {
+            FinanceViewEnricher.BillView v = views.get(row.getBillId());
+            if (v == null) {
+                continue;
+            }
+            row.setBillCode(v.billCode());
+            row.setTenantName(v.tenantName());
+            row.setFeeType(v.feeType());
+        }
     }
 }
