@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.zhyq.park.common.result.Result;
 import com.zhyq.park.finance.entity.Bill;
 import com.zhyq.park.finance.mapper.BillMapper;
+import com.zhyq.park.finance.service.BillMetrics;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
@@ -49,19 +50,20 @@ public class ReportController {
         BigDecimal aging90 = BigDecimal.ZERO;
 
         for (Bill b : all) {
-            boolean isReceivable = b.getDirection() != null && b.getDirection() == 1;
-            BigDecimal amount = nz(b.getAmount());
-            BigDecimal paid = nz(b.getPaidAmount());
+            // 口径统一走 BillMetrics,与账单页顶部卡片同源。
+            // 实收此前漏了收款方向的过滤,把应付账单已付出去的钱也算进来了,收缴率会虚高
+            boolean isReceivable = BillMetrics.isReceivable(b);
+            BigDecimal amount = BillMetrics.receivableOf(b);
 
             if (isReceivable) {
                 receivable = receivable.add(amount);
                 String feeType = b.getFeeType() == null ? "其它" : b.getFeeType();
                 feeTypeMap.merge(feeType, amount, BigDecimal::add);
             }
-            received = received.add(paid);
+            received = received.add(BillMetrics.receivedOf(b));
 
             // 账龄:仅统计未结清欠款(应收 - 实收 > 0)
-            BigDecimal owe = amount.subtract(paid);
+            BigDecimal owe = BillMetrics.outstandingOf(b);
             if (isReceivable && owe.compareTo(BigDecimal.ZERO) > 0) {
                 long overdueDays = b.getDueDate() == null ? 0
                         : today.toEpochDay() - b.getDueDate().toEpochDay();

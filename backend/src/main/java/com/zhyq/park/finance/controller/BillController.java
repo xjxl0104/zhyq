@@ -7,6 +7,7 @@ import com.zhyq.park.common.result.PageResult;
 import com.zhyq.park.common.result.Result;
 import com.zhyq.park.finance.entity.Bill;
 import com.zhyq.park.finance.mapper.BillMapper;
+import com.zhyq.park.finance.service.BillMetrics;
 import com.zhyq.park.finance.service.FinanceViewEnricher;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -76,12 +77,12 @@ public class BillController {
         BigDecimal lateFee = BigDecimal.ZERO;      // 滞纳金合计
         long overdueCount = 0;                     // 逾期账单数(status=6)
         for (Bill b : all) {
-            if (b.getDirection() != null && b.getDirection() == 1) {
-                receivable = receivable.add(nz(b.getAmount()));
-            }
-            received = received.add(nz(b.getPaidAmount()));
+            // 口径统一走 BillMetrics:实收此前漏了收款方向的过滤,
+            // 把应付账单已付出去的钱也算进了"实收",与财务报表同款问题
+            receivable = receivable.add(BillMetrics.receivableOf(b));
+            received = received.add(BillMetrics.receivedOf(b));
             lateFee = lateFee.add(nz(b.getLateFee()));
-            if (b.getStatus() != null && b.getStatus() == 6) {
+            if (b.getStatus() != null && b.getStatus() == BillMetrics.STATUS_OVERDUE) {
                 overdueCount++;
             }
         }
@@ -114,7 +115,7 @@ public class BillController {
     /**
      * 收银台的租客下拉。
      *
-     * <p>只列still欠着钱的租客,并带上欠款笔数与合计。收银台原先拉的是全部租客档案
+     * <p>只列还欠着钱的租客,并带上欠款笔数与合计。收银台原先拉的是全部租客档案
      * ({@code /tenant/info/list}),里面绝大多数没有任何未结账单 —— 收银员得挨个点开试,
      * 试到有账单的那个为止。而且档案里的名字与登记明细可能不是一个口径。</p>
      */
@@ -130,7 +131,7 @@ public class BillController {
         List<Bill> bills = billMapper.selectList(qw);
         // 只留真正还有欠款的(状态是待收付但已被收满的边角数据不该出现在收银台)
         List<Bill> outstanding = bills.stream()
-                .filter(b -> nz(b.getAmount()).subtract(nz(b.getPaidAmount())).signum() > 0)
+                .filter(b -> BillMetrics.outstandingOf(b).signum() > 0)
                 .toList();
         viewEnricher.enrichBills(outstanding);
 
@@ -139,7 +140,7 @@ public class BillController {
         List<Map<String, Object>> out = new ArrayList<>();
         byTenant.forEach((tenantRefId, rows) -> {
             BigDecimal owe = rows.stream()
-                    .map(b -> nz(b.getAmount()).subtract(nz(b.getPaidAmount())))
+                    .map(BillMetrics::outstandingOf)
                     .reduce(BigDecimal.ZERO, BigDecimal::add);
             Map<String, Object> item = new LinkedHashMap<>();
             item.put("tenantRefId", tenantRefId);
