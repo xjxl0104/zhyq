@@ -1,8 +1,7 @@
 <template>
   <div class="app-wrapper">
     <header class="navbar">
-      <div ref="navbarInner" class="navbar-inner"
-           @pointermove="proximity.onPointerMove" @pointerleave="proximity.onPointerLeave">
+      <div class="navbar-inner">
         <div class="brand-zone">
           <StrokeBrand />
         </div>
@@ -44,9 +43,7 @@
 
     <el-container class="body-row">
       <el-aside width="224px" class="sidebar">
-        <el-scrollbar ref="menuScroll" class="menu-scroll"
-                      @pointermove="menuProximity.onPointerMove" @pointerleave="menuProximity.onPointerLeave"
-                      @scroll="menuProximity.refresh">
+        <el-scrollbar class="menu-scroll">
           <el-menu :default-active="activePath" router unique-opened class="side-menu">
             <MenuItem
               v-for="(item, i) in menuTree"
@@ -72,12 +69,10 @@
 </template>
 
 <script setup>
-import { computed, ref, watch, onMounted, nextTick } from 'vue'
+import { computed, ref, onMounted, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { menuTree } from './menu'
 import request from '@/utils/request'
-import { useProximity } from '@/composables/useProximity'
-import { useReducedMotion } from '@/composables/useReducedMotion'
 import { useProjectStore } from '@/stores/project'
 import StrokeBrand from './StrokeBrand.vue'
 import MenuItem from './MenuItem.vue'
@@ -119,28 +114,6 @@ const moduleIndex = computed(() => {
   return idx >= 0 ? String(idx + 1).padStart(2, '0') : ''
 })
 
-// 右侧动作区的横向 proximity 动效(LineSidebar 的接近效果转 90°);reduced motion 时整体停用
-const navbarInner = ref(null)
-const reducedMotion = useReducedMotion()
-const proximity = useProximity({
-  container: navbarInner, itemSelector: '.action-slot',
-  radius: 150, smoothing: 100,
-  disabled: () => reducedMotion.value,
-})
-
-// 侧栏菜单的纵向 proximity(LineSidebar 原生形态);reduced motion 时停用
-const menuScroll = ref(null)
-const menuProximity = useProximity({
-  container: menuScroll, itemSelector: '.el-menu-item, .el-sub-menu__title',
-  axis: 'y', radius: 90, smoothing: 90,
-  disabled: () => reducedMotion.value,
-})
-
-// reduced-motion 中途切换时踢一帧,让残留的 --effect 衰减归零
-watch(reducedMotion, () => {
-  proximity.refresh()
-  menuProximity.refresh()
-})
 
 async function onUserCmd(cmd) {
   if (cmd === 'logout') {
@@ -169,23 +142,22 @@ function openScreen() {
   height: 100vh;
   overflow: hidden;
   background:
-    radial-gradient(520px 420px at 8% 10%, rgba(99, 102, 241, .18), transparent 70%),
-    radial-gradient(480px 540px at 3% 80%, rgba(139, 92, 246, .13), transparent 70%),
-    radial-gradient(640px 420px at 45% -12%, rgba(67, 56, 202, .10), transparent 70%),
+    radial-gradient(520px 420px at 8% 10%, rgba(99, 102, 241, .22), transparent 70%),
+    radial-gradient(480px 540px at 3% 80%, rgba(139, 92, 246, .17), transparent 70%),
+    radial-gradient(640px 420px at 45% -12%, rgba(67, 56, 202, .12), transparent 70%),
     #eef0f4;
 }
 .body-row { height: 100%; }
 
-/* —— 侧栏:透明液态玻璃(浅磨砂) + LineSidebar 形态(无彩色) —— */
+/* —— 侧栏:透明液态玻璃(无分割线,靠通透感与内容区分) —— */
 .sidebar {
-  --line-hi: #17171c;
   --line-text: #6e6e78;
-  --line-marker-rest: rgba(23, 23, 28, .16);
+  --menu-hover: #6366f1;   /* reactbits 式:悬停蓝紫 */
+  --menu-active: #6d28d9;  /* 选中深紫 */
   padding-top: 60px;
-  background: rgba(255, 255, 255, .55);
-  backdrop-filter: blur(30px) saturate(160%);
-  -webkit-backdrop-filter: blur(30px) saturate(160%);
-  border-right: 1px solid rgba(23, 23, 28, .08);
+  background: rgba(255, 255, 255, .42);
+  backdrop-filter: blur(36px) saturate(180%);
+  -webkit-backdrop-filter: blur(36px) saturate(180%);
   display: flex;
   flex-direction: column;
 }
@@ -195,96 +167,55 @@ function openScreen() {
 
 .side-menu {
   border-right: none;
-  padding: 12px 12px 12px 44px;
+  width: 100%;
+  padding: 12px 8px;
   --el-menu-item-height: 42px;
   --el-menu-sub-item-height: 38px;
   --el-menu-bg-color: transparent;
   --el-menu-text-color: var(--line-text);
   --el-menu-hover-bg-color: transparent;
-  --el-menu-hover-text-color: #fff;
-  --el-menu-active-color: var(--line-hi);
+  --el-menu-hover-text-color: var(--menu-hover);
+  --el-menu-active-color: var(--menu-active);
 }
-.side-menu { width: 212px; }
-/* 顶级分组之间:demo 的组间静态 tick 短线 */
-.menu-scroll :deep(.side-menu > .el-sub-menu) { position: relative; margin-bottom: 14px; }
-.menu-scroll :deep(.side-menu > .el-sub-menu:not(:last-child)::after) {
-  content: '';
-  position: absolute;
-  bottom: -8px;
-  left: -34px;
-  width: 13px;
-  height: 1px;
-  background: var(--line-marker-rest);
-}
+.menu-scroll :deep(.side-menu > .el-sub-menu) { margin-bottom: 8px; }
 
-/* 菜单项:LineSidebar 式纯文字行,无底色块 */
+/* 菜单项:纯文字行,reactbits 式颜色 hover(蓝紫)/选中(深紫) */
 .side-menu :deep(.el-menu-item),
 .side-menu :deep(.el-sub-menu__title) {
-  position: relative;
   height: 42px;
-  border-radius: 0;
+  border-radius: 8px;
   margin-bottom: 2px;
   background: transparent;
   font-weight: 500;
-  /* demo 公式:文字随接近度从静默色向 accent 渐变 */
-  color: color-mix(in srgb, var(--line-hi) calc(var(--effect, 0) * 100%), var(--line-text));
+  color: var(--line-text);
+  transition: color .18s ease;
 }
-/* LineSidebar:左缘 marker 线,随 proximity 伸长并点亮 */
-.side-menu :deep(.el-menu-item)::before,
-.side-menu :deep(.el-sub-menu__title)::before {
-  content: '';
-  position: absolute;
-  left: -34px;
-  top: 50%;
-  width: 26px;
-  height: 1.5px;
-  border-radius: 1px;
-  transform: translateY(-50%) scaleX(calc(.55 + var(--effect, 0) * .45));
-  transform-origin: left center;
-  background: color-mix(in srgb, var(--line-hi) calc(var(--effect, 0) * 100%), var(--line-marker-rest));
-}
-/* 序号/图标/标签:随 proximity 整体右移(demo 的 maxShift,收敛为 10px) */
 .side-menu :deep(.menu-index) {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 11px;
   letter-spacing: .08em;
-  color: color-mix(in srgb, var(--line-hi) calc(var(--effect, 0) * 100%), #74747e);
+  color: inherit;
+  opacity: .72;
   margin-right: 8px;
-  display: inline-block;
-  transform: translateX(calc(var(--effect, 0) * 10px));
-}
-.side-menu :deep(.menu-label) {
-  display: inline-block;
-  transform: translateX(calc(var(--effect, 0) * 10px));
-}
-.side-menu :deep(.el-menu-item .el-icon),
-.side-menu :deep(.el-sub-menu__title .el-icon) {
-  transform: translateX(calc(var(--effect, 0) * 10px));
 }
 .side-menu :deep(.el-menu-item:hover),
-.side-menu :deep(.el-sub-menu__title:hover) { background: transparent; }
-/* 选中态:白色常亮 + 满长 marker,无底色 */
+.side-menu :deep(.el-sub-menu__title:hover) {
+  background: transparent;
+  color: var(--menu-hover);
+}
 .side-menu :deep(.el-menu-item.is-active) {
   background: transparent;
-  color: var(--line-hi);
+  color: var(--menu-active);
   font-weight: 600;
 }
-.side-menu :deep(.el-menu-item.is-active .el-icon),
-.side-menu :deep(.el-menu-item.is-active .menu-index) { color: var(--line-hi); }
-.side-menu :deep(.el-menu-item.is-active)::before {
-  transform: translateY(-50%) scaleX(1.15);
-  background: var(--line-hi);
-}
+.side-menu :deep(.el-menu-item.is-active .el-icon) { color: var(--menu-active); }
 .side-menu :deep(.el-menu-item:focus-visible),
 .side-menu :deep(.el-sub-menu__title:focus-visible) {
   outline: 2px solid #818cf8;
   outline-offset: -2px;
 }
 .side-menu :deep(.el-sub-menu .el-menu) { padding-left: 0; }
-.side-menu :deep(.el-sub-menu .el-menu-item) {
-  min-width: auto;
-  padding-left: 32px !important;
-}
+.side-menu :deep(.el-sub-menu .el-menu-item) { min-width: auto; }
 .side-menu :deep(.el-icon) { font-size: 17px; }
 
 /* —— 顶栏:通栏蓝紫渐变液态玻璃(内容从其下滚过,真实透衬) —— */
@@ -349,43 +280,34 @@ function openScreen() {
 .crumb-swap-enter-from { opacity: 0; transform: translateY(7px); }
 .crumb-swap-leave-to { opacity: 0; transform: translateY(-6px); }
 
-/* 动作区:每项一个 slot,--effect 由 useProximity 按指针 X 距离驱动 */
+/* 动作区:简洁静态,悬停只做轻微亮度变化 */
 .actions { display: flex; align-items: center; gap: 6px; }
 .action-slot {
-  --effect: 0;
-  position: relative;
   display: flex; align-items: center;
   padding: 0 9px;
-  transform: translateY(calc(var(--effect) * -2.5px));
-}
-.action-slot::after {
-  content: '';
-  position: absolute;
-  left: 50%; bottom: 4px;
-  width: min(60%, 46px); height: 2px; border-radius: 1px;
-  background: color-mix(in srgb, #fff calc(var(--effect) * 100%), rgba(255, 255, 255, .2));
-  opacity: calc(.4 + var(--effect) * .6);
-  transform: translateX(-50%) scaleX(calc(.45 + var(--effect) * .55));
 }
 .screen-btn {
   display: flex; align-items: center; gap: 6px;
   cursor: pointer;
-  border: 1px solid color-mix(in srgb, #fff calc(18% + var(--effect) * 30%), transparent);
-  background: rgba(255, 255, 255, calc(.08 + var(--effect) * .06));
-  color: color-mix(in srgb, #fff calc(var(--effect) * 100%), #d6d6de);
+  border: 1px solid rgba(255, 255, 255, .26);
+  background: rgba(255, 255, 255, .1);
+  color: #e3e6ff;
   font-size: 13px; font-weight: 600;
   padding: 7px 14px; border-radius: 999px;
+  transition: background .18s ease, color .18s ease;
 }
+.screen-btn:hover { background: rgba(255, 255, 255, .18); color: #fff; }
 .user { display: flex; align-items: center; gap: 9px; cursor: pointer; }
 .user-avatar {
   background: linear-gradient(135deg, #6366f1, #4f46e5);
   font-size: 14px; font-weight: 600;
-  box-shadow: 0 0 0 calc(var(--effect) * 2px) rgba(255, 255, 255, .28);
 }
 .uname {
   font-size: 14px; font-weight: 500;
-  color: color-mix(in srgb, #fff calc(var(--effect) * 100%), #c7d2fe);
+  color: #c7d2fe;
+  transition: color .18s ease;
 }
+.user:hover .uname { color: #fff; }
 
 /* 项目切换器玻璃化(不改组件,el-select 外壳覆盖) */
 .action-slot :deep(.project-switcher .el-select__wrapper) {
@@ -402,16 +324,6 @@ function openScreen() {
 .action-slot :deep(.project-empty) { color: #b9b9c4; }
 
 @media (prefers-reduced-motion: reduce) {
-  .action-slot { transform: none; }
-  .action-slot::after { transform: translateX(-50%) scaleX(.45); }
-  .side-menu :deep(.menu-index),
-  .side-menu :deep(.menu-label),
-  .side-menu :deep(.el-menu-item .el-icon),
-  .side-menu :deep(.el-sub-menu__title .el-icon) { transform: none; }
-  .side-menu :deep(.el-menu-item)::before,
-  .side-menu :deep(.el-sub-menu__title)::before {
-    transform: translateY(-50%) scaleX(.55);
-  }
   .crumb-marker { animation: none; }
   .crumb-swap-enter-active, .crumb-swap-leave-active { transition: opacity .15s ease; }
   .crumb-swap-enter-from, .crumb-swap-leave-to { transform: none; }
