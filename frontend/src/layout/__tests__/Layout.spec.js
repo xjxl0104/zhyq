@@ -57,12 +57,13 @@ describe('Layout navigation chrome', () => {
   })
   afterEach(() => vi.unstubAllGlobals())
 
-  it('renders the animated gradient brand with the shortened title', () => {
+  it('renders the depth-stacked brand with the shortened title', () => {
     const wrapper = mountLayout()
 
-    const brand = wrapper.get('.navbar .gradient-brand')
-    expect(brand.text()).toBe('智慧云仓系统')
-    expect(wrapper.find('.stroke-brand').exists()).toBe(false)
+    const brand = wrapper.get('.navbar .depth-brand')
+    expect(brand.get('.depth-brand__face').text()).toBe('智慧云仓系统')
+    expect(brand.findAll('.depth-brand__layer').length).toBeGreaterThan(1)
+    expect(wrapper.find('.gradient-brand').exists()).toBe(false)
     wrapper.unmount()
   })
 
@@ -123,7 +124,7 @@ describe('Layout navigation chrome', () => {
   it('mounts the brand inline in the unified top bar without a framed logo box', () => {
     const wrapper = mountLayout()
 
-    expect(wrapper.find('.navbar .gradient-brand').exists()).toBe(true)
+    expect(wrapper.find('.navbar .depth-brand').exists()).toBe(true)
     expect(wrapper.find('.logo').exists()).toBe(false)
   })
 
