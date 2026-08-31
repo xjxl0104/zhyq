@@ -2,11 +2,10 @@
   <el-container class="app-wrapper">
     <el-aside :width="collapsed ? '68px' : '224px'" class="sidebar">
       <div class="logo" :class="{ mini: collapsed }">
-        <el-icon class="logo-icon"><OfficeBuilding /></el-icon>
-        <span v-show="!collapsed" class="logo-text">澳乐智慧园区系统</span>
+        <StrokeBrand :compact="collapsed" />
       </div>
       <el-scrollbar class="menu-scroll">
-        <GooeyNav :active-path="activePath">
+        <GooeyNav :active-path="activePath" :collapsed="collapsed">
           <el-menu :default-active="activePath" router unique-opened :collapse="collapsed"
                    :collapse-transition="false" class="side-menu">
             <MenuItem
@@ -63,6 +62,7 @@ import { menuTree } from './menu'
 import request from '@/utils/request'
 import { useProjectStore } from '@/stores/project'
 import GooeyNav from './GooeyNav.vue'
+import StrokeBrand from './StrokeBrand.vue'
 import MenuItem from './MenuItem.vue'
 import ProjectSwitcher from './ProjectSwitcher.vue'
 import FeedbackFab from '@/views/suggestion/FeedbackFab.vue'
@@ -121,7 +121,7 @@ function openScreen() {
 
 /* —— 侧栏:浅色高级风 —— */
 .sidebar {
-  background: #fff;
+  background: linear-gradient(160deg, #fafaff, #f0effb 55%, #f8f7ff);
   border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
@@ -130,19 +130,11 @@ function openScreen() {
   height: 60px;
   display: flex;
   align-items: center;
-  gap: 11px;
-  padding: 0 20px;
+  padding: 0 16px;
   border-bottom: 1px solid var(--border);
   overflow: hidden;
 }
-.logo.mini { padding: 0; justify-content: center; }
-.logo-icon {
-  font-size: 26px; color: var(--brand); flex-shrink: 0;
-}
-.logo-text {
-  font-size: 18px; font-weight: 700; color: var(--text-title);
-  letter-spacing: 1px; white-space: nowrap;
-}
+.logo.mini { padding: 0 8px; justify-content: center; }
 .menu-scroll { flex: 1; }
 .menu-scroll :deep(.el-scrollbar__view) { min-height: 100%; }
 
@@ -180,10 +172,14 @@ function openScreen() {
 .side-menu :deep(.el-menu-item.is-active .el-icon) { color: var(--brand); }
 .menu-scroll :deep(.gooey-nav--ready .el-menu-item.is-active) {
   background: transparent;
-  color: #fff;
-  text-shadow: 0 1px 1px rgb(49 46 129 / 24%);
+  color: #312e81;
 }
-.menu-scroll :deep(.gooey-nav--ready .el-menu-item.is-active .el-icon) { color: #fff; }
+.menu-scroll :deep(.gooey-nav--ready .el-menu-item.is-active .el-icon) { color: #4f46e5; }
+.menu-scroll :deep(.gooey-nav--ready .el-menu-item:hover),
+.menu-scroll :deep(.gooey-nav--ready .el-sub-menu__title:hover) {
+  background: transparent;
+  color: #312e81;
+}
 .side-menu :deep(.el-menu-item:focus-visible),
 .side-menu :deep(.el-sub-menu__title:focus-visible) {
   outline: 2px solid #818cf8;

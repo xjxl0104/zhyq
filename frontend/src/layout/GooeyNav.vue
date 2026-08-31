@@ -7,12 +7,17 @@
       'gooey-nav--reduced': reducedMotion,
     }"
     :style="indicatorStyle"
+    @pointerover="handlePointerOver"
+    @pointerleave="handlePointerLeave"
+    @focusin="handleFocusIn"
+    @focusout="handleFocusOut"
+    @click.capture="handleClick"
   >
     <div class="gooey-nav__effect" aria-hidden="true">
       <svg class="gooey-nav__filter" focusable="false">
         <defs>
-          <filter id="gooey-nav-filter" x="-30%" y="-30%" width="160%" height="160%">
-            <feGaussianBlur in="SourceGraphic" stdDeviation="5" result="blur" />
+          <filter :id="filterId" x="-30%" y="-30%" width="160%" height="160%">
+            <feGaussianBlur in="SourceGraphic" stdDeviation="2" result="blur" />
             <feColorMatrix
               in="blur"
               mode="matrix"
@@ -24,12 +29,14 @@
         </defs>
       </svg>
       <span class="gooey-nav__pill" />
-      <span
-        v-for="particle in particles"
-        :key="particle.id"
-        class="gooey-nav__particle"
-        :style="particle.style"
-      />
+      <div class="gooey-nav__particles" :style="{ filter: `url(#${filterId})` }">
+        <span
+          v-for="particle in particles"
+          :key="particle.id"
+          class="gooey-nav__particle"
+          :style="particle.style"
+        />
+      </div>
     </div>
     <div class="gooey-nav__content">
       <slot />
@@ -38,12 +45,14 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, useId, watch } from 'vue'
 
 const props = defineProps({
   activePath: { type: String, required: true },
+  collapsed: { type: Boolean, default: false },
 })
 
+const filterId = `gooey-${useId()}`
 const root = ref(null)
 const ready = ref(false)
 const reducedMotion = ref(false)
@@ -57,6 +66,9 @@ let mediaQuery = null
 let particleTimer = null
 let particleSequence = 0
 let pendingBurst = false
+let hoveredItem = null
+let focusedItem = null
+let disposed = false
 const animationFrames = new Set()
 
 const indicatorStyle = computed(() => ({
@@ -93,18 +105,19 @@ function burstParticles() {
 
   clearParticles()
   const { x, y, width, height } = geometry.value
-  const colors = ['#a78bfa', '#fb923c', '#818cf8', '#c4b5fd']
-  particles.value = Array.from({ length: 8 }, (_, index) => {
-    const angle = (Math.PI * 2 * index) / 8
-    const distance = 18 + (index % 3) * 7
+  const colors = ['#8b5cf6', '#f59e0b', '#6366f1', '#c084fc']
+  const originX = x + width * (props.collapsed ? 0.5 : 0.76)
+  particles.value = Array.from({ length: 12 }, (_, index) => {
+    const angle = (Math.PI * 2 * index) / 12
+    const distance = 25 + (index % 3) * 8
     return {
       id: `${++particleSequence}-${index}`,
       style: {
-        '--particle-origin-x': `${x + width / 2}px`,
+        '--particle-origin-x': `${originX}px`,
         '--particle-origin-y': `${y + height / 2}px`,
-        '--particle-x': `${Math.cos(angle) * distance}px`,
-        '--particle-y': `${Math.sin(angle) * distance}px`,
-        '--particle-size': `${5 + (index % 3) * 1.5}px`,
+        '--particle-x': `${Math.cos(angle) * Math.min(distance, width * 0.18)}px`,
+        '--particle-y': `${Math.sin(angle) * distance * 0.7}px`,
+        '--particle-size': `${7 + (index % 3) * 2}px`,
         '--particle-color': colors[index % colors.length],
         '--particle-delay': `${(index % 4) * 18}ms`,
       },
@@ -114,12 +127,49 @@ function burstParticles() {
   particleTimer = window.setTimeout(() => {
     particles.value = []
     particleTimer = null
-  }, 860)
+  }, 1050)
+}
+
+function menuItemFrom(target) {
+  const item = target?.closest?.('.el-menu-item, .el-sub-menu__title')
+  if (!item || !root.value?.contains(item) || item.matches('.is-disabled, [aria-disabled="true"]') || item.closest('.el-sub-menu.is-disabled')) return null
+  return item
+}
+
+function handlePointerOver(event) {
+  if (event.pointerType === 'touch') return
+  const item = menuItemFrom(event.target)
+  if (item === hoveredItem) return
+  hoveredItem = item
+  scheduleMeasure()
+}
+
+function handlePointerLeave() {
+  hoveredItem = null
+  scheduleMeasure()
+}
+
+function handleFocusIn(event) {
+  focusedItem = menuItemFrom(event.target)
+  scheduleMeasure()
+}
+
+function handleFocusOut(event) {
+  focusedItem = menuItemFrom(event.relatedTarget)
+  scheduleMeasure()
+}
+
+function handleClick(event) {
+  const item = menuItemFrom(event.target)
+  if (!item?.classList.contains('el-menu-item')) return
+  hoveredItem = item
+  scheduleMeasure({ burst: true })
 }
 
 function measureActive({ burst = false } = {}) {
   const frame = root.value
-  const activeItem = frame?.querySelector('.el-menu-item.is-active')
+  const preview = hoveredItem || focusedItem
+  const activeItem = (frame?.contains(preview) ? preview : null) || frame?.querySelector('.el-menu-item.is-active')
   if (!frame || !activeItem) {
     ready.value = false
     return
@@ -154,6 +204,7 @@ async function scheduleMeasure(options = {}) {
   pendingBurst = pendingBurst || Boolean(options.burst)
   clearFrames()
   await nextTick()
+  if (disposed) return
   requestFrame(() => requestFrame(() => {
     const burst = pendingBurst
     pendingBurst = false
@@ -161,7 +212,8 @@ async function scheduleMeasure(options = {}) {
   }))
 }
 
-function handleReflow() {
+function handleReflow(event) {
+  if (event?.target?.closest?.('.gooey-nav__effect')) return
   scheduleMeasure()
 }
 
@@ -173,16 +225,19 @@ function handleMotionPreference(event) {
 watch(
   () => props.activePath,
   (nextPath, previousPath) => {
+    hoveredItem = null
+    focusedItem = null
     scheduleMeasure({ burst: Boolean(previousPath && nextPath !== previousPath) })
   },
   { flush: 'post' },
 )
+watch(() => props.collapsed, () => scheduleMeasure())
 
 onMounted(() => {
   mediaQuery = window.matchMedia('(prefers-reduced-motion: reduce)')
   reducedMotion.value = mediaQuery.matches
-  mediaQuery.addEventListener?.('change', handleMotionPreference)
-  mediaQuery.addListener?.(handleMotionPreference)
+  if (mediaQuery.addEventListener) mediaQuery.addEventListener('change', handleMotionPreference)
+  else mediaQuery.addListener?.(handleMotionPreference)
 
   root.value.addEventListener('scroll', handleReflow, true)
   root.value.addEventListener('transitionend', handleReflow)
@@ -197,6 +252,7 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  disposed = true
   pendingBurst = false
   clearFrames()
   clearParticles()
@@ -204,8 +260,8 @@ onBeforeUnmount(() => {
   root.value?.removeEventListener('scroll', handleReflow, true)
   root.value?.removeEventListener('transitionend', handleReflow)
   window.removeEventListener('resize', handleReflow)
-  mediaQuery?.removeEventListener?.('change', handleMotionPreference)
-  mediaQuery?.removeListener?.(handleMotionPreference)
+  if (mediaQuery?.removeEventListener) mediaQuery.removeEventListener('change', handleMotionPreference)
+  else mediaQuery?.removeListener?.(handleMotionPreference)
 })
 </script>
 
@@ -213,6 +269,7 @@ onBeforeUnmount(() => {
 .gooey-nav {
   position: relative;
   min-height: 100%;
+  isolation: isolate;
 }
 
 .gooey-nav__effect {
@@ -222,7 +279,6 @@ onBeforeUnmount(() => {
   overflow: hidden;
   opacity: 0;
   pointer-events: none;
-  filter: url("#gooey-nav-filter");
   transition: opacity 120ms ease;
 }
 
@@ -243,14 +299,30 @@ onBeforeUnmount(() => {
   width: var(--gooey-width);
   height: var(--gooey-height);
   border-radius: 13px;
-  background: linear-gradient(135deg, #4f46e5 0%, #6d5ce8 58%, #8b5cf6 100%);
-  box-shadow: 0 8px 18px rgb(79 70 229 / 20%);
+  box-sizing: border-box;
+  border: 1px solid rgb(129 140 248 / 48%);
+  background:
+    radial-gradient(ellipse at 90% 10%, rgb(192 132 252 / 48%), transparent 70%),
+    linear-gradient(125deg, rgb(238 242 255 / 90%), rgb(199 210 254 / 84%) 60%, rgb(221 214 254 / 92%));
+  backdrop-filter: blur(18px) saturate(160%);
+  -webkit-backdrop-filter: blur(18px) saturate(160%);
+  box-shadow: 0 6px 16px rgb(79 70 229 / 16%), inset 0 1px 0 rgb(255 255 255 / 95%);
   transform: translate3d(var(--gooey-x), var(--gooey-y), 0);
   transform-origin: center;
-  transition:
-    transform 360ms cubic-bezier(.16, 1, .3, 1),
-    width 220ms cubic-bezier(.16, 1, .3, 1),
-    height 220ms cubic-bezier(.16, 1, .3, 1);
+  transition: transform 300ms cubic-bezier(.16, 1, .3, 1);
+}
+
+.gooey-nav__pill::after {
+  content: '';
+  position: absolute;
+  inset: 2px;
+  border-radius: 10px;
+  background: linear-gradient(170deg, rgb(255 255 255 / 56%), transparent 48%);
+}
+
+.gooey-nav__particles {
+  position: absolute;
+  inset: 0;
 }
 
 .gooey-nav__particle {
@@ -261,7 +333,8 @@ onBeforeUnmount(() => {
   height: var(--particle-size);
   border-radius: 50%;
   background: var(--particle-color);
-  animation: gooey-nav-particle 760ms cubic-bezier(.16, 1, .3, 1) var(--particle-delay) both;
+  margin: calc(var(--particle-size) / -2);
+  animation: gooey-nav-particle 940ms cubic-bezier(.16, 1, .3, 1) var(--particle-delay) both;
   will-change: transform, opacity;
 }
 
@@ -272,8 +345,9 @@ onBeforeUnmount(() => {
 
 @keyframes gooey-nav-particle {
   0% { opacity: 0; transform: translate3d(0, 0, 0) scale(.35); }
-  18% { opacity: .9; }
-  100% { opacity: 0; transform: translate3d(var(--particle-x), var(--particle-y), 0) scale(1); }
+  20% { opacity: 1; }
+  65% { opacity: .95; transform: translate3d(var(--particle-x), var(--particle-y), 0) scale(1); }
+  100% { opacity: 0; transform: translate3d(calc(var(--particle-x) * .55), calc(var(--particle-y) * .55), 0) scale(.3); }
 }
 
 .gooey-nav--reduced .gooey-nav__pill {
