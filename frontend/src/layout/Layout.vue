@@ -3,7 +3,7 @@
     <header class="navbar">
       <div class="navbar-inner">
         <div class="brand-zone">
-          <StrokeBrand />
+          <GradientBrand />
         </div>
         <div class="nav-left">
             <span class="sr-only" aria-live="polite">{{ currentTitle }}</span>
@@ -74,7 +74,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { menuTree } from './menu'
 import request from '@/utils/request'
 import { useProjectStore } from '@/stores/project'
-import StrokeBrand from './StrokeBrand.vue'
+import GradientBrand from './GradientBrand.vue'
 import MenuItem from './MenuItem.vue'
 import ProjectSwitcher from './ProjectSwitcher.vue'
 import FeedbackFab from '@/views/suggestion/FeedbackFab.vue'

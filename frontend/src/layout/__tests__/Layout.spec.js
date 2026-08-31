@@ -57,35 +57,12 @@ describe('Layout navigation chrome', () => {
   })
   afterEach(() => vi.unstubAllGlobals())
 
-  it('replaces the building logo with an accessible outlined cloud-warehouse title', () => {
+  it('renders the animated gradient brand with the shortened title', () => {
     const wrapper = mountLayout()
-    expect(wrapper.find('.logo-icon').exists()).toBe(false)
-    const brand = wrapper.get('.stroke-brand')
-    expect(brand.attributes('aria-label')).toBe('澳乐智慧云仓系统')
-    expect(brand.findAll('[data-stroke-char]')).toHaveLength(8)
-    expect(brand.find('[data-fill-text]').text()).toBe('澳乐智慧云仓系统')
-    wrapper.unmount()
-  })
 
-  it('replays the brand on hover without leaving duplicate animation layers', async () => {
-    const wrapper = mountLayout()
-    const brand = wrapper.get('.stroke-brand')
-    const initialSvg = brand.get('svg').element
-    await brand.trigger('pointerenter')
-    expect(brand.get('svg').element).toBe(initialSvg)
-    expect(brand.findAll('svg')).toHaveLength(1)
-    wrapper.unmount()
-  })
-
-  it('keeps the brand in its finished state when reduced motion is requested', async () => {
-    vi.stubGlobal('matchMedia', () => ({ matches: true, addEventListener() {}, removeEventListener() {} }))
-    const wrapper = mountLayout()
-    await flushPromises()
-    const brand = wrapper.get('.stroke-brand')
-    const initialSvg = brand.get('svg').element
-    expect(brand.classes()).toContain('stroke-brand--reduced')
-    await brand.trigger('pointerenter')
-    expect(brand.get('svg').element).toBe(initialSvg)
+    const brand = wrapper.get('.navbar .gradient-brand')
+    expect(brand.text()).toBe('智慧云仓系统')
+    expect(wrapper.find('.stroke-brand').exists()).toBe(false)
     wrapper.unmount()
   })
 
@@ -146,7 +123,7 @@ describe('Layout navigation chrome', () => {
   it('mounts the brand inline in the unified top bar without a framed logo box', () => {
     const wrapper = mountLayout()
 
-    expect(wrapper.find('.navbar .stroke-brand').exists()).toBe(true)
+    expect(wrapper.find('.navbar .gradient-brand').exists()).toBe(true)
     expect(wrapper.find('.logo').exists()).toBe(false)
   })
 
