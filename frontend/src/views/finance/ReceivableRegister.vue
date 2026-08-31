@@ -103,6 +103,12 @@
         <el-table-column prop="status" label="状态" width="100">
           <template #default="{ row }"><el-tag :type="statusType(row.status)">{{ statusLabel(row.status) }}</el-tag></template>
         </el-table-column>
+        <el-table-column prop="freePeriod" label="免租期限" min-width="190" show-overflow-tooltip>
+          <template #default="{ row }">{{ row.freePeriod || '-' }}</template>
+        </el-table-column>
+        <el-table-column prop="discount" label="优惠/调整" min-width="190" show-overflow-tooltip>
+          <template #default="{ row }">{{ row.discount || '-' }}</template>
+        </el-table-column>
         <el-table-column prop="monthlyRent" label="当月应收租金" width="140" align="right">
           <template #default="{ row }">¥{{ formatMoney(row.monthlyRent) }}</template>
         </el-table-column>
@@ -115,6 +121,10 @@
         <el-table-column label="合同期限" width="200">
           <template #default="{ row }">{{ row.contractStart }} ~ {{ row.contractEnd }}</template>
         </el-table-column>
+        <el-table-column prop="collectionTiming" label="收款约定" min-width="190" show-overflow-tooltip>
+          <template #default="{ row }">{{ row.collectionTiming || '-' }}</template>
+        </el-table-column>
+        <el-table-column prop="dueDate" label="本期应收日" width="120" />
       </el-table>
     </div>
 
@@ -219,7 +229,7 @@ function monthlySummaryMethod({ columns }) {
 function openDetail(row) { detailId.value = row.id; detailVisible.value = true }
 function openEditor(row) { editor.form = row ? { ...row } : { monthlyRent: 0, monthlyProperty: 0, monthlyTotal: 0 }; editor.visible = true }
 async function saveEditor() { editor.form.id ? await receivableApi.update(editor.form) : await receivableApi.add(editor.form); editor.visible = false; ElMessage.success('保存成功'); load() }
-async function generate(row) { await ElMessageBox.confirm('将按已确认规则生成分账账单，是否继续？'); const result = await receivableApi.generate(row.id); ElMessage.success(`已生成 ${result?.inserted || 0} 条，跳过 ${result?.skipped || 0} 条`) }
+async function generate(row) { await ElMessageBox.confirm('将按登记明细中的合同期限、免租期和收款约定生成或同步账单，是否继续？'); const result = await receivableApi.generate(row.id); ElMessage.success(`新增 ${result?.inserted || 0} 条，同步 ${result?.updated || 0} 条，跳过 ${result?.skipped || 0} 条`) }
 async function remove(row) { await receivableApi.remove(row.id); ElMessage.success('删除成功'); load() }
 async function downloadExport() {
   const response = await receivableApi.export()

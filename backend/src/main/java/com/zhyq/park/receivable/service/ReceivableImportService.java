@@ -214,12 +214,10 @@ public class ReceivableImportService {
                         .eq(DepositLedger::getRegisterId, register.getId()));
                 importRow.setNormalizedJson(write(normalized));
             }
-            // 合同为空:仅登记入库,不落规则/保证金 → 后续不生成任何账单(账单由这些规则/保证金驱动)。
-            // 合同非空:保持既有账单生成逻辑不变。
-            if (contractId != null) {
-                persistRules(register, rowData);
-                persistDeposits(register, rowData);
-            }
+            // 登记明细本身就是合同计费的权威资料。即使正式合同尚未建档，也必须保存
+            // 免租、递增、折扣、账期和保证金规则，供月度对账及后续账单生成使用。
+            persistRules(register, rowData);
+            persistDeposits(register, rowData);
 
             importRow.setStatus(ROW_IMPORTED);
             importRow.setTargetType("RECEIVABLE_REGISTER");
@@ -495,7 +493,14 @@ public class ReceivableImportService {
                                              ReceivableWorkbookData.RowData row) {
         boolean waivePropertyDuringFreePeriod = containsAny(row.discountRaw(),
                 "免物业", "无需支付物业", "免缴物业", "物业管理费按0");
-        for (ReceivableRuleParser.DateRange range : ruleParser.parseDateRanges(row.freePeriodRaw())) {
+        List<ReceivableRuleParser.DateRange> freeRanges = new ArrayList<>(
+                ruleParser.parseDateRanges(row.freePeriodRaw()));
+        if (freeRanges.isEmpty() && register.getContractStartDate() != null) {
+            ruleParser.parseMonthCount(row.freeTermRaw()).ifPresent(months -> freeRanges.add(
+                    new ReceivableRuleParser.DateRange(register.getContractStartDate(),
+                            register.getContractStartDate().plusMonths(months).minusDays(1))));
+        }
+        for (ReceivableRuleParser.DateRange range : freeRanges) {
             persistWaiver(register, "RENT", range, row.freePeriodRaw());
             if (waivePropertyDuringFreePeriod) {
                 persistWaiver(register, "PROPERTY", range, row.discountRaw());

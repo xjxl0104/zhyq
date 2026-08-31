@@ -33,26 +33,35 @@ public class ReceivablePlanService {
     @Transactional(rollbackFor = Exception.class)
     public ReceivableGenerateResult generate(long registerId) {
         ReceivableRegister register = requireConfirmed(registerId);
-        // 合同为空的登记仅做应收登记,禁止生成账单;待关联合同后再生成(ver5.1)
-        if (register.getContractId() == null) {
-            throw new BizException("该登记未关联合同,不能生成账单;请先关联合同");
-        }
         List<ReceivableRule> rules = ruleMapper.selectList(new LambdaQueryWrapper<ReceivableRule>()
                 .eq(ReceivableRule::getRegisterId, registerId)
                 .eq(ReceivableRule::getStatus, "ACTIVE")
                 .orderByAsc(ReceivableRule::getPriority));
         List<Bill> candidates = buildBills(register, rules);
         int inserted = 0;
+        int updated = 0;
+        int skipped = 0;
         for (Bill bill : candidates) {
-            if (exists(bill.getBillingKey())) continue;
+            Bill existing = find(bill.getBillingKey());
+            if (existing != null) {
+                if (canSynchronize(existing)) {
+                    bill.setId(existing.getId());
+                    billMapper.updateById(bill);
+                    updated++;
+                } else {
+                    skipped++;
+                }
+                continue;
+            }
             try {
                 billMapper.insert(bill);
                 inserted++;
             } catch (DuplicateKeyException race) {
-                if (!exists(bill.getBillingKey())) throw race;
+                if (find(bill.getBillingKey()) == null) throw race;
+                skipped++;
             }
         }
-        return new ReceivableGenerateResult(candidates.size(), inserted, candidates.size() - inserted);
+        return new ReceivableGenerateResult(candidates.size(), inserted, updated, skipped);
     }
 
     private ReceivableRegister requireConfirmed(long registerId) {
@@ -151,10 +160,16 @@ public class ReceivablePlanService {
                 + (ids.isEmpty() ? "" : "；规则ID " + ids);
     }
 
-    private boolean exists(String billingKey) {
-        Long count = billMapper.selectCount(new LambdaQueryWrapper<Bill>()
+    private Bill find(String billingKey) {
+        return billMapper.selectOne(new LambdaQueryWrapper<Bill>()
                 .eq(Bill::getBillingKey, billingKey));
-        return count != null && count > 0;
+    }
+
+    private static boolean canSynchronize(Bill bill) {
+        BigDecimal paid = bill.getPaidAmount() == null ? BigDecimal.ZERO : bill.getPaidAmount();
+        return paid.signum() == 0 && (bill.getStatus() == null
+                || bill.getStatus() == 1 || bill.getStatus() == 2
+                || bill.getStatus() == 3 || bill.getStatus() == 6);
     }
 
     private static int version(ReceivableRegister register) {

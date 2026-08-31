@@ -60,7 +60,12 @@
       <el-table :data="list" v-loading="loading" border stripe>
         <el-table-column type="index" label="#" width="55" />
         <el-table-column prop="code" label="账单号" min-width="150" />
-        <el-table-column prop="tenantRefId" label="对方租客" width="100" />
+        <el-table-column prop="tenantName" label="对方租客" min-width="160">
+          <template #default="{ row }">{{ row.tenantName || `租客 #${row.tenantRefId || '-'}` }}</template>
+        </el-table-column>
+        <el-table-column prop="agreementNo" label="协议编号" min-width="140">
+          <template #default="{ row }">{{ row.agreementNo || '-' }}</template>
+        </el-table-column>
         <el-table-column prop="feeType" label="费用类型" width="100" />
         <el-table-column label="应收" width="120" align="right">
           <template #default="{ row }">¥{{ money(row.amount) }}</template>
@@ -131,9 +136,13 @@
     <el-dialog v-model="detailDialog.visible" title="账单详情 - 收款记录" width="640px">
       <el-descriptions :column="2" border size="small" style="margin-bottom: 12px">
         <el-descriptions-item label="账单号">{{ detailDialog.bill?.code }}</el-descriptions-item>
+        <el-descriptions-item label="对方租客">{{ detailDialog.bill?.tenantName || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="协议编号">{{ detailDialog.bill?.agreementNo || '-' }}</el-descriptions-item>
         <el-descriptions-item label="费用类型">{{ detailDialog.bill?.feeType }}</el-descriptions-item>
         <el-descriptions-item label="应收">¥{{ money(detailDialog.bill?.amount) }}</el-descriptions-item>
         <el-descriptions-item label="实收">¥{{ money(detailDialog.bill?.paidAmount) }}</el-descriptions-item>
+        <el-descriptions-item label="账期">{{ detailDialog.bill?.periodStart || '-' }} ~ {{ detailDialog.bill?.periodEnd || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="应收日">{{ detailDialog.bill?.dueDate || '-' }}</el-descriptions-item>
       </el-descriptions>
       <el-table :data="payRecords" border stripe size="small">
         <el-table-column prop="payNo" label="支付流水号" min-width="180" />

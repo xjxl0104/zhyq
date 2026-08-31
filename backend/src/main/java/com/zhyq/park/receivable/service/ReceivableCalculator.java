@@ -34,57 +34,89 @@ public class ReceivableCalculator {
 
     public BigDecimal amountForMonth(ReceivableRegister register, List<ReceivableRule> allRules,
                                      String feeType, YearMonth period) {
-        List<ReceivableRule> rules = allRules.stream()
+        List<ReceivableRule> rules = new java.util.ArrayList<>(
+                Optional.ofNullable(allRules).orElse(List.of()).stream()
                 .filter(rule -> feeType.equals(rule.getFeeType()))
                 .filter(this::active)
-                .toList();
-        BigDecimal base = rules.stream()
+                .toList());
+        // ver5.1 允许登记明细先于正式合同建档。旧数据可能完全没有规则，或只有
+        // 基础金额而缺少免租规则；从原始合同条款补齐缺项，避免整月租金误计。
+        for (ReceivableRule inferred : inferRules(register, feeType)) {
+            if (rules.stream().noneMatch(existing -> equivalent(existing, inferred))) {
+                rules.add(inferred);
+            }
+        }
+        List<ReceivableRule> resolvedRules = rules;
+        BigDecimal base = resolvedRules.stream()
                 .filter(rule -> "AUTHORITATIVE_MONTHLY".equals(rule.getRuleType()))
                 .map(ReceivableRule::getFixedAmount)
                 .filter(Objects::nonNull)
                 .findFirst()
-                .orElseGet(() -> fallbackBase(register, rules, feeType));
+                .orElseGet(() -> fallbackBase(register, resolvedRules, feeType));
         LocalDate contractStart = Optional.ofNullable(register.getContractStartDate())
                 .orElse(period.atDay(1));
-        return applyRules(base, period, contractStart, rules);
+        LocalDate contractEnd = Optional.ofNullable(register.getContractEndDate())
+                .orElse(period.atEndOfMonth());
+        return applyRules(base, period, contractStart, contractEnd, resolvedRules);
     }
 
     public BigDecimal applyRules(BigDecimal baseAmount, YearMonth period, LocalDate contractStart,
                                  List<ReceivableRule> rules) {
-        BigDecimal amount = zero(baseAmount);
+        return applyRules(baseAmount, period, contractStart, period.atEndOfMonth(), rules);
+    }
 
+    private BigDecimal applyRules(BigDecimal baseAmount, YearMonth period, LocalDate contractStart,
+                                  LocalDate contractEnd, List<ReceivableRule> rules) {
+        LocalDate activeStart = max(contractStart, period.atDay(1));
+        LocalDate activeEnd = min(contractEnd, period.atEndOfMonth());
+        if (activeEnd.isBefore(activeStart)) return money(BigDecimal.ZERO);
+
+        BigDecimal dailyBase = zero(baseAmount).divide(
+                BigDecimal.valueOf(period.lengthOfMonth()), 12, RoundingMode.HALF_UP);
+        BigDecimal amount = BigDecimal.ZERO;
+        for (LocalDate day = activeStart; !day.isAfter(activeEnd); day = day.plusDays(1)) {
+            BigDecimal daily = applyEscalation(dailyBase, contractStart, day, rules);
+            if (rules.stream().anyMatch(rule -> isWaived(rule, day))) continue;
+            for (ReceivableRule rule : rules) {
+                if (!appliesToDate(rule, day) || !"DISCOUNT".equals(rule.getRuleType())
+                        || rule.getDiscountRate() == null) continue;
+                daily = daily.multiply(rule.getDiscountRate())
+                        .divide(ONE_HUNDRED, 12, RoundingMode.HALF_UP);
+            }
+            amount = amount.add(daily);
+        }
+
+        for (ReceivableRule rule : rules) {
+            if (!active(rule) || rule.getFixedAmount() == null
+                    || (!"OFFSET".equals(rule.getRuleType())
+                    && !"FIXED_ADJUSTMENT".equals(rule.getRuleType()))) continue;
+            long overlapDays = overlapDays(rule, activeStart, activeEnd);
+            if (overlapDays <= 0) continue;
+            BigDecimal adjustment = rule.getFixedAmount()
+                    .multiply(BigDecimal.valueOf(overlapDays))
+                    .divide(BigDecimal.valueOf(period.lengthOfMonth()), 12, RoundingMode.HALF_UP);
+            amount = "OFFSET".equals(rule.getRuleType())
+                    ? amount.subtract(adjustment) : amount.add(adjustment);
+        }
+        return money(amount.max(BigDecimal.ZERO));
+    }
+
+    private BigDecimal applyEscalation(BigDecimal amount, LocalDate contractStart, LocalDate day,
+                                       List<ReceivableRule> rules) {
+        BigDecimal result = amount;
         for (ReceivableRule rule : rules) {
             if (!active(rule) || !"ESCALATION".equals(rule.getRuleType())
                     || rule.getIntervalYears() == null || rule.getIntervalYears() <= 0
-                    || rule.getIncreaseRate() == null) {
-                continue;
-            }
-            long completeYears = Math.max(0, ChronoUnit.YEARS.between(contractStart, period.atEndOfMonth()));
+                    || rule.getIncreaseRate() == null) continue;
+            long completeYears = Math.max(0, ChronoUnit.YEARS.between(contractStart, day));
             int steps = (int) (completeYears / rule.getIntervalYears());
             if (steps > 0) {
                 BigDecimal factor = BigDecimal.ONE.add(
-                        rule.getIncreaseRate().divide(ONE_HUNDRED, 10, RoundingMode.HALF_UP));
-                amount = amount.multiply(factor.pow(steps));
+                        rule.getIncreaseRate().divide(ONE_HUNDRED, 12, RoundingMode.HALF_UP));
+                result = result.multiply(factor.pow(steps));
             }
         }
-
-        if (rules.stream().anyMatch(rule -> isWaived(rule, period))) {
-            return money(BigDecimal.ZERO);
-        }
-        for (ReceivableRule rule : rules) {
-            if (!appliesToPeriod(rule, period) || !"DISCOUNT".equals(rule.getRuleType())
-                    || rule.getDiscountRate() == null) {
-                continue;
-            }
-            amount = amount.multiply(rule.getDiscountRate())
-                    .divide(ONE_HUNDRED, 10, RoundingMode.HALF_UP);
-        }
-        for (ReceivableRule rule : rules) {
-            if (!appliesToPeriod(rule, period) || rule.getFixedAmount() == null) continue;
-            if ("OFFSET".equals(rule.getRuleType())) amount = amount.subtract(rule.getFixedAmount());
-            if ("FIXED_ADJUSTMENT".equals(rule.getRuleType())) amount = amount.add(rule.getFixedAmount());
-        }
-        return money(amount.max(BigDecimal.ZERO));
+        return result;
     }
 
     public LocalDate dueDate(ReceivableRegister register, YearMonth period) {
@@ -121,20 +153,130 @@ public class ReceivableCalculator {
                 .orElse(BigDecimal.ZERO);
     }
 
-    private boolean isWaived(ReceivableRule rule, YearMonth period) {
+    private boolean isWaived(ReceivableRule rule, LocalDate day) {
         if (!active(rule)) return false;
-        if ("WAIVER".equals(rule.getRuleType())) return appliesToPeriod(rule, period);
+        if ("WAIVER".equals(rule.getRuleType())) return appliesToDate(rule, day);
         return "RECURRING_WAIVER".equals(rule.getRuleType())
                 && "YEARLY_LAST_MONTH".equals(rule.getRecurrenceRule())
-                && period.getMonthValue() == 12;
+                && day.getMonthValue() == 12;
     }
 
-    private boolean appliesToPeriod(ReceivableRule rule, YearMonth period) {
+    private boolean appliesToDate(ReceivableRule rule, LocalDate day) {
         if (!active(rule)) return false;
-        LocalDate start = period.atDay(1);
-        LocalDate end = period.atEndOfMonth();
-        return (rule.getEffectiveStart() == null || !rule.getEffectiveStart().isAfter(end))
-                && (rule.getEffectiveEnd() == null || !rule.getEffectiveEnd().isBefore(start));
+        return (rule.getEffectiveStart() == null || !rule.getEffectiveStart().isAfter(day))
+                && (rule.getEffectiveEnd() == null || !rule.getEffectiveEnd().isBefore(day));
+    }
+
+    private long overlapDays(ReceivableRule rule, LocalDate activeStart, LocalDate activeEnd) {
+        LocalDate start = rule.getEffectiveStart() == null
+                ? activeStart : max(activeStart, rule.getEffectiveStart());
+        LocalDate end = rule.getEffectiveEnd() == null
+                ? activeEnd : min(activeEnd, rule.getEffectiveEnd());
+        return end.isBefore(start) ? 0 : ChronoUnit.DAYS.between(start, end) + 1;
+    }
+
+    private List<ReceivableRule> inferRules(ReceivableRegister register, String feeType) {
+        ReceivableRuleParser parser = new ReceivableRuleParser();
+        java.util.ArrayList<ReceivableRule> inferred = new java.util.ArrayList<>();
+        parser.parseEscalation(register.getEscalationRaw()).ifPresent(value -> {
+            ReceivableRule rule = rule(feeType, "ESCALATION");
+            rule.setIntervalYears(value.intervalYears());
+            rule.setIncreaseRate(value.increasePercent());
+            inferred.add(rule);
+        });
+        boolean waiveProperty = containsAny(register.getDiscountRaw(),
+                "免物业", "无需支付物业", "免缴物业", "物业管理费按0");
+        if ("RENT".equals(feeType) || waiveProperty) {
+            List<ReceivableRuleParser.DateRange> freeRanges = new java.util.ArrayList<>(
+                    parser.parseDateRanges(register.getFreePeriodRaw()));
+            if (freeRanges.isEmpty() && register.getContractStartDate() != null) {
+                parser.parseMonthCount(register.getFreeTermRaw()).ifPresent(months -> freeRanges.add(
+                        new ReceivableRuleParser.DateRange(register.getContractStartDate(),
+                                register.getContractStartDate().plusMonths(months).minusDays(1))));
+            }
+            freeRanges.forEach(range -> inferred.add(dateRule(feeType, "WAIVER", range)));
+        }
+        String combined = text(register.getFreePeriodRaw()) + "；" + text(register.getDiscountRaw());
+        if ("RENT".equals(feeType) && parser.isYearlyLastMonthWaiver(combined)) {
+            ReceivableRule rule = rule(feeType, "RECURRING_WAIVER");
+            rule.setRecurrenceRule("YEARLY_LAST_MONTH");
+            inferred.add(rule);
+        }
+        for (String clause : text(register.getDiscountRaw()).split("[；;\\n]+")) {
+            List<ReceivableRuleParser.DateRange> ranges = parser.parseDateRanges(clause);
+            if (ranges.isEmpty() || !mentionsFee(clause, feeType)) continue;
+            parser.parseDiscountRate(clause).ifPresent(rate -> ranges.forEach(range -> {
+                ReceivableRule rule = dateRule(feeType, "DISCOUNT", range);
+                rule.setDiscountRate(rate);
+                inferred.add(rule);
+            }));
+            boolean offset = clause.contains("抵扣");
+            if (offset) ranges.forEach(range -> {
+                ReceivableRule rule = dateRule(feeType, "OFFSET", range);
+                BigDecimal monthly = "RENT".equals(feeType)
+                        ? register.getMonthlyRent() : register.getMonthlyProperty();
+                rule.setFixedAmount(parser.parseCurrencyAmount(clause).map(total -> {
+                    long months = ChronoUnit.MONTHS.between(
+                            YearMonth.from(range.start()), YearMonth.from(range.end())) + 1;
+                    return months <= 0 ? total : total.divide(
+                            BigDecimal.valueOf(months), 2, RoundingMode.HALF_UP);
+                }).orElse(zero(monthly)));
+                inferred.add(rule);
+            });
+            boolean waiver = !offset && (containsAny(clause, "免租期", "免租金", "无需支付租赁费")
+                    || ("PROPERTY".equals(feeType)
+                    && containsAny(clause, "免缴", "无需支付", "免物业", "免管理费")));
+            if (waiver) ranges.forEach(range -> inferred.add(dateRule(feeType, "WAIVER", range)));
+        }
+        return inferred;
+    }
+
+    private static ReceivableRule rule(String feeType, String ruleType) {
+        ReceivableRule rule = new ReceivableRule();
+        rule.setFeeType(feeType);
+        rule.setRuleType(ruleType);
+        rule.setStatus("ACTIVE");
+        return rule;
+    }
+
+    private static ReceivableRule dateRule(String feeType, String ruleType,
+                                           ReceivableRuleParser.DateRange range) {
+        ReceivableRule rule = rule(feeType, ruleType);
+        rule.setEffectiveStart(range.start());
+        rule.setEffectiveEnd(range.end());
+        return rule;
+    }
+
+    private static boolean equivalent(ReceivableRule first, ReceivableRule second) {
+        return Objects.equals(first.getFeeType(), second.getFeeType())
+                && Objects.equals(first.getRuleType(), second.getRuleType())
+                && Objects.equals(first.getEffectiveStart(), second.getEffectiveStart())
+                && Objects.equals(first.getEffectiveEnd(), second.getEffectiveEnd())
+                && numericEquals(first.getDiscountRate(), second.getDiscountRate())
+                && numericEquals(first.getFixedAmount(), second.getFixedAmount())
+                && Objects.equals(first.getIntervalYears(), second.getIntervalYears())
+                && numericEquals(first.getIncreaseRate(), second.getIncreaseRate())
+                && Objects.equals(first.getRecurrenceRule(), second.getRecurrenceRule());
+    }
+
+    private static boolean numericEquals(BigDecimal first, BigDecimal second) {
+        return first == null ? second == null : second != null && first.compareTo(second) == 0;
+    }
+
+    private static boolean mentionsFee(String raw, String feeType) {
+        boolean property = containsAny(raw, "物业", "管理费");
+        boolean rent = containsAny(raw, "租金", "租赁费", "免租");
+        return "PROPERTY".equals(feeType) ? property : rent || !property;
+    }
+
+    private static boolean containsAny(String raw, String... tokens) {
+        if (raw == null || raw.isBlank()) return false;
+        for (String token : tokens) if (raw.contains(token)) return true;
+        return false;
+    }
+
+    private static String text(String value) {
+        return value == null ? "" : value;
     }
 
     private boolean active(ReceivableRule rule) {
@@ -161,5 +303,13 @@ public class ReceivableCalculator {
 
     private static BigDecimal money(BigDecimal value) {
         return value.setScale(2, RoundingMode.HALF_UP);
+    }
+
+    private static LocalDate max(LocalDate first, LocalDate second) {
+        return first.isAfter(second) ? first : second;
+    }
+
+    private static LocalDate min(LocalDate first, LocalDate second) {
+        return first.isBefore(second) ? first : second;
     }
 }

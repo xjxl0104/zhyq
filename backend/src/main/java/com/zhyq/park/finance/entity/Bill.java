@@ -1,6 +1,7 @@
 package com.zhyq.park.finance.entity;
 
 import com.baomidou.mybatisplus.annotation.TableName;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.zhyq.park.common.base.BaseEntity;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
@@ -30,6 +31,12 @@ public class Bill extends BaseEntity {
     private Long receivableRuleId;
     /** 租客 */
     private Long tenantRefId;
+    /** 账单查询展示字段：优先取权威应收登记中的租客名称。 */
+    @TableField(exist = false)
+    private String tenantName;
+    /** 账单查询展示字段：来源登记明细中的协议编号。 */
+    @TableField(exist = false)
+    private String agreementNo;
     private Long projectId;
     private Long buildingId;
     private Long roomId;

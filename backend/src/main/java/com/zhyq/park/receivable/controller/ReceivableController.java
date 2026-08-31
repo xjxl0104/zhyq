@@ -154,7 +154,9 @@ public class ReceivableController {
                     reg.getId(), reg.getTenantNameRaw(), reg.getSpaceNameRaw(),
                     reg.getAgreementNoRaw(), reg.getStatus(),
                     rent, property, total,
-                    reg.getContractStartDate(), reg.getContractEndDate()));
+                    reg.getContractStartDate(), reg.getContractEndDate(),
+                    reg.getFreePeriodRaw(), reg.getDiscountRaw(),
+                    reg.getCollectionTimingRaw(), calculator.dueDate(reg, period)));
         }
         return Result.ok(new MonthlySummaryResponse(
                 month, items.size(), totalRent, totalProperty, totalRent.add(totalProperty), items));
@@ -375,7 +377,9 @@ public class ReceivableController {
     public record MonthlyLineItem(Long id, String tenantName, String spaceName,
                                   String agreementNo, String status,
                                   BigDecimal monthlyRent, BigDecimal monthlyProperty, BigDecimal monthlyTotal,
-                                  java.time.LocalDate contractStart, java.time.LocalDate contractEnd) {}
+                                  java.time.LocalDate contractStart, java.time.LocalDate contractEnd,
+                                  String freePeriod, String discount, String collectionTiming,
+                                  java.time.LocalDate dueDate) {}
     public record MonthlySummaryResponse(String month, int count,
                                          BigDecimal totalRent, BigDecimal totalProperty, BigDecimal grandTotal,
                                          List<MonthlyLineItem> items) {}

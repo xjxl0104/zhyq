@@ -80,6 +80,52 @@ class ReceivableCalculatorTest {
     }
 
     @Test
+    void infersFreePeriodFromLegacyRegisterWithoutPersistedRules() {
+        ReceivableRegister register = new ReceivableRegister();
+        register.setContractStartDate(LocalDate.of(2026, 5, 1));
+        register.setContractEndDate(LocalDate.of(2032, 4, 30));
+        register.setMonthlyRent(new BigDecimal("56400"));
+        register.setMonthlyProperty(new BigDecimal("9447"));
+        register.setFreePeriodRaw("2026.05.01-2026.06.30");
+        ReceivableRule legacyBaseOnly = rule("AUTHORITATIVE_MONTHLY");
+        legacyBaseOnly.setFeeType("RENT");
+        legacyBaseOnly.setFixedAmount(new BigDecimal("56400.00"));
+
+        assertEquals(new BigDecimal("0.00"), calculator.amountForMonth(
+                register, List.of(legacyBaseOnly), "RENT", YearMonth.of(2026, 5)));
+        assertEquals(new BigDecimal("9447.00"), calculator.amountForMonth(
+                register, List.of(), "PROPERTY", YearMonth.of(2026, 5)));
+    }
+
+    @Test
+    void proratesPartialMonthAndPartialFreePeriodByCalendarDay() {
+        ReceivableRegister register = new ReceivableRegister();
+        register.setContractStartDate(LocalDate.of(2026, 5, 10));
+        register.setContractEndDate(LocalDate.of(2026, 5, 31));
+        register.setMonthlyRent(new BigDecimal("31000"));
+        register.setFreePeriodRaw("2026.05.10-2026.05.15");
+
+        assertEquals(new BigDecimal("16000.00"), calculator.amountForMonth(
+                register, List.of(), "RENT", YearMonth.of(2026, 5)));
+    }
+
+    @Test
+    void derivesFreeRangeFromMonthCountWhenExactDatesAreMissing() {
+        ReceivableRegister register = new ReceivableRegister();
+        register.setContractStartDate(LocalDate.of(2026, 5, 1));
+        register.setContractEndDate(LocalDate.of(2026, 12, 31));
+        register.setMonthlyRent(new BigDecimal("56400"));
+        register.setFreeTermRaw("2个月");
+
+        assertEquals(new BigDecimal("0.00"), calculator.amountForMonth(
+                register, List.of(), "RENT", YearMonth.of(2026, 5)));
+        assertEquals(new BigDecimal("0.00"), calculator.amountForMonth(
+                register, List.of(), "RENT", YearMonth.of(2026, 6)));
+        assertEquals(new BigDecimal("56400.00"), calculator.amountForMonth(
+                register, List.of(), "RENT", YearMonth.of(2026, 7)));
+    }
+
+    @Test
     void dueDateUsesPreviousMonthDayThirtyAndFirstCollectionFloor() {
         ReceivableRegister register = new ReceivableRegister();
         register.setCollectionTimingRaw("当月30日前收取下个月租金");
