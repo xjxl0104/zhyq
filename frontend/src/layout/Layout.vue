@@ -3,6 +3,7 @@
     <el-container class="body-row">
       <el-aside width="232px" class="sidebar">
         <div class="brand-zone">
+          <img class="brand-logo" src="@/assets/brand/dipark.png" alt="DIPARK" />
           <StrokeBrand />
         </div>
         <div class="switcher-zone">
@@ -129,10 +130,13 @@ function onClick(c) {
   padding: 16px 0 10px;
 }
 .brand-zone {
-  padding: 6px 18px 14px;
+  padding: 6px 16px 14px;
   display: flex;
   align-items: center;
+  gap: 10px;
 }
+.brand-logo { height: 24px; width: auto; flex-shrink: 0; }
+.brand-zone :deep(.stroke-brand) { flex: 1; min-width: 0; }
 .switcher-zone { padding: 0 14px 12px; }
 .switcher-zone :deep(.project-switcher) { width: 100%; }
 .user-zone {

@@ -7,7 +7,7 @@ import { gsap } from 'gsap'
 // mount 播放一次,悬停重播;prefers-reduced-motion 直接呈现终态。
 defineOptions({ name: 'StrokeBrand' })
 
-const TEXT = '智慧云仓系统'
+const TEXT = '云仓系统'
 const STROKE_COLOR = '#A78BFA'
 const FILL_COLOR = '#F8FAFC'
 const STROKE_WIDTH = 1.3   // 配合 non-scaling-stroke,小尺寸下仍保持参考实现的线条锐度

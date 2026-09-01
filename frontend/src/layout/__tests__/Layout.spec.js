@@ -61,10 +61,11 @@ describe('Layout navigation chrome', () => {
     const wrapper = mountLayout()
 
     const brand = wrapper.get('.sidebar .brand-zone .stroke-brand')
-    expect(brand.attributes('aria-label')).toBe('智慧云仓系统')
-    expect(brand.findAll('[data-stroke-char]')).toHaveLength(6)
-    expect(brand.find('[data-fill-text]').text()).toBe('智慧云仓系统')
+    expect(brand.attributes('aria-label')).toBe('云仓系统')
+    expect(brand.findAll('[data-stroke-char]')).toHaveLength(4)
+    expect(brand.find('[data-fill-text]').text()).toBe('云仓系统')
     expect(wrapper.find('.depth-brand').exists()).toBe(false)
+    expect(wrapper.get('.brand-zone .brand-logo').attributes('alt')).toBe('DIPARK')
     wrapper.unmount()
   })
 
