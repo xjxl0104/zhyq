@@ -1,4 +1,5 @@
--- V42: 清除财务演示种子数据(负责人 2026-09-01 拍板:金额与对方租客一律以应收明细登记表为准,
+-- V43: 清除财务演示种子数据(负责人 2026-09-01 拍板:金额与对方租客一律以应收明细登记表为准,
+--      原编号 V42 与已上线的 V42__budget_management(ver6.7, 2026-08-29 应用于生产)撞号,故改为 V43
 --      V8 的 6 条演示账单及其派生数据全部清除)
 -- 范围: V8__seed.sql 种的 6 条 fin_bill(code ZD2026*)、V12 种的演示收据/收据日志/收款通知,
 --      以及任何环境里挂在这 6 条账单上的支付单/流水/收据/发票/调整/通知(含本机真测产生的那一笔)。
@@ -21,7 +22,7 @@ CREATE TABLE IF NOT EXISTS bak_demo_seed_audit (
     table_name   VARCHAR(64) NOT NULL,
     rows_deleted INT         NOT NULL,
     executed_at  DATETIME(3) NOT NULL
-) COMMENT 'V42 演示数据清理行数留痕';
+) COMMENT 'V43 演示数据清理行数留痕';
 
 -- ---------- 1) 备份(以 6 条种子账单编号为根,按 id 防重,重跑不重复) ----------
 -- fin_bill 有 STORED GENERATED 列 billing_active_key,LIKE 建的备份表同样生成它,
