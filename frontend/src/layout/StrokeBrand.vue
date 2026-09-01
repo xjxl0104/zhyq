@@ -1,122 +1,141 @@
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, useId, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, useId } from 'vue'
 import { gsap } from 'gsap'
 
-// Vue adaptation of the supplied React Bits StrokeText source: measured SVG
-// glyphs, a staggered outline draw, then the original GSAP fill wipe.
+// React Bits StrokeText 的忠实 Vue 移植(fillMode: wipe):
+// 测量 SVG 字形(含 document.fonts.ready 后重测)→ 描边按字勾画(stagger)→ 左→右填充擦入。
+// mount 播放一次,悬停重播;prefers-reduced-motion 直接呈现终态。
 defineOptions({ name: 'StrokeBrand' })
-const fullTitle = '智慧云仓系统'
-const title = computed(() => fullTitle)
-const characters = computed(() => Array.from(title.value))
-const root = ref(null)
-const outline = ref(null)
-const wipe = ref(null)
-const box = ref(null)
-const clipId = `brand-wipe-${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`
-const reducedMotion = ref(false)
 
-const fontSize = 128
-const strokeWidth = 2.4 // Compensate for scaling the reference to a sidebar title.
-const dash = Math.max(fontSize * 7, 200)
-const bounds = computed(() => box.value || {
-  x: -13, y: -128, width: characters.value.length * 124 + 26, height: 154,
-})
-const viewBox = computed(() => {
-  const { x, y, width, height } = bounds.value
-  return `${x} ${y} ${width} ${height}`
-})
+const TEXT = '智慧云仓系统'
+const STROKE_COLOR = '#A78BFA'
+const FILL_COLOR = '#F8FAFC'
+const STROKE_WIDTH = 1.3   // 配合 non-scaling-stroke,小尺寸下仍保持参考实现的线条锐度
+const DRAW_DURATION = 1.6
+const FILL_DELAY = 0.2
+const STAGGER = 0.05
+const EASE = 'power2.out'
+const FONT_SIZE = 128
+const DASH = Math.max(FONT_SIZE * 7, 200)
+
+const characters = Array.from(TEXT)
+const root = ref(null)
+const strokeTextEl = ref(null)
+const wipeRect = ref(null)
+const box = ref(null)
+const wipeId = `stroke-wipe-${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`
+const viewBox = computed(() => box.value
+  ? `${box.value.x} ${box.value.y} ${box.value.width} ${box.value.height}`
+  : `0 ${-FONT_SIZE} ${characters.length * FONT_SIZE} ${FONT_SIZE * 1.3}`)
+
 let timeline
-let mediaQuery
+let reduced = false
 let disposed = false
 
-function measure() {
-  let bbox
-  try { bbox = outline.value?.getBBox() } catch { return false }
-  if (!bbox?.width || !bbox.height) return false
-  const pad = Math.max(strokeWidth, fontSize * 0.1)
-  const next = { x: bbox.x - pad, y: bbox.y - pad, width: bbox.width + pad * 2, height: bbox.height + pad * 2 }
-  if (box.value && Object.keys(next).every(key => Math.abs(box.value[key] - next[key]) < 0.5)) return false
-  box.value = next
-  return true
+function collectTargets() {
+  const strokes = gsap.utils.toArray(root.value.querySelectorAll('[data-stroke-char]'))
+  const fills = gsap.utils.toArray(root.value.querySelectorAll('[data-fill-char]'))
+  return { strokes, fills, wipe: wipeRect.value }
 }
 
 function play() {
-  if (disposed || !root.value) return
+  if (disposed || !root.value || !box.value) return
+  const { strokes, fills, wipe } = collectTargets()
+  if (!strokes.length) return
+  const all = [...strokes, ...fills, wipe].filter(Boolean)
   timeline?.kill()
-  const strokes = root.value.querySelectorAll('[data-stroke-char]')
-  if (reducedMotion.value) {
-    gsap.set(strokes, { strokeDasharray: dash, strokeDashoffset: 0 })
-    gsap.set(wipe.value, { attr: { width: bounds.value.width } })
+  gsap.killTweensOf(all)
+
+  if (reduced) {
+    gsap.set(strokes, { strokeDasharray: DASH, strokeDashoffset: 0 })
+    gsap.set(fills, { opacity: 1 })
+    if (wipe) gsap.set(wipe, { attr: { width: box.value.width } })
     return
   }
-  gsap.set(strokes, { strokeDasharray: dash, strokeDashoffset: dash })
-  gsap.set(wipe.value, { attr: { width: 0 } })
+
+  const fillDuration = Math.max(0.4, DRAW_DURATION * 0.5)
+  gsap.set(strokes, { strokeDasharray: DASH, strokeDashoffset: DASH })
+  gsap.set(fills, { opacity: 1 }) // wipe 模式下 fill 常显,由 clip 矩形控制可见范围
+  if (wipe) gsap.set(wipe, { attr: { width: 0 } })
+
   timeline = gsap.timeline({ defaults: { overwrite: 'auto' } })
-  timeline.to(strokes, { strokeDashoffset: 0, duration: 1.6, ease: 'power2.out', stagger: 0.05 }, 0)
-  timeline.to(wipe.value, {
-    attr: { width: bounds.value.width }, duration: 0.8, ease: 'power2.inOut',
-  }, 1.6 + 0.2)
+  timeline.to(strokes, { strokeDashoffset: 0, duration: DRAW_DURATION, ease: EASE, stagger: STAGGER }, 0)
+  if (wipe) {
+    timeline.to(
+      wipe,
+      { attr: { width: box.value.width }, duration: fillDuration, ease: 'power2.inOut' },
+      DRAW_DURATION + FILL_DELAY,
+    )
+  }
 }
 
-function onMotionChange(event) {
-  reducedMotion.value = event.matches
-  if (event.matches) play()
-}
-
-watch(title, async () => {
-  box.value = null
-  await nextTick()
+// 字体加载前后字形宽度会变(中文尤甚),ready 后重测重播,避免裁切/错位
+function measure() {
   if (disposed) return
-  measure()
-  await nextTick()
-  play()
-})
+  let bbox
+  try { bbox = strokeTextEl.value?.getBBox() } catch { return }
+  if (!bbox?.width) return
+  const pad = Math.max(STROKE_WIDTH, FONT_SIZE * 0.1)
+  const next = { x: bbox.x - pad, y: bbox.y - pad, width: bbox.width + pad * 2, height: bbox.height + pad * 2 }
+  const prev = box.value
+  if (prev
+    && Math.abs(prev.x - next.x) < .5
+    && Math.abs(prev.y - next.y) < .5
+    && Math.abs(prev.width - next.width) < .5) return
+  box.value = next
+  nextTick(play)
+}
+
+function replay() {
+  if (!reduced) play()
+}
 
 onMounted(async () => {
-  mediaQuery = window.matchMedia('(prefers-reduced-motion: reduce)')
-  reducedMotion.value = mediaQuery.matches
-  mediaQuery.addEventListener?.('change', onMotionChange)
-  measure()
+  reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
   await nextTick()
-  play()
-  document.fonts?.ready.then(async () => {
-    if (disposed || !measure()) return
-    await nextTick()
-    play()
-  }).catch(() => {})
+  measure()
+  if (typeof document !== 'undefined' && document.fonts?.ready) {
+    document.fonts.ready.then(() => measure()).catch(() => {})
+  }
 })
-
 onBeforeUnmount(() => {
   disposed = true
   timeline?.kill()
-  mediaQuery?.removeEventListener?.('change', onMotionChange)
 })
 </script>
 
 <template>
-  <span ref="root" class="stroke-brand" :class="{ 'stroke-brand--reduced': reducedMotion }"
-        role="img" :aria-label="fullTitle" @pointerenter="play">
-    <svg :viewBox="viewBox" preserveAspectRatio="xMidYMid meet" aria-hidden="true" focusable="false">
+  <span ref="root" class="stroke-brand" role="img" :aria-label="TEXT" @pointerenter="replay">
+    <svg class="stroke-brand__svg" :viewBox="viewBox" preserveAspectRatio="xMidYMid meet"
+         aria-hidden="true" focusable="false">
       <defs>
-        <clipPath :id="clipId" clipPathUnits="userSpaceOnUse">
-          <rect ref="wipe" :x="bounds.x" :y="bounds.y" :width="bounds.width" :height="bounds.height" />
+        <clipPath :id="wipeId" clipPathUnits="userSpaceOnUse">
+          <rect ref="wipeRect" :x="box?.x ?? 0" :y="box?.y ?? -FONT_SIZE"
+                width="0" :height="box?.height ?? FONT_SIZE * 1.3" />
         </clipPath>
       </defs>
-      <text ref="outline" class="stroke-brand__outline" x="0" y="0" fill="none"
-            :stroke-width="strokeWidth" :stroke-dasharray="dash">
-        <tspan v-for="(character, index) in characters" :key="index" data-stroke-char>{{ character }}</tspan>
+      <text ref="strokeTextEl" class="stroke-brand__stroke" x="0" y="0" fill="none"
+            :stroke="STROKE_COLOR" :stroke-width="STROKE_WIDTH"
+            stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke">
+        <tspan v-for="(c, i) in characters" :key="'s' + i" data-stroke-char>{{ c }}</tspan>
       </text>
-      <text class="stroke-brand__fill" data-fill-text x="0" y="0" :clip-path="`url(#${clipId})`">
-        <tspan v-for="(character, index) in characters" :key="index" data-fill-char>{{ character }}</tspan>
+      <text class="stroke-brand__fill" data-fill-text x="0" y="0"
+            :fill="FILL_COLOR" stroke="none" :clip-path="`url(#${wipeId})`">
+        <tspan v-for="(c, i) in characters" :key="'f' + i" data-fill-char>{{ c }}</tspan>
       </text>
     </svg>
   </span>
 </template>
 
 <style scoped>
-.stroke-brand { display: block; width: 100%; line-height: 0; }
-.stroke-brand svg { display: block; width: 100%; height: 36px; }
-.stroke-brand text { font-family: inherit; font-size: 128px; font-weight: 800; letter-spacing: -4px; user-select: none; }
-.stroke-brand__outline { stroke: #d7d7e0; stroke-linejoin: round; stroke-linecap: round; }
-.stroke-brand__fill { fill: #f5f5f7; stroke: none; }
+.stroke-brand { display: block; width: 100%; line-height: 0; cursor: default; }
+.stroke-brand__svg { display: block; width: 100%; height: 44px; }
+.stroke-brand__stroke,
+.stroke-brand__fill {
+  font-family: inherit;
+  font-size: 128px;
+  font-weight: 800;
+  letter-spacing: -4px;
+  user-select: none;
+}
 </style>
