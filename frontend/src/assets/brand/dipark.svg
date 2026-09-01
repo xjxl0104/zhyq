@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1650 400" role="img" aria-label="DIPARK">
+  <defs>
+    <linearGradient id="dfade" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="1"/>
+    </linearGradient>
+  </defs>
+  <!-- D:左柱渐隐,中部缺口,右侧实心圆弧腹 -->
+  <rect x="0" y="0" width="88" height="168" fill="url(#dfade)"/>
+  <rect x="0" y="232" width="88" height="168" fill="url(#dfade)"/>
+  <path d="M100 0 H210 A200 200 0 0 1 210 400 H100 Z" fill="#FFFFFF"/>
+  <!-- I -->
+  <rect x="470" y="0" width="92" height="400" fill="#FFFFFF"/>
+  <!-- P A R K:发丝细线几何体 -->
+  <g fill="none" stroke="#FFFFFF" stroke-width="22">
+    <path d="M651 400 L651 11 L760 11 Q839 11 839 105 Q839 199 760 199 L651 199"/>
+    <path d="M911 400 L1005 11 L1099 400"/>
+    <path d="M945 265 L1065 265"/>
+    <path d="M1171 400 L1171 11 L1280 11 Q1359 11 1359 105 Q1359 199 1280 199 L1171 199"/>
+    <path d="M1255 199 L1359 400"/>
+    <path d="M1431 11 L1431 400"/>
+    <path d="M1619 11 L1431 230"/>
+    <path d="M1495 175 L1619 400"/>
+  </g>
+</svg>
