@@ -174,4 +174,19 @@ router.beforeEach((to) => {
   return true
 })
 
+// 部署后旧 chunk 失效(动态 import 404):整页重新导航拉取新版本,同一目标只自动重试一次
+router.onError((err, to) => {
+  if (/dynamically imported module|Importing a module script|Unable to preload/i.test(err?.message || '')) {
+    const key = 'chunk-reload:' + (to?.fullPath || location.pathname)
+    if (!sessionStorage.getItem(key)) {
+      sessionStorage.setItem(key, '1')
+      location.assign(to?.fullPath || location.href)
+    }
+  }
+})
+window.addEventListener('vite:preloadError', (e) => {
+  e.preventDefault()
+  location.reload()
+})
+
 export default router
