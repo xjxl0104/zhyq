@@ -1,6 +1,7 @@
 package com.zhyq.park.receivable.controller;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.zhyq.park.common.audit.OperationLog;
@@ -31,6 +32,7 @@ import com.zhyq.park.receivable.mapper.DepositLedgerMapper;
 import com.zhyq.park.receivable.mapper.ReceivableRegisterMapper;
 import com.zhyq.park.receivable.mapper.ReceivableRuleMapper;
 import com.zhyq.park.receivable.service.FieldEncryptionService;
+import com.zhyq.park.receivable.service.ReceivableAutoBillService;
 import com.zhyq.park.receivable.service.ReceivableExportService;
 import com.zhyq.park.receivable.service.ReceivableImportService;
 import com.zhyq.park.receivable.service.ReceivablePlanService;
@@ -61,7 +63,9 @@ import org.springframework.web.multipart.MultipartFile;
 import java.nio.charset.StandardCharsets;
 import java.math.BigDecimal;
 import java.time.YearMonth;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Tag(name = "财务-应收明细登记表")
@@ -76,6 +80,7 @@ public class ReceivableController {
     private final CollectionAccountMapper accountMapper;
     private final ReceivableImportService importService;
     private final ReceivablePlanService planService;
+    private final ReceivableAutoBillService autoBillService;
     private final ReceivableProvisionService provisionService;
     private final ReceivableExportService exportService;
     private final FieldEncryptionService encryptionService;
@@ -117,7 +122,27 @@ public class ReceivableController {
                 .eq(contractId != null, ReceivableRegister::getContractId, contractId)
                 .orderByAsc(ReceivableRegister::getSeqNo).orderByDesc(ReceivableRegister::getId);
         IPage<ReceivableRegister> page = registerMapper.selectPage(new Page<>(pageNo, pageSize), query);
+        fillBillCounts(page.getRecords());
         return Result.ok(PageResult.of(page.getTotal(), page.getRecords()));
+    }
+
+    /**
+     * 给每条登记填上已生成账单数。登记表是账单的源头,列表上必须看得见
+     * "生成到哪了"——否则联动是黑箱,用户只能挨条点详情确认。
+     */
+    private void fillBillCounts(List<ReceivableRegister> registers) {
+        if (registers == null || registers.isEmpty()) {
+            return;
+        }
+        List<Long> ids = registers.stream().map(ReceivableRegister::getId).toList();
+        Map<Long, Integer> counts = new LinkedHashMap<>();
+        billMapper.selectMaps(new QueryWrapper<Bill>()
+                        .select("receivable_register_id AS rid", "COUNT(*) AS cnt")
+                        .in("receivable_register_id", ids)
+                        .groupBy("receivable_register_id"))
+                .forEach(row -> counts.put(((Number) row.get("rid")).longValue(),
+                        ((Number) row.get("cnt")).intValue()));
+        registers.forEach(r -> r.setBillCount(counts.getOrDefault(r.getId(), 0)));
     }
 
     @Operation(summary = "月度应收汇总（按月计算每条登记表的实际应收金额，含递增/减免/折扣）")
@@ -272,8 +297,20 @@ public class ReceivableController {
     @PostMapping("/import/{batchId}/confirm")
     @PreAuthorize("hasAuthority('finance:receivable:confirm')")
     @OperationLog(module = "应收明细", action = "确认导入")
-    public Result<Integer> confirm(@PathVariable long batchId) {
-        return Result.ok(importService.confirm(batchId, username()));
+    public Result<Map<String, Object>> confirm(@PathVariable long batchId) {
+        int rows = importService.confirm(batchId, username());
+        // 确认(独立事务)已提交,随即对该批登记自动生成账单:登记表是账单/收银台/逾期
+        // 的唯一源头,下游自动派生,不再依赖有人挨条点"生成账单"。逐条独立事务、
+        // billingKey 幂等,单条失败只计入 failed,不影响确认结果,每日自愈任务兜底重试
+        List<Long> registerIds = registerMapper.selectList(new LambdaQueryWrapper<ReceivableRegister>()
+                        .eq(ReceivableRegister::getSourceBatchId, batchId)
+                        .in(ReceivableRegister::getStatus, "CONFIRMED", "ACTIVE"))
+                .stream().map(ReceivableRegister::getId).toList();
+        ReceivableAutoBillService.AutoBillSummary bills = autoBillService.generateFor(registerIds);
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("rows", rows);
+        out.put("bills", bills);
+        return Result.ok(out);
     }
 
     @PostMapping("/import/{batchId}/rollback")

@@ -74,6 +74,16 @@
           :fixed="column.fixed" :align="column.align" resizable show-overflow-tooltip>
           <template #default="{ row }">{{ formatReceivableCell(row, column) }}</template>
         </el-table-column>
+        <!-- 登记表是账单的源头:每行生成到哪了必须看得见,点数字进详情看账单明细 -->
+        <el-table-column label="账单" width="90" fixed="right">
+          <template #default="{ row }">
+            <el-tag v-if="row.billCount > 0" type="success" effect="plain"
+                    style="cursor: pointer" role="button" tabindex="0"
+                    @click="openDetail(row)" @keydown.enter="openDetail(row)">{{ row.billCount }} 张</el-tag>
+            <el-tag v-else-if="['CONFIRMED', 'ACTIVE'].includes(row.status)" type="info" effect="plain">未生成</el-tag>
+            <span v-else>-</span>
+          </template>
+        </el-table-column>
         <el-table-column label="状态" width="100" fixed="right">
           <template #default="{ row }"><el-tag :type="statusType(row.status)">{{ statusLabel(row.status) }}</el-tag></template>
         </el-table-column>
@@ -149,7 +159,7 @@
 </template>
 
 <script setup>
-import { onMounted, reactive, ref } from 'vue'
+import { onActivated, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { receivableApi } from '@/api/receivable'
 import ReceivableDetailDrawer from './components/ReceivableDetailDrawer.vue'
@@ -229,7 +239,7 @@ function monthlySummaryMethod({ columns }) {
 function openDetail(row) { detailId.value = row.id; detailVisible.value = true }
 function openEditor(row) { editor.form = row ? { ...row } : { monthlyRent: 0, monthlyProperty: 0, monthlyTotal: 0 }; editor.visible = true }
 async function saveEditor() { editor.form.id ? await receivableApi.update(editor.form) : await receivableApi.add(editor.form); editor.visible = false; ElMessage.success('保存成功'); load() }
-async function generate(row) { await ElMessageBox.confirm('将按登记明细中的合同期限、免租期和收款约定生成或同步账单，是否继续？'); const result = await receivableApi.generate(row.id); ElMessage.success(`新增 ${result?.inserted || 0} 条，同步 ${result?.updated || 0} 条，跳过 ${result?.skipped || 0} 条`) }
+async function generate(row) { await ElMessageBox.confirm('将按登记明细中的合同期限、免租期和收款约定生成或同步账单，是否继续？'); const result = await receivableApi.generate(row.id); ElMessage.success(`新增 ${result?.inserted || 0} 条，同步 ${result?.updated || 0} 条，跳过 ${result?.skipped || 0} 条`); await load() }
 async function remove(row) { await receivableApi.remove(row.id); ElMessage.success('删除成功'); load() }
 async function downloadExport() {
   const response = await receivableApi.export()
@@ -242,6 +252,14 @@ onMounted(async () => {
   if (capabilities.value.query) tasks.push(load())
   if (capabilities.value.confirm) tasks.push(loadBatches())
   await Promise.allSettled(tasks)
+})
+
+// keep-alive 缓存下,从账单页跳回来要重拉列表,账单数/状态才不停留在离开前的快照。
+// 首次挂载 onMounted 已经拉过,onActivated 的第一次触发跳过,避免双拉
+let activatedBefore = false
+onActivated(() => {
+  if (!activatedBefore) { activatedBefore = true; return }
+  if (capabilities.value.query) load()
 })
 </script>
 

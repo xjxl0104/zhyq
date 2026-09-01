@@ -9,6 +9,7 @@ import com.zhyq.park.finance.mapper.BillMapper;
 import com.zhyq.park.finance.mapper.InvoiceMapper;
 import com.zhyq.park.finance.mapper.PaymentMapper;
 import com.zhyq.park.finance.service.FinanceViewEnricher;
+import com.zhyq.park.finance.service.LateFeeService;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
@@ -47,6 +48,7 @@ class BillControllerTest {
     @Mock private FinanceViewEnricher viewEnricher;
     @Mock private PaymentMapper paymentMapper;
     @Mock private InvoiceMapper invoiceMapper;
+    @Mock private LateFeeService lateFeeService;
 
     @BeforeAll
     static void initMpLambdaCache() {
@@ -57,54 +59,20 @@ class BillControllerTest {
     }
 
     private BillController controller() {
-        return new BillController(billMapper, viewEnricher, paymentMapper, invoiceMapper);
-    }
-
-    private static Bill overdueBill(long id, String amount, String paid, int daysOverdue) {
-        Bill b = new Bill();
-        b.setId(id);
-        b.setDirection(1);
-        b.setStatus(3);
-        b.setAmount(new BigDecimal(amount));
-        b.setPaidAmount(new BigDecimal(paid));
-        b.setDueDate(LocalDate.now().minusDays(daysOverdue));
-        return b;
+        return new BillController(billMapper, viewEnricher, paymentMapper, invoiceMapper, lateFeeService);
     }
 
     // ---------- calcLateFee ----------
+    // 计算逻辑(条件更新语义)已抽到 LateFeeService,由 LateFeeServiceTest 锁住;
+    // 控制器只剩委托,手动端点与每日自愈任务走同一份实现
 
     @Test
-    @DisplayName("calcLateFee 走条件更新,不再 updateById 盲写;WHERE 必须带本金未收齐条件")
-    void calcLateFeeUsesConditionalUpdate() {
-        when(billMapper.selectList(any())).thenReturn(List.of(overdueBill(5L, "1000", "0", 10)));
-        when(billMapper.update(any(), any())).thenReturn(1);
+    @DisplayName("calcLateFee 委托 LateFeeService,不再自持计算逻辑")
+    void calcLateFeeDelegates() {
+        when(lateFeeService.recalc()).thenReturn(5);
 
-        Integer count = controller().calcLateFee().getData();
-
-        assertThat(count).isEqualTo(1);
-        verify(billMapper, never()).updateById(any(Bill.class));
-        // SET 走实体(审计字段自动填充生效),守卫条件锁在 WHERE 里
-        ArgumentCaptor<Bill> patch = ArgumentCaptor.forClass(Bill.class);
-        @SuppressWarnings({"unchecked", "rawtypes"})
-        ArgumentCaptor<com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<Bill>> wrapper =
-                ArgumentCaptor.forClass((Class) com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper.class);
-        verify(billMapper).update(patch.capture(), wrapper.capture());
-        assertThat(patch.getValue().getStatus()).isEqualTo(6);
-        assertThat(patch.getValue().getLateFee()).isEqualByComparingTo("5.00"); // 1000×0.0005×10
-        assertThat(patch.getValue().getOverdueDays()).isEqualTo(10);
-        assertThat(patch.getValue().getPaidAmount()).isNull(); // 实收绝不允许被这里改
-        assertThat(wrapper.getValue().getCustomSqlSegment()).contains("paid_amount < amount");
-    }
-
-    @Test
-    @DisplayName("快照后被收满的账单条件不满足(updated==0),不计数、不被打回逾期")
-    void calcLateFeeSkipsBillSettledAfterSnapshot() {
-        when(billMapper.selectList(any())).thenReturn(List.of(overdueBill(5L, "1000", "0", 10)));
-        when(billMapper.update(any(), any())).thenReturn(0);
-
-        Integer count = controller().calcLateFee().getData();
-
-        assertThat(count).isZero();
+        assertThat(controller().calcLateFee().getData()).isEqualTo(5);
+        verify(lateFeeService).recalc();
     }
 
     // ---------- PUT 字段白名单 ----------

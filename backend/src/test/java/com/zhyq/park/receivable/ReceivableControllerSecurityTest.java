@@ -53,16 +53,20 @@ class ReceivableControllerSecurityTest {
         @Bean ImportBatchMapper batchMapper() { return mock(ImportBatchMapper.class); }
         @Bean ImportRowMapper importRowMapper() { return mock(ImportRowMapper.class); }
         @Bean ReceivableCalculator calculator() { return mock(ReceivableCalculator.class); }
+        @Bean com.zhyq.park.receivable.service.ReceivableAutoBillService autoBillService() {
+            return mock(com.zhyq.park.receivable.service.ReceivableAutoBillService.class);
+        }
         @Bean ReceivableController controller(
                 ReceivableRegisterMapper registers, ReceivableRuleMapper rules,
                 DepositLedgerMapper deposits, BillMapper bills, CollectionAccountMapper accounts,
                 ReceivableImportService imports, ReceivablePlanService plans,
+                com.zhyq.park.receivable.service.ReceivableAutoBillService autoBills,
                 ReceivableProvisionService provisions,
                 ReceivableExportService exports, FieldEncryptionService encryption,
                 ImportBatchMapper batches, ImportRowMapper rows,
                 ReceivableCalculator calculator) {
             return new ReceivableController(registers, rules, deposits, bills, accounts,
-                    imports, plans, provisions, exports, encryption, batches, rows, calculator);
+                    imports, plans, autoBills, provisions, exports, encryption, batches, rows, calculator);
         }
     }
 

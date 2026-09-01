@@ -1,5 +1,6 @@
 package com.zhyq.park.receivable.entity;
 
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.zhyq.park.common.base.BaseEntity;
 import lombok.Data;
@@ -53,4 +54,7 @@ public class ReceivableRegister extends BaseEntity {
     private Long sourceBatchId;
     private Long sourceRowId;
     private Integer sourceVersion;
+    /** 列表展示字段:该登记已生成的账单数(登记表是账单源头,生成进度要看得见) */
+    @TableField(exist = false)
+    private Integer billCount;
 }

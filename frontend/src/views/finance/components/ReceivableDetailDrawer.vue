@@ -43,7 +43,17 @@
             </el-descriptions-item>
           </el-descriptions>
           <el-divider>已生成账单</el-divider>
-          <el-table :data="detail.bills || []" border><el-table-column prop="code" label="账单号" /><el-table-column prop="feeType" label="费用" /><el-table-column prop="amount" label="金额" /><el-table-column prop="dueDate" label="应收日" /></el-table>
+          <!-- 账单号可点:跳到所有账单页并定位该单,与流水/收据页的联动同一套路 -->
+          <el-table :data="detail.bills || []" border>
+            <el-table-column prop="code" label="账单号" min-width="150">
+              <template #default="{ row }">
+                <!-- el-link 无 href 时不进 tab 序,手动补键盘可达性 -->
+                <el-link type="primary" tabindex="0" @click="gotoBill(row)"
+                         @keydown.enter="gotoBill(row)">{{ row.code }}</el-link>
+              </template>
+            </el-table-column>
+            <el-table-column prop="feeType" label="费用" /><el-table-column prop="amount" label="金额" /><el-table-column prop="dueDate" label="应收日" />
+          </el-table>
         </el-tab-pane>
         <el-tab-pane label="来源与变更">
           <el-descriptions :column="2" border>
@@ -62,10 +72,16 @@
 <script setup>
 import { ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
+import { useRouter } from 'vue-router'
 import { receivableApi } from '@/api/receivable'
 import { formatReceivableCell, receivableColumns } from '../receivableModel'
 const props = defineProps({ modelValue: Boolean, registerId: [String, Number], canViewAccount: Boolean })
-defineEmits(['update:modelValue'])
+const emit = defineEmits(['update:modelValue'])
+const router = useRouter()
+function gotoBill(bill) {
+  emit('update:modelValue', false)
+  router.push({ path: '/finance/bill', query: { billId: bill.id } })
+}
 const loading = ref(false); const detail = ref(null)
 const revealed = ref({ rent: '', property: '' })
 const revealing = ref({ rent: false, property: false })

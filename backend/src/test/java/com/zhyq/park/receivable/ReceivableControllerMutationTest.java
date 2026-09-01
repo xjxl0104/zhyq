@@ -41,7 +41,9 @@ class ReceivableControllerMutationTest {
     void setUp() {
         controller = new ReceivableController(registers, rules, deposits, bills,
                 mock(CollectionAccountMapper.class), mock(ReceivableImportService.class),
-                mock(ReceivablePlanService.class), mock(ReceivableProvisionService.class),
+                mock(ReceivablePlanService.class),
+                mock(com.zhyq.park.receivable.service.ReceivableAutoBillService.class),
+                mock(ReceivableProvisionService.class),
                 mock(ReceivableExportService.class),
                 mock(FieldEncryptionService.class), mock(ImportBatchMapper.class),
                 mock(ImportRowMapper.class), mock(ReceivableCalculator.class));

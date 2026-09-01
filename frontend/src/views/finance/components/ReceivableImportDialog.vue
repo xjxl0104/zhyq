@@ -101,7 +101,26 @@ async function doProvision() {
     ElMessage.success('建档成功，已回填绑定')
   } finally { loading.value = false }
 }
-async function confirm() { loading.value = true; try { const count = await receivableApi.confirm(preview.value.batchId); stage.value = 3; ElMessage.success(`成功导入 ${count} 条`); emit('confirmed'); close() } finally { loading.value = false } }
+async function confirm() {
+  loading.value = true
+  try {
+    const res = await receivableApi.confirm(preview.value.batchId)
+    stage.value = 3
+    // 确认后账单已自动生成(登记表是账单/收银台/逾期的源头,下游自动派生);
+    // 兼容旧后端只返回条数的情况
+    if (typeof res === 'object' && res?.bills) {
+      const b = res.bills
+      const failedNote = b.failed ? `,${b.failed} 条生成失败(每日自愈任务会重试)` : ''
+      ElMessage.success(`成功导入 ${res.rows} 条,已自动生成账单 ${b.inserted} 张${failedNote}`)
+    } else {
+      ElMessage.success(`成功导入 ${res} 条`)
+    }
+    emit('confirmed')
+    close()
+  } finally {
+    loading.value = false
+  }
+}
 function close() { emit('update:modelValue', false); stage.value = 0; file.value = null; preview.value = null; provision.value = null }
 </script>
 <style scoped>.upload-stage,.preview-stage,.provision-stage{margin-top:24px}.upload-stage{display:grid;gap:16px}.provision-stage h4{margin:16px 0 8px}.totals{margin-bottom:16px}.binding{display:flex;gap:6px}.import-surface :deep(.el-upload),.import-surface :deep(.el-upload-dragger){width:100%}</style>

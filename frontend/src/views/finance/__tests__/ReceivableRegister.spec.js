@@ -29,14 +29,21 @@ describe('应收明细登记表', () => {
         monthlyRent: 100000,
         monthlyProperty: 20000,
         monthlyTotal: 120000,
-        status: 'CONFIRMED'
+        status: 'CONFIRMED',
+        billCount: 8
       }],
       total: 1
     })
   })
 
+  // 抽屉组件已由 ReceivableDetailDrawer.spec 独立覆盖,这里 stub 掉,
+  // 免得它的 useRouter 在无路由的挂载环境里刷注入警告
+  const mountPage = () => mount(ReceivableRegister, {
+    global: { plugins: [ElementPlus], stubs: { ReceivableDetailDrawer: true } }
+  })
+
   it('使用同一份27列定义并渲染权威金额', async () => {
-    const wrapper = mount(ReceivableRegister, { global: { plugins: [ElementPlus] } })
+    const wrapper = mountPage()
     await flushPromises()
 
     expect(receivableColumns).toHaveLength(27)
@@ -45,6 +52,24 @@ describe('应收明细登记表', () => {
     expect(wrapper.text()).toContain('100,000.00')
     expect(wrapper.text()).toContain('20,000.00')
     expect(wrapper.text()).toContain('120,000.00')
+  })
+
+  it('登记表是账单源头:每行显示已生成账单数,联动进度看得见', async () => {
+    const wrapper = mountPage()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('8 张')
+  })
+
+  it('已确认但账单为 0 的行显示「未生成」而不是空白', async () => {
+    receivableApi.page.mockResolvedValue({
+      records: [{ id: 2, seqNo: 2, tenantNameRaw: '示例租户乙', status: 'CONFIRMED', billCount: 0 }],
+      total: 1
+    })
+    const wrapper = mountPage()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('未生成')
   })
 
   it('有错误、待绑定或总计未核对时禁止确认', () => {

@@ -1,7 +1,6 @@
 package com.zhyq.park.finance.controller;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.zhyq.park.common.exception.BizException;
@@ -15,6 +14,7 @@ import com.zhyq.park.finance.mapper.InvoiceMapper;
 import com.zhyq.park.finance.mapper.PaymentMapper;
 import com.zhyq.park.finance.service.BillMetrics;
 import com.zhyq.park.finance.service.FinanceViewEnricher;
+import com.zhyq.park.finance.service.LateFeeService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
@@ -42,6 +42,7 @@ public class BillController {
     private final FinanceViewEnricher viewEnricher;
     private final PaymentMapper paymentMapper;
     private final InvoiceMapper invoiceMapper;
+    private final LateFeeService lateFeeService;
 
     @Operation(summary = "分页查询账单")
     @PreAuthorize("hasAuthority('finance:bill:query')")
@@ -143,58 +144,13 @@ public class BillController {
         return Result.ok(viewEnricher.cashierTenantOptions(projectId, bills));
     }
 
-    @Operation(summary = "计算滞纳金(遍历逾期未结清的应收账单)")
+    @Operation(summary = "计算滞纳金(逾期未结清应收账单,与每日自愈任务同一实现)")
     @PreAuthorize("hasAuthority('finance:bill:calcLateFee')")
     @PostMapping("/calcLateFee")
     public Result<Integer> calcLateFee() {
-        LocalDate today = LocalDate.now();
-        // 仅应收方向(direction=1)、可催缴状态(待收付3/部分结清4/已逾期6)、应收日<今天。
-        // 逐行独立条件更新、不整批包事务:每行都是幂等重算,整批事务只会把行锁攥到循环
-        // 结束(卡住并发收款),两次并发触发还可能因扫描顺序不同互相死锁;按 id 排序让
-        // 加锁顺序确定
-        LambdaQueryWrapper<Bill> qw = new LambdaQueryWrapper<>();
-        qw.eq(Bill::getDirection, 1)
-          .in(Bill::getStatus, 3, 4, 6)
-          .lt(Bill::getDueDate, today)
-          .orderByAsc(Bill::getId);
-        List<Bill> list = billMapper.selectList(qw);
-        // 万分之五/天,基数为剩余本金欠款(amount - paid),每次全量重算,重复调用幂等
-        BigDecimal rate = new BigDecimal("0.0005");
-        int count = 0;
-        for (Bill b : list) {
-            if (b.getDueDate() == null) {
-                continue;
-            }
-            long days = today.toEpochDay() - b.getDueDate().toEpochDay();
-            if (days <= 0) {
-                continue;
-            }
-            BigDecimal outstanding = nz(b.getAmount()).subtract(nz(b.getPaidAmount()));
-            if (outstanding.compareTo(BigDecimal.ZERO) <= 0) {
-                continue;
-            }
-            BigDecimal lateFee = outstanding
-                    .multiply(rate)
-                    .multiply(BigDecimal.valueOf(days))
-                    .setScale(2, java.math.RoundingMode.HALF_UP);
-            // 条件更新:上面的 selectList 是旧读,这中间账单可能刚被收满(status→5)。
-            // updateById 盲写会把已结清账单打回"逾期";WHERE 里必须再验一次
-            // "仍在可催缴状态且本金未收齐",条件不满足(updated==0)就跳过。
-            // SET 走实体而不是 wrapper.set():实体形式才会触发 MyMetaObjectHandler
-            // 自动填充 update_time/update_by,审计字段不掉队
-            Bill patch = new Bill();
-            patch.setOverdueDays((int) days);
-            patch.setLateFee(lateFee);
-            patch.setStatus(6);
-            int updated = billMapper.update(patch, new LambdaUpdateWrapper<Bill>()
-                    .eq(Bill::getId, b.getId())
-                    .in(Bill::getStatus, 3, 4, 6)
-                    .apply("paid_amount < amount"));
-            if (updated == 1) {
-                count++;
-            }
-        }
-        return Result.ok(count);
+        // 计算逻辑在 LateFeeService:ReceivableBillSyncJob 每天自动跑同一份,
+        // 这个端点保留给"不想等自愈周期"的手动触发
+        return Result.ok(lateFeeService.recalc());
     }
 
     @Operation(summary = "账单详情")
