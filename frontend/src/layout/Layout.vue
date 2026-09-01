@@ -130,12 +130,12 @@ function onClick(c) {
   padding: 16px 0 10px;
 }
 .brand-zone {
-  padding: 6px 16px 14px;
+  padding: 6px 14px 12px;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 6px;
 }
-.brand-logo { height: 20px; width: auto; max-width: 104px; object-fit: contain; flex-shrink: 0; }
+.brand-logo { height: 18px; width: auto; max-width: 94px; object-fit: contain; flex-shrink: 0; }
 .brand-zone :deep(.stroke-brand) { flex: 1; min-width: 0; }
 .switcher-zone { padding: 0 14px 12px; }
 .switcher-zone :deep(.project-switcher) { width: 100%; }

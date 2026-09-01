@@ -141,7 +141,7 @@ onBeforeUnmount(() => {
   font-display: swap;
 }
 .stroke-brand { display: block; width: 100%; line-height: 0; cursor: default; }
-.stroke-brand__svg { display: block; width: 100%; height: 44px; }
+.stroke-brand__svg { display: block; width: 100%; height: 40px; }
 .stroke-brand__stroke,
 .stroke-brand__fill {
   font-family: 'Brand Source Han', 'Source Han Sans SC', 'Noto Sans SC', 'PingFang SC', sans-serif;

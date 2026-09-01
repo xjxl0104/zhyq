@@ -1,12 +1,12 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="2050" height="400" viewBox="0 0 2050 400" role="img" aria-label="DIPARK">
   <defs>
-    <linearGradient id="dfade" x1="0" y1="0" x2="131" y2="0" gradientUnits="userSpaceOnUse">
+    <linearGradient id="dfade" x1="0" y1="0" x2="176" y2="0" gradientUnits="userSpaceOnUse">
       <stop offset="0" stop-color="#000000"/>
       <stop offset="1" stop-color="#FFFFFF"/>
     </linearGradient>
     <mask id="dmask" maskUnits="userSpaceOnUse" x="0" y="0" width="374" height="400">
       <rect width="374" height="400" fill="url(#dfade)"/>
-      <rect x="0" y="165" width="217" height="70" fill="#000000"/>
+      <rect x="0" y="152" width="217" height="96" fill="#000000"/>
     </mask>
   </defs>
   <!-- D:一体成型,左缘渐隐 + 深切中缺口(蒙版实现) -->
