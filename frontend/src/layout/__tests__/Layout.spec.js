@@ -57,53 +57,34 @@ describe('Layout navigation chrome', () => {
   })
   afterEach(() => vi.unstubAllGlobals())
 
-  it('renders the depth-stacked brand with the shortened title', () => {
+  it('renders the outlined stroke brand with the shortened title', () => {
     const wrapper = mountLayout()
 
-    const brand = wrapper.get('.navbar .depth-brand')
-    expect(brand.get('.depth-brand__face').text()).toBe('智慧云仓系统')
-    expect(brand.findAll('.depth-brand__layer').length).toBeGreaterThan(1)
-    expect(wrapper.find('.gradient-brand').exists()).toBe(false)
+    const brand = wrapper.get('.sidebar .brand-zone .stroke-brand')
+    expect(brand.attributes('aria-label')).toBe('智慧云仓系统')
+    expect(brand.findAll('[data-stroke-char]')).toHaveLength(6)
+    expect(brand.find('[data-fill-text]').text()).toBe('智慧云仓系统')
+    expect(wrapper.find('.depth-brand').exists()).toBe(false)
     wrapper.unmount()
   })
 
-  it('keeps the switcher, monitor button and user in ordered action slots', () => {
+  it('stacks brand, switcher, menu and user top-to-bottom in the sidebar', () => {
     const wrapper = mountLayout()
 
-    expect(wrapper.find('.nav-left .project-switcher-stub').exists()).toBe(false)
-    const slots = wrapper.findAll('.actions .action-slot')
-    expect(slots).toHaveLength(3)
-    expect(slots[0].find('.project-switcher-stub').exists()).toBe(true)
-    expect(slots[1].find('.screen-btn').exists()).toBe(true)
-    expect(slots[2].find('.user').exists()).toBe(true)
+    const zones = wrapper.get('.sidebar').element.children
+    expect(zones[0].className).toContain('brand-zone')
+    expect(zones[1].className).toContain('switcher-zone')
+    expect(zones[2].className).toContain('menu-scroll')
+    expect(zones[3].className).toContain('user-zone')
+    expect(wrapper.find('.switcher-zone .project-switcher-stub').exists()).toBe(true)
+    expect(wrapper.find('.user-zone .user').exists()).toBe(true)
+    expect(wrapper.find('.screen-btn').exists()).toBe(false)
   })
 
   it('announces the current page title to assistive tech', () => {
     const wrapper = mountLayout()
 
     expect(wrapper.get('[aria-live="polite"]').text()).toBe('工作台')
-    wrapper.unmount()
-  })
-
-  it('shows the module index and marker line beside the page title', () => {
-    const wrapper = mountLayout()
-
-    const block = wrapper.get('.crumb-block')
-    expect(block.find('.crumb-marker').exists()).toBe(true)
-    expect(block.get('.crumb-index').text()).toBe('01')
-    expect(block.get('.crumb').text()).toBe('工作台')
-  })
-
-  it('opens the monitoring screen without click particle chrome', async () => {
-    const open = vi.fn()
-    vi.stubGlobal('open', open)
-    const wrapper = mountLayout()
-
-    await wrapper.get('.screen-btn').trigger('click')
-
-    expect(open).toHaveBeenCalledWith('/screen', '_blank')
-    expect(wrapper.find('.navbar-burst').exists()).toBe(false)
-    expect(wrapper.find('.navbar-burst__filter').exists()).toBe(false)
     wrapper.unmount()
   })
 
@@ -121,10 +102,17 @@ describe('Layout navigation chrome', () => {
     expect(wrapper.find('.side-menu').exists()).toBe(true)
   })
 
-  it('mounts the brand inline in the unified top bar without a framed logo box', () => {
+  it('keeps the menu directly on the connected chrome without a glass panel', () => {
     const wrapper = mountLayout()
 
-    expect(wrapper.find('.navbar .depth-brand').exists()).toBe(true)
+    expect(wrapper.find('.sidebar .liquid-glass').exists()).toBe(false)
+    expect(wrapper.find('.sidebar .side-menu').exists()).toBe(true)
+  })
+
+  it('drops the top bar entirely in favor of the single sidebar chrome', () => {
+    const wrapper = mountLayout()
+
+    expect(wrapper.find('.navbar').exists()).toBe(false)
     expect(wrapper.find('.logo').exists()).toBe(false)
   })
 
