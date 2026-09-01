@@ -48,27 +48,8 @@ defineProps({
   pointer-events: none;
 }
 
-.glass-surface__glow {
-  inset: -58%;
-  background: conic-gradient(
-    from 24deg,
-    rgb(124 58 237 / 17%),
-    rgb(251 146 60 / 12%),
-    rgb(99 102 241 / 16%),
-    rgb(124 58 237 / 17%)
-  );
-  transform: translateZ(0);
-}
-
-.glass-surface--upload .glass-surface__glow {
-  animation: glass-surface-orbit 18s linear infinite;
-  will-change: transform;
-}
-
-.glass-surface--card .glass-surface__glow {
-  opacity: .58;
-  transform: rotate(-14deg);
-}
+/* 简约化(2026-09-01):彩色锥形光晕(紫/橙/靛,上传变体旋转)视觉过闹,整体停用 */
+.glass-surface__glow { display: none; }
 
 .glass-surface__veil {
   inset: 0;

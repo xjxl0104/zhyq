@@ -23,6 +23,9 @@ importers:
       gsap:
         specifier: ^3.15.0
         version: 3.15.0
+      ogl:
+        specifier: ^1.0.11
+        version: 1.0.11
       pinia:
         specifier: ^2.1.7
         version: 2.3.1(vue@3.5.39)
@@ -1099,6 +1102,9 @@ packages:
 
   nwsapi@2.2.24:
     resolution: {integrity: sha512-7YRhZ3jS45LwmSCT4b2sVFHt/WuovaktDU07QrtOBY2PXskss5a9jfmR9jptyumwXST+rFjrmppMY1KT/yn35A==}
+
+  ogl@1.0.11:
+    resolution: {integrity: sha512-kUpC154AFfxi16pmZUK4jk3J+8zxwTWGPo03EoYA8QPbzikHoaC82n6pNTbd+oEaJonaE8aPWBlX7ad9zrqLsA==}
 
   package-json-from-dist@1.0.1:
     resolution: {integrity: sha512-UEZIS3/by4OC8vL3P2dTXRETpebLI2NiI5vIrjaD/5UtrkFX/tNbwjTSRAGC/+7CAo2pIcBaRgWmcBBHcsaCIw==}
@@ -2428,6 +2434,8 @@ snapshots:
   normalize-wheel-es@1.2.0: {}
 
   nwsapi@2.2.24: {}
+
+  ogl@1.0.11: {}
 
   package-json-from-dist@1.0.1: {}
 

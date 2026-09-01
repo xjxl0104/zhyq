@@ -1,6 +1,7 @@
 <template>
   <div class="app-wrapper">
     <el-container class="body-row">
+      <GrainientBg class="chrome-aurora" />
       <el-aside width="232px" class="sidebar">
         <div class="brand-zone">
           <img class="brand-logo" src="@/assets/brand/dipark.svg" alt="DIPARK" />
@@ -54,6 +55,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { menuTree } from './menu'
 import request from '@/utils/request'
 import { useProjectStore } from '@/stores/project'
+import GrainientBg from '@/components/GrainientBg.vue'
 import StrokeBrand from './StrokeBrand.vue'
 import MenuItem from './MenuItem.vue'
 import ProjectSwitcher from './ProjectSwitcher.vue'
@@ -115,12 +117,30 @@ function onClick(c) {
 }
 /* chrome:原顶栏的蓝紫渐变铺满整个画框,白色内容纸包裹嵌入 */
 .body-row {
+  position: relative;
   height: 100%;
   background: linear-gradient(160deg, #1e1b4b 0%, #312e81 42%, #4c42d9 100%);
+}
+/* 极光只铺 chrome:垫在最底层,白色内容纸不透明,自然只透出侧栏与外框区域 */
+.chrome-aurora {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: .75;
+}
+/* 暗色纱罩:钳制装饰层有效亮度,保证浅色文字在任何配色相位下可读 */
+.chrome-aurora::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(16, 14, 48, .38), rgba(16, 14, 48, .18) 45%, rgba(16, 14, 48, .42));
 }
 
 /* —— 侧栏:唯一 chrome,自上而下 品牌/项目切换/菜单/用户 —— */
 .sidebar {
+  position: relative;
+  z-index: 1;
   --line-text: #c5c7ea;
   --menu-hover: #ffffff;   /* 悬停提亮为白 */
   --menu-active: #c4b5fd;  /* 选中亮紫 */
@@ -281,6 +301,8 @@ function onClick(c) {
 
 /* 白色内容"纸":上下右留缝,四角圆角,被 chrome 包裹 */
 .el-main {
+  position: relative;
+  z-index: 1;
   background: #fff;
   margin: 12px 12px 12px 0;
   height: calc(100% - 24px);
