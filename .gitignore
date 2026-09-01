@@ -43,3 +43,8 @@ uploads/
 # 正规带 HMAC 校验的 webhook 实现见 backend common/event/HmacWebhookDispatcher.java
 deploy.sh
 webhook-listener.sh
+
+# Claude Code 本机产物(勿提交)
+.claude/worktrees/
+.claude/launch.json
+.claude/settings.local.json

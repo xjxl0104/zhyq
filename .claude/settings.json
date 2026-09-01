@@ -1,0 +1,29 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/sync-on-start.sh",
+            "timeout": 60,
+            "statusMessage": "自动拉取远端最新代码…"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/auto-default-branch.sh",
+            "timeout": 30,
+            "statusMessage": "同步 GitHub 默认分支…"
+          }
+        ]
+      }
+    ]
+  }
+}
