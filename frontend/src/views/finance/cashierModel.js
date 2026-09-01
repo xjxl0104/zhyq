@@ -26,3 +26,42 @@ export function tenantOptionLabel(t) {
   if (t?.tenantName) return t.tenantName
   return t?.tenantRefId != null ? `租客 #${t.tenantRefId}` : '-'
 }
+
+// ---------- 金额:一律整数分运算 ----------
+// 浮点直接加减会留下 8.79e-14 这类残差:残差进了预算,尾单就会发出 0 元收款请求,
+// 被后端"收款金额必须大于0"拒绝,整批收款中断。
+
+// 前提:入参本身不超过两位小数(后端 DECIMAL(14,2) 序列化值 / :precision="2" 的输入框)。
+// 三位小数的 1.005 这类值在二进制浮点下会被 Math.round 舍错半分,别把这函数用在
+// 未约束精度的计算结果上
+export function toCents(v) {
+  return Math.round(Number(v || 0) * 100)
+}
+
+// 单张账单欠款(分):本金 + 滞纳金 - 实收,与后端 BillMetrics.outstandingOf 同口径
+export function billOweCents(row) {
+  return Math.max(0, toCents(row?.amount) + toCents(row?.lateFee) - toCents(row?.paidAmount))
+}
+
+export function billOwe(row) {
+  return billOweCents(row) / 100
+}
+
+/**
+ * 结算计划:把本次收款金额按选中顺序拆到每张账单上。
+ * 整数分递减,永不产生 0 元条目;金额不足整单时只收部分。
+ * @returns {Array<{billId: number, amount: number}>} amount 单位元,精确两位小数
+ */
+export function buildPaymentPlan(rows, payAmountYuan) {
+  let budget = toCents(payAmountYuan)
+  const plan = []
+  for (const row of rows || []) {
+    if (budget <= 0) break
+    const owe = billOweCents(row)
+    if (owe <= 0) continue
+    const cents = Math.min(budget, owe)
+    plan.push({ billId: row.id, amount: cents / 100 })
+    budget -= cents
+  }
+  return plan
+}

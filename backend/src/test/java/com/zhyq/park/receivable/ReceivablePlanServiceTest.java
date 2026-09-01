@@ -75,7 +75,8 @@ class ReceivablePlanServiceTest {
         existing.setPaidAmount(BigDecimal.ZERO);
         existing.setStatus(3);
         when(billMapper.selectOne(any())).thenReturn(existing);
-        when(billMapper.updateById(any(Bill.class))).thenReturn(1);
+        // 覆盖必须走条件更新(entity + wrapper 带 paid_amount=0 前置条件),不再 updateById 盲写
+        when(billMapper.update(any(Bill.class), any())).thenReturn(1);
 
         ReceivableGenerateResult result = service.generate(7L);
 
@@ -83,7 +84,57 @@ class ReceivablePlanServiceTest {
         assertEquals(0, result.skipped());
         assertEquals(0, result.inserted());
         verify(billMapper, never()).insert(any(Bill.class));
-        verify(billMapper, times(4)).updateById(any(Bill.class));
+        verify(billMapper, never()).updateById(any(Bill.class));
+        ArgumentCaptor<Bill> captor = ArgumentCaptor.forClass(Bill.class);
+        verify(billMapper, times(4)).update(captor.capture(), any());
+        // 覆盖只同步生成侧字段;滞纳金/状态/实收/逾期天数/开票是运行时状态,
+        // 重跑生成把滞纳金清零等于免债(滞纳金已计入应收)
+        for (Bill patch : captor.getAllValues()) {
+            assertEquals(null, patch.getLateFee());
+            assertEquals(null, patch.getStatus());
+            assertEquals(null, patch.getPaidAmount());
+            assertEquals(null, patch.getOverdueDays());
+            assertEquals(null, patch.getInvoiceStatus());
+            assertTrue(patch.getAmount() != null);
+        }
+    }
+
+    @Test
+    void syncSkipsWhenPaymentRacesInBetweenReadAndWrite() {
+        // 读快照时未收款(canSynchronize 通过),但条件更新时钱刚到账 → updated==0,
+        // 必须计入 skipped 而不是把 paid_amount 清零覆盖掉
+        when(registerMapper.selectByIdForUpdate(7L)).thenReturn(register("CONFIRMED"));
+        when(ruleMapper.selectList(any())).thenReturn(rules());
+        Bill existing = new Bill();
+        existing.setId(99L);
+        existing.setPaidAmount(BigDecimal.ZERO);
+        existing.setStatus(3);
+        when(billMapper.selectOne(any())).thenReturn(existing);
+        when(billMapper.update(any(Bill.class), any())).thenReturn(0);
+
+        ReceivableGenerateResult result = service.generate(7L);
+
+        assertEquals(0, result.updated());
+        assertEquals(4, result.skipped());
+        assertEquals(0, result.inserted());
+    }
+
+    @Test
+    void syncSkipsPaidBillsWithoutTouchingDb() {
+        when(registerMapper.selectByIdForUpdate(7L)).thenReturn(register("CONFIRMED"));
+        when(ruleMapper.selectList(any())).thenReturn(rules());
+        Bill paid = new Bill();
+        paid.setId(99L);
+        paid.setPaidAmount(new BigDecimal("50"));
+        paid.setStatus(4);
+        when(billMapper.selectOne(any())).thenReturn(paid);
+
+        ReceivableGenerateResult result = service.generate(7L);
+
+        assertEquals(0, result.updated());
+        assertEquals(4, result.skipped());
+        verify(billMapper, never()).update(any(Bill.class), any());
+        verify(billMapper, never()).updateById(any(Bill.class));
     }
 
     @Test

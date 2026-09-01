@@ -55,12 +55,15 @@ public class DashboardController {
     public Result<Map<String, Object>> overview() {
         Map<String, Object> m = new LinkedHashMap<>();
 
-        // 财务数字概览
+        // 财务数字概览。口径对齐 BillMetrics(应收含滞纳金、实收只看应收方向):
+        // 这里是原生 SQL,BillMetrics 改口径时必须同步,否则驾驶舱与账单页/报表对不上
         Map<String, Object> fin = new LinkedHashMap<>();
-        fin.put("dueReceivable", sum("SELECT COALESCE(SUM(amount-paid_amount),0) FROM fin_bill WHERE direction=1 AND status IN (3,4,6) AND deleted=0"));
+        fin.put("dueReceivable", sum("SELECT COALESCE(SUM(amount+late_fee-paid_amount),0) FROM fin_bill WHERE direction=1 AND status IN (3,4,6) AND deleted=0"));
         fin.put("future30", sum("SELECT COALESCE(SUM(amount),0) FROM fin_bill WHERE direction=1 AND status=3 AND due_date BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 30 DAY) AND deleted=0"));
-        fin.put("overdue", sum("SELECT COALESCE(SUM(amount-paid_amount),0) FROM fin_bill WHERE status=6 AND deleted=0"));
-        fin.put("received", sum("SELECT COALESCE(SUM(paid_amount),0) FROM fin_bill WHERE deleted=0"));
+        // 逾期口径与逾期账单页一致:status=6 或 已到期未结清。status=6 只有手动点
+        // "计算滞纳金"才产生,只认它的话驾驶舱逾期长期是 0
+        fin.put("overdue", sum("SELECT COALESCE(SUM(amount+late_fee-paid_amount),0) FROM fin_bill WHERE direction=1 AND (status=6 OR (due_date<CURDATE() AND status IN (3,4))) AND deleted=0"));
+        fin.put("received", sum("SELECT COALESCE(SUM(paid_amount),0) FROM fin_bill WHERE direction=1 AND deleted=0"));
         m.put("finance", fin);
 
         // 经营收入来源：租费账单沿用财务权威口径，售货机只统计已受控导入的本地销售副本。
@@ -140,7 +143,7 @@ public class DashboardController {
     public Result<Map<String, Object>> revenueTrend() {
         List<Map<String, Object>> rows = jdbc.queryForList("""
                 SELECT DATE_FORMAT(due_date,'%Y-%m') AS ym,
-                       COALESCE(SUM(amount),0) AS receivable,
+                       COALESCE(SUM(amount+late_fee),0) AS receivable,
                        COALESCE(SUM(paid_amount),0) AS received
                 FROM fin_bill
                 WHERE direction=1 AND deleted=0

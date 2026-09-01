@@ -62,4 +62,41 @@ class BillMetricsTest {
         assertThat(BillMetrics.isReceivable(bill(null, "100", "0"))).isFalse();
         assertThat(BillMetrics.isReceivable(null)).isFalse();
     }
+
+    // ---------- 滞纳金口径:计入应收 ----------
+    // 此前滞纳金算得出来却收不进去:收款上限与结清条件只看 amount,租客付满本金
+    // 账单就"已结清",滞纳金永久挂空,收银台还把这个租客从欠款列表里移走。
+    // 现在口径统一为:应收 = 本金 + 滞纳金,欠款、结清、可收上限全部同源。
+
+    private static Bill lateBill(String amount, String paid, String lateFee) {
+        Bill b = bill(BillMetrics.DIRECTION_RECEIVE, amount, paid);
+        b.setLateFee(lateFee == null ? null : new BigDecimal(lateFee));
+        return b;
+    }
+
+    @Test
+    @DisplayName("应收含滞纳金:本金付清但滞纳金没付,欠款不是 0,账单不算收齐")
+    void lateFeeCountsIntoReceivableAndOutstanding() {
+        Bill b = lateBill("1000", "1000", "5.00");
+
+        assertThat(BillMetrics.receivableOf(b)).isEqualByComparingTo("1005.00");
+        assertThat(BillMetrics.outstandingOf(b)).isEqualByComparingTo("5.00");
+    }
+
+    @Test
+    @DisplayName("本金 + 滞纳金一起付清后欠款归 0;滞纳金为空按 0 处理")
+    void settledIncludingLateFee() {
+        assertThat(BillMetrics.outstandingOf(lateBill("1000", "1005", "5.00"))).isEqualByComparingTo("0");
+        assertThat(BillMetrics.receivableOf(lateBill("1000", "0", null))).isEqualByComparingTo("1000");
+    }
+
+    @Test
+    @DisplayName("应付账单的滞纳金同样不计入应收口径")
+    void payableLateFeeStillExcluded() {
+        Bill payable = bill(BillMetrics.DIRECTION_PAY, "50000", "0");
+        payable.setLateFee(new BigDecimal("100"));
+
+        assertThat(BillMetrics.receivableOf(payable)).isEqualByComparingTo("0");
+        assertThat(BillMetrics.outstandingOf(payable)).isEqualByComparingTo("0");
+    }
 }
