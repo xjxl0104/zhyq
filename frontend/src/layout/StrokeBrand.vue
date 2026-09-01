@@ -11,12 +11,14 @@ const TEXT = '智慧云仓系统'
 const STROKE_COLOR = '#A78BFA'
 const FILL_COLOR = '#F8FAFC'
 const STROKE_WIDTH = 1.3   // 配合 non-scaling-stroke,小尺寸下仍保持参考实现的线条锐度
-const DRAW_DURATION = 1.6
+const DRAW_DURATION = 2
 const FILL_DELAY = 0.2
 const STAGGER = 0.05
-const EASE = 'power2.out'
+const EASE = 'power1.inOut'
 const FONT_SIZE = 128
-const DASH = Math.max(FONT_SIZE * 7, 200)
+// 参考实现的 fontSize*7 按拉丁字母校准;汉字笔画路径长得多,
+// dash 必须覆盖单字全部轮廓长度,否则虚线循环导致勾画断线
+const DASH = FONT_SIZE * 45
 
 const characters = Array.from(TEXT)
 const root = ref(null)
@@ -47,7 +49,7 @@ function play() {
   gsap.killTweensOf(all)
 
   if (reduced) {
-    gsap.set(strokes, { strokeDasharray: DASH, strokeDashoffset: 0 })
+    gsap.set(strokes, { strokeDasharray: 'none', strokeDashoffset: 0 })
     gsap.set(fills, { opacity: 1 })
     if (wipe) gsap.set(wipe, { attr: { width: box.value.width } })
     return
@@ -60,6 +62,8 @@ function play() {
 
   timeline = gsap.timeline({ defaults: { overwrite: 'auto' } })
   timeline.to(strokes, { strokeDashoffset: 0, duration: DRAW_DURATION, ease: EASE, stagger: STAGGER }, 0)
+  // 勾画完成后取消虚线:无论字形路径多长,终态描边都连续无缺口
+  timeline.set(strokes, { strokeDasharray: 'none' }, DRAW_DURATION + STAGGER * (characters.length - 1))
   if (wipe) {
     timeline.to(
       wipe,
@@ -128,11 +132,19 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+/* 思源黑体(Noto Sans SC)800 字重,仅含品牌 6 字的子集(~2KB),自托管 */
+@font-face {
+  font-family: 'Brand Source Han';
+  src: url('@/assets/fonts/brand-source-han-800.woff2') format('woff2');
+  font-weight: 800;
+  font-style: normal;
+  font-display: swap;
+}
 .stroke-brand { display: block; width: 100%; line-height: 0; cursor: default; }
 .stroke-brand__svg { display: block; width: 100%; height: 44px; }
 .stroke-brand__stroke,
 .stroke-brand__fill {
-  font-family: inherit;
+  font-family: 'Brand Source Han', 'Source Han Sans SC', 'Noto Sans SC', 'PingFang SC', sans-serif;
   font-size: 128px;
   font-weight: 800;
   letter-spacing: -4px;
