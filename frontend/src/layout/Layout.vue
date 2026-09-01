@@ -3,7 +3,7 @@
     <el-container class="body-row">
       <el-aside width="232px" class="sidebar">
         <div class="brand-zone">
-          <img class="brand-logo" src="@/assets/brand/dipark.png" alt="DIPARK" />
+          <img class="brand-logo" src="@/assets/brand/dipark.svg" alt="DIPARK" />
           <StrokeBrand />
         </div>
         <div class="switcher-zone">
