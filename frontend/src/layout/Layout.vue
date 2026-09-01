@@ -135,7 +135,7 @@ function onClick(c) {
   align-items: center;
   gap: 10px;
 }
-.brand-logo { height: 24px; width: auto; flex-shrink: 0; }
+.brand-logo { height: 20px; width: auto; max-width: 104px; object-fit: contain; flex-shrink: 0; }
 .brand-zone :deep(.stroke-brand) { flex: 1; min-width: 0; }
 .switcher-zone { padding: 0 14px 12px; }
 .switcher-zone :deep(.project-switcher) { width: 100%; }
