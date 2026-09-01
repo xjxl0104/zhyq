@@ -41,6 +41,13 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class FinanceViewEnricher {
 
+    /**
+     * 可作为权威租户名来源的登记表状态。
+     *
+     * <p>草稿(DRAFT)与待核对(PENDING_REVIEW)里的名字还没校对过,拿它覆盖租客档案反而更不准。</p>
+     */
+    private static final List<String> AUTHORITATIVE_STATUS = List.of("CONFIRMED", "ACTIVE");
+
     private final BillMapper billMapper;
     private final ReceivableRegisterMapper receivableRegisterMapper;
     private final BizTenantMapper bizTenantMapper;
@@ -63,14 +70,21 @@ public class FinanceViewEnricher {
         if (bills == null || bills.isEmpty()) {
             return;
         }
-        Map<Long, ReceivableRegister> registers = loadRegisters(
+        List<Long> tenantRefIds = bills.stream().map(Bill::getTenantRefId).toList();
+        Map<Long, ReceivableRegister> byRegisterId = loadRegisters(
                 bills.stream().map(Bill::getReceivableRegisterId).toList());
-        Map<Long, BizTenant> tenants = loadTenants(
-                bills.stream().map(Bill::getTenantRefId).toList());
+        Map<Long, ReceivableRegister> byTenantRefId = loadRegistersByTenant(tenantRefIds);
+        Map<Long, BizTenant> tenants = loadTenants(tenantRefIds);
         for (Bill bill : bills) {
-            ReceivableRegister register = registers.get(bill.getReceivableRegisterId());
-            bill.setTenantName(tenantNameOf(register, tenants.get(bill.getTenantRefId())));
-            bill.setAgreementNo(register == null ? null : register.getAgreementNoRaw());
+            // 优先用账单直接挂着的那张登记表(它同时给出协议编号);
+            // 挂不上的(合同计划生成的、历史遗留的账单)退而按租客反查登记表 —— 登记表是
+            // 租户名的权威来源,同一个租客不该在登记表叫一个名、在账单页叫另一个名。
+            ReceivableRegister linked = byRegisterId.get(bill.getReceivableRegisterId());
+            ReceivableRegister authoritative = linked != null
+                    ? linked : byTenantRefId.get(bill.getTenantRefId());
+            bill.setTenantName(tenantNameOf(authoritative, tenants.get(bill.getTenantRefId())));
+            // 协议编号只认直接挂着的那张:按租客猜出来的登记表未必对应这张账单的那份协议
+            bill.setAgreementNo(linked == null ? null : linked.getAgreementNoRaw());
         }
     }
 
@@ -189,6 +203,33 @@ public class FinanceViewEnricher {
             return register.getTenantNameRaw();
         }
         return tenant == null ? null : tenant.getName();
+    }
+
+    /**
+     * 按租客 id 反查登记表,给"没挂登记表的账单"提供权威租户名。
+     *
+     * <p>同一个租客可能有多份登记明细(续签、多个铺位)。这里只用它拿名字,取最新一份即可 ——
+     * 名字在多份之间通常一致;真要拿协议编号必须用账单直接挂着的那份,不能靠这个猜。</p>
+     *
+     * <p>只取已确认/已生效的:草稿和待核对的登记表里名字可能还没校对过,
+     * 拿它覆盖租客档案反而更不准。</p>
+     */
+    private Map<Long, ReceivableRegister> loadRegistersByTenant(Collection<Long> rawIds) {
+        List<Long> ids = rawIds.stream().filter(Objects::nonNull).distinct().toList();
+        if (ids.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        List<ReceivableRegister> rows = receivableRegisterMapper.selectList(
+                new LambdaQueryWrapper<ReceivableRegister>()
+                        .in(ReceivableRegister::getTenantRefId, ids)
+                        .in(ReceivableRegister::getStatus, AUTHORITATIVE_STATUS)
+                        .orderByAsc(ReceivableRegister::getId));
+        // 同一租客多行时后写覆盖前写 → 留下 id 最大的那份(最新)
+        Map<Long, ReceivableRegister> out = new java.util.HashMap<>();
+        for (ReceivableRegister r : rows) {
+            out.put(r.getTenantRefId(), r);
+        }
+        return out;
     }
 
     private Map<Long, ReceivableRegister> loadRegisters(Collection<Long> rawIds) {

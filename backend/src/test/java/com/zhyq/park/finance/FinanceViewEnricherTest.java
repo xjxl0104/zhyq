@@ -44,10 +44,15 @@ class FinanceViewEnricherTest {
     }
 
     private static ReceivableRegister register(long id, String tenantName, String agreementNo) {
+        return register(id, tenantName, agreementNo, null);
+    }
+
+    private static ReceivableRegister register(long id, String tenantName, String agreementNo, Long tenantRefId) {
         ReceivableRegister r = new ReceivableRegister();
         r.setId(id);
         r.setTenantNameRaw(tenantName);
         r.setAgreementNoRaw(agreementNo);
+        r.setTenantRefId(tenantRefId);
         return r;
     }
 
@@ -73,6 +78,7 @@ class FinanceViewEnricherTest {
     @DisplayName("租客名优先取应收登记明细 —— 登记明细是财务权威来源,账单金额也生成自它")
     void prefersRegisterTenantName() {
         when(registerMapper.selectBatchIds(any())).thenReturn(List.of(register(7L, "登记表里的租户", "XY-2026-001")));
+        when(registerMapper.selectList(any())).thenReturn(List.of());
         when(tenantMapper.selectBatchIds(any())).thenReturn(List.of(tenant(2L, "租客档案里的旧名字")));
 
         List<Bill> bills = new ArrayList<>(List.of(bill(1L, 7L, 2L)));
@@ -83,9 +89,26 @@ class FinanceViewEnricherTest {
     }
 
     @Test
-    @DisplayName("没挂登记表的账单(如历史演示数据)回落到租客档案,不显示裸 id")
+    @DisplayName("没挂登记表的账单按租客反查登记表拿权威名 —— 合同计划/历史账单也要跟登记明细一致")
+    void unlinkedBillStillUsesRegisterNameViaTenant() {
+        // 账单没有 receivableRegisterId(合同计划生成的、V8 演示种子等)
+        when(registerMapper.selectBatchIds(any())).thenReturn(List.of());
+        when(registerMapper.selectList(any())).thenReturn(List.of(register(9L, "杭州云智能科技有限公司", "XY-2026-088", 2L)));
+        when(tenantMapper.selectBatchIds(any())).thenReturn(List.of(tenant(2L, "云智能科技有限公司")));
+
+        List<Bill> bills = new ArrayList<>(List.of(bill(1L, null, 2L)));
+        enricher.enrichBills(bills);
+
+        assertThat(bills.get(0).getTenantName()).isEqualTo("杭州云智能科技有限公司");
+        // 协议编号只认账单直接挂着的那份登记表:按租客猜出来的未必对应这张账单的协议
+        assertThat(bills.get(0).getAgreementNo()).isNull();
+    }
+
+    @Test
+    @DisplayName("登记表里也找不到该租客时才回落到租客档案,不显示裸 id")
     void fallsBackToTenantProfile() {
         when(registerMapper.selectBatchIds(any())).thenReturn(List.of());
+        when(registerMapper.selectList(any())).thenReturn(List.of());
         when(tenantMapper.selectBatchIds(any())).thenReturn(List.of(tenant(2L, "绿源环保股份公司")));
 
         List<Bill> bills = new ArrayList<>(List.of(bill(1L, null, 2L)));
@@ -97,9 +120,26 @@ class FinanceViewEnricherTest {
     }
 
     @Test
+    @DisplayName("账单直接挂着的登记表优先于按租客反查出来的那份")
+    void linkedRegisterWinsOverTenantMatch() {
+        when(registerMapper.selectBatchIds(any()))
+                .thenReturn(List.of(register(7L, "这张账单对应的登记表", "XY-001", 2L)));
+        when(registerMapper.selectList(any()))
+                .thenReturn(List.of(register(9L, "同租客的另一份登记表", "XY-999", 2L)));
+        when(tenantMapper.selectBatchIds(any())).thenReturn(List.of(tenant(2L, "租客档案名")));
+
+        List<Bill> bills = new ArrayList<>(List.of(bill(1L, 7L, 2L)));
+        enricher.enrichBills(bills);
+
+        assertThat(bills.get(0).getTenantName()).isEqualTo("这张账单对应的登记表");
+        assertThat(bills.get(0).getAgreementNo()).isEqualTo("XY-001");
+    }
+
+    @Test
     @DisplayName("登记表的租户名是空白时同样回落,不能把空字符串当名字用")
     void blankRegisterNameFallsBack() {
         when(registerMapper.selectBatchIds(any())).thenReturn(List.of(register(7L, "   ", "XY-2026-001")));
+        when(registerMapper.selectList(any())).thenReturn(List.of());
         when(tenantMapper.selectBatchIds(any())).thenReturn(List.of(tenant(2L, "租客档案名")));
 
         List<Bill> bills = new ArrayList<>(List.of(bill(1L, 7L, 2L)));
@@ -113,6 +153,7 @@ class FinanceViewEnricherTest {
     void resolvesBillViewsForDownstreamPages() {
         when(billMapper.selectList(any())).thenReturn(List.of(bill(11L, 7L, 2L)));
         when(registerMapper.selectBatchIds(any())).thenReturn(List.of(register(7L, "登记表里的租户", "XY-2026-001")));
+        when(registerMapper.selectList(any())).thenReturn(List.of());
         when(tenantMapper.selectBatchIds(any())).thenReturn(List.of(tenant(2L, "旧名字")));
 
         // 故意混入 null 与重复 id:下游记录的 bill_id 可能为空(如手工补录的流水),
