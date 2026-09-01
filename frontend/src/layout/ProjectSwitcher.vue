@@ -15,7 +15,10 @@
       :value="p.id"
     />
   </el-select>
-  <span v-else class="project-empty" @click="goCreate">暂无项目</span>
+  <span v-else class="project-empty" @click="goCreate">
+    <el-icon><OfficeBuilding /></el-icon>
+    <span>暂无项目</span>
+  </span>
 </template>
 
 <script setup>
@@ -36,5 +39,11 @@ function goCreate() {
 
 <style scoped>
 .project-switcher { width: 180px; }
-.project-empty { color: var(--el-text-color-secondary); cursor: pointer; }
+.project-empty {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--el-text-color-secondary);
+  cursor: pointer;
+}
 </style>
