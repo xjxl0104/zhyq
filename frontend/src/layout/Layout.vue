@@ -252,8 +252,9 @@ function onClick(c) {
 .switcher-zone :deep(.project-switcher .el-select__selected-item),
 .switcher-zone :deep(.project-switcher .el-select__placeholder) { color: #e8e8ee; }
 .switcher-zone :deep(.project-switcher .el-select__caret),
-.switcher-zone :deep(.project-switcher .el-select__prefix) { color: #a2a2ae; }
-.switcher-zone :deep(.project-empty) { color: #b9b9c4; }
+.switcher-zone :deep(.project-switcher .el-select__prefix) { color: #c3c8f5; }
+.switcher-zone :deep(.project-empty) { color: #c3c8f5; }
+.switcher-zone :deep(.project-empty .el-icon) { font-size: 16px; }
 
 /* 白色内容"纸":上下右留缝,四角圆角,被 chrome 包裹 */
 .el-main {
