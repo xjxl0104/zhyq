@@ -5,14 +5,15 @@
       <div class="left-panel">
         <div class="panel-head">
           <div class="panel-title">选择租客</div>
-          <!-- 只列还欠着钱的租客,名字与登记明细口径一致,选项右侧直接显示欠款笔数与金额。
-               原先拉的是全部租客档案,里面绝大多数没有未结账单,收银员得挨个点开试 -->
-          <el-select v-model="tenantRefId" filterable placeholder="请选择租客(仅列有欠款的)" clearable
+          <!-- 档案里的每个租客都能选:欠款的排前面并带「N 笔 · ¥金额」徽标,没欠款的
+               显示「无欠款」也照样可选。原先只列欠款租客,当月有应收的租客一旦口径
+               没对上就整个从下拉里消失,收银员无从下手 -->
+          <el-select v-model="tenantRefId" filterable placeholder="请选择租客(欠款的在前)" clearable
                      style="width: 340px" @change="loadBills">
             <el-option v-for="t in tenants" :key="t.tenantRefId"
-                       :label="t.tenantName" :value="t.tenantRefId">
-              <span>{{ t.tenantName }}</span>
-              <span class="opt-owe">{{ t.billCount }} 笔 · ¥{{ money(t.owe) }}</span>
+                       :label="tenantOptionLabel(t)" :value="t.tenantRefId">
+              <span>{{ tenantOptionLabel(t) }}</span>
+              <span class="opt-owe" :class="{ clear: !hasOutstanding(t) }">{{ tenantOptionBadge(t) }}</span>
             </el-option>
           </el-select>
         </div>
@@ -80,6 +81,7 @@
 import { reactive, ref, computed, onMounted, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { billApi, paymentApi } from '@/api/finance'
+import { hasOutstanding, tenantOptionBadge, tenantOptionLabel } from './cashierModel'
 
 const PAYABLE = [3, 4, 6] // 待收付/部分结清/逾期
 
@@ -108,7 +110,7 @@ const totalOwe = computed(() =>
 watch(totalOwe, (v) => { payAmount.value = Number(v.toFixed(2)) })
 
 async function loadTenants() {
-  // 只要有欠款的租客。收款成功后要重新拉一次:某个租客结清了就该从下拉里消失
+  // 全部租客,欠款的在前。收款成功后要重新拉一次:结清的租客徽标变「无欠款」并沉到列表后面
   tenants.value = (await billApi.payableTenants()) || []
 }
 
@@ -176,7 +178,8 @@ onMounted(loadTenants)
 .panel-title { font-size: 15px; font-weight: 650; color: var(--text-title); }
 .bill-table { --el-table-row-hover-bg-color: var(--bg-hover, #f5f7fa); }
 .owe { color: #e5484d; font-weight: 650; font-variant-numeric: tabular-nums; }
-.opt-owe { float: right; color: var(--text-secondary); font-size: 12px; margin-left: 20px; }
+.opt-owe { float: right; color: var(--el-color-danger); font-size: 12px; margin-left: 20px; }
+.opt-owe.clear { color: var(--text-secondary); }
 .empty-tip { text-align: center; color: var(--text-secondary); padding: 30px 0; }
 
 .settle-card {

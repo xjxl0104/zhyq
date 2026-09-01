@@ -18,12 +18,9 @@ import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.stream.Collectors;
 
 @Tag(name = "财务-账单")
 @RestController
@@ -117,46 +114,24 @@ public class BillController {
     }
 
     /**
-     * 收银台的租客下拉。
+     * 收银台的租客下拉:档案里的<b>每个租客都能选</b>,欠款的排前面并带欠款汇总。
      *
-     * <p>只列还欠着钱的租客,并带上欠款笔数与合计。收银台原先拉的是全部租客档案
-     * ({@code /tenant/info/list}),里面绝大多数没有任何未结账单 —— 收银员得挨个点开试,
-     * 试到有账单的那个为止。而且档案里的名字与登记明细可能不是一个口径。</p>
+     * <p>此前只列"还欠着钱的租客" —— 当月有应收/有欠款的租客一旦口径没对上
+     * (账单挂了档案外的 tenantRefId 等)就整个从下拉里消失,收银员无从下手。
+     * 名册与欠款的拼装口径统一在 {@link FinanceViewEnricher#cashierTenantOptions}。</p>
      */
-    @Operation(summary = "收银台:有未结账单的租客(含欠款汇总)")
+    @Operation(summary = "收银台:全部租客(欠款的在前,带欠款笔数与合计)")
     @PreAuthorize("hasAuthority('finance:bill:query')")
     @GetMapping("/payable-tenants")
-    public Result<List<Map<String, Object>>> payableTenants(@RequestParam(required = false) Long projectId) {
-        LambdaQueryWrapper<Bill> qw = new LambdaQueryWrapper<Bill>()
+    public Result<List<FinanceViewEnricher.TenantOption>> payableTenants(
+            @RequestParam(required = false) Long projectId) {
+        // 欠款账单不按 projectId 过滤:登记表生成的账单目前不带 project_id,
+        // 按项目过滤会把它们的欠款漏成 0。projectId 只用来收窄租客名册
+        List<Bill> bills = billMapper.selectList(new LambdaQueryWrapper<Bill>()
                 .eq(Bill::getDirection, 1)
                 .in(Bill::getStatus, PAYABLE_STATUS)
-                .eq(projectId != null, Bill::getProjectId, projectId)
-                .isNotNull(Bill::getTenantRefId);
-        List<Bill> bills = billMapper.selectList(qw);
-        // 只留真正还有欠款的(状态是待收付但已被收满的边角数据不该出现在收银台)
-        List<Bill> outstanding = bills.stream()
-                .filter(b -> BillMetrics.outstandingOf(b).signum() > 0)
-                .toList();
-        viewEnricher.enrichBills(outstanding);
-
-        Map<Long, List<Bill>> byTenant = outstanding.stream()
-                .collect(Collectors.groupingBy(Bill::getTenantRefId, LinkedHashMap::new, Collectors.toList()));
-        List<Map<String, Object>> out = new ArrayList<>();
-        byTenant.forEach((tenantRefId, rows) -> {
-            BigDecimal owe = rows.stream()
-                    .map(BillMetrics::outstandingOf)
-                    .reduce(BigDecimal.ZERO, BigDecimal::add);
-            Map<String, Object> item = new LinkedHashMap<>();
-            item.put("tenantRefId", tenantRefId);
-            item.put("tenantName", rows.stream().map(Bill::getTenantName)
-                    .filter(StringUtils::hasText).findFirst().orElse("租客 #" + tenantRefId));
-            item.put("billCount", rows.size());
-            item.put("owe", owe);
-            out.add(item);
-        });
-        // 欠得多的排前面,收银员通常先处理大额
-        out.sort((a, b) -> ((BigDecimal) b.get("owe")).compareTo((BigDecimal) a.get("owe")));
-        return Result.ok(out);
+                .isNotNull(Bill::getTenantRefId));
+        return Result.ok(viewEnricher.cashierTenantOptions(projectId, bills));
     }
 
     @Operation(summary = "计算滞纳金(遍历逾期未结清的应收账单)")
