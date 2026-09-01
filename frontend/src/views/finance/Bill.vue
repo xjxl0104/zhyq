@@ -3,7 +3,7 @@
     <!-- 统计卡片 -->
     <div class="stat-row">
       <div class="stat-card">
-        <div class="stat-label">应收</div>
+        <div class="stat-label">应收(含滞纳金)</div>
         <div class="stat-value">¥{{ money(stats.receivable) }}</div>
       </div>
       <div class="stat-card">
@@ -141,6 +141,9 @@
         <el-form-item label="应收">
           <el-input :model-value="money(payDialog.bill?.amount)" disabled />
         </el-form-item>
+        <el-form-item label="滞纳金" v-if="Number(payDialog.bill?.lateFee) > 0">
+          <el-input :model-value="money(payDialog.bill?.lateFee)" disabled />
+        </el-form-item>
         <el-form-item label="已收">
           <el-input :model-value="money(payDialog.bill?.paidAmount)" disabled />
         </el-form-item>
@@ -213,6 +216,7 @@ import { reactive, ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { billApi, paymentApi, invoiceApi } from '@/api/finance'
+import { billOwe } from './cashierModel'
 
 const feeTypes = ['租金', '物业费', '保证金', '能源费', '服务费', '一次性']
 // 账单来源。'应收登记表' = 由应收明细登记表生成(带协议编号与登记明细口径的租客名)
@@ -303,7 +307,8 @@ function openPay(row) {
   payDialog.bill = row
   // 每次打开生成一个幂等键:重复点击"确定"或网络重试不会重复入账
   const payNo = 'SK' + Date.now() + Math.random().toString(36).slice(2, 10)
-  Object.assign(payForm, { billId: row.id, amount: Number(row.amount) - Number(row.paidAmount || 0), payMethod: '转账', payNo })
+  // 默认收满剩余欠款(本金 + 滞纳金 - 实收),与后端剩余可收同口径
+  Object.assign(payForm, { billId: row.id, amount: billOwe(row), payMethod: '转账', payNo })
 }
 async function submitPay() {
   await payFormRef.value.validate()

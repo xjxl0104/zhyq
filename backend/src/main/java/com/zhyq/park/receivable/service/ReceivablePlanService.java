@@ -1,6 +1,7 @@
 package com.zhyq.park.receivable.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.zhyq.park.common.exception.BizException;
 import com.zhyq.park.finance.entity.Bill;
 import com.zhyq.park.finance.mapper.BillMapper;
@@ -46,8 +47,27 @@ public class ReceivablePlanService {
             if (existing != null) {
                 if (canSynchronize(existing)) {
                     bill.setId(existing.getId());
-                    billMapper.updateById(bill);
-                    updated++;
+                    // 覆盖只同步生成侧字段(金额/账期/应收日/规则/备注)。滞纳金/逾期
+                    // 天数/状态/实收/开票是运行时状态:滞纳金已计入应收,重跑生成把它
+                    // 清零等于免掉欠款;置 null 后 MyBatis-Plus 非空策略不会写这些列
+                    bill.setStatus(null);
+                    bill.setPaidAmount(null);
+                    bill.setLateFee(null);
+                    bill.setOverdueDays(null);
+                    bill.setInvoiceStatus(null);
+                    // 条件更新:canSynchronize 用的是进循环前的快照,这中间可能刚落了
+                    // 一笔收款。新实体不带 version,乐观锁拦截器不会介入 —— 前置条件
+                    // 必须显式写进 WHERE,否则会把真实收款覆盖回 paid_amount=0。
+                    // 条件不满足(updated==0)按跳过计,不覆盖
+                    int changed = billMapper.update(bill, new LambdaUpdateWrapper<Bill>()
+                            .eq(Bill::getId, existing.getId())
+                            .in(Bill::getStatus, 1, 2, 3, 6)
+                            .apply("paid_amount = 0"));
+                    if (changed == 1) {
+                        updated++;
+                    } else {
+                        skipped++;
+                    }
                 } else {
                     skipped++;
                 }

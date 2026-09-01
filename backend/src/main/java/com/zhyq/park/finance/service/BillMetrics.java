@@ -12,6 +12,11 @@ import java.math.BigDecimal;
  * 只是演示数据里恰好没有应付账单才没露馅。口径写在这里一处,谁要用谁调,不再各算各的。</p>
  *
  * <p>方向:1 收款(应收) 2 付款(应付)。状态见 {@code Bill} 的 javadoc。</p>
+ *
+ * <p>滞纳金计入应收:应收 = 本金 + 滞纳金。此前滞纳金算得出来却收不进去 ——
+ * 收款上限与结清条件只看本金,租客付满本金账单就"已结清",滞纳金永久挂空,
+ * 收银台还把这个租客从欠款列表里移走。欠款、结清、剩余可收三处必须与这里同源
+ * (PaymentService 的 SQL 条件是同一口径的数据库侧写法)。</p>
  */
 public final class BillMetrics {
 
@@ -30,9 +35,9 @@ public final class BillMetrics {
         return bill != null && bill.getDirection() != null && bill.getDirection() == DIRECTION_RECEIVE;
     }
 
-    /** 应收金额:非应收方向记 0,免得调用方忘了判方向 */
+    /** 应收金额 = 本金 + 滞纳金:非应收方向记 0,免得调用方忘了判方向 */
     public static BigDecimal receivableOf(Bill bill) {
-        return isReceivable(bill) ? nz(bill.getAmount()) : BigDecimal.ZERO;
+        return isReceivable(bill) ? nz(bill.getAmount()).add(nz(bill.getLateFee())) : BigDecimal.ZERO;
     }
 
     /**

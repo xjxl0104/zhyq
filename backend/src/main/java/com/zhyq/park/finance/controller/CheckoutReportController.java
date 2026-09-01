@@ -9,10 +9,12 @@ import com.zhyq.park.finance.entity.Bill;
 import com.zhyq.park.finance.entity.ContractRef;
 import com.zhyq.park.finance.mapper.BillMapper;
 import com.zhyq.park.finance.mapper.ContractRefMapper;
+import com.zhyq.park.finance.service.FinanceViewEnricher;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
@@ -21,6 +23,7 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 @Tag(name = "财务-退房报表")
 @RestController
@@ -30,6 +33,7 @@ public class CheckoutReportController {
 
     private final ContractRefMapper contractMapper;
     private final BillMapper billMapper;
+    private final FinanceViewEnricher viewEnricher;
 
     // 已终止合同
     private static final int CONTRACT_TERMINATED = 9;
@@ -44,21 +48,41 @@ public class CheckoutReportController {
                 new LambdaQueryWrapper<ContractRef>()
                         .eq(ContractRef::getStatus, CONTRACT_TERMINATED)
                         .orderByDesc(ContractRef::getId));
-        List<Map<String, Object>> rows = new ArrayList<>();
+        // 每份合同的租金账单先集中取名:账单带的登记明细名优先(与账单页同口径),
+        // 没有租金账单的合同再用档案名兜底 —— 本页此前只显示裸 tenantRefId,一个"2"
+        // 谁也不知道是哪家租客
+        Map<Long, List<Bill>> billsByContract = new LinkedHashMap<>();
+        List<Bill> allRentBills = new ArrayList<>();
         for (ContractRef c : p.getRecords()) {
             List<Bill> rentBills = billMapper.selectList(new LambdaQueryWrapper<Bill>()
                     .eq(Bill::getContractId, c.getId())
                     .eq(Bill::getFeeType, FEE_RENT));
+            billsByContract.put(c.getId(), rentBills);
+            allRentBills.addAll(rentBills);
+        }
+        viewEnricher.enrichBills(allRentBills);
+        Map<Long, String> profileNames = viewEnricher.tenantNamesOf(p.getRecords().stream()
+                .map(ContractRef::getTenantRefId).filter(Objects::nonNull).toList());
+
+        List<Map<String, Object>> rows = new ArrayList<>();
+        for (ContractRef c : p.getRecords()) {
+            List<Bill> rentBills = billsByContract.getOrDefault(c.getId(), List.of());
             BigDecimal rentTotal = BigDecimal.ZERO;
             BigDecimal rentPaid = BigDecimal.ZERO;
             for (Bill b : rentBills) {
                 rentTotal = rentTotal.add(nz(b.getAmount()));
                 rentPaid = rentPaid.add(nz(b.getPaidAmount()));
             }
+            String tenantName = rentBills.stream()
+                    .map(Bill::getTenantName)
+                    .filter(StringUtils::hasText)
+                    .findFirst()
+                    .orElse(c.getTenantRefId() == null ? null : profileNames.get(c.getTenantRefId()));
             Map<String, Object> m = new LinkedHashMap<>();
             m.put("contractId", c.getId());
             m.put("code", c.getCode());
             m.put("tenantRefId", c.getTenantRefId());
+            m.put("tenantName", tenantName);
             m.put("terminateDate", c.getTerminateDate());
             m.put("rentTotal", rentTotal);
             m.put("rentPaid", rentPaid);

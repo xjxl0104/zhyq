@@ -21,7 +21,11 @@
       <el-table :data="list" v-loading="loading" border stripe>
         <el-table-column type="index" label="#" width="55" />
         <el-table-column prop="code" label="合同编号" min-width="160" />
-        <el-table-column prop="tenantRefId" label="租客" width="100" />
+        <!-- 租客列显示名字而不是裸 id:账单口径的登记明细名优先,档案名兜底(后端拼好),
+             兜底文案与收银台同一份 tenantOptionLabel -->
+        <el-table-column label="租客" min-width="160">
+          <template #default="{ row }">{{ tenantOptionLabel(row) }}</template>
+        </el-table-column>
         <el-table-column prop="terminateDate" label="退租日期" width="130" />
         <el-table-column label="租金应收" width="140" align="right">
           <template #default="{ row }">¥{{ money(row.rentTotal) }}</template>
@@ -43,6 +47,7 @@
 <script setup>
 import { reactive, ref, onMounted } from 'vue'
 import { checkoutApi } from '@/api/finance'
+import { tenantOptionLabel } from './cashierModel'
 
 const loading = ref(false)
 const list = ref([])

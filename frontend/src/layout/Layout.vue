@@ -1,48 +1,13 @@
 <template>
   <div class="app-wrapper">
-    <header class="navbar">
-      <div class="navbar-inner">
-        <div class="brand-zone">
-          <DepthBrand />
-        </div>
-        <div class="nav-left">
-            <span class="sr-only" aria-live="polite">{{ currentTitle }}</span>
-            <transition name="crumb-swap" mode="out-in">
-              <div class="crumb-block" :key="route.path">
-                <span class="crumb-marker" aria-hidden="true"></span>
-                <span v-if="moduleIndex" class="crumb-index" aria-hidden="true">{{ moduleIndex }}</span>
-                <span class="crumb">{{ currentTitle }}</span>
-              </div>
-            </transition>
-          </div>
-          <div class="actions">
-            <span class="action-slot">
-              <ProjectSwitcher @switched="onProjectSwitched" />
-            </span>
-            <span class="action-slot">
-              <button class="screen-btn" @click="openScreen">
-                <el-icon><Monitor /></el-icon><span>监控大屏</span>
-              </button>
-            </span>
-            <span class="action-slot">
-              <el-dropdown @command="onUserCmd">
-                <div class="user">
-                  <el-avatar :size="32" class="user-avatar">{{ uname.charAt(0) }}</el-avatar>
-                  <span class="uname">{{ uname }}</span>
-                </div>
-                <template #dropdown>
-                  <el-dropdown-menu>
-                    <el-dropdown-item command="logout">退出登录</el-dropdown-item>
-                  </el-dropdown-menu>
-                </template>
-              </el-dropdown>
-            </span>
-          </div>
-      </div>
-    </header>
-
     <el-container class="body-row">
-      <el-aside width="224px" class="sidebar">
+      <el-aside width="232px" class="sidebar">
+        <div class="brand-zone">
+          <StrokeBrand />
+        </div>
+        <div class="switcher-zone">
+          <ProjectSwitcher @switched="onProjectSwitched" />
+        </div>
         <el-scrollbar class="menu-scroll">
           <el-menu :default-active="activePath" router unique-opened class="side-menu">
             <MenuItem
@@ -54,8 +19,22 @@
             />
           </el-menu>
         </el-scrollbar>
+        <div class="user-zone">
+          <el-dropdown @command="onUserCmd" trigger="click">
+            <div class="user">
+              <el-avatar :size="32" class="user-avatar">{{ uname.charAt(0) }}</el-avatar>
+              <span class="uname">{{ uname }}</span>
+            </div>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item command="logout">退出登录</el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
+        </div>
       </el-aside>
       <el-main>
+        <span class="sr-only" aria-live="polite">{{ currentTitle }}</span>
         <router-view v-if="ready" v-slot="{ Component }">
           <transition name="fade-slide" mode="out-in">
             <keep-alive v-if="alive"><component :is="Component" :key="route.fullPath" /></keep-alive>
@@ -74,7 +53,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { menuTree } from './menu'
 import request from '@/utils/request'
 import { useProjectStore } from '@/stores/project'
-import DepthBrand from './DepthBrand.vue'
+import StrokeBrand from './StrokeBrand.vue'
 import MenuItem from './MenuItem.vue'
 import ProjectSwitcher from './ProjectSwitcher.vue'
 import FeedbackFab from '@/views/suggestion/FeedbackFab.vue'
@@ -107,13 +86,6 @@ const activePath = computed(() => route.path)
 const currentTitle = computed(() => route.meta.title || '')
 const uname = ref(localStorage.getItem('zhyq_user') || '管理员')
 
-// 当前路由所属一级模块的序号(01..10),LineSidebar 式标题前缀;不在菜单里则隐藏
-const moduleIndex = computed(() => {
-  const inTree = node => node.path === route.path || (node.children?.some(inTree) ?? false)
-  const idx = menuTree.findIndex(inTree)
-  return idx >= 0 ? String(idx + 1).padStart(2, '0') : ''
-})
-
 
 async function onUserCmd(cmd) {
   if (cmd === 'logout') {
@@ -130,9 +102,6 @@ function onClick(c) {
     window.open(router.resolve(c.path).href, '_blank')
   }
 }
-function openScreen() {
-  window.open(router.resolve('/screen').href, '_blank')
-}
 </script>
 
 <style scoped>
@@ -141,29 +110,52 @@ function openScreen() {
   position: relative;
   height: 100vh;
   overflow: hidden;
-  background:
-    radial-gradient(520px 420px at 8% 10%, rgba(99, 102, 241, .22), transparent 70%),
-    radial-gradient(480px 540px at 3% 80%, rgba(139, 92, 246, .17), transparent 70%),
-    radial-gradient(640px 420px at 45% -12%, rgba(67, 56, 202, .12), transparent 70%),
-    #eef0f4;
+  background: var(--bg-body);
 }
-.body-row { height: 100%; }
+/* chrome:原顶栏的蓝紫渐变铺满整个画框,白色内容纸包裹嵌入 */
+.body-row {
+  height: 100%;
+  background: linear-gradient(160deg, #1e1b4b 0%, #312e81 42%, #4c42d9 100%);
+}
 
-/* —— 侧栏:透明液态玻璃(无分割线,靠通透感与内容区分) —— */
+/* —— 侧栏:唯一 chrome,自上而下 品牌/项目切换/菜单/用户 —— */
 .sidebar {
-  --line-text: #6e6e78;
-  --menu-hover: #6366f1;   /* reactbits 式:悬停蓝紫 */
-  --menu-active: #6d28d9;  /* 选中深紫 */
-  padding-top: 60px;
-  background: rgba(255, 255, 255, .42);
-  backdrop-filter: blur(36px) saturate(180%);
-  -webkit-backdrop-filter: blur(36px) saturate(180%);
+  --line-text: #c5c7ea;
+  --menu-hover: #ffffff;   /* 悬停提亮为白 */
+  --menu-active: #c4b5fd;  /* 选中亮紫 */
+  background: transparent;
   display: flex;
   flex-direction: column;
+  padding: 16px 0 10px;
 }
-.menu-scroll { flex: 1; }
+.brand-zone {
+  padding: 6px 18px 14px;
+  display: flex;
+  align-items: center;
+}
+.switcher-zone { padding: 0 14px 12px; }
+.switcher-zone :deep(.project-switcher) { width: 100%; }
+.user-zone {
+  padding: 10px 12px 4px;
+  border-top: 1px solid rgba(255, 255, 255, .09);
+}
+.user {
+  display: flex; align-items: center; gap: 10px;
+  cursor: pointer;
+  padding: 8px 10px;
+  border-radius: 10px;
+  transition: background .18s ease;
+}
+.user:hover { background: rgba(255, 255, 255, .07); }
+.user-avatar {
+  background: linear-gradient(135deg, #6366f1, #4f46e5);
+  font-size: 14px; font-weight: 600;
+  flex-shrink: 0;
+}
+.uname { font-size: 14px; font-weight: 500; color: #e0e2ff; }
+.menu-scroll { flex: 1; position: relative; z-index: 1; }
 .menu-scroll :deep(.el-scrollbar__view) { min-height: 100%; }
-.menu-scroll :deep(.el-scrollbar__thumb) { background: rgba(23, 23, 28, .18); }
+.menu-scroll :deep(.el-scrollbar__thumb) { background: rgba(255, 255, 255, .22); }
 
 .side-menu {
   border-right: none;
@@ -203,50 +195,42 @@ function openScreen() {
   background: transparent;
   color: var(--menu-hover);
 }
+/* 选中态:白色舌头与右侧内容纸连通(PinHome 式),上下反向圆角"通气" */
 .side-menu :deep(.el-menu-item.is-active) {
-  background: transparent;
-  color: var(--menu-active);
+  position: relative;
+  background: #fff;
+  color: var(--brand);
   font-weight: 600;
+  margin-right: -8px;              /* 探出菜单右内边距,贴上白纸 */
+  border-radius: 12px 0 0 12px;
 }
-.side-menu :deep(.el-menu-item.is-active .el-icon) { color: var(--menu-active); }
+.side-menu :deep(.el-menu-item.is-active .el-icon) { color: var(--brand); }
+.side-menu :deep(.el-menu-item.is-active)::before,
+.side-menu :deep(.el-menu-item.is-active)::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  width: 14px;
+  height: 14px;
+  pointer-events: none;
+}
+.side-menu :deep(.el-menu-item.is-active)::before {
+  top: -14px;
+  background: radial-gradient(circle at 0 0, transparent 13.5px, #fff 14px);
+}
+.side-menu :deep(.el-menu-item.is-active)::after {
+  bottom: -14px;
+  background: radial-gradient(circle at 0 100%, transparent 13.5px, #fff 14px);
+}
 .side-menu :deep(.el-menu-item:focus-visible),
 .side-menu :deep(.el-sub-menu__title:focus-visible) {
-  outline: 2px solid #818cf8;
+  outline: 2px solid rgba(255, 255, 255, .55);
   outline-offset: -2px;
 }
 .side-menu :deep(.el-sub-menu .el-menu) { padding-left: 0; }
 .side-menu :deep(.el-sub-menu .el-menu-item) { min-width: auto; }
 .side-menu :deep(.el-icon) { font-size: 17px; }
 
-/* —— 顶栏:通栏蓝紫渐变液态玻璃(内容从其下滚过,真实透衬) —— */
-.navbar {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 60px;
-  z-index: 30;
-  background: linear-gradient(115deg, rgba(30, 27, 75, .82), rgba(49, 46, 129, .72) 55%, rgba(79, 70, 229, .58));
-  backdrop-filter: blur(26px) saturate(180%);
-  -webkit-backdrop-filter: blur(26px) saturate(180%);
-  border-bottom: 1px solid rgba(129, 140, 248, .32);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .14), 0 12px 32px rgba(20, 18, 60, .26);
-}
-.navbar-inner {
-  position: relative;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 0 20px 0 16px;
-}
-.brand-zone {
-  width: 184px;
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-}
-.nav-left { flex: 1; display: flex; align-items: center; min-width: 0; }
 .sr-only {
   position: absolute;
   width: 1px; height: 1px;
@@ -257,80 +241,29 @@ function openScreen() {
   border: 0;
 }
 
-/* 标题区:marker 线 + 等宽序号(LineSidebar 语言横置) */
-.crumb-block { display: flex; align-items: center; gap: 10px; min-width: 0; }
-.crumb-marker {
-  width: 30px; height: 2px; border-radius: 1px; flex-shrink: 0;
-  background: linear-gradient(90deg, rgba(255, 255, 255, .85), rgba(255, 255, 255, .08));
-  transform-origin: left center;
-  animation: crumb-marker-pop .5s cubic-bezier(.22, 1, .36, 1) both;
-}
-.crumb-index {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 12px; font-weight: 600; letter-spacing: .1em;
-  color: #b3b9ea;
-}
-.crumb {
-  font-size: 16px; font-weight: 600; color: #fff;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
-@keyframes crumb-marker-pop { from { transform: scaleX(.55); } }
-.crumb-swap-enter-active { transition: opacity .26s ease, transform .26s ease; }
-.crumb-swap-leave-active { transition: opacity .16s ease, transform .16s ease; }
-.crumb-swap-enter-from { opacity: 0; transform: translateY(7px); }
-.crumb-swap-leave-to { opacity: 0; transform: translateY(-6px); }
-
-/* 动作区:简洁静态,悬停只做轻微亮度变化 */
-.actions { display: flex; align-items: center; gap: 6px; }
-.action-slot {
-  display: flex; align-items: center;
-  padding: 0 9px;
-}
-.screen-btn {
-  display: flex; align-items: center; gap: 6px;
-  cursor: pointer;
-  border: 1px solid rgba(255, 255, 255, .26);
-  background: rgba(255, 255, 255, .1);
-  color: #e3e6ff;
-  font-size: 13px; font-weight: 600;
-  padding: 7px 14px; border-radius: 999px;
-  transition: background .18s ease, color .18s ease;
-}
-.screen-btn:hover { background: rgba(255, 255, 255, .18); color: #fff; }
-.user { display: flex; align-items: center; gap: 9px; cursor: pointer; }
-.user-avatar {
-  background: linear-gradient(135deg, #6366f1, #4f46e5);
-  font-size: 14px; font-weight: 600;
-}
-.uname {
-  font-size: 14px; font-weight: 500;
-  color: #c7d2fe;
-  transition: color .18s ease;
-}
-.user:hover .uname { color: #fff; }
-
 /* 项目切换器玻璃化(不改组件,el-select 外壳覆盖) */
-.action-slot :deep(.project-switcher .el-select__wrapper) {
+.switcher-zone :deep(.project-switcher .el-select__wrapper) {
   background: rgba(255, 255, 255, .08);
   box-shadow: 0 0 0 1px rgba(255, 255, 255, .22) inset;
 }
-.action-slot :deep(.project-switcher .el-select__wrapper.is-hovering:not(.is-focused)) {
+.switcher-zone :deep(.project-switcher .el-select__wrapper.is-hovering:not(.is-focused)) {
   box-shadow: 0 0 0 1px rgba(255, 255, 255, .38) inset;
 }
-.action-slot :deep(.project-switcher .el-select__selected-item),
-.action-slot :deep(.project-switcher .el-select__placeholder) { color: #e8e8ee; }
-.action-slot :deep(.project-switcher .el-select__caret),
-.action-slot :deep(.project-switcher .el-select__prefix) { color: #a2a2ae; }
-.action-slot :deep(.project-empty) { color: #b9b9c4; }
+.switcher-zone :deep(.project-switcher .el-select__selected-item),
+.switcher-zone :deep(.project-switcher .el-select__placeholder) { color: #e8e8ee; }
+.switcher-zone :deep(.project-switcher .el-select__caret),
+.switcher-zone :deep(.project-switcher .el-select__prefix) { color: #a2a2ae; }
+.switcher-zone :deep(.project-empty) { color: #b9b9c4; }
 
-@media (prefers-reduced-motion: reduce) {
-  .crumb-marker { animation: none; }
-  .crumb-swap-enter-active, .crumb-swap-leave-active { transition: opacity .15s ease; }
-  .crumb-swap-enter-from, .crumb-swap-leave-to { transform: none; }
+/* 白色内容"纸":上下右留缝,四角圆角,被 chrome 包裹 */
+.el-main {
+  background: #fff;
+  margin: 12px 12px 12px 0;
+  height: calc(100% - 24px);
+  border-radius: 22px;
+  padding: 0;
+  overflow-y: auto;
 }
-
-/* 内容区从液态玻璃顶栏底下滚过:滚动容器上探到 y=0,顶部 60px 由 padding 让位 */
-.el-main { background: var(--bg-body); padding: 60px 0 0; overflow-y: auto; height: 100%; }
 
 /* 路由切换微动效 */
 .fade-slide-enter-active, .fade-slide-leave-active { transition: all .2s ease; }

@@ -5,14 +5,15 @@
       <div class="left-panel">
         <div class="panel-head">
           <div class="panel-title">选择租客</div>
-          <!-- 只列还欠着钱的租客,名字与登记明细口径一致,选项右侧直接显示欠款笔数与金额。
-               原先拉的是全部租客档案,里面绝大多数没有未结账单,收银员得挨个点开试 -->
-          <el-select v-model="tenantRefId" filterable placeholder="请选择租客(仅列有欠款的)" clearable
+          <!-- 档案里的每个租客都能选:欠款的排前面并带「N 笔 · ¥金额」徽标,没欠款的
+               显示「无欠款」也照样可选。原先只列欠款租客,当月有应收的租客一旦口径
+               没对上就整个从下拉里消失,收银员无从下手 -->
+          <el-select v-model="tenantRefId" filterable placeholder="请选择租客(欠款的在前)" clearable
                      style="width: 340px" @change="loadBills">
             <el-option v-for="t in tenants" :key="t.tenantRefId"
-                       :label="t.tenantName" :value="t.tenantRefId">
-              <span>{{ t.tenantName }}</span>
-              <span class="opt-owe">{{ t.billCount }} 笔 · ¥{{ money(t.owe) }}</span>
+                       :label="tenantOptionLabel(t)" :value="t.tenantRefId">
+              <span>{{ tenantOptionLabel(t) }}</span>
+              <span class="opt-owe" :class="{ clear: !hasOutstanding(t) }">{{ tenantOptionBadge(t) }}</span>
             </el-option>
           </el-select>
         </div>
@@ -27,10 +28,16 @@
             <template #default="{ row }">{{ row.periodStart || '-' }} ~ {{ row.periodEnd || '-' }}</template>
           </el-table-column>
           <el-table-column prop="dueDate" label="应收日" width="110" />
-          <el-table-column label="应收" width="120" align="right">
+          <el-table-column label="应收" width="110" align="right">
             <template #default="{ row }">¥{{ money(row.amount) }}</template>
           </el-table-column>
-          <el-table-column label="已收" width="120" align="right">
+          <!-- 滞纳金计入欠款口径,不单列出来的话"欠款 > 应收-已收"会让收银员一头雾水 -->
+          <el-table-column label="滞纳金" width="100" align="right">
+            <template #default="{ row }">
+              <span :class="{ 'late-fee': Number(row.lateFee) > 0 }">¥{{ money(row.lateFee) }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="已收" width="110" align="right">
             <template #default="{ row }">¥{{ money(row.paidAmount) }}</template>
           </el-table-column>
           <el-table-column label="欠款" width="130" align="right">
@@ -80,6 +87,7 @@
 import { reactive, ref, computed, onMounted, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { billApi, paymentApi } from '@/api/finance'
+import { billOwe, billOweCents, buildPaymentPlan, hasOutstanding, tenantOptionBadge, tenantOptionLabel } from './cashierModel'
 
 const PAYABLE = [3, 4, 6] // 待收付/部分结清/逾期
 
@@ -97,18 +105,18 @@ const payMethods = ['现金', '转账', 'POS', '微信', '支付宝', '聚合']
 function money(v) {
   return Number(v || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
-function owe(row) {
-  return Number(row.amount || 0) - Number(row.paidAmount || 0)
-}
+// 欠款 = 本金 + 滞纳金 - 实收,与后端 BillMetrics.outstandingOf 同口径
+const owe = billOwe
 
+// 整数分求和再除回元:浮点直接累加会带出 e-14 级残差
 const totalOwe = computed(() =>
-  selected.value.reduce((s, r) => s + owe(r), 0)
+  selected.value.reduce((s, r) => s + billOweCents(r), 0) / 100
 )
 
-watch(totalOwe, (v) => { payAmount.value = Number(v.toFixed(2)) })
+watch(totalOwe, (v) => { payAmount.value = v })
 
 async function loadTenants() {
-  // 只要有欠款的租客。收款成功后要重新拉一次:某个租客结清了就该从下拉里消失
+  // 全部租客,欠款的在前。收款成功后要重新拉一次:结清的租客徽标变「无欠款」并沉到列表后面
   tenants.value = (await billApi.payableTenants()) || []
 }
 
@@ -130,36 +138,63 @@ function onSelect(rows) {
   selected.value = rows
 }
 
+// 幂等键按「账单 + 金额(分)」缓存:同一笔未完成的收款重试复用同一个 payNo
+// (后端撞同 payNo 直接返回首次的支付单,不会重复入账);金额变了就是一笔新收款,
+// 换新键走后端全量校验 —— 只按账单缓存的话,首笔实际入账但响应丢失后,刷新会把
+// 默认金额改小,同键重试被后端当重放吞掉,前端还误报"收款成功"。
+// 确认成功后丢弃;之前每次点击都现生成 payNo,超时重试等于全新收款,幂等键形同虚设
+const payNos = new Map() // billId -> { payNo, cents }
+function payNoFor(billId, cents) {
+  const cached = payNos.get(billId)
+  if (cached && cached.cents === cents) return cached.payNo
+  const payNo = 'SK' + Date.now() + Math.random().toString(36).slice(2, 10)
+  payNos.set(billId, { payNo, cents })
+  return payNo
+}
+// 换租客清空:keep-alive 下组件实例常驻,旧租客的中断记录不该一直攒着
+watch(tenantRefId, () => payNos.clear())
+
 async function confirmPay() {
   if (!selected.value.length) return
+  // 整数分拆单,永不产生 0 元支付请求
+  const plan = buildPaymentPlan(selected.value, payAmount.value)
+  if (!plan.length) {
+    ElMessage.warning('没有可收款的金额,请检查收款金额与所选账单')
+    return
+  }
   paying.value = true
-  let budget = Number(payAmount.value)
   let paidCount = 0
+  let failed = false
   try {
-    // 按欠款顺序逐张收款,金额不足整单时只收部分
-    const rows = [...selected.value]
-    for (const row of rows) {
-      if (budget <= 0) break
-      const rowOwe = owe(row)
-      if (rowOwe <= 0) continue
-      const pay = Math.min(budget, rowOwe)
-      const payNo = 'SK' + Date.now() + Math.floor(Math.random() * 100000)
+    for (const item of plan) {
+      const cents = Math.round(item.amount * 100)
       await paymentApi.pay({
-        billId: row.id,
-        amount: Number(pay.toFixed(2)),
+        billId: item.billId,
+        amount: item.amount,
         payMethod: payMethod.value,
-        payNo
+        payNo: payNoFor(item.billId, cents)
       })
-      budget -= pay
+      payNos.delete(item.billId)
       paidCount++
     }
-    // 收款已在后端一笔事务里落了:支付单 + 账单实收 + 收支流水 + 收据。
-    // 这四处分别在 收支流水 / 收据记录 页面可查,账单页的「详情」能看到本次收款记录。
-    ElMessage.success(`收款成功,共 ${paidCount} 张账单,已生成收据与收支流水`)
-    // 租客下拉要一起刷:这个租客要是结清了,就该从"有欠款的租客"里消失
+  } catch (e) {
+    // request.js 已经弹过具体错误;这里只负责别让循环把刷新逻辑一起带走
+    failed = true
+  }
+  // 无论成败都要刷新:把服务端真实入账状态拉回来。中断时界面停在旧欠款上,
+  // 用户拿着旧数字再点一次就是重复收款。刷新自己失败也不能吞掉下面的结果提示
+  try {
     await Promise.all([loadBills(), loadTenants()])
+  } catch (e) {
+    // 刷新失败 request.js 已提示
   } finally {
     paying.value = false
+  }
+  if (!failed) {
+    // 收款已在后端一笔事务里落了:支付单 + 账单实收 + 收支流水 + 收据
+    ElMessage.success(`收款成功,共 ${paidCount} 张账单,已生成收据与收支流水`)
+  } else if (paidCount > 0) {
+    ElMessage.warning(`前 ${paidCount} 张已收款成功,其余中断;欠款已刷新,可直接重试`)
   }
 }
 
@@ -175,8 +210,10 @@ onMounted(loadTenants)
 .panel-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
 .panel-title { font-size: 15px; font-weight: 650; color: var(--text-title); }
 .bill-table { --el-table-row-hover-bg-color: var(--bg-hover, #f5f7fa); }
-.owe { color: #e5484d; font-weight: 650; font-variant-numeric: tabular-nums; }
-.opt-owe { float: right; color: var(--text-secondary); font-size: 12px; margin-left: 20px; }
+.owe { color: var(--el-color-danger); font-weight: 650; font-variant-numeric: tabular-nums; }
+.late-fee { color: var(--el-color-warning); font-weight: 600; }
+.opt-owe { float: right; color: var(--el-color-danger); font-size: 12px; margin-left: 20px; }
+.opt-owe.clear { color: var(--text-secondary); }
 .empty-tip { text-align: center; color: var(--text-secondary); padding: 30px 0; }
 
 .settle-card {

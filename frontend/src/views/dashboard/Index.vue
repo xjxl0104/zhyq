@@ -130,16 +130,29 @@ const { refresh: refreshTrend } = useChart(trendRef, (theme) => ({
 }))
 
 async function load() {
-  const w = await dashboardApi.workbench()
-  Object.assign(wb, w)
-  const ov = await dashboardApi.overview()
-  overviewCards.value = [
-    { label: '在租房间', value: ov.room.rented + ' / ' + ov.room.total },
-    { label: '出租率', value: ov.room.rentRate + '%' },
-    { label: '执行中合同', value: ov.contract.executing },
-    { label: '在租租客', value: ov.other.tenantTotal }
-  ]
-  todos.value = await todoApi.list()
+  // 各区块独立容错:任一接口失败不拖死整页(后端不可用时展示占位)
+  try {
+    Object.assign(wb, await dashboardApi.workbench())
+  } catch (e) { /* 指标卡保持 0 */ }
+  try {
+    const ov = await dashboardApi.overview()
+    overviewCards.value = [
+      { label: '在租房间', value: ov.room.rented + ' / ' + ov.room.total },
+      { label: '出租率', value: ov.room.rentRate + '%' },
+      { label: '执行中合同', value: ov.contract.executing },
+      { label: '在租租客', value: ov.other.tenantTotal }
+    ]
+  } catch (e) {
+    overviewCards.value = [
+      { label: '在租房间', value: '—' },
+      { label: '出租率', value: '—' },
+      { label: '执行中合同', value: '—' },
+      { label: '在租租客', value: '—' }
+    ]
+  }
+  try {
+    todos.value = await todoApi.list()
+  } catch (e) { todos.value = [] }
   // 预警卡片流:优先未确认告警,空则取近期
   try {
     const al = await request.get('/iot/alarm/page', { params: { pageNo: 1, pageSize: 5, status: 1 } })
@@ -151,8 +164,10 @@ async function load() {
     alarms.value = list
   } catch (e) { alarms.value = [] }
 
-  const t = await dashboardApi.revenueTrend()
-  Object.assign(trendData, { months: t.months, receivable: t.receivable, received: t.received })
+  try {
+    const t = await dashboardApi.revenueTrend()
+    Object.assign(trendData, { months: t.months, receivable: t.receivable, received: t.received })
+  } catch (e) { /* 趋势图留空 */ }
   await nextTick()
   refreshTrend()
 }

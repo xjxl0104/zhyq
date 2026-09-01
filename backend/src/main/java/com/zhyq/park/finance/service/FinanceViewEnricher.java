@@ -13,11 +13,15 @@ import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -104,6 +108,88 @@ public class FinanceViewEnricher {
         return bills.stream().collect(Collectors.toMap(Bill::getId,
                 b -> new BillView(b.getId(), b.getCode(), b.getFeeType(), b.getTenantName(),
                         b.getAgreementNo(), b.getAmount(), b.getDueDate(), b.getStatus())));
+    }
+
+    /**
+     * 收银台租客下拉的一个选项。
+     *
+     * <p>档案里的<b>每个租客都可选</b>:当月有应收、有欠款的租客,以前只要口径没对上
+     * (账单状态不在可收款集合、tenantRefId 挂空等)就整个从下拉里消失,收银员无从下手。
+     * 现在名册来自租客档案,欠款只是附加汇总 —— 没欠款的租客同样能选进去看账。</p>
+     */
+    public record TenantOption(Long tenantRefId, String tenantName, int billCount, BigDecimal owe) {}
+
+    /**
+     * 收银台租客选项:全部档案租客 + 欠款汇总,欠款多的排前面,没欠款的按名字排在后面。
+     *
+     * <p>名字口径与账单页同源:该租客的欠款账单带出的登记明细名优先,档案名兜底 ——
+     * 租客 id 从此总是跟着一个人能读懂的名字,而不是界面上一个裸数字。</p>
+     *
+     * <p>账单里出现了档案中不存在的 tenantRefId(历史脏数据)时,该 id 也会以
+     * 「租客 #id」兜底名出现在选项里 —— 账单必须有收款入口,不能因为档案缺失而失联。</p>
+     *
+     * @param projectId 只收窄<b>租客名册</b>(档案里的 project_id)。欠款账单不按项目过滤:
+     *                  登记表生成的账单目前不带 project_id,按项目过滤会把它们的欠款漏成 0
+     * @param bills     候选账单(调用方按可收款状态查出;这里再按"应收方向且有欠款"过滤)
+     */
+    public List<TenantOption> cashierTenantOptions(Long projectId, List<Bill> bills) {
+        List<Bill> outstanding = bills == null ? List.of() : bills.stream()
+                .filter(b -> b != null && b.getTenantRefId() != null)
+                .filter(b -> BillMetrics.outstandingOf(b).signum() > 0)
+                .toList();
+        enrichBills(outstanding);
+        Map<Long, List<Bill>> byTenant = outstanding.stream()
+                .collect(Collectors.groupingBy(Bill::getTenantRefId, LinkedHashMap::new, Collectors.toList()));
+
+        List<BizTenant> roster = bizTenantMapper.selectList(new LambdaQueryWrapper<BizTenant>()
+                .eq(projectId != null, BizTenant::getProjectId, projectId)
+                .orderByAsc(BizTenant::getId));
+
+        List<TenantOption> options = new ArrayList<>();
+        for (BizTenant tenant : roster) {
+            options.add(toOption(tenant.getId(), tenant.getName(), byTenant.get(tenant.getId())));
+        }
+        // 档案里没有的 tenantRefId(欠款账单挂着的孤儿 id)也要有入口
+        Set<Long> rosterIds = roster.stream().map(BizTenant::getId).collect(Collectors.toSet());
+        byTenant.forEach((tenantRefId, rows) -> {
+            if (!rosterIds.contains(tenantRefId)) {
+                options.add(toOption(tenantRefId, null, rows));
+            }
+        });
+
+        options.sort(Comparator.comparing(TenantOption::owe, Comparator.reverseOrder())
+                .thenComparing(o -> o.tenantName() == null ? "" : o.tenantName()));
+        return options;
+    }
+
+    /**
+     * 批量取租客档案名(biz_tenant.name),空白名不算名字。
+     *
+     * <p>给退房报表这类手里只有 tenantRefId、又没有账单可借登记明细名的页面兜底用。</p>
+     */
+    public Map<Long, String> tenantNamesOf(Collection<Long> tenantRefIds) {
+        Map<Long, BizTenant> tenants = loadTenants(tenantRefIds == null ? List.of() : tenantRefIds);
+        Map<Long, String> names = new LinkedHashMap<>();
+        tenants.forEach((id, tenant) -> {
+            if (StringUtils.hasText(tenant.getName())) {
+                names.put(id, tenant.getName());
+            }
+        });
+        return names;
+    }
+
+    private TenantOption toOption(Long tenantRefId, String profileName, List<Bill> rows) {
+        BigDecimal owe = rows == null ? BigDecimal.ZERO : rows.stream()
+                .map(BillMetrics::outstandingOf)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        String name = rows == null ? null : rows.stream()
+                .map(Bill::getTenantName)
+                .filter(StringUtils::hasText)
+                .findFirst().orElse(null);
+        if (name == null) {
+            name = StringUtils.hasText(profileName) ? profileName : "租客 #" + tenantRefId;
+        }
+        return new TenantOption(tenantRefId, name, rows == null ? 0 : rows.size(), owe);
     }
 
     /**

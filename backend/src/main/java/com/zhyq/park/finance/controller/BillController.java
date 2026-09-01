@@ -1,29 +1,33 @@
 package com.zhyq.park.finance.controller;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.zhyq.park.common.exception.BizException;
 import com.zhyq.park.common.result.PageResult;
 import com.zhyq.park.common.result.Result;
 import com.zhyq.park.finance.entity.Bill;
+import com.zhyq.park.finance.entity.Invoice;
+import com.zhyq.park.finance.entity.Payment;
 import com.zhyq.park.finance.mapper.BillMapper;
+import com.zhyq.park.finance.mapper.InvoiceMapper;
+import com.zhyq.park.finance.mapper.PaymentMapper;
 import com.zhyq.park.finance.service.BillMetrics;
 import com.zhyq.park.finance.service.FinanceViewEnricher;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.stream.Collectors;
 
 @Tag(name = "财务-账单")
 @RestController
@@ -36,6 +40,8 @@ public class BillController {
 
     private final BillMapper billMapper;
     private final FinanceViewEnricher viewEnricher;
+    private final PaymentMapper paymentMapper;
+    private final InvoiceMapper invoiceMapper;
 
     @Operation(summary = "分页查询账单")
     @PreAuthorize("hasAuthority('finance:bill:query')")
@@ -117,46 +123,24 @@ public class BillController {
     }
 
     /**
-     * 收银台的租客下拉。
+     * 收银台的租客下拉:档案里的<b>每个租客都能选</b>,欠款的排前面并带欠款汇总。
      *
-     * <p>只列还欠着钱的租客,并带上欠款笔数与合计。收银台原先拉的是全部租客档案
-     * ({@code /tenant/info/list}),里面绝大多数没有任何未结账单 —— 收银员得挨个点开试,
-     * 试到有账单的那个为止。而且档案里的名字与登记明细可能不是一个口径。</p>
+     * <p>此前只列"还欠着钱的租客" —— 当月有应收/有欠款的租客一旦口径没对上
+     * (账单挂了档案外的 tenantRefId 等)就整个从下拉里消失,收银员无从下手。
+     * 名册与欠款的拼装口径统一在 {@link FinanceViewEnricher#cashierTenantOptions}。</p>
      */
-    @Operation(summary = "收银台:有未结账单的租客(含欠款汇总)")
+    @Operation(summary = "收银台:全部租客(欠款的在前,带欠款笔数与合计)")
     @PreAuthorize("hasAuthority('finance:bill:query')")
     @GetMapping("/payable-tenants")
-    public Result<List<Map<String, Object>>> payableTenants(@RequestParam(required = false) Long projectId) {
-        LambdaQueryWrapper<Bill> qw = new LambdaQueryWrapper<Bill>()
+    public Result<List<FinanceViewEnricher.TenantOption>> payableTenants(
+            @RequestParam(required = false) Long projectId) {
+        // 欠款账单不按 projectId 过滤:登记表生成的账单目前不带 project_id,
+        // 按项目过滤会把它们的欠款漏成 0。projectId 只用来收窄租客名册
+        List<Bill> bills = billMapper.selectList(new LambdaQueryWrapper<Bill>()
                 .eq(Bill::getDirection, 1)
                 .in(Bill::getStatus, PAYABLE_STATUS)
-                .eq(projectId != null, Bill::getProjectId, projectId)
-                .isNotNull(Bill::getTenantRefId);
-        List<Bill> bills = billMapper.selectList(qw);
-        // 只留真正还有欠款的(状态是待收付但已被收满的边角数据不该出现在收银台)
-        List<Bill> outstanding = bills.stream()
-                .filter(b -> BillMetrics.outstandingOf(b).signum() > 0)
-                .toList();
-        viewEnricher.enrichBills(outstanding);
-
-        Map<Long, List<Bill>> byTenant = outstanding.stream()
-                .collect(Collectors.groupingBy(Bill::getTenantRefId, LinkedHashMap::new, Collectors.toList()));
-        List<Map<String, Object>> out = new ArrayList<>();
-        byTenant.forEach((tenantRefId, rows) -> {
-            BigDecimal owe = rows.stream()
-                    .map(BillMetrics::outstandingOf)
-                    .reduce(BigDecimal.ZERO, BigDecimal::add);
-            Map<String, Object> item = new LinkedHashMap<>();
-            item.put("tenantRefId", tenantRefId);
-            item.put("tenantName", rows.stream().map(Bill::getTenantName)
-                    .filter(StringUtils::hasText).findFirst().orElse("租客 #" + tenantRefId));
-            item.put("billCount", rows.size());
-            item.put("owe", owe);
-            out.add(item);
-        });
-        // 欠得多的排前面,收银员通常先处理大额
-        out.sort((a, b) -> ((BigDecimal) b.get("owe")).compareTo((BigDecimal) a.get("owe")));
-        return Result.ok(out);
+                .isNotNull(Bill::getTenantRefId));
+        return Result.ok(viewEnricher.cashierTenantOptions(projectId, bills));
     }
 
     @Operation(summary = "计算滞纳金(遍历逾期未结清的应收账单)")
@@ -164,13 +148,17 @@ public class BillController {
     @PostMapping("/calcLateFee")
     public Result<Integer> calcLateFee() {
         LocalDate today = LocalDate.now();
-        // 仅应收方向(direction=1)、可催缴状态(待收付3/部分结清4/已逾期6)、应收日<今天
+        // 仅应收方向(direction=1)、可催缴状态(待收付3/部分结清4/已逾期6)、应收日<今天。
+        // 逐行独立条件更新、不整批包事务:每行都是幂等重算,整批事务只会把行锁攥到循环
+        // 结束(卡住并发收款),两次并发触发还可能因扫描顺序不同互相死锁;按 id 排序让
+        // 加锁顺序确定
         LambdaQueryWrapper<Bill> qw = new LambdaQueryWrapper<>();
         qw.eq(Bill::getDirection, 1)
           .in(Bill::getStatus, 3, 4, 6)
-          .lt(Bill::getDueDate, today);
+          .lt(Bill::getDueDate, today)
+          .orderByAsc(Bill::getId);
         List<Bill> list = billMapper.selectList(qw);
-        // 万分之五/天,基数为剩余欠款(应收-实收),每次全量重算,重复调用幂等
+        // 万分之五/天,基数为剩余本金欠款(amount - paid),每次全量重算,重复调用幂等
         BigDecimal rate = new BigDecimal("0.0005");
         int count = 0;
         for (Bill b : list) {
@@ -189,13 +177,22 @@ public class BillController {
                     .multiply(rate)
                     .multiply(BigDecimal.valueOf(days))
                     .setScale(2, java.math.RoundingMode.HALF_UP);
-            Bill update = new Bill();
-            update.setId(b.getId());
-            update.setOverdueDays((int) days);
-            update.setLateFee(lateFee);
-            update.setStatus(6);
-            billMapper.updateById(update);
-            count++;
+            // 条件更新:上面的 selectList 是旧读,这中间账单可能刚被收满(status→5)。
+            // updateById 盲写会把已结清账单打回"逾期";WHERE 里必须再验一次
+            // "仍在可催缴状态且本金未收齐",条件不满足(updated==0)就跳过。
+            // SET 走实体而不是 wrapper.set():实体形式才会触发 MyMetaObjectHandler
+            // 自动填充 update_time/update_by,审计字段不掉队
+            Bill patch = new Bill();
+            patch.setOverdueDays((int) days);
+            patch.setLateFee(lateFee);
+            patch.setStatus(6);
+            int updated = billMapper.update(patch, new LambdaUpdateWrapper<Bill>()
+                    .eq(Bill::getId, b.getId())
+                    .in(Bill::getStatus, 3, 4, 6)
+                    .apply("paid_amount < amount"));
+            if (updated == 1) {
+                count++;
+            }
         }
         return Result.ok(count);
     }
@@ -217,19 +214,73 @@ public class BillController {
         return Result.ok(bill.getId());
     }
 
-    @Operation(summary = "修改账单")
+    /**
+     * 修改账单:只放行非资金字段。
+     *
+     * <p>此前全字段 updateById,持 {@code finance:bill:edit} 即可绕开收款服务直接改写
+     * paid_amount/status/amount —— 与 9b0ecc2 在采购/工作流里修掉的是同一类洞。
+     * 资金字段各有唯一入口:实收/结清走 {@code PaymentService.收款},滞纳金/逾期走
+     * {@code calcLateFee},金额与来源由生成方(登记表/合同)负责。</p>
+     */
+    @Operation(summary = "修改账单(仅限租客/费用类型/账期/应收日/税率/备注等非资金字段)")
     @PreAuthorize("hasAuthority('finance:bill:edit')")
     @PutMapping
     public Result<Void> update(@RequestBody Bill bill) {
-        billMapper.updateById(bill);
+        if (bill.getId() == null) {
+            throw new BizException("缺少账单 id");
+        }
+        Bill patch = new Bill();
+        patch.setId(bill.getId());
+        patch.setTenantRefId(bill.getTenantRefId());
+        patch.setFeeType(bill.getFeeType());
+        patch.setPeriodStart(bill.getPeriodStart());
+        patch.setPeriodEnd(bill.getPeriodEnd());
+        patch.setDueDate(bill.getDueDate());
+        patch.setTaxRate(bill.getTaxRate());
+        patch.setRemark(bill.getRemark());
+        int updated = billMapper.updateById(patch);
+        if (updated == 0) {
+            throw new BizException("账单不存在: " + bill.getId());
+        }
         return Result.ok();
     }
 
-    @Operation(summary = "删除账单")
+    /**
+     * 删除账单:有实收、有收款记录或已开票的一律拒删。
+     *
+     * <p>软删会把 {@code billing_active_key} 置 NULL,幂等键随即可复用 —— 下次
+     * 生成账单会给同一账期重新插一张新账单,而已收的钱从统计里消失(账实脱钩)。
+     * 实收条件放在 DELETE 的 WHERE 里,并发下刚落一笔收款也删不掉。</p>
+     */
+    @Operation(summary = "删除账单(有实收/收款记录/发票的不可删)")
     @PreAuthorize("hasAuthority('finance:bill:delete')")
+    @Transactional(rollbackFor = Exception.class)
     @DeleteMapping("/{id}")
     public Result<Void> delete(@PathVariable Long id) {
-        billMapper.deleteById(id);
+        Long payments = paymentMapper.selectCount(
+                new LambdaQueryWrapper<Payment>().eq(Payment::getBillId, id));
+        if (payments != null && payments > 0) {
+            throw new BizException("该账单已有收款记录,不能删除");
+        }
+        Long invoices = invoiceMapper.selectCount(
+                new LambdaQueryWrapper<Invoice>().eq(Invoice::getBillId, id));
+        if (invoices != null && invoices > 0) {
+            throw new BizException("该账单已关联发票,不能删除");
+        }
+        // 实收守卫放进 DELETE 的 WHERE:并发下刚落一笔收款也删不掉
+        int deleted = billMapper.delete(new LambdaQueryWrapper<Bill>()
+                .eq(Bill::getId, id)
+                .eq(Bill::getPaidAmount, BigDecimal.ZERO));
+        if (deleted == 0) {
+            throw new BizException("账单不存在或已有实收,不能删除");
+        }
+        // 删单后再验一次发票:上面查完、删之前这窗口里刚开出的发票会让整个删除回滚,
+        // 不留孤儿发票(fin_invoice.bill_id 无外键兜底)
+        Long invoicedAfter = invoiceMapper.selectCount(
+                new LambdaQueryWrapper<Invoice>().eq(Invoice::getBillId, id));
+        if (invoicedAfter != null && invoicedAfter > 0) {
+            throw new BizException("该账单刚被开票,删除已回滚");
+        }
         return Result.ok();
     }
 
