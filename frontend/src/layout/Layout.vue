@@ -184,7 +184,26 @@ function onClick(c) {
   background: transparent;
   font-weight: 500;
   color: var(--line-text);
-  transition: color .18s ease;
+  transition: color .18s ease, transform .2s ease;
+}
+/* hover:向右小抖动后停在 3px,离开平滑归位;白舌头选中项不参与(避免破坏通气圆角) */
+.side-menu :deep(.el-menu-item:not(.is-active):hover),
+.side-menu :deep(.el-sub-menu__title:hover) {
+  transform: translateX(3px);
+  animation: menu-jiggle .38s ease;
+}
+@keyframes menu-jiggle {
+  0% { transform: translateX(0); }
+  38% { transform: translateX(6px); }
+  66% { transform: translateX(1.5px); }
+  100% { transform: translateX(3px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .side-menu :deep(.el-menu-item:not(.is-active):hover),
+  .side-menu :deep(.el-sub-menu__title:hover) {
+    transform: none;
+    animation: none;
+  }
 }
 .side-menu :deep(.menu-index) {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;

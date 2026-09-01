@@ -1,4 +1,8 @@
 <template>
-  <router-view />
+  <ClickSpark>
+    <router-view />
+  </ClickSpark>
 </template>
-<script setup></script>
+<script setup>
+import ClickSpark from '@/components/ClickSpark.vue'
+</script>
