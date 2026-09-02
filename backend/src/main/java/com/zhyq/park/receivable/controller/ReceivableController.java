@@ -195,6 +195,11 @@ public class ReceivableController {
         if (register == null) return Result.ok(null);
         List<ReceivableRule> rules = ruleMapper.selectList(new LambdaQueryWrapper<ReceivableRule>()
                 .eq(ReceivableRule::getRegisterId, id).orderByAsc(ReceivableRule::getPriority));
+        // 历史导入批次没落过规则行,计费规则页签不能空着:按与出账完全相同的
+        // 推断逻辑展示(首行=按月计费,每月每客户一张租金+一张物业费账单)
+        if (rules.isEmpty()) {
+            rules = calculator.displayRules(register);
+        }
         List<DepositLedger> deposits = depositMapper.selectList(new LambdaQueryWrapper<DepositLedger>()
                 .eq(DepositLedger::getRegisterId, id));
         List<Bill> bills = billMapper.selectList(new LambdaQueryWrapper<Bill>()

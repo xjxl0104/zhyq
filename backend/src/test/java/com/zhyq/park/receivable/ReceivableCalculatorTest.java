@@ -231,6 +231,71 @@ class ReceivableCalculatorTest {
                 "-003 全期租金合计 " + sixthTotal + " 应与合同租金总额 19810331.03 相差 <1 元");
     }
 
+    @Test
+    void displayRulesLeadWithMonthlyBillingThenInferredTerms() {
+        ReceivableRegister register = yunshanRegister(
+                LocalDate.of(2026, 6, 1), LocalDate.of(2041, 5, 31),
+                "256500", "27000",
+                "免租期计算：2026年11月1日至2026年11月30日，且2027年起至合同期满，每年最后一个月免租一个月，合计15个月；");
+        register.setRentRateRaw("每月每平方含税19元");
+        register.setPropertyRateRaw("每月每平方含税2元");
+
+        List<ReceivableRule> rules = calculator.displayRules(register);
+
+        // 首两行固定是「按月计费」:每月每客户一张租金 + 一张物业费
+        assertEquals("AUTHORITATIVE_MONTHLY", rules.get(0).getRuleType());
+        assertEquals("RENT", rules.get(0).getFeeType());
+        assertEquals(0, new BigDecimal("256500.00").compareTo(rules.get(0).getFixedAmount()));
+        assertEquals("MONTH_SQM", rules.get(0).getRateUnit());
+        assertTrue(rules.get(0).getRawText().contains("每月按客户生成一张租金账单"));
+        assertEquals("PROPERTY", rules.get(1).getFeeType());
+        assertEquals(0, new BigDecimal("27000.00").compareTo(rules.get(1).getFixedAmount()));
+        // 免租/递增条款以同一推断源展示
+        assertTrue(rules.stream().anyMatch(r -> "RECURRING_WAIVER".equals(r.getRuleType())));
+        assertTrue(rules.stream().anyMatch(r -> "ESCALATION".equals(r.getRuleType())));
+        assertTrue(rules.stream().allMatch(r -> r.getRawText() != null && !r.getRawText().isBlank()));
+    }
+
+    @Test
+    void pairsDateOnlyLineWithFollowingDiscountLine() {
+        // 李万能行的真实写法:日期一行、"租金按5折"另一行,拆行后也要配得上对
+        ReceivableRegister register = new ReceivableRegister();
+        register.setContractStartDate(LocalDate.of(2026, 5, 1));
+        register.setContractEndDate(LocalDate.of(2032, 4, 30));
+        register.setMonthlyRent(new BigDecimal("56400"));
+        register.setMonthlyProperty(new BigDecimal("9447"));
+        register.setFreePeriodRaw("20260501-20260531");
+        register.setDiscountRaw("20260601-20260930\n租金按5折");
+
+        assertEquals(new BigDecimal("0.00"), rent(register, YearMonth.of(2026, 5)));
+        assertEquals(new BigDecimal("28200.00"), rent(register, YearMonth.of(2026, 6)));
+        assertEquals(new BigDecimal("28200.00"), rent(register, YearMonth.of(2026, 9)));
+        assertEquals(new BigDecimal("56400.00"), rent(register, YearMonth.of(2026, 10)));
+        // 条款只写了租金打折,物业费不打折
+        assertEquals(new BigDecimal("9447.00"), property(register, YearMonth.of(2026, 6)));
+    }
+
+    @Test
+    void waivesPropertyDuringFreePeriodWhenPhrasedAsRentAndProperty() {
+        // 昌泰行的真实措辞:"免租期内,无需支付租赁费及物业管理费"
+        ReceivableRegister register = new ReceivableRegister();
+        register.setContractStartDate(LocalDate.of(2026, 6, 1));
+        register.setContractEndDate(LocalDate.of(2032, 5, 31));
+        register.setMonthlyRent(new BigDecimal("56400"));
+        register.setMonthlyProperty(new BigDecimal("9447"));
+        register.setFreePeriodRaw("20260601-20260731");
+        register.setDiscountRaw("拆迁费补助为3个月租金，抵扣20260801-20261031租金（续下）；\n"
+                + "免租期内，无需支付租赁费及物业管理费，但承租人仍需全额支付水电等其它实际产生的费用；\n"
+                + "每交租满12个月免租0.5个月");
+
+        assertEquals(new BigDecimal("0.00"), rent(register, YearMonth.of(2026, 6)));
+        assertEquals(new BigDecimal("0.00"), property(register, YearMonth.of(2026, 7)));
+        // 拆迁补助抵扣只针对租金;物业费照收
+        assertEquals(new BigDecimal("0.00"), rent(register, YearMonth.of(2026, 8)));
+        assertEquals(new BigDecimal("9447.00"), property(register, YearMonth.of(2026, 8)));
+        assertEquals(new BigDecimal("56400.00"), rent(register, YearMonth.of(2026, 11)));
+    }
+
     private ReceivableRegister yunshanRegister(LocalDate start, LocalDate end,
                                                String monthlyRent, String monthlyProperty,
                                                String discountRaw) {

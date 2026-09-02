@@ -9,6 +9,8 @@ export const billApi = {
   // 收银台专用:全部租客(欠款的在前),带欠款笔数与合计;没欠款的租客也返回,照样可选
   payableTenants: () => request.get('/finance/bill/payable-tenants'),
   calcLateFee: () => request.post('/finance/bill/calcLateFee'),
+  // 重置登记表推送的账单:未收款未开票的全部作废,之后可回登记表重新推送
+  reset: () => request.post('/finance/bill/reset'),
   add: (data) => request.post('/finance/bill', data),
   update: (data) => request.put('/finance/bill', data),
   remove: (id) => request.delete(`/finance/bill/${id}`)

@@ -162,6 +162,75 @@ class ReceivablePlanServiceTest {
         verify(billMapper, times(4)).insert(any(Bill.class));
     }
 
+    // ---------- 按月按需出账(不再一次性铺满整个合同期) ----------
+
+    @Test
+    void generatesOnlyArrivedPeriodsPlusDeposits() {
+        // 固定"今天"=2026-09-02:合同 2026-07~2027-12,只出 07/08/09 三个月 + 两张保证金
+        ReceivableRegister spanning = register("CONFIRMED");
+        spanning.setContractStartDate(LocalDate.of(2026, 7, 1));
+        spanning.setContractEndDate(LocalDate.of(2027, 12, 31));
+        when(registerMapper.selectByIdForUpdate(7L)).thenReturn(spanning);
+        when(ruleMapper.selectList(any())).thenReturn(rules());
+        when(billMapper.insert(any(Bill.class))).thenReturn(1);
+
+        ReceivableGenerateResult result = serviceAt(LocalDate.of(2026, 9, 2)).generate(7L);
+
+        assertEquals(8, result.totalCandidates());
+        assertEquals(8, result.inserted());
+        ArgumentCaptor<Bill> captor = ArgumentCaptor.forClass(Bill.class);
+        verify(billMapper, times(8)).insert(captor.capture());
+        assertTrue(captor.getAllValues().stream()
+                .map(Bill::getPeriodStart)
+                .noneMatch(start -> start.isAfter(LocalDate.of(2026, 9, 30))));
+    }
+
+    @Test
+    void futureContractGeneratesDepositsOnly() {
+        ReceivableRegister future = register("CONFIRMED");
+        future.setContractStartDate(LocalDate.of(2027, 1, 1));
+        future.setContractEndDate(LocalDate.of(2027, 12, 31));
+        when(registerMapper.selectByIdForUpdate(7L)).thenReturn(future);
+        when(ruleMapper.selectList(any())).thenReturn(rules());
+        when(billMapper.insert(any(Bill.class))).thenReturn(1);
+
+        ReceivableGenerateResult result = serviceAt(LocalDate.of(2026, 9, 2)).generate(7L);
+
+        assertEquals(2, result.totalCandidates());
+        ArgumentCaptor<Bill> captor = ArgumentCaptor.forClass(Bill.class);
+        verify(billMapper, times(2)).insert(captor.capture());
+        assertEquals(Set.of("租金保证金", "物业保证金"),
+                captor.getAllValues().stream().map(Bill::getFeeType).collect(Collectors.toSet()));
+    }
+
+    @Test
+    void advanceCollectionEmitsNextMonthOnItsDueDate() {
+        // 「当月30日前收取下个月」:下月账单的应收日落在本月 30 日,当天就要能出
+        ReceivableRegister advance = register("CONFIRMED");
+        advance.setContractStartDate(LocalDate.of(2026, 7, 1));
+        advance.setContractEndDate(LocalDate.of(2027, 12, 31));
+        advance.setCollectionTimingRaw("当月30日前收取下个月租金");
+        when(registerMapper.selectByIdForUpdate(7L)).thenReturn(advance);
+        when(ruleMapper.selectList(any())).thenReturn(rules());
+        when(billMapper.insert(any(Bill.class))).thenReturn(1);
+
+        // 9/2:10 月账单应收日(9/30)未到,不出 → 3 个月×2 + 2 张保证金
+        assertEquals(8, serviceAt(LocalDate.of(2026, 9, 2)).generate(7L).totalCandidates());
+        // 9/30:10 月账单应收日已到,提前放行 → 4 个月×2 + 2 张保证金
+        assertEquals(10, serviceAt(LocalDate.of(2026, 9, 30)).generate(7L).totalCandidates());
+    }
+
+    /** 固定"今天"的服务实例:按月按需出账以自然日为界 */
+    private ReceivablePlanService serviceAt(LocalDate fixedToday) {
+        return new ReceivablePlanService(
+                registerMapper, ruleMapper, billMapper, new ReceivableCalculator()) {
+            @Override
+            protected LocalDate today() {
+                return fixedToday;
+            }
+        };
+    }
+
     private static ReceivableRegister register(String status) {
         ReceivableRegister register = new ReceivableRegister();
         register.setId(7L);

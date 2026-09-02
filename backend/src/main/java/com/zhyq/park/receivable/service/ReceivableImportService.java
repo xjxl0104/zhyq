@@ -494,7 +494,7 @@ public class ReceivableImportService {
         String combined = nullToEmpty(row.freePeriodRaw()) + "；" + nullToEmpty(row.discountRaw());
         boolean recurringLastMonth = ruleParser.isYearlyLastMonthWaiver(combined);
         boolean waivePropertyDuringFreePeriod = containsAny(row.discountRaw(),
-                "免物业", "无需支付物业", "免缴物业", "物业管理费按0");
+                "免物业", "无需支付物业", "免缴物业", "物业管理费按0", "无需支付租赁费及物业管理费");
         List<ReceivableRuleParser.DateRange> freeRanges = new ArrayList<>(
                 ruleParser.parseDateRanges(row.freePeriodRaw()));
         // 免租月按年循环时,「免租期N个月」是循环月数的合计,不能当成起租日起连免N个月
@@ -521,9 +521,16 @@ public class ReceivableImportService {
         }
 
         if (!StringUtils.hasText(row.discountRaw())) return;
+        List<ReceivableRuleParser.DateRange> pendingRanges = List.of();
         for (String clause : row.discountRaw().split("[；;\\n]+")) {
-            List<ReceivableRuleParser.DateRange> ranges = ruleParser.parseDateRanges(clause);
-            if (ranges.isEmpty()) continue;
+            List<ReceivableRuleParser.DateRange> own = ruleParser.parseDateRanges(clause);
+            // 与 ReceivableCalculator.inferRules 同口径:日期段与动作被换行拆成两行时配对,
+            // 否则"20260601-20260930\n租金按5折"这类写法的折扣会被静默丢掉
+            boolean actionable = clause.contains("折") || clause.contains("抵扣")
+                    || containsAny(clause, "免租期", "免租金", "免缴", "无需支付", "免物业", "免管理费");
+            List<ReceivableRuleParser.DateRange> ranges = own.isEmpty() ? pendingRanges : own;
+            pendingRanges = !own.isEmpty() && !actionable ? own : List.of();
+            if (!actionable || ranges.isEmpty()) continue;
 
             ruleParser.parseDiscountRate(clause).ifPresent(rate -> {
                 if (mentionsRent(clause) || !mentionsProperty(clause)) {
