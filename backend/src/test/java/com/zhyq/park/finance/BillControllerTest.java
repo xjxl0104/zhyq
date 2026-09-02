@@ -191,6 +191,29 @@ class BillControllerTest {
                 .hasMessageContaining("开票");
     }
 
+    // ---------- 费用类型筛选 ----------
+
+    @Test
+    @DisplayName("费用类型「保证金」为大类:按后缀命中租金保证金/物业保证金;精确类型仍走等值")
+    void feeTypeDepositCategoryMatchesBySuffix() {
+        when(billMapper.selectPage(any(), any()))
+                .thenReturn(new com.baomidou.mybatisplus.extension.plugins.pagination.Page<>());
+
+        controller().page(1, 10, null, null, null, null, null, "保证金", null, null, null);
+        controller().page(1, 10, null, null, null, null, null, "租金", null, null, null);
+
+        @SuppressWarnings({"unchecked", "rawtypes"})
+        ArgumentCaptor<com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<Bill>> captor =
+                (ArgumentCaptor) ArgumentCaptor.forClass(
+                        com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper.class);
+        verify(billMapper, org.mockito.Mockito.times(2)).selectPage(any(), captor.capture());
+        String depositSql = captor.getAllValues().get(0).getSqlSegment();
+        String rentSql = captor.getAllValues().get(1).getSqlSegment();
+        assertThat(depositSql).contains("LIKE");
+        assertThat(rentSql).doesNotContain("LIKE");
+        assertThat(rentSql).contains("fee_type =");
+    }
+
     // ---------- 重置(批量作废登记表账单) ----------
 
     @Test

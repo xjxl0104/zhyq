@@ -64,13 +64,17 @@ public class BillController {
                                          @RequestParam(required = false) Long billId,
                                          @RequestParam(required = false) Boolean onlyDue) {
         LambdaQueryWrapper<Bill> qw = new LambdaQueryWrapper<>();
+        // 「保证金」是费用大类:登记表生成的是「租金保证金/物业保证金」,按后缀命中
+        // 全部保证金类账单(老数据里费用类型恰好叫「保证金」的也被 %保证金 覆盖)
+        boolean depositCategory = "保证金".equals(feeType);
         qw.eq(billId != null, Bill::getId, billId)
           .like(StringUtils.hasText(code), Bill::getCode, code)
           .eq(contractId != null, Bill::getContractId, contractId)
           .eq(tenantRefId != null, Bill::getTenantRefId, tenantRefId)
           .eq(direction != null, Bill::getDirection, direction)
           .eq(status != null, Bill::getStatus, status)
-          .eq(StringUtils.hasText(feeType), Bill::getFeeType, feeType)
+          .likeLeft(depositCategory, Bill::getFeeType, "保证金")
+          .eq(!depositCategory && StringUtils.hasText(feeType), Bill::getFeeType, feeType)
           .eq(StringUtils.hasText(source), Bill::getSource, source)
           // 隐藏未到期:仅显示应收日<=今天的账单
           .le(Boolean.TRUE.equals(onlyDue), Bill::getDueDate, LocalDate.now())
