@@ -77,6 +77,183 @@ body {
    ===================================================================== */
 .page-container { padding: 20px; }
 
+/* =====================================================================
+   Shopeers 风格数据页骨架：首页 / 数据中心 / 产品团队共用
+   ===================================================================== */
+.commerce-page {
+  --brand: #0a24e9;
+  --brand-hover: #152eae;
+  --brand-active: #101f91;
+  --bg-card: #ffffff;
+  --bg-subtle: #f7f8fb;
+  --bg-hover: #f0f3ff;
+  --border: #e7eaf0;
+  --border-strong: #caced6;
+  --text-title: #0b0d17;
+  --text-body: #29315d;
+  --text-secondary: #68708a;
+  --text-muted: #a9b6c0;
+  --radius-lg: 20px;
+  --radius: 16px;
+  --radius-sm: 12px;
+  --shadow-card: 0 1px 2px rgba(11, 13, 23, 0.02), 0 8px 24px rgba(41, 49, 93, 0.045);
+  --shadow-pop: 0 18px 50px rgba(41, 49, 93, 0.14);
+  --el-color-primary: #0a24e9;
+  --el-color-primary-light-3: #5264f0;
+  --el-color-primary-light-5: #8490f4;
+  --el-color-primary-light-7: #b6bdf8;
+  --el-color-primary-light-8: #d7dbfb;
+  --el-color-primary-light-9: #eef0ff;
+  --el-color-primary-dark-2: #152eae;
+  --el-color-success: #5c9764;
+  --el-text-color-primary: #0b0d17;
+  --el-text-color-regular: #29315d;
+  --el-border-color: #caced6;
+  --el-border-color-light: #e7eaf0;
+  min-height: 100%;
+  padding: 28px;
+  color: var(--text-body);
+  background: #f4f6fa;
+}
+
+.commerce-page__header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 22px;
+}
+
+.commerce-page__eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 7px;
+  color: var(--brand);
+  font-size: 11px;
+  font-weight: 750;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+}
+
+.commerce-page__eyebrow::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--brand);
+  box-shadow: 0 0 0 4px rgba(10, 36, 233, .09);
+}
+
+.commerce-page__title {
+  margin: 0;
+  color: var(--text-title);
+  font-size: clamp(24px, 2.1vw, 32px);
+  font-weight: 720;
+  letter-spacing: -.04em;
+  line-height: 1.15;
+}
+
+.commerce-page__subtitle {
+  margin: 7px 0 0;
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.commerce-page__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.commerce-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 38px;
+  padding: 0 13px;
+  color: var(--text-body);
+  font-size: 12px;
+  font-weight: 560;
+  white-space: nowrap;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  box-shadow: 0 1px 2px rgba(11, 13, 23, .025);
+}
+
+.commerce-action {
+  min-height: 38px !important;
+  padding: 0 15px !important;
+  border-radius: 11px !important;
+  box-shadow: 0 7px 16px rgba(10, 36, 233, .16);
+}
+
+.commerce-card {
+  position: relative;
+  min-width: 0;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-card);
+}
+
+.commerce-card__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 19px 20px 0;
+}
+
+.commerce-card__title {
+  margin: 0;
+  color: var(--text-title);
+  font-size: 15px;
+  font-weight: 680;
+  letter-spacing: -.015em;
+}
+
+.commerce-card__meta {
+  margin: 4px 0 0;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.commerce-card__body { padding: 14px 20px 20px; }
+
+.commerce-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
+  color: var(--icon-color, var(--brand));
+  background: var(--icon-bg, #eef0ff);
+  border-radius: 10px;
+}
+
+.commerce-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 7px;
+  color: var(--badge-color, #5c9764);
+  background: var(--badge-bg, #edf7ef);
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+@media (max-width: 900px) {
+  .commerce-page { padding: 20px; }
+  .commerce-page__header { align-items: flex-start; flex-direction: column; }
+  .commerce-page__actions { justify-content: flex-start; }
+}
+
 /* 查询区 —— 卡片化,细边框无阴影 */
 .search-bar {
   background: var(--bg-card);

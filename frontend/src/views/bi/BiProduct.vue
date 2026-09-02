@@ -1,120 +1,251 @@
 <template>
-  <div class="page-container" style="padding:20px">
-    <!-- 模块使用率 -->
-    <el-card shadow="hover" style="margin-bottom:20px">
-      <template #header><span>模块使用率（近30天）</span></template>
-      <div ref="moduleChartRef" style="height:320px"></div>
-    </el-card>
+  <div class="commerce-page product-view">
+    <header class="commerce-page__header">
+      <div>
+        <div class="commerce-page__eyebrow">Product intelligence</div>
+        <h1 class="commerce-page__title">产品团队视图</h1>
+        <p class="commerce-page__subtitle">从功能使用、流程闭环与用户反馈判断下一轮产品优先级。</p>
+      </div>
+      <div class="commerce-page__actions">
+        <span class="commerce-chip"><el-icon><Calendar /></el-icon>近 30 天</span>
+        <el-button class="commerce-action" type="primary" :loading="loading" @click="load">
+          <el-icon><Refresh /></el-icon><span>刷新分析</span>
+        </el-button>
+      </div>
+    </header>
 
-    <el-row :gutter="16" style="margin-bottom:20px">
-      <!-- 流程闭环仪表盘 -->
-      <el-col :span="10">
-        <el-card shadow="hover">
-          <template #header><span>流程闭环率（本月）</span></template>
-          <div ref="gaugeChartRef" style="height:300px"></div>
-          <div style="text-align:center;color:var(--el-text-color-secondary);margin-top:-8px">
-            发起 {{ flow.total_started ?? '-' }} · 完成 {{ flow.total_completed ?? '-' }}
+    <div class="product-kpis">
+      <article v-for="item in summaryCards" :key="item.label" class="product-kpi commerce-card">
+        <div class="product-kpi__top">
+          <span class="commerce-icon" :style="{ '--icon-color': item.color, '--icon-bg': item.soft }">
+            <el-icon><component :is="item.icon" /></el-icon>
+          </span>
+          <span class="commerce-badge" :style="{ '--badge-color': item.color, '--badge-bg': item.soft }">{{ item.tag }}</span>
+        </div>
+        <strong>{{ item.value }}</strong>
+        <span>{{ item.label }}</span>
+      </article>
+    </div>
+
+    <section class="commerce-card module-card">
+      <div class="commerce-card__head">
+        <div>
+          <h2 class="commerce-card__title">模块使用表现</h2>
+          <p class="commerce-card__meta">请求量衡量使用强度，独立用户数衡量覆盖范围</p>
+        </div>
+        <span class="legend-pills"><i class="requests"></i>请求数 <i class="users"></i>独立用户</span>
+      </div>
+      <div ref="moduleChartRef" class="module-chart" aria-label="模块使用率图"></div>
+    </section>
+
+    <div class="insight-grid">
+      <section class="commerce-card insight-card">
+        <div class="commerce-card__head">
+          <div><h2 class="commerce-card__title">流程闭环率</h2><p class="commerce-card__meta">本月流程完成效率</p></div>
+          <span class="commerce-icon"><el-icon><CircleCheck /></el-icon></span>
+        </div>
+        <div class="gauge-wrap">
+          <div ref="gaugeChartRef" class="gauge-chart" aria-label="流程闭环率仪表图"></div>
+          <div class="flow-counts">
+            <span><small>发起</small><strong>{{ flow.total_started ?? '-' }}</strong></span>
+            <i></i>
+            <span><small>完成</small><strong>{{ flow.total_completed ?? '-' }}</strong></span>
           </div>
-        </el-card>
-      </el-col>
-      <!-- 反馈状态分布 -->
-      <el-col :span="14">
-        <el-card shadow="hover">
-          <template #header><span>反馈状态分布</span></template>
-          <div ref="feedbackChartRef" style="height:300px"></div>
-        </el-card>
-      </el-col>
-    </el-row>
+        </div>
+      </section>
 
-    <!-- 反馈明细 -->
-    <el-card shadow="hover">
-      <template #header><span>反馈看板（按模块/状态）</span></template>
-      <el-table :data="feedbackData" border stripe>
-        <el-table-column prop="module" label="模块" />
-        <el-table-column prop="status" label="状态">
-          <template #default="{ row }">{{ statusMap[row.status] || row.status }}</template>
-        </el-table-column>
-        <el-table-column prop="cnt" label="数量" width="100" />
-      </el-table>
-    </el-card>
+      <section class="commerce-card insight-card feedback-chart-card">
+        <div class="commerce-card__head">
+          <div><h2 class="commerce-card__title">反馈状态分布</h2><p class="commerce-card__meta">当前反馈池的处置结构</p></div>
+          <span class="commerce-icon"><el-icon><ChatDotSquare /></el-icon></span>
+        </div>
+        <div ref="feedbackChartRef" class="feedback-chart" aria-label="反馈状态分布图"></div>
+      </section>
+    </div>
+
+    <section class="commerce-card feedback-table-card">
+      <div class="commerce-card__head">
+        <div>
+          <h2 class="commerce-card__title">反馈看板</h2>
+          <p class="commerce-card__meta">按模块与状态拆解，快速发现积压区域</p>
+        </div>
+        <span class="feedback-total">共 {{ feedbackTotal }} 条</span>
+      </div>
+      <div class="table-wrap">
+        <el-table :data="feedbackData" stripe>
+          <el-table-column prop="module" label="模块" min-width="180">
+            <template #default="{ row }"><span class="module-name"><i></i>{{ row.module }}</span></template>
+          </el-table-column>
+          <el-table-column prop="status" label="状态" min-width="140">
+            <template #default="{ row }">
+              <span class="status-pill" :style="statusStyle(row.status)">{{ statusMap[row.status] || row.status }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column prop="cnt" label="数量" width="120">
+            <template #default="{ row }"><strong class="count-cell">{{ row.cnt }}</strong></template>
+          </el-table-column>
+        </el-table>
+      </div>
+    </section>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { biApi } from '@/api/bi'
 import { useChart } from '@/composables/useChart'
 
 const statusMap = { 1: '待处理', 2: '已确认', 3: '处理中', 4: '已解决', 5: '已采纳', 6: '已关闭' }
-const STATUS_COLOR = { 1: '#f6bd16', 2: '#5b8ff9', 3: '#6dc8ec', 4: '#5ad8a6', 5: '#5ad8a6', 6: '#b0b8c4' }
+const STATUS_COLOR = { 1: '#d99022', 2: '#0a24e9', 3: '#277f9d', 4: '#5c9764', 5: '#7256d8', 6: '#8b95a5' }
+const STATUS_SOFT = { 1: '#fff7e8', 2: '#eef0ff', 3: '#eaf8fb', 4: '#edf7ef', 5: '#f3efff', 6: '#f0f2f5' }
 
 const moduleData = ref([])
 const flow = ref({})
 const feedbackData = ref([])
-
+const loading = ref(false)
 const moduleChartRef = ref(null)
 const gaugeChartRef = ref(null)
 const feedbackChartRef = ref(null)
 
 const closeRate = computed(() => {
-  const s = Number(flow.value.total_started || 0)
-  const c = Number(flow.value.total_completed || 0)
-  return s ? Math.round(c / s * 100) : 0
+  const started = Number(flow.value.total_started || 0)
+  const completed = Number(flow.value.total_completed || 0)
+  return started ? Math.min(100, Math.round(completed / started * 100)) : 0
 })
+const totalRequests = computed(() => moduleData.value.reduce((sum, item) => sum + Number(item.request_count || 0), 0))
+const totalUsers = computed(() => moduleData.value.reduce((sum, item) => sum + Number(item.user_count || 0), 0))
+const feedbackTotal = computed(() => feedbackData.value.reduce((sum, item) => sum + Number(item.cnt || 0), 0))
+const numberFmt = (value) => Number(value || 0).toLocaleString('zh-CN')
 
-// 模块使用率:请求数柱 + 独立用户折线(双轴)
-const moduleChart = useChart(moduleChartRef, (t) => {
-  const d = moduleData.value
+const summaryCards = computed(() => [
+  { label: '活跃模块', value: moduleData.value.length, tag: '覆盖', icon: 'Grid', color: '#0a24e9', soft: '#eef0ff' },
+  { label: '累计请求', value: numberFmt(totalRequests.value), tag: '使用强度', icon: 'DataLine', color: '#7256d8', soft: '#f3efff' },
+  { label: '独立用户', value: numberFmt(totalUsers.value), tag: '触达', icon: 'UserFilled', color: '#277f9d', soft: '#eaf8fb' },
+  { label: '流程闭环率', value: `${closeRate.value}%`, tag: '本月', icon: 'CircleCheck', color: '#5c9764', soft: '#edf7ef' }
+])
+
+function statusStyle(status) {
+  return { color: STATUS_COLOR[status] || '#68708a', background: STATUS_SOFT[status] || '#f0f2f5' }
+}
+
+const moduleChart = useChart(moduleChartRef, (theme) => {
+  const data = moduleData.value
   return {
-    tooltip: { trigger: 'axis' },
-    legend: { top: 0, textStyle: { color: t.textColor } },
-    grid: { left: 50, right: 50, top: 36, bottom: 60 },
-    xAxis: { type: 'category', data: d.map(x => x.module), axisLabel: { rotate: 30, color: t.axisLabel }, axisLine: { lineStyle: { color: t.axisLine } } },
+    tooltip: { trigger: 'axis', backgroundColor: '#0b0d17', borderWidth: 0, textStyle: { color: '#fff' } },
+    grid: { left: 18, right: 18, top: 34, bottom: 18, containLabel: true },
+    xAxis: { type: 'category', data: data.map(x => x.module), axisTick: { show: false }, axisLabel: { color: theme.axisLabel, interval: 0, rotate: data.length > 7 ? 24 : 0 }, axisLine: { lineStyle: { color: theme.axisLine } } },
     yAxis: [
-      { type: 'value', name: '请求数', axisLabel: { color: t.axisLabel }, splitLine: { lineStyle: { color: t.splitLine } } },
-      { type: 'value', name: '用户数', axisLabel: { color: t.axisLabel }, splitLine: { show: false } }
+      { type: 'value', axisLine: { show: false }, axisTick: { show: false }, axisLabel: { color: theme.axisLabel }, splitLine: { lineStyle: { color: theme.splitLine, type: 'dashed' } } },
+      { type: 'value', axisLine: { show: false }, axisTick: { show: false }, axisLabel: { color: theme.axisLabel }, splitLine: { show: false } }
     ],
     series: [
-      { name: '请求数', type: 'bar', data: d.map(x => x.request_count), barWidth: '46%', itemStyle: { borderRadius: [4,4,0,0], color: '#5b8ff9' } },
-      { name: '独立用户数', type: 'line', yAxisIndex: 1, smooth: true, data: d.map(x => x.user_count), itemStyle: { color: '#f6bd16' } }
+      { name: '请求数', type: 'bar', data: data.map(x => x.request_count), barMaxWidth: 30, itemStyle: { borderRadius: [8, 8, 0, 0], color: '#0a24e9' } },
+      { name: '独立用户', type: 'line', yAxisIndex: 1, smooth: true, data: data.map(x => x.user_count), symbol: 'circle', symbolSize: 7, itemStyle: { color: '#7256d8', borderColor: '#fff', borderWidth: 2 }, lineStyle: { width: 3, color: '#7256d8' } }
     ]
   }
 })
 
-// 闭环率仪表盘
 const gauge = useChart(gaugeChartRef, () => ({
   series: [{
-    type: 'gauge', min: 0, max: 100, radius: '92%',
-    progress: { show: true, width: 14 },
-    axisLine: { lineStyle: { width: 14 } },
-    axisTick: { show: false }, splitLine: { length: 12 }, axisLabel: { distance: 18, fontSize: 10 },
-    pointer: { width: 5 },
-    detail: { valueAnimation: true, formatter: '{value}%', fontSize: 30, offsetCenter: [0, '62%'] },
-    data: [{ value: closeRate.value, name: '闭环率', title: { offsetCenter: [0, '86%'] } }]
+    type: 'gauge',
+    min: 0,
+    max: 100,
+    radius: '88%',
+    startAngle: 205,
+    endAngle: -25,
+    progress: { show: true, width: 15, roundCap: true, itemStyle: { color: '#0a24e9' } },
+    axisLine: { roundCap: true, lineStyle: { width: 15, color: [[1, '#eef0ff']] } },
+    pointer: { show: false },
+    axisTick: { show: false },
+    splitLine: { show: false },
+    axisLabel: { show: false },
+    anchor: { show: false },
+    title: { offsetCenter: [0, '28%'], color: '#a9b6c0', fontSize: 11 },
+    detail: { valueAnimation: true, formatter: '{value}%', color: '#0b0d17', fontSize: 32, fontWeight: 700, offsetCenter: [0, '-6%'] },
+    data: [{ value: closeRate.value, name: '闭环率' }]
   }]
 }))
 
-// 反馈状态分布(环形)
-const feedbackChart = useChart(feedbackChartRef, (t) => {
-  const agg = {}
-  feedbackData.value.forEach(r => { agg[r.status] = (agg[r.status] || 0) + Number(r.cnt || 0) })
-  const data = Object.keys(agg).map(k => ({ name: statusMap[k] || k, value: agg[k], itemStyle: { color: STATUS_COLOR[k] } }))
+const feedbackChart = useChart(feedbackChartRef, (theme) => {
+  const aggregate = {}
+  feedbackData.value.forEach(row => { aggregate[row.status] = (aggregate[row.status] || 0) + Number(row.cnt || 0) })
+  const data = Object.keys(aggregate).map(status => ({ name: statusMap[status] || status, value: aggregate[status], itemStyle: { color: STATUS_COLOR[status] } }))
   return {
-    tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
-    legend: { bottom: 0, textStyle: { color: t.textColor }, type: 'scroll' },
+    tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)', backgroundColor: '#0b0d17', borderWidth: 0, textStyle: { color: '#fff' } },
+    legend: { right: 10, top: 'center', orient: 'vertical', icon: 'circle', itemWidth: 8, itemHeight: 8, textStyle: { color: theme.textColor, fontSize: 10 } },
     series: [{
-      type: 'pie', radius: ['42%', '66%'], center: ['50%', '44%'],
-      itemStyle: { borderColor: 'var(--el-bg-color)', borderWidth: 2, borderRadius: 4 },
-      label: { color: t.textColor, formatter: '{b}\n{c}' }, data
+      type: 'pie',
+      radius: ['52%', '72%'],
+      center: ['37%', '48%'],
+      itemStyle: { borderColor: '#fff', borderWidth: 4, borderRadius: 6 },
+      label: { show: false },
+      data
     }]
   }
 })
 
-onMounted(async () => {
-  const [mod, fl, fb] = await Promise.all([biApi.moduleUsage(), biApi.flowAnalysis(), biApi.feedbackBoard()])
-  moduleData.value = mod || []
-  flow.value = fl || {}
-  feedbackData.value = fb || []
-  moduleChart.refresh(); gauge.refresh(); feedbackChart.refresh()
-})
+async function load() {
+  loading.value = true
+  try {
+    const [modules, flowData, feedback] = await Promise.allSettled([
+      biApi.moduleUsage(),
+      biApi.flowAnalysis(),
+      biApi.feedbackBoard()
+    ])
+    if (modules.status === 'fulfilled') moduleData.value = modules.value || []
+    if (flowData.status === 'fulfilled') flow.value = flowData.value || {}
+    if (feedback.status === 'fulfilled') feedbackData.value = feedback.value || []
+    moduleChart.refresh()
+    gauge.refresh()
+    feedbackChart.refresh()
+  } finally {
+    loading.value = false
+  }
+}
+
+onMounted(load)
 </script>
+
+<style scoped>
+.product-kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 16px; }
+.product-kpi { display: flex; flex-direction: column; gap: 7px; padding: 17px 18px; }
+.product-kpi__top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.product-kpi > strong { color: var(--text-title); font-size: clamp(24px, 2vw, 30px); font-weight: 740; letter-spacing: -.045em; font-variant-numeric: tabular-nums; }
+.product-kpi > span { color: var(--text-secondary); font-size: 11px; }
+
+.module-card { margin-bottom: 16px; }
+.module-chart { height: 350px; padding: 4px 14px 14px; }
+.legend-pills { display: flex; align-items: center; gap: 6px; color: var(--text-secondary); font-size: 10px; }
+.legend-pills i { width: 7px; height: 7px; margin-left: 5px; border-radius: 50%; }
+.legend-pills .requests { background: #0a24e9; }
+.legend-pills .users { background: #7256d8; }
+
+.insight-grid { display: grid; grid-template-columns: minmax(300px, .75fr) minmax(0, 1.25fr); gap: 16px; margin-bottom: 16px; }
+.insight-card { min-height: 350px; }
+.gauge-wrap { display: grid; grid-template-rows: 236px auto; padding: 4px 20px 20px; }
+.gauge-chart { width: 100%; height: 250px; }
+.flow-counts { display: flex; align-items: center; justify-content: center; gap: 28px; margin-top: -4px; padding: 12px; background: #f8f9fb; border-radius: 12px; }
+.flow-counts > span { display: grid; justify-items: center; gap: 3px; min-width: 64px; }
+.flow-counts small { color: var(--text-muted); font-size: 9px; }
+.flow-counts strong { color: var(--text-title); font-size: 17px; }
+.flow-counts i { width: 1px; height: 26px; background: var(--border); }
+.feedback-chart { width: 100%; height: 284px; padding: 0 12px 12px; }
+
+.feedback-table-card { overflow: hidden; }
+.feedback-total { color: var(--text-secondary); font-size: 11px; }
+.table-wrap { padding: 14px 20px 20px; }
+.table-wrap :deep(.el-table) { border-radius: 12px; overflow: hidden; }
+.module-name { display: inline-flex; align-items: center; gap: 9px; color: var(--text-title); font-weight: 600; }
+.module-name i { width: 7px; height: 7px; background: #0a24e9; border-radius: 50%; box-shadow: 0 0 0 4px #eef0ff; }
+.status-pill { display: inline-flex; padding: 5px 9px; border-radius: 999px; font-size: 10px; font-weight: 650; }
+.count-cell { color: var(--text-title); font-variant-numeric: tabular-nums; }
+
+@media (max-width: 1000px) {
+  .product-kpis { grid-template-columns: 1fr 1fr; }
+  .insight-grid { grid-template-columns: 1fr; }
+}
+@media (max-width: 680px) {
+  .product-kpis { grid-template-columns: 1fr; }
+  .feedback-chart { height: 320px; }
+}
+</style>
