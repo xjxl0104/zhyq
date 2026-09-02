@@ -218,7 +218,8 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { billApi, paymentApi, invoiceApi } from '@/api/finance'
 import { billOwe } from './cashierModel'
 
-const feeTypes = ['租金', '物业费', '保证金', '能源费', '服务费', '一次性']
+// 保证金按实际费用类型拆分:登记表生成的就是「租金保证金/物业保证金」两类
+const feeTypes = ['租金', '物业费', '租金保证金', '物业保证金', '能源费', '服务费', '一次性']
 // 账单来源。'应收登记表' = 由应收明细登记表生成(带协议编号与登记明细口径的租客名)
 const sources = ['应收登记表', '合同计划', '抄表', '人工', '商城', '预约', '工单', '接口']
 const payMethods = ['现金', '转账', 'POS', '微信', '支付宝', '聚合']
