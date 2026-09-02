@@ -25,6 +25,7 @@ public class ReceivableRuleParser {
     private static final Pattern DISCOUNT = Pattern.compile("(\\d+(?:\\.\\d+)?)\\s*折");
     private static final Pattern CURRENCY_AMOUNT = Pattern.compile("(\\d+(?:\\.\\d+)?)\\s*元");
     private static final Pattern MONTH_COUNT = Pattern.compile("(\\d+)\\s*个?月");
+    private static final Pattern YEAR_FROM = Pattern.compile("(\\d{4})\\s*年起");
 
     public Optional<DateRange> parseContractTerm(String raw) {
         if (raw == null) {
@@ -105,6 +106,17 @@ public class ReceivableRuleParser {
 
     public boolean isYearlyLastMonthWaiver(String raw) {
         return raw != null && raw.replaceAll("\\s+", "").contains("每年最后一个月免租一个月");
+    }
+
+    /** 「2027年起…每年最后一个月免租」里的生效年份,循环免租从该年 1 月 1 日起才适用 */
+    public Optional<LocalDate> parseRecurringWaiverStart(String raw) {
+        if (raw == null) {
+            return Optional.empty();
+        }
+        Matcher matcher = YEAR_FROM.matcher(raw.replaceAll("\\s+", ""));
+        return matcher.find()
+                ? Optional.of(LocalDate.of(Integer.parseInt(matcher.group(1)), 1, 1))
+                : Optional.empty();
     }
 
     public Optional<Integer> parseMonthCount(String raw) {

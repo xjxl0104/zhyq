@@ -77,7 +77,7 @@ public class ReceivableCalculator {
         for (LocalDate day = activeStart; !day.isAfter(activeEnd); day = day.plusDays(1)) {
             LocalDate current = day; // lambda 只能捕获 effectively-final 变量
             BigDecimal daily = applyEscalation(dailyBase, contractStart, day, rules);
-            if (rules.stream().anyMatch(rule -> isWaived(rule, current))) continue;
+            if (rules.stream().anyMatch(rule -> isWaived(rule, current, contractStart))) continue;
             for (ReceivableRule rule : rules) {
                 if (!appliesToDate(rule, day) || !"DISCOUNT".equals(rule.getRuleType())
                         || rule.getDiscountRate() == null) continue;
@@ -154,12 +154,19 @@ public class ReceivableCalculator {
                 .orElse(BigDecimal.ZERO);
     }
 
-    private boolean isWaived(ReceivableRule rule, LocalDate day) {
+    private boolean isWaived(ReceivableRule rule, LocalDate day, LocalDate contractStart) {
         if (!active(rule)) return false;
         if ("WAIVER".equals(rule.getRuleType())) return appliesToDate(rule, day);
-        return "RECURRING_WAIVER".equals(rule.getRuleType())
-                && "YEARLY_LAST_MONTH".equals(rule.getRecurrenceRule())
-                && day.getMonthValue() == 12;
+        if (!"RECURRING_WAIVER".equals(rule.getRuleType())
+                || !"YEARLY_LAST_MONTH".equals(rule.getRecurrenceRule())
+                || !appliesToDate(rule, day)) {
+            return false;
+        }
+        // 「每年最后一个月免租」= 每个合同年度的最后一个月(6月起租免5月、7月起租免6月),
+        // 不是自然年 12 月:云山四份补充协议的「合同租金总额」只有按合同年度口径才对得平
+        long monthIndex = ChronoUnit.MONTHS.between(
+                YearMonth.from(contractStart), YearMonth.from(day));
+        return monthIndex >= 0 && monthIndex % 12 == 11;
     }
 
     private boolean appliesToDate(ReceivableRule rule, LocalDate day) {
@@ -185,22 +192,25 @@ public class ReceivableCalculator {
             rule.setIncreaseRate(value.increasePercent());
             inferred.add(rule);
         });
+        String combined = text(register.getFreePeriodRaw()) + "；" + text(register.getDiscountRaw());
+        boolean recurringLastMonth = parser.isYearlyLastMonthWaiver(combined);
         boolean waiveProperty = containsAny(register.getDiscountRaw(),
                 "免物业", "无需支付物业", "免缴物业", "物业管理费按0");
         if ("RENT".equals(feeType) || waiveProperty) {
             List<ReceivableRuleParser.DateRange> freeRanges = new java.util.ArrayList<>(
                     parser.parseDateRanges(register.getFreePeriodRaw()));
-            if (freeRanges.isEmpty() && register.getContractStartDate() != null) {
+            // 免租月按年循环时,「免租期N个月」是循环月数的合计,不能当成起租日起连免N个月
+            if (freeRanges.isEmpty() && !recurringLastMonth && register.getContractStartDate() != null) {
                 parser.parseMonthCount(register.getFreeTermRaw()).ifPresent(months -> freeRanges.add(
                         new ReceivableRuleParser.DateRange(register.getContractStartDate(),
                                 register.getContractStartDate().plusMonths(months).minusDays(1))));
             }
             freeRanges.forEach(range -> inferred.add(dateRule(feeType, "WAIVER", range)));
         }
-        String combined = text(register.getFreePeriodRaw()) + "；" + text(register.getDiscountRaw());
-        if ("RENT".equals(feeType) && parser.isYearlyLastMonthWaiver(combined)) {
+        if ("RENT".equals(feeType) && recurringLastMonth) {
             ReceivableRule rule = rule(feeType, "RECURRING_WAIVER");
             rule.setRecurrenceRule("YEARLY_LAST_MONTH");
+            parser.parseRecurringWaiverStart(combined).ifPresent(rule::setEffectiveStart);
             inferred.add(rule);
         }
         for (String clause : text(register.getDiscountRaw()).split("[；;\\n]+")) {
