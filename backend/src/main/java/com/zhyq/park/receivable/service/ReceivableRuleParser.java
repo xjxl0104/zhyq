@@ -108,15 +108,24 @@ public class ReceivableRuleParser {
         return raw != null && raw.replaceAll("\\s+", "").contains("每年最后一个月免租一个月");
     }
 
-    /** 「2027年起…每年最后一个月免租」里的生效年份,循环免租从该年 1 月 1 日起才适用 */
+    /**
+     * 「2027年起…每年最后一个月免租」里的生效年份,循环免租从该年 1 月 1 日起才适用。
+     * 只在包含循环免租措辞的那个子句里找「XXXX年起」,避免误取其它条款的年份。
+     */
     public Optional<LocalDate> parseRecurringWaiverStart(String raw) {
         if (raw == null) {
             return Optional.empty();
         }
-        Matcher matcher = YEAR_FROM.matcher(raw.replaceAll("\\s+", ""));
-        return matcher.find()
-                ? Optional.of(LocalDate.of(Integer.parseInt(matcher.group(1)), 1, 1))
-                : Optional.empty();
+        for (String clause : raw.split("[；;\\n]+")) {
+            if (!isYearlyLastMonthWaiver(clause)) {
+                continue;
+            }
+            Matcher matcher = YEAR_FROM.matcher(clause.replaceAll("\\s+", ""));
+            if (matcher.find()) {
+                return Optional.of(LocalDate.of(Integer.parseInt(matcher.group(1)), 1, 1));
+            }
+        }
+        return Optional.empty();
     }
 
     public Optional<Integer> parseMonthCount(String raw) {

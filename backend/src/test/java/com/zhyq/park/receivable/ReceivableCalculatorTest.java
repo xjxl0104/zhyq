@@ -188,6 +188,14 @@ class ReceivableCalculatorTest {
         BigDecimal total = totalRent(register, YearMonth.of(2026, 6), YearMonth.of(2041, 5));
         assertTrue(new BigDecimal("48118843.83").subtract(total).abs().compareTo(BigDecimal.ONE) < 0,
                 "全期租金合计 " + total + " 应与合同租金总额 48118843.83 相差 <1 元");
+
+        // -002 补充协议:同一日期结构,月租 168,750(12.5元/方),总额 31,657,134.10
+        ReceivableRegister third = yunshanRegister(
+                LocalDate.of(2026, 6, 1), LocalDate.of(2041, 5, 31),
+                "168750", "27000", register.getDiscountRaw());
+        BigDecimal thirdTotal = totalRent(third, YearMonth.of(2026, 6), YearMonth.of(2041, 5));
+        assertTrue(new BigDecimal("31657134.10").subtract(thirdTotal).abs().compareTo(BigDecimal.ONE) < 0,
+                "-002 全期租金合计 " + thirdTotal + " 应与合同租金总额 31657134.10 相差 <1 元");
     }
 
     /**
@@ -213,6 +221,14 @@ class ReceivableCalculatorTest {
         BigDecimal total = totalRent(register, YearMonth.of(2026, 7), YearMonth.of(2041, 6));
         assertTrue(new BigDecimal("30390848.73").subtract(total).abs().compareTo(BigDecimal.ONE) < 0,
                 "全期租金合计 " + total + " 应与合同租金总额 30390848.73 相差 <1 元");
+
+        // -003 补充协议:同一日期结构,月租 105,600(8,800方×12元),总额 19,810,331.03
+        ReceivableRegister sixth = yunshanRegister(
+                LocalDate.of(2026, 7, 1), LocalDate.of(2041, 6, 30),
+                "105600", "17600", register.getDiscountRaw());
+        BigDecimal sixthTotal = totalRent(sixth, YearMonth.of(2026, 7), YearMonth.of(2041, 6));
+        assertTrue(new BigDecimal("19810331.03").subtract(sixthTotal).abs().compareTo(BigDecimal.ONE) < 0,
+                "-003 全期租金合计 " + sixthTotal + " 应与合同租金总额 19810331.03 相差 <1 元");
     }
 
     private ReceivableRegister yunshanRegister(LocalDate start, LocalDate end,

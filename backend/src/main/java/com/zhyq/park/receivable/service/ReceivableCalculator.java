@@ -259,9 +259,16 @@ public class ReceivableCalculator {
     }
 
     private static boolean equivalent(ReceivableRule first, ReceivableRule second) {
-        return Objects.equals(first.getFeeType(), second.getFeeType())
-                && Objects.equals(first.getRuleType(), second.getRuleType())
-                && Objects.equals(first.getEffectiveStart(), second.getEffectiveStart())
+        if (!Objects.equals(first.getFeeType(), second.getFeeType())
+                || !Objects.equals(first.getRuleType(), second.getRuleType())) {
+            return false;
+        }
+        // 循环免租按(费用,类型,循环口径)判重:库里的与推断的生效边界写法可能不同,
+        // 并存时 anyMatch 会让约束更松的那条生效,宁可只留库里那条
+        if ("RECURRING_WAIVER".equals(first.getRuleType())) {
+            return Objects.equals(first.getRecurrenceRule(), second.getRecurrenceRule());
+        }
+        return Objects.equals(first.getEffectiveStart(), second.getEffectiveStart())
                 && Objects.equals(first.getEffectiveEnd(), second.getEffectiveEnd())
                 && numericEquals(first.getDiscountRate(), second.getDiscountRate())
                 && numericEquals(first.getFixedAmount(), second.getFixedAmount())
