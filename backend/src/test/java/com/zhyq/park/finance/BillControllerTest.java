@@ -5,6 +5,8 @@ import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.zhyq.park.common.exception.BizException;
 import com.zhyq.park.finance.controller.BillController;
 import com.zhyq.park.finance.entity.Bill;
+import com.zhyq.park.finance.entity.Invoice;
+import com.zhyq.park.finance.entity.Payment;
 import com.zhyq.park.finance.mapper.BillMapper;
 import com.zhyq.park.finance.mapper.InvoiceMapper;
 import com.zhyq.park.finance.mapper.PaymentMapper;
@@ -22,6 +24,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -54,8 +57,11 @@ class BillControllerTest {
     static void initMpLambdaCache() {
         // 纯单测没有 Spring/MyBatis 上下文;LambdaUpdateWrapper.set() 解析列名是即时的
         // (eq/in 是惰性的),需要手工装载 Bill 的 TableInfo/lambda 缓存
-        TableInfoHelper.initTableInfo(
-                new MapperBuilderAssistant(new MybatisConfiguration(), ""), Bill.class);
+        MapperBuilderAssistant assistant =
+                new MapperBuilderAssistant(new MybatisConfiguration(), "");
+        TableInfoHelper.initTableInfo(assistant, Bill.class);
+        TableInfoHelper.initTableInfo(assistant, Payment.class);
+        TableInfoHelper.initTableInfo(assistant, Invoice.class);
     }
 
     private BillController controller() {
@@ -183,5 +189,58 @@ class BillControllerTest {
         assertThatThrownBy(() -> controller().delete(5L))
                 .isInstanceOf(BizException.class)
                 .hasMessageContaining("开票");
+    }
+
+    // ---------- 费用类型筛选 ----------
+
+    @Test
+    @DisplayName("费用类型「保证金」为大类:按后缀命中租金保证金/物业保证金;精确类型仍走等值")
+    void feeTypeDepositCategoryMatchesBySuffix() {
+        when(billMapper.selectPage(any(), any()))
+                .thenReturn(new com.baomidou.mybatisplus.extension.plugins.pagination.Page<>());
+
+        controller().page(1, 10, null, null, null, null, null, "保证金", null, null, null);
+        controller().page(1, 10, null, null, null, null, null, "租金", null, null, null);
+
+        @SuppressWarnings({"unchecked", "rawtypes"})
+        ArgumentCaptor<com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<Bill>> captor =
+                (ArgumentCaptor) ArgumentCaptor.forClass(
+                        com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper.class);
+        verify(billMapper, org.mockito.Mockito.times(2)).selectPage(any(), captor.capture());
+        String depositSql = captor.getAllValues().get(0).getSqlSegment();
+        String rentSql = captor.getAllValues().get(1).getSqlSegment();
+        assertThat(depositSql).contains("LIKE");
+        assertThat(rentSql).doesNotContain("LIKE");
+        assertThat(rentSql).contains("fee_type =");
+    }
+
+    // ---------- 重置(批量作废登记表账单) ----------
+
+    @Test
+    @DisplayName("重置只作废登记表来源账单,有收款/发票关联的排除在删除范围外")
+    void resetExcludesPaidAndInvoicedBills() {
+        Payment payment = new Payment();
+        payment.setBillId(11L);
+        Invoice invoice = new Invoice();
+        invoice.setBillId(12L);
+        when(paymentMapper.selectList(any())).thenReturn(List.of(payment));
+        when(invoiceMapper.selectList(any())).thenReturn(List.of(invoice));
+        when(billMapper.delete(any())).thenReturn(340);
+        when(billMapper.selectCount(any())).thenReturn(2L);
+
+        Map<String, Object> data = controller().reset().getData();
+
+        assertThat(data.get("deleted")).isEqualTo(340);
+        assertThat(data.get("kept")).isEqualTo(2L);
+        @SuppressWarnings({"unchecked", "rawtypes"})
+        ArgumentCaptor<com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<Bill>> captor =
+                (ArgumentCaptor) ArgumentCaptor.forClass(
+                        com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper.class);
+        verify(billMapper).delete(captor.capture());
+        // 有收款/发票关联的账单 id 必须进 NOT IN 排除名单;来源与零实收进 WHERE
+        String sql = captor.getValue().getSqlSegment();
+        assertThat(sql).contains("NOT IN");
+        assertThat(sql).contains("source");
+        assertThat(sql).contains("paid_amount");
     }
 }

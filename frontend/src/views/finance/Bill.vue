@@ -54,7 +54,7 @@
         </el-form-item>
         <el-form-item>
           <el-button type="primary" @click="load"><el-icon><Search /></el-icon>查询</el-button>
-          <el-button @click="reset">重置</el-button>
+          <el-button type="danger" plain @click="reset">重置</el-button>
         </el-form-item>
       </el-form>
     </div>
@@ -214,11 +214,12 @@
 <script setup>
 import { reactive, ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { billApi, paymentApi, invoiceApi } from '@/api/finance'
 import { billOwe } from './cashierModel'
 
-const feeTypes = ['租金', '物业费', '保证金', '能源费', '服务费', '一次性']
+// 保证金按实际费用类型拆分:登记表生成的就是「租金保证金/物业保证金」两类
+const feeTypes = ['租金', '物业费', '租金保证金', '物业保证金', '能源费', '服务费', '一次性']
 // 账单来源。'应收登记表' = 由应收明细登记表生成(带协议编号与登记明细口径的租客名)
 const sources = ['应收登记表', '合同计划', '抄表', '人工', '商城', '预约', '工单', '接口']
 const payMethods = ['现金', '转账', 'POS', '微信', '支付宝', '聚合']
@@ -279,10 +280,26 @@ async function loadStats() {
   const res = await billApi.stats()
   Object.assign(stats, res)
 }
-function reset() {
+/**
+ * 重置账单:推送口径出错时的重来通道。
+ * 作废所有「由应收明细登记表推送、且未收款未开票」的账单(已收款/已开票保留),
+ * 之后回登记表逐行点「生成账单」重新推送即可。
+ */
+async function reset() {
+  try {
+    await ElMessageBox.confirm(
+      '将作废所有由应收明细登记表推送、且未收款未开票的账单(已收款/已开票的保留)。重置后请回登记表重新点「生成账单」推送。确定重置?',
+      '重置账单',
+      { type: 'warning', confirmButtonText: '确定重置', cancelButtonText: '取消' }
+    )
+  } catch {
+    return
+  }
+  const res = await billApi.reset()
+  ElMessage.success(`已重置:作废 ${res.deleted} 张账单,保留 ${res.kept} 张(已收款/已开票)`)
   Object.assign(query, { pageNo: 1, code: '', feeType: null, status: null, direction: null, source: null, billId: null, onlyDue: false })
   locatedBillId.value = null
-  load()
+  refresh()
 }
 async function refresh() {
   await Promise.all([load(), loadStats()])

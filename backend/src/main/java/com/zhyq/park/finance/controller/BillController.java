@@ -26,8 +26,10 @@ import org.springframework.web.bind.annotation.*;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 @Tag(name = "财务-账单")
 @RestController
@@ -62,17 +64,23 @@ public class BillController {
                                          @RequestParam(required = false) Long billId,
                                          @RequestParam(required = false) Boolean onlyDue) {
         LambdaQueryWrapper<Bill> qw = new LambdaQueryWrapper<>();
+        // 「保证金」是费用大类:登记表生成的是「租金保证金/物业保证金」,按后缀命中
+        // 全部保证金类账单(老数据里费用类型恰好叫「保证金」的也被 %保证金 覆盖)
+        boolean depositCategory = "保证金".equals(feeType);
         qw.eq(billId != null, Bill::getId, billId)
           .like(StringUtils.hasText(code), Bill::getCode, code)
           .eq(contractId != null, Bill::getContractId, contractId)
           .eq(tenantRefId != null, Bill::getTenantRefId, tenantRefId)
           .eq(direction != null, Bill::getDirection, direction)
           .eq(status != null, Bill::getStatus, status)
-          .eq(StringUtils.hasText(feeType), Bill::getFeeType, feeType)
+          .likeLeft(depositCategory, Bill::getFeeType, "保证金")
+          .eq(!depositCategory && StringUtils.hasText(feeType), Bill::getFeeType, feeType)
           .eq(StringUtils.hasText(source), Bill::getSource, source)
           // 隐藏未到期:仅显示应收日<=今天的账单
           .le(Boolean.TRUE.equals(onlyDue), Bill::getDueDate, LocalDate.now())
-          .orderByDesc(Bill::getId);
+          // 台账习惯:按账期从合同起始月往后排,而不是最后生成的(合同末期)排最前
+          .orderByAsc(Bill::getPeriodStart)
+          .orderByAsc(Bill::getId);
         IPage<Bill> p = billMapper.selectPage(new Page<>(pageNo, pageSize), qw);
         enrich(p.getRecords());
         return Result.ok(PageResult.of(p.getTotal(), p.getRecords()));
@@ -238,6 +246,40 @@ public class BillController {
             throw new BizException("该账单刚被开票,删除已回滚");
         }
         return Result.ok();
+    }
+
+    /**
+     * 重置登记表推送的账单:一键作废「由应收明细登记表生成、且未收款未开票」的全部账单。
+     *
+     * <p>推送口径出错时(如免租月落错)的重来通道:软删后 billing_active_key 释放,
+     * 回登记表重新点「生成账单」即可按新口径重出。已收款/已关联发票的账单一律保留,
+     * 与单条删除同一守卫;实收守卫同样写进 DELETE 的 WHERE,并发下刚落款的删不掉。</p>
+     */
+    @Operation(summary = "重置登记表账单(未收款未开票的全部作废,可重新推送)")
+    @PreAuthorize("hasAuthority('finance:bill:delete')")
+    @Transactional(rollbackFor = Exception.class)
+    @PostMapping("/reset")
+    public Result<Map<String, Object>> reset() {
+        Set<Long> protectedIds = new HashSet<>();
+        paymentMapper.selectList(new LambdaQueryWrapper<Payment>()
+                        .select(Payment::getBillId).isNotNull(Payment::getBillId))
+                .forEach(p -> protectedIds.add(p.getBillId()));
+        invoiceMapper.selectList(new LambdaQueryWrapper<Invoice>()
+                        .select(Invoice::getBillId).isNotNull(Invoice::getBillId))
+                .forEach(i -> protectedIds.add(i.getBillId()));
+        LambdaQueryWrapper<Bill> deletable = new LambdaQueryWrapper<Bill>()
+                .eq(Bill::getSource, "应收登记表")
+                .eq(Bill::getPaidAmount, BigDecimal.ZERO);
+        if (!protectedIds.isEmpty()) {
+            deletable.notIn(Bill::getId, protectedIds);
+        }
+        int deleted = billMapper.delete(deletable);
+        Long kept = billMapper.selectCount(new LambdaQueryWrapper<Bill>()
+                .eq(Bill::getSource, "应收登记表"));
+        Map<String, Object> result = new HashMap<>();
+        result.put("deleted", deleted);
+        result.put("kept", kept == null ? 0L : kept);
+        return Result.ok(result);
     }
 
     private static BigDecimal nz(BigDecimal v) {
