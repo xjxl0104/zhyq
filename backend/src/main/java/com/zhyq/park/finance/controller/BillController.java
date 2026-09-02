@@ -72,7 +72,9 @@ public class BillController {
           .eq(StringUtils.hasText(source), Bill::getSource, source)
           // 隐藏未到期:仅显示应收日<=今天的账单
           .le(Boolean.TRUE.equals(onlyDue), Bill::getDueDate, LocalDate.now())
-          .orderByDesc(Bill::getId);
+          // 台账习惯:按账期从合同起始月往后排,而不是最后生成的(合同末期)排最前
+          .orderByAsc(Bill::getPeriodStart)
+          .orderByAsc(Bill::getId);
         IPage<Bill> p = billMapper.selectPage(new Page<>(pageNo, pageSize), qw);
         enrich(p.getRecords());
         return Result.ok(PageResult.of(p.getTotal(), p.getRecords()));

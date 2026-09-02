@@ -491,11 +491,14 @@ public class ReceivableImportService {
 
     private void persistActionableConditions(ReceivableRegister register,
                                              ReceivableWorkbookData.RowData row) {
+        String combined = nullToEmpty(row.freePeriodRaw()) + "；" + nullToEmpty(row.discountRaw());
+        boolean recurringLastMonth = ruleParser.isYearlyLastMonthWaiver(combined);
         boolean waivePropertyDuringFreePeriod = containsAny(row.discountRaw(),
                 "免物业", "无需支付物业", "免缴物业", "物业管理费按0");
         List<ReceivableRuleParser.DateRange> freeRanges = new ArrayList<>(
                 ruleParser.parseDateRanges(row.freePeriodRaw()));
-        if (freeRanges.isEmpty() && register.getContractStartDate() != null) {
+        // 免租月按年循环时,「免租期N个月」是循环月数的合计,不能当成起租日起连免N个月
+        if (freeRanges.isEmpty() && !recurringLastMonth && register.getContractStartDate() != null) {
             ruleParser.parseMonthCount(row.freeTermRaw()).ifPresent(months -> freeRanges.add(
                     new ReceivableRuleParser.DateRange(register.getContractStartDate(),
                             register.getContractStartDate().plusMonths(months).minusDays(1))));
@@ -507,10 +510,10 @@ public class ReceivableImportService {
             }
         }
 
-        String combined = nullToEmpty(row.freePeriodRaw()) + "；" + nullToEmpty(row.discountRaw());
-        if (ruleParser.isYearlyLastMonthWaiver(combined)) {
+        if (recurringLastMonth) {
             ReceivableRule recurring = baseRule(register, "RENT", "RECURRING_WAIVER", 40);
-            recurring.setEffectiveStart(register.getContractStartDate());
+            recurring.setEffectiveStart(ruleParser.parseRecurringWaiverStart(combined)
+                    .orElse(register.getContractStartDate()));
             recurring.setEffectiveEnd(register.getContractEndDate());
             recurring.setRecurrenceRule("YEARLY_LAST_MONTH");
             recurring.setRawText(combined);
