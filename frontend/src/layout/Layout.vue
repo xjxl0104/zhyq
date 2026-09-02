@@ -309,6 +309,8 @@ function onClick(c) {
   border-radius: 22px;
   padding: 0;
   overflow-y: auto;
+  overflow-x: hidden;      /* 页面级横向滚动禁用:宽表格由 el-table 自己就近滚动 */
+  scrollbar-gutter: stable; /* 滚动条出现/消失不再引起内容抖动 */
 }
 
 /* 路由切换微动效 */
