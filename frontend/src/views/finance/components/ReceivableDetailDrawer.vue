@@ -11,9 +11,26 @@
         </el-tab-pane>
         <el-tab-pane label="计费规则">
           <el-table :data="detail.rules || []" border>
-            <el-table-column prop="feeType" label="费用" /><el-table-column prop="ruleType" label="规则类型" />
-            <el-table-column prop="rateUnit" label="单位" /><el-table-column prop="rateValue" label="单价" />
-            <el-table-column prop="fixedAmount" label="固定金额" /><el-table-column prop="rawText" label="来源文字" min-width="220" />
+            <el-table-column label="费用" width="110">
+              <template #default="{ row }">{{ feeTypeLabels[row.feeType] || row.feeType }}</template>
+            </el-table-column>
+            <el-table-column label="规则类型" width="120">
+              <template #default="{ row }">{{ ruleTypeLabels[row.ruleType] || row.ruleType }}</template>
+            </el-table-column>
+            <el-table-column label="单价" width="130">
+              <template #default="{ row }">
+                {{ row.rateValue != null ? `${row.rateValue} ${rateUnitLabels[row.rateUnit] || row.rateUnit || ''}` : '-' }}
+              </template>
+            </el-table-column>
+            <el-table-column label="月金额" width="120" align="right">
+              <template #default="{ row }">{{ row.fixedAmount != null ? `¥${row.fixedAmount}` : '-' }}</template>
+            </el-table-column>
+            <el-table-column label="生效区间" width="200">
+              <template #default="{ row }">
+                {{ row.effectiveStart ? `${row.effectiveStart} ~ ${row.effectiveEnd || '合同止'}` : '整个合同期' }}
+              </template>
+            </el-table-column>
+            <el-table-column prop="rawText" label="规则说明(来源条款)" min-width="220" />
           </el-table>
         </el-tab-pane>
         <el-tab-pane label="保证金与收款">
@@ -77,6 +94,19 @@ import { receivableApi } from '@/api/receivable'
 import { formatReceivableCell, receivableColumns } from '../receivableModel'
 const props = defineProps({ modelValue: Boolean, registerId: [String, Number], canViewAccount: Boolean })
 const emit = defineEmits(['update:modelValue'])
+// 计费规则页签的展示字典:后端返回的是与出账同源的规则枚举
+const feeTypeLabels = { RENT: '租金', PROPERTY: '物业管理费' }
+const ruleTypeLabels = {
+  AUTHORITATIVE_MONTHLY: '按月计费',
+  BASE_RATE: '基础单价',
+  ESCALATION: '递增',
+  WAIVER: '免租/免缴',
+  RECURRING_WAIVER: '循环免租',
+  DISCOUNT: '折扣',
+  OFFSET: '补助抵扣',
+  FIXED_ADJUSTMENT: '固定调整'
+}
+const rateUnitLabels = { MONTH_SQM: '元/㎡·月', DAY_SQM: '元/㎡·日', MONTH_FIXED: '元/月' }
 const router = useRouter()
 function gotoBill(bill) {
   emit('update:modelValue', false)

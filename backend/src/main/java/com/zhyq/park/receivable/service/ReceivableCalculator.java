@@ -183,6 +183,59 @@ public class ReceivableCalculator {
         return end.isBefore(start) ? 0 : ChronoUnit.DAYS.between(start, end) + 1;
     }
 
+    /**
+     * 计费规则页签的展示口径:库里没持久化规则的登记(历史导入批次),按与出账
+     * 完全相同的推断逻辑给出规则清单 —— 页签上看到的就是实际出账用的。
+     * 首行固定是「按月计费」:按基础资料每月每客户生成一张租金 + 一张物业费账单。
+     */
+    public List<ReceivableRule> displayRules(ReceivableRegister register) {
+        List<ReceivableRule> rules = new java.util.ArrayList<>();
+        rules.add(monthlyDisplayRule(register, "RENT", "租金",
+                register.getRentRateRaw(), register.getMonthlyRent()));
+        rules.add(monthlyDisplayRule(register, "PROPERTY", "物业管理费",
+                register.getPropertyRateRaw(), register.getMonthlyProperty()));
+        for (String feeType : List.of("RENT", "PROPERTY")) {
+            for (ReceivableRule rule : inferRules(register, feeType)) {
+                if (rule.getRawText() == null || rule.getRawText().isBlank()) {
+                    rule.setRawText(describeInferred(register, rule));
+                }
+                rules.add(rule);
+            }
+        }
+        return rules;
+    }
+
+    private ReceivableRule monthlyDisplayRule(ReceivableRegister register, String feeType,
+                                              String feeName, String rateRaw, BigDecimal monthly) {
+        ReceivableRule rule = rule(feeType, "AUTHORITATIVE_MONTHLY");
+        rule.setRegisterId(register.getId());
+        rule.setFixedAmount(zero(monthly).setScale(2, RoundingMode.HALF_UP));
+        new ReceivableRuleParser().parseRate(rateRaw).ifPresent(rate -> {
+            rule.setRateUnit(rate.unit());
+            rule.setRateValue(rate.value());
+        });
+        rule.setEffectiveStart(register.getContractStartDate());
+        rule.setEffectiveEnd(register.getContractEndDate());
+        rule.setRawText((rateRaw == null || rateRaw.isBlank() ? "" : rateRaw + "；")
+                + "每月按客户生成一张" + feeName + "账单");
+        return rule;
+    }
+
+    private String describeInferred(ReceivableRegister register, ReceivableRule rule) {
+        return switch (text(rule.getRuleType())) {
+            case "ESCALATION" -> text(register.getEscalationRaw());
+            case "RECURRING_WAIVER" -> "每个合同年度最后一个月免租"
+                    + (rule.getEffectiveStart() == null
+                    ? "" : "(" + rule.getEffectiveStart().getYear() + "年起)");
+            case "WAIVER" -> "免收该费用: " + rule.getEffectiveStart() + " ~ " + rule.getEffectiveEnd();
+            case "OFFSET" -> "补助抵扣(每月按固定金额冲抵): "
+                    + rule.getEffectiveStart() + " ~ " + rule.getEffectiveEnd();
+            case "DISCOUNT" -> "按 " + rule.getDiscountRate() + "% 收取: "
+                    + rule.getEffectiveStart() + " ~ " + rule.getEffectiveEnd();
+            default -> "";
+        };
+    }
+
     private List<ReceivableRule> inferRules(ReceivableRegister register, String feeType) {
         ReceivableRuleParser parser = new ReceivableRuleParser();
         java.util.ArrayList<ReceivableRule> inferred = new java.util.ArrayList<>();
@@ -195,7 +248,7 @@ public class ReceivableCalculator {
         String combined = text(register.getFreePeriodRaw()) + "；" + text(register.getDiscountRaw());
         boolean recurringLastMonth = parser.isYearlyLastMonthWaiver(combined);
         boolean waiveProperty = containsAny(register.getDiscountRaw(),
-                "免物业", "无需支付物业", "免缴物业", "物业管理费按0");
+                "免物业", "无需支付物业", "免缴物业", "物业管理费按0", "无需支付租赁费及物业管理费");
         if ("RENT".equals(feeType) || waiveProperty) {
             List<ReceivableRuleParser.DateRange> freeRanges = new java.util.ArrayList<>(
                     parser.parseDateRanges(register.getFreePeriodRaw()));
@@ -213,9 +266,16 @@ public class ReceivableCalculator {
             parser.parseRecurringWaiverStart(combined).ifPresent(rule::setEffectiveStart);
             inferred.add(rule);
         }
+        List<ReceivableRuleParser.DateRange> pendingRanges = List.of();
         for (String clause : text(register.getDiscountRaw()).split("[；;\\n]+")) {
-            List<ReceivableRuleParser.DateRange> ranges = parser.parseDateRanges(clause);
-            if (ranges.isEmpty() || !mentionsFee(clause, feeType)) continue;
+            List<ReceivableRuleParser.DateRange> own = parser.parseDateRanges(clause);
+            // 表格里日期段与动作常被换行拆成两行(如"20260601-20260930\n租金按5折"):
+            // 只带日期不带动作的行先记下,配给紧随其后的动作行,否则 5 折会被静默丢掉
+            boolean actionable = clause.contains("折") || clause.contains("抵扣")
+                    || containsAny(clause, "免租期", "免租金", "免缴", "无需支付", "免物业", "免管理费");
+            List<ReceivableRuleParser.DateRange> ranges = own.isEmpty() ? pendingRanges : own;
+            pendingRanges = !own.isEmpty() && !actionable ? own : List.of();
+            if (!actionable || ranges.isEmpty() || !mentionsFee(clause, feeType)) continue;
             parser.parseDiscountRate(clause).ifPresent(rate -> ranges.forEach(range -> {
                 ReceivableRule rule = dateRule(feeType, "DISCOUNT", range);
                 rule.setDiscountRate(rate);

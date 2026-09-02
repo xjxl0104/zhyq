@@ -103,7 +103,16 @@ public class ReceivablePlanService {
         List<Bill> bills = new ArrayList<>();
         YearMonth first = YearMonth.from(register.getContractStartDate());
         YearMonth last = YearMonth.from(register.getContractEndDate());
-        for (YearMonth period = first; !period.isAfter(last); period = period.plusMonths(1)) {
+        // 按月按需出账:只出已到账期(当月及更早)的账单,未来月份等每日自愈任务在
+        // 账期到来时自动补出,不再一次性铺满整个合同期(15 年合同一次 362 张)。
+        // 例外:预收类合同(下月账单本月到应收日)按应收日放行,最多提前一个月
+        YearMonth current = YearMonth.from(today());
+        YearMonth horizon = current.plusMonths(1).isAfter(last) ? last : current.plusMonths(1);
+        for (YearMonth period = first; !period.isAfter(horizon); period = period.plusMonths(1)) {
+            if (period.isAfter(current)
+                    && calculator.dueDate(register, period).isAfter(today())) {
+                continue;
+            }
             bills.add(monthlyBill(register, rules, "RENT", "租金", period));
             bills.add(monthlyBill(register, rules, "PROPERTY", "物业费", period));
         }
@@ -183,6 +192,11 @@ public class ReceivablePlanService {
     private Bill find(String billingKey) {
         return billMapper.selectOne(new LambdaQueryWrapper<Bill>()
                 .eq(Bill::getBillingKey, billingKey));
+    }
+
+    /** 按月按需出账以"今天"为界;抽成方法供测试固定日期 */
+    protected LocalDate today() {
+        return LocalDate.now();
     }
 
     private static boolean canSynchronize(Bill bill) {
