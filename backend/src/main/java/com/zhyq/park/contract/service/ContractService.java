@@ -143,6 +143,25 @@ public class ContractService {
     }
 
     /**
+     * 把合同关联的房源放回可租。退租与合同重置共用 —— 房源状态是全局资源,
+     * 合同不再有效就必须释放,否则房源永远锁在一份已终止/已作废的合同上。
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public void releaseRooms(Long contractId) {
+        List<ContractRoom> rooms = contractRoomMapper.selectList(
+                new LambdaQueryWrapper<ContractRoom>().eq(ContractRoom::getContractId, contractId));
+        for (ContractRoom cr : rooms) {
+            if (cr.getRoomId() == null) {
+                continue;
+            }
+            RoomRef room = new RoomRef();
+            room.setId(cr.getRoomId());
+            room.setStatus(ROOM_RENTABLE);
+            roomRefMapper.updateById(room);
+        }
+    }
+
+    /**
      * 退租:执行中(5)→已终止(9),terminate_date=今天;关联房源改回可租(1);记录一条退租版本。
      * 仅执行中的合同可退租;条件更新抢状态,重复退租只有一次生效。
      */
@@ -163,18 +182,7 @@ public class ContractService {
             throw new BizException("仅执行中的合同可退租");
         }
 
-        // 关联房源改回可租
-        List<ContractRoom> rooms = contractRoomMapper.selectList(
-                new LambdaQueryWrapper<ContractRoom>().eq(ContractRoom::getContractId, id));
-        for (ContractRoom cr : rooms) {
-            if (cr.getRoomId() == null) {
-                continue;
-            }
-            RoomRef room = new RoomRef();
-            room.setId(cr.getRoomId());
-            room.setStatus(ROOM_RENTABLE);
-            roomRefMapper.updateById(room);
-        }
+        releaseRooms(id);
 
         // 记录退租版本
         Long maxVersion = contractVersionMapper.selectCount(

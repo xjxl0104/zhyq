@@ -29,7 +29,9 @@
         </el-form-item>
         <el-form-item>
           <el-button type="primary" @click="load"><el-icon><Search /></el-icon>查询</el-button>
-          <el-button @click="reset">重置</el-button>
+          <el-button @click="clearFilter">清空条件</el-button>
+          <!-- 与账单页同口径:重置 = 真清数据,不是清筛选条件 -->
+          <el-button type="danger" plain @click="reset">重置</el-button>
         </el-form-item>
       </el-form>
     </div>
@@ -205,7 +207,7 @@
 <script setup>
 import { reactive, ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { contractApi } from '@/api/contract'
 import { fileApi } from '@/api/file'
 import FileUpload from '@/components/FileUpload.vue'
@@ -273,8 +275,30 @@ async function load() {
     loading.value = false
   }
 }
-function reset() {
+/** 清空筛选条件(不动数据):页签选的合同类型保留,只清编号/租客/状态并回到第一页 */
+function clearFilter() {
   Object.assign(query, { pageNo: 1, code: '', tenantRefId: null, status: null })
+  load()
+}
+
+/**
+ * 重置合同:录错/演示数据的重来通道。与账单页「重置」同一语义 ——
+ * 作废未产生实收的全部合同,名下账单收过款的整份保留。
+ */
+async function reset() {
+  try {
+    await ElMessageBox.confirm(
+      '将作废所有「未产生任何实收」的合同(名下账单收过款的整份保留)。' +
+      '同时把关联房源放回可租、解除应收登记表的合同关联。确定重置?',
+      '重置合同',
+      { type: 'warning', confirmButtonText: '确定重置', cancelButtonText: '取消' }
+    )
+  } catch (e) {
+    return // 用户取消
+  }
+  const res = await contractApi.reset()
+  ElMessage.success(`已重置:作废 ${res.deleted} 份合同，保留 ${res.kept} 份(有实收)`)
+  Object.assign(query, { pageNo: 1 })
   load()
 }
 
