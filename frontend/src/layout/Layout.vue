@@ -2,7 +2,7 @@
   <div class="app-wrapper">
     <el-container class="body-row">
       <GrainientBg class="chrome-aurora" />
-      <el-aside width="232px" class="sidebar">
+      <el-aside width="var(--aside-w)" class="sidebar">
         <div class="brand-zone">
           <img class="brand-logo" src="@/assets/brand/dipark.svg" alt="DIPARK" />
           <StrokeBrand />
@@ -120,6 +120,36 @@ function onClick(c) {
   position: relative;
   height: 100%;
   background: linear-gradient(160deg, #1e1b4b 0%, #312e81 42%, #4c42d9 100%);
+  /* 画框几何:侧栏宽 / 内容纸留缝 / 圆角,纸与玻璃层共用同一组数 */
+  --aside-w: 232px;
+  --paper-gap: 12px;
+  --paper-radius: 22px;
+  /* 毛玻璃配方:选中舌头与内容纸同一材质,拼接处才看不出缝 */
+  --glass-bg: rgba(255, 255, 255, .84);
+  --glass-filter: blur(22px) saturate(1.35);
+}
+/* 内容纸的玻璃层:独立于 .el-main 铺在其正下方。
+   不直接把 backdrop-filter 放在 .el-main 上:它是滚动容器,滤镜会让
+   position:fixed 的后代(弹窗遮罩 / 反馈悬浮钮)被锁进纸内随内容滚动 */
+.body-row::after {
+  content: '';
+  position: absolute;
+  top: var(--paper-gap);
+  right: var(--paper-gap);
+  bottom: var(--paper-gap);
+  left: var(--aside-w);
+  z-index: 0;
+  border-radius: var(--paper-radius);
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: var(--glass-filter);
+  backdrop-filter: var(--glass-filter);
+  pointer-events: none;
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .body-row { --glass-bg: rgba(255, 255, 255, .96); }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .body-row { --glass-bg: rgba(255, 255, 255, .97); }
 }
 /* 极光只铺 chrome:垫在最底层,白色内容纸不透明,自然只透出侧栏与外框区域 */
 .chrome-aurora {
@@ -238,16 +268,32 @@ function onClick(c) {
   background: transparent;
   color: var(--menu-hover);
 }
-/* 选中态:白色舌头与右侧内容纸连通(PinHome 式),上下反向圆角"通气" */
+/* 选中态:毛玻璃舌头与右侧内容纸连通(PinHome 式),上下反向圆角"通气"。
+   玻璃分三块各自 backdrop-filter:舌身(.tongue-glass span)+ 上下两个圆角 fillet(伪元素)。
+   三块必须同为 li 的直接子级、互不嵌套:带 backdrop-filter 的元素会成为其后代的
+   backdrop root,fillet 若嵌在舌身里就只能取到空背景、糊不出来 */
 .side-menu :deep(.el-menu-item.is-active) {
   position: relative;
-  background: #fff;
+  z-index: 0;                      /* 建立层叠上下文:z-index:-1 的舌身垫在文字下、仍留在 li 内 */
+  background: transparent;
   color: var(--brand);
   font-weight: 600;
-  margin-right: -8px;              /* 探出菜单右内边距,贴上白纸 */
+  margin-right: -8px;              /* 探出菜单右内边距,贴上内容纸 */
   border-radius: 12px 0 0 12px;
 }
 .side-menu :deep(.el-menu-item.is-active .el-icon) { color: var(--brand); }
+.side-menu :deep(.tongue-glass) { display: none; }
+.side-menu :deep(.el-menu-item.is-active > .tongue-glass) {
+  display: block;
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: var(--glass-filter);
+  backdrop-filter: var(--glass-filter);
+  pointer-events: none;
+}
 .side-menu :deep(.el-menu-item.is-active)::before,
 .side-menu :deep(.el-menu-item.is-active)::after {
   content: '';
@@ -255,22 +301,51 @@ function onClick(c) {
   right: 0;
   width: 14px;
   height: 14px;
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: var(--glass-filter);
+  backdrop-filter: var(--glass-filter);
   pointer-events: none;
 }
+/* fillet = 14px 方块挖掉一个 1/4 圆(圆心在方块贴舌头的那个角),剩下的月牙就是反向圆角 */
 .side-menu :deep(.el-menu-item.is-active)::before {
   top: -14px;
-  background: radial-gradient(circle at 0 0, transparent 13.5px, #fff 14px);
+  clip-path: path('M14 0 V14 H0 A14 14 0 0 0 14 0 Z');
 }
 .side-menu :deep(.el-menu-item.is-active)::after {
   bottom: -14px;
-  background: radial-gradient(circle at 0 100%, transparent 13.5px, #fff 14px);
+  clip-path: path('M14 14 V0 H0 A14 14 0 0 1 14 14 Z');
 }
 .side-menu :deep(.el-menu-item:focus-visible),
 .side-menu :deep(.el-sub-menu__title:focus-visible) {
   outline: 2px solid rgba(255, 255, 255, .55);
   outline-offset: -2px;
 }
-.side-menu :deep(.el-sub-menu .el-menu) { padding-left: 0; }
+/* 嵌套子菜单 ul 的盒子延伸到侧栏右缘。Element Plus 展开/收起动画全程会给这个 ul
+   写 overflow:hidden,舌头靠 margin-right:-8px 伸出 ul 的那 8px 会在第一帧被裁掉、
+   与内容纸硬生生断开;让 ul 自带 8px 右内边距,舌头就落在它的 padding 盒内,动画全程贴纸 */
+.side-menu :deep(.el-sub-menu .el-menu) {
+  padding-left: 0;
+  padding-right: 8px;
+  margin-right: -8px;
+}
+/* 动画期间把 EP 写在 style 属性上的 overflow:hidden 换成 clip(不建滚动容器、不撑大侧栏滚动区),
+   并只在顶部放开 14px:首项舌头的上反圆角落在父级标题行内、ul 盒子之外,否则同样第一帧就消失。
+   底部不放开,折叠中的内容会盖到下一组标题上 */
+.side-menu :deep(.el-sub-menu .el-menu.el-collapse-transition-leave-active),
+.side-menu :deep(.el-sub-menu .el-menu.el-collapse-transition-enter-active) {
+  overflow: clip !important;
+  overflow-clip-margin: 14px;
+  clip-path: inset(-14px 0 0 0);
+}
+/* 放开的那个角随折叠同步淡出/淡入,否则 ul 折到 0 高时会孤零零剩一个角、展开时又先冒出一个角 */
+.side-menu :deep(.el-collapse-transition-leave-active > .el-menu-item.is-active:first-child)::before,
+.side-menu :deep(.el-collapse-transition-enter-active > .el-menu-item.is-active:first-child)::before {
+  transition: opacity var(--el-transition-duration) ease-in-out;
+}
+.side-menu :deep(.el-collapse-transition-leave-active > .el-menu-item.is-active:first-child)::before,
+.side-menu :deep(.el-collapse-transition-enter-from > .el-menu-item.is-active:first-child)::before {
+  opacity: 0;
+}
 .side-menu :deep(.el-sub-menu .el-menu-item) { min-width: auto; }
 .side-menu :deep(.el-icon) { font-size: 17px; }
 
@@ -299,21 +374,21 @@ function onClick(c) {
 .switcher-zone :deep(.project-empty) { color: #c3c8f5; }
 .switcher-zone :deep(.project-empty .el-icon) { font-size: 16px; }
 
-/* 白色内容"纸":上下右留缝,四角圆角,被 chrome 包裹 */
+/* 内容"纸":毛玻璃(玻璃本体在 .body-row::after),上下右留缝,四角圆角,被 chrome 包裹;
+   纸内卡片保持不透明白,只有页面底色透出氛围光 */
 .el-main {
   position: relative;
   z-index: 1;
-  background: #fff;
-  margin: 12px 12px 12px 0;
-  height: calc(100% - 24px);
-  border-radius: 22px;
+  background: transparent;
+  margin: var(--paper-gap) var(--paper-gap) var(--paper-gap) 0;
+  height: calc(100% - var(--paper-gap) * 2);
+  border-radius: var(--paper-radius);
   padding: 0;
   overflow-x: hidden;       /* 页面级横向滚动禁用:宽表格由 el-table 自己就近滚动 */
   overflow-y: auto;
   scrollbar-gutter: stable; /* 滚动条出现/消失不再引起内容抖动 */
   isolation: isolate;
-  background-clip: padding-box;
-  clip-path: inset(0 round 22px);
+  clip-path: inset(0 round var(--paper-radius));
 }
 
 /* 路由切换微动效 */

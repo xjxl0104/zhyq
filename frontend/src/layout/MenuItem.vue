@@ -16,6 +16,8 @@
 
   <!-- 叶子项:实际路由项 -->
   <el-menu-item v-else :index="item.path" @click="$emit('leaf', item)">
+    <!-- 选中态毛玻璃舌身,由 Layout 样式控制显隐;非选中项保持 display:none -->
+    <span class="tongue-glass" aria-hidden="true" />
     <el-icon v-if="item.icon"><component :is="item.icon" /></el-icon>
     <template #title>
       <span v-if="formattedIndex" class="menu-index" aria-hidden="true">{{ formattedIndex }}</span>

@@ -118,7 +118,7 @@ body {
   min-height: 100%;
   padding: 28px;
   color: var(--text-body);
-  background: #f4f6fa;
+  background: transparent; /* 底色交给 Layout 的毛玻璃纸透出,卡片自身仍是白底 */
   border-radius: inherit;
   background-clip: padding-box;
 }
