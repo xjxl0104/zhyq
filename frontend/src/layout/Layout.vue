@@ -1,6 +1,23 @@
 <template>
   <div class="app-wrapper">
-    <el-container class="body-row" :style="{ '--aside-w': asideWidth }">
+    <!-- 液态玻璃的 SVG 位移滤镜(仅 Chromium 支持 backdrop-filter: url());这个 svg 不能 display:none -->
+    <svg v-if="lensOk" class="lens-defs" aria-hidden="true" focusable="false">
+      <defs>
+        <filter v-for="f in lensFilters" :key="f.id" :id="f.id" color-interpolation-filters="sRGB" x="0%" y="0%" width="100%" height="100%">
+          <feImage :href="f.map" x="0" y="0" width="100%" height="100%" preserveAspectRatio="none" result="map" />
+          <feDisplacementMap in="SourceGraphic" in2="map" :scale="f.scale" xChannelSelector="R" yChannelSelector="G" result="dispRed" />
+          <feColorMatrix in="dispRed" type="matrix" values="1 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0" result="red" />
+          <feDisplacementMap in="SourceGraphic" in2="map" :scale="f.scale + 10" xChannelSelector="R" yChannelSelector="G" result="dispGreen" />
+          <feColorMatrix in="dispGreen" type="matrix" values="0 0 0 0 0  0 1 0 0 0  0 0 0 0 0  0 0 0 1 0" result="green" />
+          <feDisplacementMap in="SourceGraphic" in2="map" :scale="f.scale + 20" xChannelSelector="R" yChannelSelector="G" result="dispBlue" />
+          <feColorMatrix in="dispBlue" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 1 0 0  0 0 0 1 0" result="blue" />
+          <feBlend in="red" in2="green" mode="screen" result="rg" />
+          <feBlend in="rg" in2="blue" mode="screen" result="output" />
+          <feGaussianBlur in="output" stdDeviation="0.7" />
+        </filter>
+      </defs>
+    </svg>
+    <el-container class="body-row" :class="{ 'lens-on': lensOk }" :style="{ '--aside-w': asideWidth }">
       <GrainientBg class="chrome-aurora" />
       <!-- 侧边栏可收起:财务几张宽表(所有账单、应收明细登记表 28 列)在 232px 侧边栏下
            右侧列会被挤出可视区,收起后表格独占整宽。
@@ -49,7 +66,7 @@
           </el-dropdown>
         </div>
       </el-aside>
-      <el-main>
+      <el-main ref="mainRef">
         <span class="sr-only" aria-live="polite">{{ currentTitle }}</span>
         <router-view v-if="ready" v-slot="{ Component }">
           <transition name="fade-slide" mode="out-in">
@@ -64,12 +81,13 @@
 </template>
 
 <script setup>
-import { computed, ref, onMounted, nextTick } from 'vue'
+import { computed, ref, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { menuTree } from './menu'
 import request from '@/utils/request'
 import { useProjectStore } from '@/stores/project'
 import GrainientBg from '@/components/GrainientBg.vue'
+import { lensMapDataUri } from '@/utils/lensMap'
 import StrokeBrand from './StrokeBrand.vue'
 import MenuItem from './MenuItem.vue'
 import ProjectSwitcher from './ProjectSwitcher.vue'
@@ -85,6 +103,41 @@ const collapsed = ref(localStorage.getItem(COLLAPSE_KEY) === '1')
 // 侧栏两档宽度只在这里定义,经 .body-row 的 --aside-w 同时喂给 el-aside 和内容纸的玻璃层
 const SIDEBAR_WIDTH = { open: '232px', rail: '64px' }
 const asideWidth = computed(() => (collapsed.value ? SIDEBAR_WIDTH.rail : SIDEBAR_WIDTH.open))
+
+// ---- 液态玻璃:纸与舌头各一张按尺寸生成的位移贴图,挂成 SVG 滤镜给 backdrop-filter 用 ----
+// Chromium 才支持 backdrop-filter: url(#svg);Safari(非 Chrome 内核)/Firefox 退回普通磨砂
+function detectLens() {
+  const ua = navigator.userAgent
+  if ((/Safari/.test(ua) && !/Chrome/.test(ua)) || /Firefox/.test(ua)) return false
+  const probe = document.createElement('div')
+  probe.style.backdropFilter = 'url(#lens-paper)'
+  return probe.style.backdropFilter !== ''
+}
+const lensOk = ref(false)
+const mainRef = ref(null)
+const paperMap = ref('')
+// 舌头尺寸固定(侧栏 232 - 菜单左内边距 8,高 42),只有左侧两角圆;右边贴纸,不做折射
+const TONGUE_LENS = { width: 224, height: 42, radii: [12, 0, 0, 12], edge: 6, flat: { right: true } }
+const PAPER_LENS = { radius: 22, edge: 18 }
+const tongueMap = lensMapDataUri(TONGUE_LENS)
+const lensFilters = computed(() => [
+  { id: 'lens-paper', map: paperMap.value, scale: -180 },
+  { id: 'lens-tongue', map: tongueMap, scale: -110 },
+])
+let paperObserver
+onMounted(() => {
+  lensOk.value = detectLens()
+  const el = mainRef.value?.$el
+  if (!lensOk.value || !el) return
+  const refresh = () => {
+    const r = el.getBoundingClientRect()
+    paperMap.value = lensMapDataUri({ width: r.width, height: r.height, radii: Array(4).fill(PAPER_LENS.radius), edge: PAPER_LENS.edge })
+  }
+  refresh()
+  paperObserver = new ResizeObserver(() => refresh())
+  paperObserver.observe(el)
+})
+onBeforeUnmount(() => paperObserver?.disconnect())
 function toggleSidebar() {
   collapsed.value = !collapsed.value
   localStorage.setItem(COLLAPSE_KEY, collapsed.value ? '1' : '0')
@@ -154,6 +207,15 @@ function onClick(c) {
   --glass-bg: rgba(255, 255, 255, .84);
   --glass-filter: blur(22px) saturate(1.35);
 }
+/* 液态玻璃:纸和舌头各用自己的位移滤镜(折射 + 色散,几乎不模糊),磨砂只在不支持时兜底 */
+.body-row.lens-on {
+  --glass-bg: rgba(255, 255, 255, .8);
+  --glass-paper-filter: url(#lens-paper) saturate(1.5);
+  --glass-tongue-filter: url(#lens-tongue) saturate(1.5);
+  --glass-rim: rgba(255, 255, 255, .42);
+  --glass-rim-top: rgba(255, 255, 255, .72);
+}
+.lens-defs { position: absolute; width: 0; height: 0; overflow: hidden; }
 /* 内容纸的玻璃层:独立于 .el-main 铺在其正下方。
    不直接把 backdrop-filter 放在 .el-main 上:它是滚动容器,滤镜会让
    position:fixed 的后代(弹窗遮罩 / 反馈悬浮钮)被锁进纸内随内容滚动 */
@@ -168,8 +230,12 @@ function onClick(c) {
   transition: left .2s ease;   /* 与 .sidebar 的 width 过渡同步,收起/展开时玻璃跟着侧栏走 */
   border-radius: var(--paper-radius);
   background: var(--glass-bg);
-  -webkit-backdrop-filter: var(--glass-filter);
-  backdrop-filter: var(--glass-filter);
+  -webkit-backdrop-filter: var(--glass-paper-filter, var(--glass-filter));
+  backdrop-filter: var(--glass-paper-filter, var(--glass-filter));
+  /* 高光描边:顶边最亮,左边不画(那是和舌头相接的一侧) */
+  border: 1px solid var(--glass-rim, transparent);
+  border-top-color: var(--glass-rim-top, transparent);
+  border-left: 0;
   pointer-events: none;
 }
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
@@ -347,8 +413,11 @@ function onClick(c) {
   z-index: -1;
   border-radius: inherit;
   background: var(--glass-bg);
-  -webkit-backdrop-filter: var(--glass-filter);
-  backdrop-filter: var(--glass-filter);
+  -webkit-backdrop-filter: var(--glass-tongue-filter, var(--glass-filter));
+  backdrop-filter: var(--glass-tongue-filter, var(--glass-filter));
+  border: 1px solid var(--glass-rim, transparent);
+  border-top-color: var(--glass-rim-top, transparent);
+  border-right: 0;                 /* 贴纸的一侧不描边 */
   pointer-events: none;
 }
 .side-menu :deep(.el-menu-item.is-active)::before,
