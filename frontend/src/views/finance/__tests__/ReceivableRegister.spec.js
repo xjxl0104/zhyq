@@ -42,11 +42,11 @@ describe('应收明细登记表', () => {
     global: { plugins: [ElementPlus], stubs: { ReceivableDetailDrawer: true } }
   })
 
-  it('使用同一份27列定义并渲染权威金额', async () => {
+  it('使用同一份28列定义并渲染权威金额', async () => {
     const wrapper = mountPage()
     await flushPromises()
 
-    expect(receivableColumns).toHaveLength(27)
+    expect(receivableColumns).toHaveLength(28)
     expect(receivableColumns.map(column => column.label)).toContain('月租金/元')
     expect(wrapper.text()).toContain('示例租户甲')
     expect(wrapper.text()).toContain('100,000.00')

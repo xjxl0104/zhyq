@@ -6,6 +6,25 @@
         <p>以园区租金及物业管理费基础资料为权威口径</p>
       </div>
       <div class="toolbar">
+        <!-- 28 列全开必然横向滚动、右侧固定列会压住内容;列设置让用户选到不横滚为止 -->
+        <el-popover placement="bottom-end" :width="360" trigger="click">
+          <template #reference>
+            <el-button>列设置 ({{ visibleCols.length }}/{{ receivableColumns.length }})</el-button>
+          </template>
+          <div class="col-picker">
+            <div class="col-picker-bar">
+              <el-button link type="primary" @click="applyPreset('common')">常用列</el-button>
+              <el-button link type="primary" @click="applyPreset('all')">全选</el-button>
+              <span class="col-picker-hint">列越少越不容易被右侧固定列挡住</span>
+            </div>
+            <el-checkbox-group v-model="visibleCols" class="col-picker-list" @change="onColsChange">
+              <el-checkbox v-for="column in receivableColumns" :key="column.prop"
+                           :value="column.prop" :disabled="LOCKED_COLUMN_PROPS.includes(column.prop)">
+                {{ column.label }}
+              </el-checkbox>
+            </el-checkbox-group>
+          </div>
+        </el-popover>
         <el-button v-if="capabilities.exportData" @click="downloadExport">导出 Excel</el-button>
         <el-button v-if="capabilities.importData" type="primary" @click="importVisible = true">导入工作簿</el-button>
         <el-button v-if="capabilities.add" type="success" @click="openEditor()">新增</el-button>
@@ -69,7 +88,7 @@
 
     <div class="table-card" v-if="viewMode === 'list'">
       <el-table :data="list" v-loading="loading" border stripe height="calc(100vh - 300px)" @row-dblclick="openDetail">
-        <el-table-column v-for="column in receivableColumns" :key="column.prop"
+        <el-table-column v-for="column in shownColumns" :key="column.prop"
           :prop="column.prop" :label="column.label" :min-width="column.minWidth"
           :fixed="column.fixed" :align="column.align" resizable show-overflow-tooltip>
           <template #default="{ row }">{{ formatReceivableCell(row, column) }}</template>
@@ -87,14 +106,23 @@
         <el-table-column label="状态" width="100" fixed="right">
           <template #default="{ row }"><el-tag :type="statusType(row.status)">{{ statusLabel(row.status) }}</el-tag></template>
         </el-table-column>
-        <el-table-column label="操作" width="250" fixed="right">
+        <!-- 操作收进下拉:5 个按钮平铺要 300px,右侧固定列越宽、被它盖住的内容越多。
+             只留最常用的「详情」,其余进「更多」,固定区从 490px 降到 300px -->
+        <el-table-column label="操作" width="110" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click="openDetail(row)">详情</el-button>
-            <el-button v-if="capabilities.edit && ['DRAFT', 'PENDING_REVIEW'].includes(row.status)" link type="primary" @click="openEditor(row)">编辑</el-button>
-            <el-button v-if="capabilities.generate" link type="success" @click="generate(row)">生成账单</el-button>
-            <el-popconfirm v-if="capabilities.deleteData" title="确认删除该登记表?" @confirm="remove(row)">
-              <template #reference><el-button link type="danger">删除</el-button></template>
-            </el-popconfirm>
+            <el-dropdown v-if="hasRowActions(row)" trigger="click" @command="cmd => onRowAction(cmd, row)">
+              <el-button link type="primary">更多<el-icon class="el-icon--right"><arrow-down /></el-icon></el-button>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item v-if="capabilities.edit && ['DRAFT', 'PENDING_REVIEW'].includes(row.status)" command="edit">编辑</el-dropdown-item>
+                  <el-dropdown-item v-if="capabilities.generate" command="generate">生成账单</el-dropdown-item>
+                  <!-- 收缴政策,不是合同真相:已确认/已生效的登记也可调,后端普通编辑仍锁死 -->
+                  <el-dropdown-item v-if="capabilities.edit" command="lateFee">滞纳金</el-dropdown-item>
+                  <el-dropdown-item v-if="capabilities.deleteData" command="delete" divided>删除</el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
           </template>
         </el-table-column>
       </el-table>
@@ -155,16 +183,38 @@
       </el-form>
       <template #footer><el-button @click="editor.visible = false">取消</el-button><el-button type="primary" @click="saveEditor">保存</el-button></template>
     </el-dialog>
+
+    <el-dialog v-model="lateFee.visible" title="滞纳金起算日" width="460px">
+      <el-form label-width="110px">
+        <el-form-item label="租户"><span>{{ lateFee.tenantName }}</span></el-form-item>
+        <el-form-item label="起算日">
+          <el-date-picker v-model="lateFee.date" type="date" value-format="YYYY-MM-DD"
+                          placeholder="留空 = 默认口径" clearable style="width: 100%" />
+        </el-form-item>
+        <div class="late-fee-tip">
+          该日之前不计滞纳金（账单仍照实标逾期）；从该日起按万分之五/天计。
+          留空恢复默认口径（应收日与建单日取较晚者）。保存后立即对全部逾期账单重算。
+        </div>
+      </el-form>
+      <template #footer>
+        <el-button @click="lateFee.visible = false">取消</el-button>
+        <el-button type="primary" :loading="lateFee.saving" @click="saveLateFee">保存</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { onActivated, onMounted, reactive, ref } from 'vue'
+import { computed, onActivated, onMounted, reactive, ref } from 'vue'
+import { ArrowDown } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { receivableApi } from '@/api/receivable'
 import ReceivableDetailDrawer from './components/ReceivableDetailDrawer.vue'
 import ReceivableImportDialog from './components/ReceivableImportDialog.vue'
-import { formatReceivableCell, receivableColumns } from './receivableModel'
+import {
+  COMMON_COLUMN_PROPS, LOCKED_COLUMN_PROPS, formatReceivableCell,
+  loadVisibleColumns, receivableColumns, saveVisibleColumns
+} from './receivableModel'
 
 const loading = ref(false)
 const list = ref([])
@@ -179,6 +229,17 @@ const importVisible = ref(false)
 const detailVisible = ref(false)
 const detailId = ref(null)
 const editor = reactive({ visible: false, form: {} })
+const lateFee = reactive({ visible: false, saving: false, id: null, tenantName: '', date: null })
+const visibleCols = ref(loadVisibleColumns())
+// 按 receivableColumns 的原始顺序渲染,不跟着勾选顺序走
+const shownColumns = computed(() => receivableColumns.filter(c => visibleCols.value.includes(c.prop)))
+function onColsChange() { saveVisibleColumns(visibleCols.value) }
+function applyPreset(kind) {
+  visibleCols.value = kind === 'all'
+    ? receivableColumns.map(c => c.prop)
+    : [...COMMON_COLUMN_PROPS]
+  onColsChange()
+}
 const capabilities = ref({ query: false, add: false, edit: false, importData: false, confirm: false, generate: false, exportData: false, deleteData: false, accountView: false })
 const lastCompletedBatch = ref(null)
 const statusMap = { DRAFT: '草稿', PENDING_REVIEW: '待核对', CONFIRMED: '已确认', ACTIVE: '已生效', TERMINATED: '已终止' }
@@ -238,9 +299,34 @@ function monthlySummaryMethod({ columns }) {
 }
 function openDetail(row) { detailId.value = row.id; detailVisible.value = true }
 function openEditor(row) { editor.form = row ? { ...row } : { monthlyRent: 0, monthlyProperty: 0, monthlyTotal: 0 }; editor.visible = true }
+function openLateFee(row) {
+  Object.assign(lateFee, { visible: true, saving: false, id: row.id, tenantName: row.tenantNameRaw || '-', date: row.lateFeeStartDate || null })
+}
+async function saveLateFee() {
+  lateFee.saving = true
+  try {
+    await receivableApi.updateLateFeeStart(lateFee.id, lateFee.date || null)
+    ElMessage.success(lateFee.date ? `滞纳金将从 ${lateFee.date} 起算，逾期账单已重算` : '已恢复默认滞纳金口径，逾期账单已重算')
+    lateFee.visible = false
+    await load()
+  } finally { lateFee.saving = false }
+}
 async function saveEditor() { editor.form.id ? await receivableApi.update(editor.form) : await receivableApi.add(editor.form); editor.visible = false; ElMessage.success('保存成功'); load() }
 async function generate(row) { await ElMessageBox.confirm('将按登记明细中的合同期限、免租期和收款约定生成或同步账单，是否继续？'); const result = await receivableApi.generate(row.id); ElMessage.success(`新增 ${result?.inserted || 0} 条，同步 ${result?.updated || 0} 条，跳过 ${result?.skipped || 0} 条`); await load() }
-async function remove(row) { await receivableApi.remove(row.id); ElMessage.success('删除成功'); load() }
+async function remove(row) {
+  await ElMessageBox.confirm(`确认删除「${row.tenantNameRaw || '该登记表'}」这条应收登记？`, '确认删除', { type: 'warning' })
+  await receivableApi.remove(row.id); ElMessage.success('删除成功'); load()
+}
+function hasRowActions(row) {
+  return capabilities.value.generate || capabilities.value.deleteData || capabilities.value.edit
+    || ['DRAFT', 'PENDING_REVIEW'].includes(row.status)
+}
+function onRowAction(command, row) {
+  if (command === 'edit') return openEditor(row)
+  if (command === 'generate') return generate(row)
+  if (command === 'lateFee') return openLateFee(row)
+  if (command === 'delete') return remove(row)
+}
 async function downloadExport() {
   const response = await receivableApi.export()
   const url = URL.createObjectURL(response.data)
@@ -282,4 +368,8 @@ onActivated(() => {
 .summary-card.property .card-value { color: #409eff; }
 .summary-card.total .card-value { color: #67c23a; }
 .amount-highlight { font-weight: 600; color: var(--el-color-primary); }
+.col-picker-bar { display: flex; align-items: center; gap: 10px; padding-bottom: 8px; border-bottom: 1px solid var(--el-border-color-lighter); }
+.col-picker-hint { margin-left: auto; font-size: 12px; color: var(--el-text-color-secondary); }
+.col-picker-list { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 8px; max-height: 340px; overflow-y: auto; padding-top: 8px; }
+.late-fee-tip { margin: 4px 12px 0 110px; font-size: 12px; line-height: 1.6; color: var(--el-text-color-secondary); }
 </style>

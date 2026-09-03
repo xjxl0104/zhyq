@@ -1,8 +1,10 @@
 package com.zhyq.park.finance.controller;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.zhyq.park.common.audit.OperationLog;
 import com.zhyq.park.common.exception.BizException;
 import com.zhyq.park.common.result.PageResult;
 import com.zhyq.park.common.result.Result;
@@ -152,6 +154,24 @@ public class BillController {
         return Result.ok(viewEnricher.cashierTenantOptions(projectId, bills));
     }
 
+    /** 账单页按钮可见性:前端据此决定显示哪些操作入口(与 @PreAuthorize 同一权限点) */
+    public record BillCapabilities(boolean lateFeeAdjust) {}
+
+    @Operation(summary = "账单页操作权限(前端按钮可见性)")
+    @GetMapping("/capabilities")
+    public Result<BillCapabilities> capabilities() {
+        var authentication = org.springframework.security.core.context.SecurityContextHolder
+                .getContext().getAuthentication();
+        return Result.ok(new BillCapabilities(
+                hasAuthority(authentication, "finance:bill:lateFee:adjust")));
+    }
+
+    private static boolean hasAuthority(org.springframework.security.core.Authentication authentication,
+                                        String authority) {
+        return authentication != null && authentication.getAuthorities().stream()
+                .anyMatch(item -> authority.equals(item.getAuthority()));
+    }
+
     @Operation(summary = "计算滞纳金(逾期未结清应收账单,与每日自愈任务同一实现)")
     @PreAuthorize("hasAuthority('finance:bill:calcLateFee')")
     @PostMapping("/calcLateFee")
@@ -159,6 +179,54 @@ public class BillController {
         // 计算逻辑在 LateFeeService:ReceivableBillSyncJob 每天自动跑同一份,
         // 这个端点保留给"不想等自愈周期"的手动触发
         return Result.ok(lateFeeService.recalc());
+    }
+
+    /**
+     * 滞纳金人工调整请求。
+     *
+     * @param lateFee 调整后的滞纳金,>=0;restoreAuto=true 时忽略
+     * @param remark  调整原因(如「与租户协商减免」),留痕给对账/审计看
+     * @param restoreAuto true=撤销人工调整、恢复自动计算(并立即重算)
+     */
+    public record LateFeeAdjustRequest(BigDecimal lateFee, String remark, Boolean restoreAuto) {}
+
+    @Operation(summary = "调整滞纳金(人工改额或减免;调整后锁定不再被自动重算覆盖,可恢复自动)")
+    @PreAuthorize("hasAuthority('finance:bill:lateFee:adjust')")
+    @OperationLog(module = "账单", action = "调整滞纳金")
+    @PutMapping("/{id}/late-fee")
+    public Result<Void> adjustLateFee(@PathVariable Long id,
+                                      @RequestBody LateFeeAdjustRequest request) {
+        Bill bill = billMapper.selectById(id);
+        if (bill == null) throw new BizException("账单不存在");
+        if (!BillMetrics.isReceivable(bill)) throw new BizException("只有应收账单才有滞纳金");
+        if (Boolean.TRUE.equals(request.restoreAuto())) {
+            // 解锁 + 立即重算:让管理员当场看到自动口径算出来的数,不用等自愈任务
+            Bill patch = new Bill();
+            patch.setLateFeeManual(0);
+            patch.setLateFeeRemark("");
+            billMapper.update(patch, new LambdaUpdateWrapper<Bill>().eq(Bill::getId, id));
+            lateFeeService.recalc();
+            return Result.ok();
+        }
+        BigDecimal lateFee = request.lateFee();
+        if (lateFee == null || lateFee.signum() < 0) throw new BizException("滞纳金不能为负数");
+        lateFee = lateFee.setScale(2, java.math.RoundingMode.HALF_UP);
+        // 结清判定与 PaymentService 同口径(付满 本金+滞纳金 才算结清):减免滞纳金后
+        // 可能刚好收满,状态要跟着走,否则会出现「欠款 ¥0 却仍显示逾期」。只做
+        // 「未结清→已结清」这一个方向,不把逾期账单降级成别的状态
+        int updated = billMapper.update(null, new LambdaUpdateWrapper<Bill>()
+                .eq(Bill::getId, id)
+                .in(Bill::getStatus, PAYABLE_STATUS)
+                .set(Bill::getLateFee, lateFee)
+                .set(Bill::getLateFeeManual, 1)
+                .set(Bill::getLateFeeRemark, request.remark())
+                .set(Bill::getUpdateTime, java.time.LocalDateTime.now())
+                .setSql("status = IF(paid_amount >= amount + " + lateFee.toPlainString()
+                        + ", " + BillMetrics.STATUS_SETTLED + ", status)"));
+        if (updated != 1) {
+            throw new BizException("该账单当前状态不可调整滞纳金(仅待收付/部分结清/逾期账单可调)");
+        }
+        return Result.ok();
     }
 
     @Operation(summary = "账单详情")

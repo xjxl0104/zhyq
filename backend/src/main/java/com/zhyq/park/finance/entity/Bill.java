@@ -54,6 +54,9 @@ public class Bill extends BaseEntity {
     private BigDecimal paidAmount;
     /** 滞纳金 */
     private BigDecimal lateFee;
+    /** 滞纳金人工调整标记:1=锁定,LateFeeService 自动重算整条跳过 */
+    private Integer lateFeeManual;
+    private String lateFeeRemark;
     /** 税率% */
     private BigDecimal taxRate;
     /** 账期起 */

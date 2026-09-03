@@ -35,6 +35,7 @@ import static org.mockito.Mockito.when;
 class LateFeeServiceTest {
 
     @Mock private BillMapper billMapper;
+    @Mock private com.zhyq.park.receivable.mapper.ReceivableRegisterMapper registerMapper;
 
     @BeforeAll
     static void initMpLambdaCache() {
@@ -43,7 +44,7 @@ class LateFeeServiceTest {
     }
 
     private LateFeeService service() {
-        return new LateFeeService(billMapper);
+        return new LateFeeService(billMapper, registerMapper);
     }
 
     private static Bill overdueBill(long id, String amount, String paid, int daysOverdue) {
@@ -54,6 +55,18 @@ class LateFeeServiceTest {
         b.setAmount(new BigDecimal(amount));
         b.setPaidAmount(new BigDecimal(paid));
         b.setDueDate(LocalDate.now().minusDays(daysOverdue));
+        return b;
+    }
+
+    /** 挂在登记表上的逾期账单 + 该登记表的滞纳金起算日政策 */
+    private Bill overdueBillWithPolicy(long registerId, LocalDate policyStart, int daysOverdue) {
+        Bill b = overdueBill(5L, "1000", "0", daysOverdue);
+        b.setReceivableRegisterId(registerId);
+        var register = new com.zhyq.park.receivable.entity.ReceivableRegister();
+        register.setId(registerId);
+        register.setLateFeeStartDate(policyStart);
+        when(billMapper.selectList(any())).thenReturn(List.of(b));
+        when(registerMapper.selectBatchIds(List.of(registerId))).thenReturn(List.of(register));
         return b;
     }
 
@@ -127,5 +140,70 @@ class LateFeeServiceTest {
 
         assertThat(service().recalc()).isZero();
         verify(billMapper, never()).update(any(), any());
+    }
+
+    @Test
+    @DisplayName("人工调整过的账单:查询与条件更新两处都带 late_fee_manual 守卫,不被自动重算覆盖")
+    void manuallyAdjustedBillsAreExcludedFromRecalc() {
+        when(billMapper.selectList(any())).thenReturn(List.of(overdueBill(5L, "1000", "0", 10)));
+        when(billMapper.update(any(), any())).thenReturn(1);
+
+        service().recalc();
+
+        // 查询侧:必须把人工锁定的行排除在候选之外
+        @SuppressWarnings({"unchecked", "rawtypes"})
+        ArgumentCaptor<com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<Bill>> query =
+                ArgumentCaptor.forClass((Class) com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper.class);
+        verify(billMapper).selectList(query.capture());
+        assertThat(query.getValue().getCustomSqlSegment()).contains("late_fee_manual");
+
+        // 更新侧:快照后可能刚被锁定,WHERE 里要再验一次
+        @SuppressWarnings({"unchecked", "rawtypes"})
+        ArgumentCaptor<LambdaUpdateWrapper<Bill>> wrapper =
+                ArgumentCaptor.forClass((Class) LambdaUpdateWrapper.class);
+        verify(billMapper).update(any(), wrapper.capture());
+        assertThat(wrapper.getValue().getCustomSqlSegment()).contains("late_fee_manual");
+    }
+
+    @Test
+    @DisplayName("登记表滞纳金起算日在未来:滞纳金 0,但仍标逾期、逾期天数照真实应收日")
+    void policyStartDateInFutureSuppressesLateFee() {
+        overdueBillWithPolicy(9L, LocalDate.now().plusDays(28), 96);
+        when(billMapper.update(any(), any())).thenReturn(1);
+
+        assertThat(service().recalc()).isEqualTo(1);
+
+        ArgumentCaptor<Bill> patch = ArgumentCaptor.forClass(Bill.class);
+        verify(billMapper).update(patch.capture(), any());
+        assertThat(patch.getValue().getLateFee()).isEqualByComparingTo("0");
+        assertThat(patch.getValue().getStatus()).isEqualTo(6);
+        assertThat(patch.getValue().getOverdueDays()).isEqualTo(96);
+    }
+
+    @Test
+    @DisplayName("起算日已过 4 天:只按起算日以来的天数计费,不追溯之前的逾期")
+    void policyStartDateInPastAccruesFromPolicyDate() {
+        overdueBillWithPolicy(9L, LocalDate.now().minusDays(4), 96);
+        when(billMapper.update(any(), any())).thenReturn(1);
+
+        service().recalc();
+
+        ArgumentCaptor<Bill> patch = ArgumentCaptor.forClass(Bill.class);
+        verify(billMapper).update(patch.capture(), any());
+        assertThat(patch.getValue().getLateFee()).isEqualByComparingTo("2.00"); // 1000×0.0005×4
+    }
+
+    @Test
+    @DisplayName("起算日早于默认口径时不生效:政策只能推后,不能提前(不绕过补录不追溯)")
+    void policyEarlierThanDefaultDoesNotAdvanceAccrual() {
+        Bill backfilled = overdueBillWithPolicy(9L, LocalDate.now().minusDays(30), 10);
+        backfilled.setCreateTime(java.time.LocalDateTime.now()); // 今天刚补录
+        when(billMapper.update(any(), any())).thenReturn(1);
+
+        service().recalc();
+
+        ArgumentCaptor<Bill> patch = ArgumentCaptor.forClass(Bill.class);
+        verify(billMapper).update(patch.capture(), any());
+        assertThat(patch.getValue().getLateFee()).isEqualByComparingTo("0");
     }
 }
