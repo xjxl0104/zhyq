@@ -28,7 +28,7 @@
 import { computed } from 'vue'
 
 // 递归菜单项:支持任意层级嵌套(业务域 → 中间模块 → 叶子)。
-// leaf 事件把被点击的叶子项上抛给 Layout,用于处理 target=_blank(如监控大屏)。
+// leaf 事件把被点击的叶子项上抛给 Layout,为需要特殊打开方式的菜单项预留处理入口。
 // topIndex 仅一级分组传入,渲染 LineSidebar 式零填充序号;子层不编号。
 const props = defineProps({
   item: { type: Object, required: true },
