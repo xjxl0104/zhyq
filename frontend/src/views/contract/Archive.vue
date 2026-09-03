@@ -1,6 +1,10 @@
 <template>
   <div class="page-container">
+    <!-- 合同档案库:所有合同都在册,不只是走完生命周期的。
+         执行中的合同也要能查到,否则新签约的一批在这里永远是空白 -->
     <el-tabs v-model="activeTab" @tab-change="onTabChange" class="archive-tabs">
+      <el-tab-pane label="全部" name="all" />
+      <el-tab-pane label="在租中" name="running" />
       <el-tab-pane label="已到期" name="expired" />
       <el-tab-pane label="已终止" name="terminated" />
       <el-tab-pane label="已归档" name="archived" />
@@ -39,7 +43,8 @@
         </el-table-column>
         <el-table-column label="操作" width="120" fixed="right">
           <template #default="{ row }">
-            <el-popconfirm v-if="activeTab !== 'archived'" title="确认归档该合同?" @confirm="archive(row.id)">
+            <!-- 与后端守卫同口径:仅已到期(8)/已终止(9)可归档,执行中的不给按钮 -->
+            <el-popconfirm v-if="[8, 9].includes(row.status)" title="确认归档该合同?" @confirm="archive(row.id)">
               <template #reference><el-button link type="primary">归档</el-button></template>
             </el-popconfirm>
             <span v-else>-</span>
@@ -58,21 +63,24 @@ import { reactive, ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { contractApi } from '@/api/contract'
 
-const tabStatus = { expired: 8, terminated: 9, archived: 10 }
-const activeTab = ref('expired')
+// null = 不按状态过滤(全部)。档案库要能查到所有合同,不只走完生命周期的那些
+const tabStatus = { all: null, running: 5, expired: 8, terminated: 9, archived: 10 }
+const activeTab = ref('all')
 
-function statusText(v) {
-  if (v === 8) return '已到期'
-  if (v === 9) return '已终止'
-  if (v === 10) return '已归档'
-  return v
+const statusMap = {
+  1: { label: '草稿', type: 'info' },
+  2: { label: '待审核', type: 'warning' },
+  3: { label: '待签署', type: 'warning' },
+  4: { label: '待执行', type: 'warning' },
+  5: { label: '在租中', type: 'success' },
+  6: { label: '变更中', type: 'warning' },
+  7: { label: '退租中', type: 'warning' },
+  8: { label: '已到期', type: 'warning' },
+  9: { label: '已终止', type: 'danger' },
+  10: { label: '已归档', type: 'info' }
 }
-function statusType(v) {
-  if (v === 8) return 'warning'
-  if (v === 9) return 'danger'
-  if (v === 10) return 'info'
-  return 'info'
-}
+function statusText(v) { return statusMap[v]?.label ?? v }
+function statusType(v) { return statusMap[v]?.type ?? 'info' }
 
 const loading = ref(false)
 const list = ref([])
