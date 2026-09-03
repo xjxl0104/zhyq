@@ -16,6 +16,8 @@ import com.zhyq.park.finance.entity.Bill;
 import com.zhyq.park.finance.mapper.BillMapper;
 import com.zhyq.park.receivable.entity.ReceivableRegister;
 import com.zhyq.park.receivable.mapper.ReceivableRegisterMapper;
+import com.zhyq.park.tenant.entity.BizTenant;
+import com.zhyq.park.tenant.mapper.BizTenantMapper;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
@@ -44,6 +46,7 @@ public class ContractController {
     private final ContractService contractService;
     private final BillMapper billMapper;
     private final ReceivableRegisterMapper receivableRegisterMapper;
+    private final BizTenantMapper bizTenantMapper;
 
     @Operation(summary = "分页查询合同")
     @PreAuthorize("hasAuthority('contract:query')")
@@ -63,6 +66,7 @@ public class ContractController {
           .eq(contractType != null, Contract::getContractType, contractType)
           .orderByDesc(Contract::getId);
         IPage<Contract> p = contractMapper.selectPage(new Page<>(pageNo, pageSize), qw);
+        fillTenantNames(p.getRecords());
         return Result.ok(PageResult.of(p.getTotal(), p.getRecords()));
     }
 
@@ -149,6 +153,25 @@ public class ContractController {
                 .set(ReceivableRegister::getContractId, null));
         int deleted = contractMapper.deleteBatchIds(ids);
         return Result.ok(summary(deleted, protectedIds.size()));
+    }
+
+    /**
+     * 批量填租客名:合同列表与合同归档都要显示租客而不是裸 tenant_ref_id,
+     * 一次查库按 id 映射,避免逐行查。
+     */
+    private void fillTenantNames(List<Contract> contracts) {
+        if (contracts == null || contracts.isEmpty()) {
+            return;
+        }
+        List<Long> ids = contracts.stream().map(Contract::getTenantRefId)
+                .filter(Objects::nonNull).distinct().toList();
+        if (ids.isEmpty()) {
+            return;
+        }
+        Map<Long, String> names = new HashMap<>();
+        bizTenantMapper.selectBatchIds(ids)
+                .forEach(t -> names.put(t.getId(), t.getName()));
+        contracts.forEach(c -> c.setTenantName(names.get(c.getTenantRefId())));
     }
 
     private static Map<String, Object> summary(int deleted, int kept) {

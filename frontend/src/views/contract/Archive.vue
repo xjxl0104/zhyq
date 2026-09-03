@@ -24,7 +24,10 @@
       <el-table :data="list" v-loading="loading" border stripe>
         <el-table-column type="index" label="#" width="55" />
         <el-table-column prop="code" label="合同编号" min-width="160" />
-        <el-table-column prop="tenantRefId" label="租客ID" width="100" />
+        <!-- 与合同列表同口径:后端已填好 tenantName,页面上不再露裸 ID -->
+        <el-table-column prop="tenantName" label="租客" min-width="180" show-overflow-tooltip>
+          <template #default="{ row }">{{ row.tenantName || `租客 #${row.tenantRefId ?? '-'}` }}</template>
+        </el-table-column>
         <el-table-column label="起止日期" width="220">
           <template #default="{ row }">{{ row.startDate || '-' }} ~ {{ row.endDate || '-' }}</template>
         </el-table-column>
