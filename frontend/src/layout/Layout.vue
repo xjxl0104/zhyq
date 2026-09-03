@@ -6,16 +6,25 @@
            右侧列会被挤出可视区,收起后表格独占整宽。
            用 v-show 整块摘出布局流,而不是把宽度动画到 0 —— el-aside 是 flex 项,
            改 --el-aside-width 会被内容的 min-content 宽度顶住,收放两头都不干净 -->
-      <el-aside v-show="!collapsed" width="232px" class="sidebar">
+      <!-- 收起 = 64px 图标栏,不是整块消失:宽表要横向空间时收窄,但品牌条与图标导航还在,
+           视觉上不塌。折叠态 el-menu 走官方 collapse,子菜单变悬浮弹层 -->
+      <el-aside :width="collapsed ? '64px' : '232px'" class="sidebar" :class="{ collapsed }">
         <div class="brand-zone">
           <img class="brand-logo" src="@/assets/brand/dipark.svg" alt="DIPARK" />
-          <StrokeBrand />
+          <StrokeBrand v-show="!collapsed" />
+          <button class="rail-toggle" type="button"
+                  :title="collapsed ? '展开菜单' : '收起菜单（表格可用更宽）'"
+                  :aria-label="collapsed ? '展开菜单' : '收起菜单'"
+                  :aria-expanded="!collapsed" @click="toggleSidebar">
+            <el-icon><component :is="collapsed ? 'Expand' : 'Fold'" /></el-icon>
+          </button>
         </div>
-        <div class="switcher-zone">
+        <div v-show="!collapsed" class="switcher-zone">
           <ProjectSwitcher @switched="onProjectSwitched" />
         </div>
         <el-scrollbar class="menu-scroll">
-          <el-menu :default-active="activePath" router unique-opened class="side-menu">
+          <el-menu :default-active="activePath" router unique-opened class="side-menu"
+                   :collapse="collapsed" :collapse-transition="false">
             <MenuItem
               v-for="(item, i) in menuTree"
               :key="item.title"
@@ -29,7 +38,7 @@
           <el-dropdown @command="onUserCmd" trigger="click">
             <div class="user">
               <el-avatar :size="32" class="user-avatar">{{ uname.charAt(0) }}</el-avatar>
-              <span class="uname">{{ uname }}</span>
+              <span v-show="!collapsed" class="uname">{{ uname }}</span>
             </div>
             <template #dropdown>
               <el-dropdown-menu>
@@ -39,14 +48,6 @@
           </el-dropdown>
         </div>
       </el-aside>
-      <!-- 贴边浮动按钮:收起后仍要有地方把菜单叫回来,故不放在侧边栏内部 -->
-      <!-- 位置走内联绑定而不是 .collapsed 类:类选择器在部分缓存场景下没吃到,内联最稳 -->
-      <button class="sidebar-toggle" :style="{ left: collapsed ? '11px' : '232px' }" type="button"
-              :title="collapsed ? '展开菜单' : '收起菜单（表格可用更宽）'"
-              :aria-label="collapsed ? '展开菜单' : '收起菜单'"
-              :aria-expanded="!collapsed" @click="toggleSidebar">
-        <el-icon><component :is="collapsed ? 'ArrowRight' : 'ArrowLeft'" /></el-icon>
-      </button>
       <el-main>
         <span class="sr-only" aria-live="polite">{{ currentTitle }}</span>
         <router-view v-if="ready" v-slot="{ Component }">
@@ -162,6 +163,8 @@ function onClick(c) {
 /* —— 侧栏:唯一 chrome,自上而下 品牌/项目切换/菜单/用户 —— */
 .sidebar {
   position: relative;
+  overflow: hidden;
+  transition: width .2s ease;
   z-index: 1;
   --line-text: #c5c7ea;
   --menu-hover: #ffffff;   /* 悬停提亮为白 */
@@ -171,28 +174,33 @@ function onClick(c) {
   flex-direction: column;
   padding: 16px 0 10px;
 }
-.sidebar-toggle {
-  position: fixed;
-  top: 50%;
-  left: 232px;
-  z-index: 20;
-  transform: translate(-50%, -50%);
-  width: 22px;
-  height: 46px;
+/* 收起按钮放在品牌条右侧,跟着侧边栏走,不再是贴边浮动的一小片 */
+.rail-toggle {
+  margin-left: auto;
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
   padding: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 0 8px 8px 0;
-  background: #fff;
-  color: var(--el-text-color-secondary);
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--line-text);
   cursor: pointer;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, .12);
-  transition: left .2s ease, color .2s ease;
+  transition: background .18s ease, color .18s ease;
 }
-.sidebar-toggle:hover { color: var(--el-color-primary); }
-.sidebar-toggle:focus-visible { outline: 2px solid var(--el-color-primary); outline-offset: 2px; }
+.rail-toggle:hover { background: rgba(255, 255, 255, .12); color: var(--menu-hover); }
+.rail-toggle:focus-visible { outline: 2px solid var(--menu-active); outline-offset: 1px; }
+/* 折叠态:品牌条只剩按钮,居中摆放 */
+.sidebar.collapsed .brand-zone { justify-content: center; padding: 6px 0 12px; }
+.sidebar.collapsed .brand-logo { display: none; }
+.sidebar.collapsed .rail-toggle { margin-left: 0; }
+/* el-menu collapse 下隐掉自定义的序号与文字,只留图标 */
+.sidebar.collapsed .side-menu :deep(.menu-index),
+.sidebar.collapsed .side-menu :deep(.menu-label) { display: none; }
+.sidebar.collapsed .user-zone { display: flex; justify-content: center; }
 
 .brand-zone {
   padding: 6px 14px 12px;

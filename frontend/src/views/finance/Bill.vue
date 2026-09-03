@@ -80,11 +80,13 @@
       <el-table :data="list" v-loading="loading" border stripe>
         <el-table-column type="index" label="#" width="55" />
         <el-table-column prop="code" label="账单号" min-width="150" />
-        <el-table-column prop="tenantName" label="对方租客" min-width="160">
-          <template #default="{ row }">{{ row.tenantName || `租客 #${row.tenantRefId || '-'}` }}</template>
-        </el-table-column>
-        <el-table-column prop="agreementNo" label="协议编号" min-width="140">
-          <template #default="{ row }">{{ row.agreementNo || '-' }}</template>
+        <!-- 租客与协议编号合并成双行:两列平铺要 300px,表格就得横向滚动、
+             右侧固定列会盖住内容;合并后 180px 且信息一个不少 -->
+        <el-table-column prop="tenantName" label="对方租客 / 协议编号" min-width="180" show-overflow-tooltip>
+          <template #default="{ row }">
+            <div class="cell-main">{{ row.tenantName || `租客 #${row.tenantRefId || '-'}` }}</div>
+            <div v-if="row.agreementNo" class="cell-sub">{{ row.agreementNo }}</div>
+          </template>
         </el-table-column>
         <el-table-column prop="feeType" label="费用类型" width="100" />
         <el-table-column prop="source" label="来源" width="110">
@@ -100,10 +102,12 @@
         <el-table-column label="实收" width="120" align="right">
           <template #default="{ row }">¥{{ money(row.paidAmount) }}</template>
         </el-table-column>
-        <el-table-column label="账期" width="180">
-          <template #default="{ row }">{{ row.periodStart || '-' }} ~ {{ row.periodEnd || '-' }}</template>
+        <el-table-column label="账期 / 应收日" width="200">
+          <template #default="{ row }">
+            <div class="cell-main">{{ row.periodStart || '-' }} ~ {{ row.periodEnd || '-' }}</div>
+            <div class="cell-sub">应收日 {{ row.dueDate || '-' }}</div>
+          </template>
         </el-table-column>
-        <el-table-column prop="dueDate" label="应收日" width="120" />
         <el-table-column label="逾期天数" width="90" align="center">
           <template #default="{ row }">
             <span :style="{ color: row.overdueDays > 0 ? '#e5484d' : '' }">{{ row.overdueDays || 0 }}</span>
@@ -383,6 +387,9 @@ onMounted(() => {
 </script>
 
 <style scoped>
+/* 双行单元格:主信息正常字号,次要信息小一号灰字,行高压紧不撑高表格 */
+.cell-main { line-height: 1.4; }
+.cell-sub { margin-top: 2px; font-size: 12px; line-height: 1.3; color: var(--el-text-color-secondary); }
 .stat-row { display: flex; gap: 16px; margin-bottom: 16px; }
 .stat-row .stat-card {
   flex: 1; background: var(--bg-card); border-radius: var(--radius);
