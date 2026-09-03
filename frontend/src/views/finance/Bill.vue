@@ -104,16 +104,18 @@
           <template #default="{ row }">{{ row.periodStart || '-' }} ~ {{ row.periodEnd || '-' }}</template>
         </el-table-column>
         <el-table-column prop="dueDate" label="应收日" width="120" />
-        <el-table-column label="状态" width="100">
+        <el-table-column label="逾期天数" width="90" align="center">
+          <template #default="{ row }">
+            <span :style="{ color: row.overdueDays > 0 ? '#e5484d' : '' }">{{ row.overdueDays || 0 }}</span>
+          </template>
+        </el-table-column>
+        <!-- 状态与操作一起固定右侧:列多时横向滚动会让状态被固定的操作列压住看不见。
+             固定列必须连续,故把状态挪到逾期天数之后 -->
+        <el-table-column label="状态" width="100" fixed="right">
           <template #default="{ row }">
             <el-tag :type="statusMap[row.status]?.type || 'info'">
               {{ statusMap[row.status]?.label || row.status }}
             </el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column label="逾期天数" width="90" align="center">
-          <template #default="{ row }">
-            <span :style="{ color: row.overdueDays > 0 ? '#e5484d' : '' }">{{ row.overdueDays || 0 }}</span>
           </template>
         </el-table-column>
         <el-table-column label="操作" width="240" fixed="right">

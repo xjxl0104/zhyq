@@ -2,7 +2,11 @@
   <div class="app-wrapper">
     <el-container class="body-row">
       <GrainientBg class="chrome-aurora" />
-      <el-aside width="232px" class="sidebar">
+      <!-- 侧边栏可收起:财务几张宽表(所有账单、应收明细登记表 28 列)在 232px 侧边栏下
+           右侧列会被挤出可视区,收起后表格独占整宽。
+           用 v-show 整块摘出布局流,而不是把宽度动画到 0 —— el-aside 是 flex 项,
+           改 --el-aside-width 会被内容的 min-content 宽度顶住,收放两头都不干净 -->
+      <el-aside v-show="!collapsed" width="232px" class="sidebar">
         <div class="brand-zone">
           <img class="brand-logo" src="@/assets/brand/dipark.svg" alt="DIPARK" />
           <StrokeBrand />
@@ -35,6 +39,14 @@
           </el-dropdown>
         </div>
       </el-aside>
+      <!-- 贴边浮动按钮:收起后仍要有地方把菜单叫回来,故不放在侧边栏内部 -->
+      <!-- 位置走内联绑定而不是 .collapsed 类:类选择器在部分缓存场景下没吃到,内联最稳 -->
+      <button class="sidebar-toggle" :style="{ left: collapsed ? '11px' : '232px' }" type="button"
+              :title="collapsed ? '展开菜单' : '收起菜单（表格可用更宽）'"
+              :aria-label="collapsed ? '展开菜单' : '收起菜单'"
+              :aria-expanded="!collapsed" @click="toggleSidebar">
+        <el-icon><component :is="collapsed ? 'ArrowRight' : 'ArrowLeft'" /></el-icon>
+      </button>
       <el-main>
         <span class="sr-only" aria-live="polite">{{ currentTitle }}</span>
         <router-view v-if="ready" v-slot="{ Component }">
@@ -64,6 +76,16 @@ import FeedbackFab from '@/views/suggestion/FeedbackFab.vue'
 const route = useRoute()
 const router = useRouter()
 const projectStore = useProjectStore()
+
+// 收起状态存 localStorage:切页面/刷新后保持,不然每次进宽表页都要重按一次
+const COLLAPSE_KEY = 'zhyq_sidebar_collapsed'
+const collapsed = ref(localStorage.getItem(COLLAPSE_KEY) === '1')
+function toggleSidebar() {
+  collapsed.value = !collapsed.value
+  localStorage.setItem(COLLAPSE_KEY, collapsed.value ? '1' : '0')
+  // el-table 的固定列/横向滚动条按挂载时的宽度算,容器变宽后要让它重算
+  nextTick(() => window.dispatchEvent(new Event('resize')))
+}
 
 const ready = ref(false) // init 门闸
 const alive = ref(true)  // keep-alive 拨断开关
@@ -149,6 +171,29 @@ function onClick(c) {
   flex-direction: column;
   padding: 16px 0 10px;
 }
+.sidebar-toggle {
+  position: fixed;
+  top: 50%;
+  left: 232px;
+  z-index: 20;
+  transform: translate(-50%, -50%);
+  width: 22px;
+  height: 46px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 0 8px 8px 0;
+  background: #fff;
+  color: var(--el-text-color-secondary);
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, .12);
+  transition: left .2s ease, color .2s ease;
+}
+.sidebar-toggle:hover { color: var(--el-color-primary); }
+.sidebar-toggle:focus-visible { outline: 2px solid var(--el-color-primary); outline-offset: 2px; }
+
 .brand-zone {
   padding: 6px 14px 12px;
   display: flex;
