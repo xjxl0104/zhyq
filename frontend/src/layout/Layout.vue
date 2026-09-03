@@ -2,16 +2,29 @@
   <div class="app-wrapper">
     <el-container class="body-row">
       <GrainientBg class="chrome-aurora" />
-      <el-aside width="var(--aside-w)" class="sidebar">
+      <!-- 侧边栏可收起:财务几张宽表(所有账单、应收明细登记表 28 列)在 232px 侧边栏下
+           右侧列会被挤出可视区,收起后表格独占整宽。
+           用 v-show 整块摘出布局流,而不是把宽度动画到 0 —— el-aside 是 flex 项,
+           改 --el-aside-width 会被内容的 min-content 宽度顶住,收放两头都不干净 -->
+      <!-- 收起 = 64px 图标栏,不是整块消失:宽表要横向空间时收窄,但品牌条与图标导航还在,
+           视觉上不塌。折叠态 el-menu 走官方 collapse,子菜单变悬浮弹层 -->
+      <el-aside :width="collapsed ? '64px' : '232px'" class="sidebar" :class="{ collapsed }">
         <div class="brand-zone">
           <img class="brand-logo" src="@/assets/brand/dipark.svg" alt="DIPARK" />
-          <StrokeBrand />
+          <StrokeBrand v-show="!collapsed" />
+          <button class="rail-toggle" type="button"
+                  :title="collapsed ? '展开菜单' : '收起菜单（表格可用更宽）'"
+                  :aria-label="collapsed ? '展开菜单' : '收起菜单'"
+                  :aria-expanded="!collapsed" @click="toggleSidebar">
+            <el-icon><component :is="collapsed ? 'Expand' : 'Fold'" /></el-icon>
+          </button>
         </div>
-        <div class="switcher-zone">
+        <div v-show="!collapsed" class="switcher-zone">
           <ProjectSwitcher @switched="onProjectSwitched" />
         </div>
         <el-scrollbar class="menu-scroll">
-          <el-menu :default-active="activePath" router unique-opened class="side-menu">
+          <el-menu :default-active="activePath" router unique-opened class="side-menu"
+                   :collapse="collapsed" :collapse-transition="false">
             <MenuItem
               v-for="(item, i) in menuTree"
               :key="item.title"
@@ -25,7 +38,7 @@
           <el-dropdown @command="onUserCmd" trigger="click">
             <div class="user">
               <el-avatar :size="32" class="user-avatar">{{ uname.charAt(0) }}</el-avatar>
-              <span class="uname">{{ uname }}</span>
+              <span v-show="!collapsed" class="uname">{{ uname }}</span>
             </div>
             <template #dropdown>
               <el-dropdown-menu>
@@ -64,6 +77,16 @@ import FeedbackFab from '@/views/suggestion/FeedbackFab.vue'
 const route = useRoute()
 const router = useRouter()
 const projectStore = useProjectStore()
+
+// 收起状态存 localStorage:切页面/刷新后保持,不然每次进宽表页都要重按一次
+const COLLAPSE_KEY = 'zhyq_sidebar_collapsed'
+const collapsed = ref(localStorage.getItem(COLLAPSE_KEY) === '1')
+function toggleSidebar() {
+  collapsed.value = !collapsed.value
+  localStorage.setItem(COLLAPSE_KEY, collapsed.value ? '1' : '0')
+  // el-table 的固定列/横向滚动条按挂载时的宽度算,容器变宽后要让它重算
+  nextTick(() => window.dispatchEvent(new Event('resize')))
+}
 
 const ready = ref(false) // init 门闸
 const alive = ref(true)  // keep-alive 拨断开关
@@ -170,6 +193,8 @@ function onClick(c) {
 /* —— 侧栏:唯一 chrome,自上而下 品牌/项目切换/菜单/用户 —— */
 .sidebar {
   position: relative;
+  overflow: hidden;
+  transition: width .2s ease;
   z-index: 1;
   --line-text: #c5c7ea;
   --menu-hover: #ffffff;   /* 悬停提亮为白 */
@@ -179,6 +204,34 @@ function onClick(c) {
   flex-direction: column;
   padding: 16px 0 10px;
 }
+/* 收起按钮放在品牌条右侧,跟着侧边栏走,不再是贴边浮动的一小片 */
+.rail-toggle {
+  margin-left: auto;
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--line-text);
+  cursor: pointer;
+  transition: background .18s ease, color .18s ease;
+}
+.rail-toggle:hover { background: rgba(255, 255, 255, .12); color: var(--menu-hover); }
+.rail-toggle:focus-visible { outline: 2px solid var(--menu-active); outline-offset: 1px; }
+/* 折叠态:品牌条只剩按钮,居中摆放 */
+.sidebar.collapsed .brand-zone { justify-content: center; padding: 6px 0 12px; }
+.sidebar.collapsed .brand-logo { display: none; }
+.sidebar.collapsed .rail-toggle { margin-left: 0; }
+/* el-menu collapse 下隐掉自定义的序号与文字,只留图标 */
+.sidebar.collapsed .side-menu :deep(.menu-index),
+.sidebar.collapsed .side-menu :deep(.menu-label) { display: none; }
+.sidebar.collapsed .user-zone { display: flex; justify-content: center; }
+
 .brand-zone {
   padding: 6px 14px 12px;
   display: flex;

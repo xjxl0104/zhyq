@@ -32,11 +32,45 @@ export const receivableColumns = [
   { label: '物业保证金', prop: 'propertyDeposit', minWidth: 140, format: money, align: 'right' },
   { label: '收款时间', prop: 'collectionTimingRaw', minWidth: 220 },
   { label: '开始收取租金时间', prop: 'firstCollectionRaw', minWidth: 180 },
+  // 收缴政策字段:该日之前不计滞纳金(逾期状态照标),空 = 默认口径
+  { label: '滞纳金起算日', prop: 'lateFeeStartDate', minWidth: 130 },
   { label: '租金收款账户', prop: 'rentAccountMasked', minWidth: 260 },
   { label: '物业管理、水电收款账户', prop: 'propertyAccountMasked', minWidth: 280 },
   { label: '备注', prop: 'notesRaw', minWidth: 240 },
   { label: '保证金差额', prop: 'depositDifference', minWidth: 140, format: money, align: 'right' }
 ]
+
+// 列设置:28 列全开时必然横向滚动,右侧固定的「账单/状态/操作」会一直压住内容。
+// 让用户自选列,选到不横滚就不会再被挡。序号与租户是定位行用的,锁定不可取消。
+export const LOCKED_COLUMN_PROPS = ['seqNo', 'tenantNameRaw']
+
+// 「常用」预设:目标是 1440 宽屏下不横向滚动 —— 只有不滚,右侧固定列才不会挡住任何内容。
+// 选的是看租金物业口径最少够用的列(≈1110px + 右侧固定 300px),其余按需在列设置里勾。
+export const COMMON_COLUMN_PROPS = [
+  'seqNo', 'tenantNameRaw', 'spaceNameRaw', 'freePeriodRaw',
+  'monthlyRent', 'monthlyProperty', 'monthlyTotal'
+]
+
+const COLUMN_PREF_KEY = 'zhyq_receivable_visible_cols'
+
+/** 读取列偏好;没存过或存的列已不存在(版本升级删过列)时回落到全列 */
+export function loadVisibleColumns() {
+  const all = receivableColumns.map(column => column.prop)
+  let saved = null
+  try {
+    saved = JSON.parse(localStorage.getItem(COLUMN_PREF_KEY) || 'null')
+  } catch {
+    saved = null
+  }
+  if (!Array.isArray(saved) || !saved.length) return all
+  const kept = saved.filter(prop => all.includes(prop))
+  // 锁定列即便偏好里没有也要补回来,否则表格会认不出是哪一行
+  return all.filter(prop => kept.includes(prop) || LOCKED_COLUMN_PROPS.includes(prop))
+}
+
+export function saveVisibleColumns(props) {
+  localStorage.setItem(COLUMN_PREF_KEY, JSON.stringify(props))
+}
 
 export function formatReceivableCell(row, column) {
   const value = row?.[column.prop]

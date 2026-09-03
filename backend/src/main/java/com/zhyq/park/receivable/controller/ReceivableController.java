@@ -2,6 +2,7 @@ package com.zhyq.park.receivable.controller;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.zhyq.park.common.audit.OperationLog;
@@ -10,6 +11,7 @@ import com.zhyq.park.common.result.PageResult;
 import com.zhyq.park.common.result.Result;
 import com.zhyq.park.finance.entity.Bill;
 import com.zhyq.park.finance.mapper.BillMapper;
+import com.zhyq.park.finance.service.LateFeeService;
 import com.zhyq.park.importing.entity.ImportBatch;
 import com.zhyq.park.importing.dto.ImportBatchSummary;
 import com.zhyq.park.importing.entity.ImportRow;
@@ -62,6 +64,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.nio.charset.StandardCharsets;
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.YearMonth;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -87,6 +90,7 @@ public class ReceivableController {
     private final ImportBatchMapper batchMapper;
     private final ImportRowMapper importRowMapper;
     private final ReceivableCalculator calculator;
+    private final LateFeeService lateFeeService;
 
     @GetMapping("/capabilities")
     public Result<ReceivableCapabilities> capabilities() {
@@ -248,6 +252,32 @@ public class ReceivableController {
         if (registerMapper.updateById(register) != 1) {
             throw new BizException("应收登记表已被修改，请刷新后重试");
         }
+        return Result.ok();
+    }
+
+    /** 滞纳金起算日设置请求:日期为空 = 恢复默认口径(应收日与建单日取晚者) */
+    public record LateFeeStartRequest(LocalDate lateFeeStartDate) {}
+
+    @Operation(summary = "设置滞纳金起算日(该日之前不计滞纳金,逾期状态照标;传空恢复默认口径)")
+    @PutMapping("/{id}/late-fee-start")
+    @PreAuthorize("hasAuthority('finance:receivable:edit')")
+    @OperationLog(module = "应收明细", action = "设置滞纳金起算日")
+    public Result<Void> updateLateFeeStart(@PathVariable Long id,
+                                           @RequestBody LateFeeStartRequest request) {
+        if (registerMapper.selectById(id) == null) {
+            throw new BizException("应收登记表不存在");
+        }
+        // 收缴政策字段,不是合同真相,已确认/已生效的登记也允许调整(普通编辑仍锁死)。
+        // 置空要真写 NULL,走 wrapper.set;空实体一并传入让审计字段自动填充不掉队
+        int updated = registerMapper.update(new ReceivableRegister(),
+                new LambdaUpdateWrapper<ReceivableRegister>()
+                        .eq(ReceivableRegister::getId, id)
+                        .set(ReceivableRegister::getLateFeeStartDate, request.lateFeeStartDate()));
+        if (updated != 1) {
+            throw new BizException("应收登记表已被修改，请刷新后重试");
+        }
+        // 设置即生效:立刻按新起算日全量重算逾期滞纳金(幂等),不等每日自愈任务
+        lateFeeService.recalc();
         return Result.ok();
     }
 

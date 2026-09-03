@@ -22,8 +22,14 @@
         <el-table-column label="实收" width="120" align="right">
           <template #default="{ row }">¥{{ money(row.paidAmount) }}</template>
         </el-table-column>
-        <el-table-column label="滞纳金" width="120" align="right">
-          <template #default="{ row }"><span style="color:#e5484d">¥{{ money(row.lateFee) }}</span></template>
+        <el-table-column label="滞纳金" width="150" align="right">
+          <template #default="{ row }">
+            <span style="color:#e5484d">¥{{ money(row.lateFee) }}</span>
+            <!-- 人工调整过的要一眼可辨:它不参与每日自动重算,数字与系统口径可能不同 -->
+            <el-tooltip v-if="row.lateFeeManual === 1" :content="row.lateFeeRemark || '已人工调整，不参与自动重算'">
+              <el-tag type="warning" size="small" effect="plain" class="manual-tag">人工</el-tag>
+            </el-tooltip>
+          </template>
         </el-table-column>
         <el-table-column prop="dueDate" label="应收日" width="120" />
         <el-table-column label="逾期天数" width="110" align="center">
@@ -38,17 +44,24 @@
             </el-tag>
           </template>
         </el-table-column>
+        <el-table-column v-if="canAdjust" label="操作" width="120" fixed="right">
+          <template #default="{ row }">
+            <el-button link type="primary" @click="openAdjust(row)">调整滞纳金</el-button>
+          </template>
+        </el-table-column>
       </el-table>
       <el-pagination class="pager" background layout="total, prev, pager, next, sizes"
                      :total="total" v-model:current-page="query.pageNo"
                      v-model:page-size="query.pageSize" :page-sizes="[10,20,50]" @change="load" />
     </div>
+    <LateFeeAdjustDialog v-model="adjustVisible" :bill="adjustBill" @saved="load" />
   </div>
 </template>
 
 <script setup>
 import { reactive, ref, onMounted } from 'vue'
 import { billApi } from '@/api/finance'
+import LateFeeAdjustDialog from './components/LateFeeAdjustDialog.vue'
 
 const statusMap = {
   1: { label: '草稿', type: 'info' },
@@ -70,6 +83,11 @@ const loading = ref(false)
 const list = ref([])
 const total = ref(0)
 const query = reactive({ pageNo: 1, pageSize: 10 })
+const adjustVisible = ref(false)
+const adjustBill = ref(null)
+// 与后端 @PreAuthorize('finance:bill:lateFee:adjust') 同一权限点,没权限的不显示入口
+const canAdjust = ref(false)
+function openAdjust(row) { adjustBill.value = row; adjustVisible.value = true }
 
 async function load() {
   loading.value = true
@@ -82,10 +100,14 @@ async function load() {
   }
 }
 
-onMounted(load)
+onMounted(async () => {
+  const [caps] = await Promise.allSettled([billApi.capabilities(), load()])
+  canAdjust.value = caps.status === 'fulfilled' && !!caps.value?.lateFeeAdjust
+})
 </script>
 
 <style scoped>
 .title { font-size: 15px; font-weight: 600; }
+.manual-tag { margin-left: 6px; }
 .pager { margin-top: 16px; justify-content: flex-end; }
 </style>

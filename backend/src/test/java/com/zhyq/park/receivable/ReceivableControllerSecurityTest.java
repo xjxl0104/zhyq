@@ -56,6 +56,9 @@ class ReceivableControllerSecurityTest {
         @Bean com.zhyq.park.receivable.service.ReceivableAutoBillService autoBillService() {
             return mock(com.zhyq.park.receivable.service.ReceivableAutoBillService.class);
         }
+        @Bean com.zhyq.park.finance.service.LateFeeService lateFeeService() {
+            return mock(com.zhyq.park.finance.service.LateFeeService.class);
+        }
         @Bean ReceivableController controller(
                 ReceivableRegisterMapper registers, ReceivableRuleMapper rules,
                 DepositLedgerMapper deposits, BillMapper bills, CollectionAccountMapper accounts,
@@ -64,15 +67,28 @@ class ReceivableControllerSecurityTest {
                 ReceivableProvisionService provisions,
                 ReceivableExportService exports, FieldEncryptionService encryption,
                 ImportBatchMapper batches, ImportRowMapper rows,
-                ReceivableCalculator calculator) {
+                ReceivableCalculator calculator,
+                com.zhyq.park.finance.service.LateFeeService lateFees) {
             return new ReceivableController(registers, rules, deposits, bills, accounts,
-                    imports, plans, autoBills, provisions, exports, encryption, batches, rows, calculator);
+                    imports, plans, autoBills, provisions, exports, encryption, batches, rows,
+                    calculator, lateFees);
         }
     }
 
     @Autowired private ReceivableController controller;
     @Autowired private CollectionAccountMapper accountMapper;
     @Autowired private FieldEncryptionService encryptionService;
+    @Autowired private ReceivableRegisterMapper registerMapper;
+
+    // updateLateFeeStart 用 LambdaUpdateWrapper 引用 ReceivableRegister 字段,
+    // 纯 mock 上下文要先初始化 MP 的 lambda 元数据缓存(同 LateFeeServiceTest 先例)
+    @org.junit.jupiter.api.BeforeAll
+    static void initMpLambdaCache() {
+        com.baomidou.mybatisplus.core.metadata.TableInfoHelper.initTableInfo(
+                new org.apache.ibatis.builder.MapperBuilderAssistant(
+                        new com.baomidou.mybatisplus.core.MybatisConfiguration(), ""),
+                com.zhyq.park.receivable.entity.ReceivableRegister.class);
+    }
 
     @Test
     @WithMockUser(authorities = "finance:bill:query")
@@ -83,6 +99,19 @@ class ReceivableControllerSecurityTest {
         assertThrows(AccessDeniedException.class, () -> controller.confirm(1L));
         assertThrows(AccessDeniedException.class, () -> controller.generate(1L));
         assertThrows(AccessDeniedException.class, () -> controller.revealAccount(1L));
+        assertThrows(AccessDeniedException.class, () -> controller.updateLateFeeStart(1L,
+                new ReceivableController.LateFeeStartRequest(null)));
+    }
+
+    @Test
+    @WithMockUser(authorities = "finance:receivable:edit")
+    void exactEditPermissionAllowsLateFeeStart() {
+        when(registerMapper.selectById(1L))
+                .thenReturn(new com.zhyq.park.receivable.entity.ReceivableRegister());
+        when(registerMapper.update(org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any())).thenReturn(1);
+        assertDoesNotThrow(() -> controller.updateLateFeeStart(1L,
+                new ReceivableController.LateFeeStartRequest(java.time.LocalDate.of(2026, 10, 1))));
     }
 
     @Test

@@ -8,7 +8,11 @@ export const billApi = {
   overdue: (params) => request.get('/finance/bill/overdue', { params }),
   // 收银台专用:全部租客(欠款的在前),带欠款笔数与合计;没欠款的租客也返回,照样可选
   payableTenants: () => request.get('/finance/bill/payable-tenants'),
+  capabilities: () => request.get('/finance/bill/capabilities'),
   calcLateFee: () => request.post('/finance/bill/calcLateFee'),
+  // 人工调整滞纳金:传 { lateFee, remark } 改额并锁定(不再被自动重算覆盖);
+  // 传 { restoreAuto: true } 撤销人工调整、恢复自动计算
+  adjustLateFee: (id, body) => request.put(`/finance/bill/${id}/late-fee`, body),
   // 重置登记表推送的账单:未收款未开票的全部作废,之后可回登记表重新推送
   reset: () => request.post('/finance/bill/reset'),
   add: (data) => request.post('/finance/bill', data),
