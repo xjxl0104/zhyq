@@ -75,7 +75,12 @@ body {
 /* =====================================================================
    共享布局类(所有列表页复用,一改全改)
    ===================================================================== */
-.page-container { padding: 20px; }
+.page-container {
+  min-height: 100%;
+  padding: 20px;
+  border-radius: inherit;
+  background-clip: padding-box;
+}
 
 /* =====================================================================
    Shopeers 风格数据页骨架：首页 / 数据中心 / 产品团队共用
@@ -114,6 +119,8 @@ body {
   padding: 28px;
   color: var(--text-body);
   background: #f4f6fa;
+  border-radius: inherit;
+  background-clip: padding-box;
 }
 
 .commerce-page__header {

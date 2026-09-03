@@ -1,20 +1,15 @@
 <template>
-  <div class="screen">
-    <div class="screen-bg"></div>
-
-    <header class="screen-header">
-      <div class="screen-brand">
-        <span class="brand-mark"><el-icon><Monitor /></el-icon></span>
-        <div>
-          <span class="screen-eyebrow">Live operation center</span>
-          <h1>智慧园区监控中心</h1>
-        </div>
+  <div class="commerce-page screen">
+    <header class="commerce-page__header screen-header">
+      <div>
+        <span class="commerce-page__eyebrow">Live operation center</span>
+        <h1 class="commerce-page__title">智慧园区监控中心</h1>
+        <p class="commerce-page__subtitle">经营、空间、设备与服务状态集中监测，每分钟自动更新。</p>
       </div>
-      <div class="header-actions">
-        <span class="status-chip"><i class="pulse"></i>系统运行正常</span>
-        <span class="status-chip"><i class="device-dot"></i>在线设备 {{ device.online || 0 }}/{{ device.total || 0 }}</span>
-        <time>{{ now }}</time>
-        <button class="back-button" type="button" @click="goBack"><el-icon><Back /></el-icon>返回后台</button>
+      <div class="commerce-page__actions header-actions">
+        <span class="commerce-chip status-chip"><i class="pulse"></i>系统运行正常</span>
+        <span class="commerce-chip status-chip"><i class="device-dot"></i>在线 {{ device.online || 0 }}/{{ device.total || 0 }}</span>
+        <time class="commerce-chip"><el-icon><Clock /></el-icon>{{ now }}</time>
       </div>
     </header>
 
@@ -26,9 +21,19 @@
           <span class="kpi-tag positive">经营</span>
         </article>
         <article class="screen-kpi">
+          <span class="kpi-icon cyan"><el-icon><House /></el-icon></span>
+          <div><small>在租房间</small><strong>{{ room.rented || 0 }}<i> / {{ room.total || 0 }}</i></strong></div>
+          <span class="kpi-tag neutral">空间</span>
+        </article>
+        <article class="screen-kpi">
           <span class="kpi-icon violet"><el-icon><Coin /></el-icon></span>
           <div><small>累计实收</small><strong><i>¥</i>{{ fmtW(fin.received) }}<i>万</i></strong></div>
           <span class="kpi-tag positive">财务</span>
+        </article>
+        <article class="screen-kpi">
+          <span class="kpi-icon red"><el-icon><Warning /></el-icon></span>
+          <div><small>逾期欠款</small><strong><i>¥</i>{{ fmtW(fin.overdue) }}<i>万</i></strong></div>
+          <span class="kpi-tag risk">风险</span>
         </article>
         <article class="screen-kpi">
           <span class="kpi-icon green"><el-icon><Cpu /></el-icon></span>
@@ -50,6 +55,7 @@
           </div>
           <div class="finance-strip">
             <div><small>到期应收</small><strong>¥{{ fmtW(fin.dueReceivable) }}<i>万</i></strong></div>
+            <div><small>未来 30 天</small><strong>¥{{ fmtW(fin.future30) }}<i>万</i></strong></div>
             <div class="danger"><small>逾期欠款</small><strong>¥{{ fmtW(fin.overdue) }}<i>万</i></strong></div>
             <div><small>合同总数</small><strong>{{ contract.total || 0 }}<i>份</i></strong></div>
           </div>
@@ -64,6 +70,11 @@
           <div class="room-chart-wrap">
             <div ref="roomRef" class="chart room-chart" aria-label="房源状态分布图"></div>
             <div class="room-center"><strong>{{ room.total || 0 }}</strong><span>全部房源</span></div>
+          </div>
+          <div class="room-legend">
+            <span v-for="(item, index) in roomStats.slice(0, 4)" :key="item.name">
+              <i :style="{ background: ROOM_COLORS[index] }"></i>{{ item.name }} <strong>{{ item.value }}</strong>
+            </span>
           </div>
         </section>
       </div>
@@ -124,13 +135,11 @@
 
 <script setup>
 import { nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
-import { useRouter } from 'vue-router'
 import * as echarts from 'echarts'
 import { dashboardApi } from '@/api/dashboard'
 import { leadApi } from '@/api/crm'
 import request from '@/utils/request'
 
-const router = useRouter()
 const fin = reactive({})
 const contract = reactive({})
 const device = reactive({})
@@ -138,6 +147,7 @@ const room = reactive({})
 const other = reactive({})
 const alarms = ref([])
 const funnel = ref([])
+const roomStats = ref([])
 const roomRef = ref()
 const trendRef = ref()
 const woRef = ref()
@@ -147,6 +157,7 @@ const PALETTE = {
   blue: '#0a24e9', blueSoft: '#d7dbfb', violet: '#7256d8', green: '#5c9764',
   axisLine: '#e7eaf0', axisLabel: '#a9b6c0', splitLine: '#f0f2f5', label: '#29315d'
 }
+const ROOM_COLORS = ['#0a24e9', '#6f7df3', '#5c9764', '#d99022', '#d95c62', '#a9b6c0']
 const lightAxis = {
   axisLine: { lineStyle: { color: PALETTE.axisLine } },
   axisTick: { show: false },
@@ -159,7 +170,6 @@ const charts = {}
 function addTimer(fn, ms) { fn(); timers.push(setInterval(fn, ms)) }
 const fmtW = (v) => (Number(v || 0) / 10000).toFixed(1)
 const pct = (a, b) => b ? Math.round(Number(a || 0) * 100 / Number(b)) : 0
-function goBack() { router.push('/dashboard') }
 
 function tick() {
   now.value = new Date().toLocaleString('zh-CN', { hour12: false })
@@ -212,8 +222,9 @@ function chartOf(key, el) {
 async function loadRoomChart() {
   try {
     const data = await dashboardApi.roomStatus()
+    roomStats.value = data || []
     chartOf('room', roomRef.value)?.setOption({
-      color: ['#0a24e9', '#6f7df3', '#5c9764', '#d99022', '#d95c62', '#a9b6c0'],
+      color: ROOM_COLORS,
       tooltip: { trigger: 'item', backgroundColor: '#0b0d17', borderWidth: 0, textStyle: { color: '#fff' } },
       legend: { bottom: 0, type: 'scroll', icon: 'circle', itemWidth: 8, itemHeight: 8, textStyle: { color: PALETTE.axisLabel, fontSize: 10 } },
       series: [{
@@ -280,66 +291,43 @@ onUnmounted(() => {
   --screen-text: #0b0d17;
   --screen-secondary: #68708a;
   position: relative;
-  min-height: 100vh;
-  overflow: auto;
   color: var(--screen-text);
-  background: #eef1f5;
-  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
-}
-.screen-bg {
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  background:
-    radial-gradient(720px 420px at 8% -8%, rgba(10, 36, 233, .08), transparent 70%),
-    radial-gradient(680px 420px at 95% 105%, rgba(114, 86, 216, .06), transparent 72%);
 }
 .screen-header {
-  position: sticky;
-  top: 0;
-  z-index: 10;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 24px;
-  min-height: 82px;
-  padding: 14px 24px;
-  background: rgba(255, 255, 255, .92);
-  border-bottom: 1px solid #e7eaf0;
-  backdrop-filter: blur(18px);
+  align-items: flex-end;
+  margin-bottom: 16px;
 }
-.screen-brand { display: flex; align-items: center; gap: 12px; }
-.brand-mark { display: grid; place-items: center; width: 42px; height: 42px; color: #fff; background: #0a24e9; border-radius: 13px; box-shadow: 0 9px 18px rgba(10, 36, 233, .18); }
-.screen-eyebrow { color: #0a24e9; font-size: 9px; font-weight: 750; letter-spacing: .14em; text-transform: uppercase; }
-.screen-brand h1 { margin: 3px 0 0; font-size: 20px; font-weight: 720; letter-spacing: -.025em; }
 .header-actions { display: flex; align-items: center; justify-content: flex-end; gap: 9px; }
-.status-chip { display: inline-flex; align-items: center; gap: 7px; min-height: 34px; padding: 0 11px; color: #68708a; background: #f7f8fb; border: 1px solid #e7eaf0; border-radius: 10px; font-size: 10px; white-space: nowrap; }
+.status-chip { color: #68708a; }
 .pulse, .device-dot { width: 7px; height: 7px; border-radius: 50%; background: #5c9764; box-shadow: 0 0 0 4px #edf7ef; }
 .pulse { animation: status-pulse 2s ease-in-out infinite; }
 @keyframes status-pulse { 50% { opacity: .45; } }
-.header-actions time { color: #68708a; font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.back-button { display: inline-flex; align-items: center; gap: 6px; min-height: 35px; padding: 0 12px; color: #fff; background: #0a24e9; border: 0; border-radius: 10px; font: inherit; font-size: 10px; font-weight: 650; cursor: pointer; box-shadow: 0 7px 16px rgba(10, 36, 233, .16); }
-.back-button:hover { background: #152eae; }
+.header-actions time { color: #68708a; font-size: 10px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.header-actions time .el-icon { color: #0a24e9; }
 
-.screen-body { position: relative; z-index: 1; display: grid; gap: 14px; padding: 16px; }
-.screen-kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
-.screen-kpi { display: flex; align-items: center; gap: 12px; min-width: 0; padding: 15px 16px; background: #fff; border: 1px solid #e7eaf0; border-radius: 16px; box-shadow: 0 8px 24px rgba(41, 49, 93, .045); }
-.kpi-icon { display: grid; place-items: center; width: 38px; height: 38px; flex: 0 0 38px; border-radius: 11px; }
+.screen-body { position: relative; z-index: 1; display: grid; gap: 12px; }
+.screen-kpis { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; }
+.screen-kpi { display: flex; align-items: center; gap: 10px; min-width: 0; min-height: 82px; padding: 13px 14px; background: #fff; border: 1px solid #e7eaf0; border-radius: 14px; box-shadow: 0 6px 20px rgba(41, 49, 93, .04); }
+.kpi-icon { display: grid; place-items: center; width: 36px; height: 36px; flex: 0 0 36px; border-radius: 10px; }
 .kpi-icon.blue { color: #0a24e9; background: #eef0ff; }
+.kpi-icon.cyan { color: #15839b; background: #edf9fb; }
 .kpi-icon.violet { color: #7256d8; background: #f3efff; }
 .kpi-icon.green { color: #5c9764; background: #edf7ef; }
 .kpi-icon.amber { color: #d99022; background: #fff7e8; }
+.kpi-icon.red { color: #d95c62; background: #fff0f1; }
 .screen-kpi > div { display: grid; min-width: 0; flex: 1; gap: 4px; }
 .screen-kpi small { color: #a9b6c0; font-size: 9px; }
-.screen-kpi strong { overflow: hidden; color: #0b0d17; font-size: 24px; font-weight: 740; letter-spacing: -.04em; font-variant-numeric: tabular-nums; white-space: nowrap; text-overflow: ellipsis; }
+.screen-kpi strong { overflow: hidden; color: #0b0d17; font-size: 21px; font-weight: 740; letter-spacing: -.04em; font-variant-numeric: tabular-nums; white-space: nowrap; text-overflow: ellipsis; }
 .screen-kpi strong i { color: #68708a; font-size: 11px; font-style: normal; font-weight: 600; letter-spacing: 0; }
 .kpi-tag { align-self: flex-start; padding: 4px 7px; border-radius: 999px; font-size: 8px; font-weight: 700; }
 .kpi-tag.positive { color: #5c9764; background: #edf7ef; }
 .kpi-tag.attention { color: #d99022; background: #fff7e8; }
+.kpi-tag.neutral { color: #15839b; background: #edf9fb; }
+.kpi-tag.risk { color: #d95c62; background: #fff0f1; }
 
-.primary-grid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(330px, .82fr); gap: 14px; }
-.secondary-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
-.screen-panel { min-width: 0; background: #fff; border: 1px solid #e7eaf0; border-radius: 16px; box-shadow: 0 8px 24px rgba(41, 49, 93, .045); }
+.primary-grid { display: grid; grid-template-columns: minmax(0, 1.8fr) minmax(300px, .72fr); gap: 12px; }
+.secondary-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.screen-panel { min-width: 0; background: #fff; border: 1px solid #e7eaf0; border-radius: 14px; box-shadow: 0 6px 20px rgba(41, 49, 93, .04); }
 .panel-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; padding: 16px 17px 0; }
 .panel-head h2 { margin: 0; color: #0b0d17; font-size: 13px; font-weight: 680; }
 .panel-head p { margin: 4px 0 0; color: #a9b6c0; font-size: 9px; }
@@ -348,8 +336,8 @@ onUnmounted(() => {
 .legend i { width: 7px; height: 7px; margin-left: 5px; border-radius: 50%; }
 .legend .due { background: #d7dbfb; }
 .legend .paid { background: #0a24e9; }
-.trend-panel, .room-panel { min-height: 374px; }
-.finance-strip { display: grid; grid-template-columns: repeat(3, 1fr); gap: 9px; padding: 13px 17px 0; }
+.trend-panel, .room-panel { min-height: 348px; }
+.finance-strip { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; padding: 12px 17px 0; }
 .finance-strip > div { display: grid; gap: 4px; padding: 10px 12px; background: #f8f9fb; border: 1px solid #f0f2f5; border-radius: 11px; }
 .finance-strip small { color: #a9b6c0; font-size: 8px; }
 .finance-strip strong { color: #0b0d17; font-size: 19px; font-weight: 720; letter-spacing: -.025em; }
@@ -357,15 +345,19 @@ onUnmounted(() => {
 .finance-strip .danger { background: #fff7f7; }
 .finance-strip .danger strong { color: #d95c62; }
 .chart { width: 100%; }
-.trend-chart { height: 270px; padding: 0 8px 8px; }
+.trend-chart { height: 232px; padding: 0 8px 8px; }
 .room-chart-wrap { position: relative; }
-.room-chart { height: 314px; padding: 0 6px 8px; }
-.room-center { position: absolute; top: 122px; left: 50%; display: grid; justify-items: center; pointer-events: none; transform: translateX(-50%); }
+.room-chart { height: 236px; padding: 0 6px; }
+.room-center { position: absolute; top: 83px; left: 50%; display: grid; justify-items: center; pointer-events: none; transform: translateX(-50%); }
 .room-center strong { color: #0b0d17; font-size: 24px; }
 .room-center span { color: #a9b6c0; font-size: 8px; }
+.room-legend { display: grid; grid-template-columns: 1fr 1fr; gap: 7px 12px; padding: 3px 18px 16px; }
+.room-legend span { display: flex; align-items: center; gap: 6px; min-width: 0; color: #68708a; font-size: 8px; }
+.room-legend span i { width: 7px; height: 7px; flex: 0 0 7px; border-radius: 50%; }
+.room-legend span strong { margin-left: auto; color: #0b0d17; font-size: 9px; }
 
-.compact-panel { min-height: 250px; overflow: hidden; }
-.bar-list { display: flex; flex-direction: column; gap: 18px; padding: 25px 17px 18px; }
+.compact-panel { min-height: 232px; overflow: hidden; }
+.bar-list { display: flex; flex-direction: column; gap: 14px; padding: 20px 17px 16px; }
 .bar-row { display: grid; grid-template-columns: 60px 1fr; align-items: center; gap: 10px; }
 .bar-row > span { display: inline-flex; align-items: center; gap: 6px; color: #29315d; font-size: 9px; }
 .bar-dot { width: 6px; height: 6px; border-radius: 50%; }
@@ -374,7 +366,7 @@ onUnmounted(() => {
 .bar-dot.expired { background: #d99022; }
 .bar-row :deep(.el-progress-bar__outer) { background: #f0f2f5 !important; }
 .bar-row :deep(.el-progress__text) { color: #29315d !important; font-size: 9px !important; }
-.small-chart { height: 196px; padding: 0 7px 7px; }
+.small-chart { height: 174px; padding: 0 7px 7px; }
 .alarm-count { display: grid; place-items: center; min-width: 27px; height: 27px; padding: 0 7px; color: #d95c62; background: #fff0f1; border-radius: 9px; font-size: 10px; font-weight: 700; }
 .alarm-list { display: flex; flex-direction: column; gap: 7px; padding: 14px 17px 17px; }
 .alarm-row { display: flex; align-items: center; gap: 9px; min-width: 0; padding: 8px 9px; background: #f8f9fb; border-radius: 10px; }
@@ -385,7 +377,7 @@ onUnmounted(() => {
 .alarm-row strong { overflow: hidden; color: #0b0d17; font-size: 9px; font-weight: 620; white-space: nowrap; text-overflow: ellipsis; }
 .alarm-row small { overflow: hidden; color: #a9b6c0; font-size: 7px; white-space: nowrap; text-overflow: ellipsis; }
 .alarm-level { padding: 3px 5px; color: #68708a; background: #fff; border-radius: 999px; font-size: 7px; }
-.funnel { display: flex; flex-direction: column; gap: 13px; padding: 23px 17px 17px; }
+.funnel { display: flex; flex-direction: column; gap: 11px; padding: 19px 17px 16px; }
 .funnel-row { display: grid; grid-template-columns: 44px 1fr 26px; align-items: center; gap: 8px; }
 .funnel-row > span { color: #68708a; font-size: 8px; }
 .funnel-row > strong { color: #0b0d17; font-size: 9px; text-align: right; }
@@ -395,10 +387,11 @@ onUnmounted(() => {
 @media (max-width: 1500px) {
   .secondary-grid { grid-template-columns: 1fr 1fr; }
 }
+@media (max-width: 1300px) {
+  .screen-kpis { grid-template-columns: repeat(3, 1fr); }
+}
 @media (max-width: 1100px) {
-  .screen-header { align-items: flex-start; flex-direction: column; }
   .header-actions { flex-wrap: wrap; justify-content: flex-start; }
-  .screen-kpis { grid-template-columns: 1fr 1fr; }
   .primary-grid { grid-template-columns: 1fr; }
 }
 @media (max-width: 720px) {

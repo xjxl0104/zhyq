@@ -136,6 +136,7 @@ const routes = [
       { path: 'data/center', meta: { title: '数据看板' }, component: () => import('@/views/data/DataCenter.vue') },
       { path: 'data/section', meta: { title: '剖面图' }, component: () => import('@/views/data/SectionView.vue') },
       { path: 'data/report', meta: { title: '报表统计' }, component: () => import('@/views/data/ReportIndex.vue') },
+      { path: 'screen', name: 'Screen', meta: { title: '一体监控大屏' }, component: () => import('@/views/screen/BigScreen.vue') },
 
       // 建议与反馈
       { path: 'suggestion/mine', meta: { title: '我的建议' }, component: () => import('@/views/suggestion/MySuggestions.vue') },
@@ -155,9 +156,7 @@ const routes = [
       { path: 'system/resource', meta: { title: '运营资源' }, component: () => import('@/views/system/Resource.vue') },
       { path: 'system/message', meta: { title: '消息中心' }, component: () => import('@/views/system/MessageCenter.vue') }
     ]
-  },
-  // 监控大屏(独立全屏,不套 Layout)
-  { path: '/screen', name: 'Screen', meta: { title: '一体监控大屏' }, component: () => import('@/views/screen/BigScreen.vue') }
+  }
 ]
 
 const router = createRouter({
