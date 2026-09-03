@@ -21,6 +21,8 @@ export const receivableApi = {
   rollback: (batchId) => request.post(`/finance/receivable/import/${batchId}/rollback`),
   batches: () => request.get('/finance/receivable/import/batches'),
   generate: (id) => request.post(`/finance/receivable/${id}/generate`),
+  updateLateFeeStart: (id, lateFeeStartDate) => request.put(
+    `/finance/receivable/${id}/late-fee-start`, { lateFeeStartDate }),
   revealAccount: (id) => request.get(`/finance/receivable/accounts/${id}/reveal`),
   export: () => request.get('/finance/receivable/export', { responseType: 'blob' })
 }

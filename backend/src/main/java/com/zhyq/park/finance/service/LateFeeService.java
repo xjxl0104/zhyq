@@ -4,6 +4,8 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.zhyq.park.finance.entity.Bill;
 import com.zhyq.park.finance.mapper.BillMapper;
+import com.zhyq.park.receivable.entity.ReceivableRegister;
+import com.zhyq.park.receivable.mapper.ReceivableRegisterMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -12,6 +14,9 @@ import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.stream.Collectors;
 
 /**
  * 逾期与滞纳金计算(从 BillController 抽出)。
@@ -29,6 +34,7 @@ public class LateFeeService {
     private static final BigDecimal DAILY_RATE = new BigDecimal("0.0005");
 
     private final BillMapper billMapper;
+    private final ReceivableRegisterMapper registerMapper;
 
     /**
      * 重算所有逾期未结清应收账单的滞纳金与逾期天数。
@@ -47,6 +53,7 @@ public class LateFeeService {
           .lt(Bill::getDueDate, today)
           .orderByAsc(Bill::getId);
         List<Bill> list = billMapper.selectList(qw);
+        Map<Long, LocalDate> policyStarts = policyStartDates(list);
         int count = 0;
         for (Bill b : list) {
             if (b.getDueDate() == null) {
@@ -63,7 +70,10 @@ public class LateFeeService {
             if (outstanding.compareTo(BigDecimal.ZERO) <= 0) {
                 continue;
             }
-            long feeDays = today.toEpochDay() - lateFeeStart(b).toEpochDay();
+            // 不可变 Map 对 null 键 get 会 NPE:没挂登记表的历史账单 registerId 为空
+            LocalDate policyStart = b.getReceivableRegisterId() == null
+                    ? null : policyStarts.get(b.getReceivableRegisterId());
+            long feeDays = today.toEpochDay() - effectiveFeeStart(b, policyStart).toEpochDay();
             BigDecimal lateFee = feeDays <= 0 ? BigDecimal.ZERO.setScale(2)
                     : outstanding
                     .multiply(DAILY_RATE)
@@ -87,6 +97,36 @@ public class LateFeeService {
             }
         }
         return count;
+    }
+
+    /**
+     * 批量取账单所属登记表的「滞纳金起算日」政策(late_fee_start_date),避免逐单查库。
+     * 没挂登记表的账单(历史/合同计划来源)不受政策影响。
+     */
+    private Map<Long, LocalDate> policyStartDates(List<Bill> bills) {
+        List<Long> registerIds = bills.stream()
+                .map(Bill::getReceivableRegisterId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+        if (registerIds.isEmpty()) {
+            return Map.of();
+        }
+        return registerMapper.selectBatchIds(registerIds).stream()
+                .filter(register -> register != null && register.getLateFeeStartDate() != null)
+                .collect(Collectors.toMap(ReceivableRegister::getId,
+                        ReceivableRegister::getLateFeeStartDate));
+    }
+
+    /**
+     * 实际滞纳金起算日 = 默认起算日与登记表政策起算日取较晚者。
+     *
+     * <p>政策日只能把起算推后(如「10 月以后才开始算」),不能把它提前到默认口径之前
+     * —— 否则会绕过「补录不追溯」的保护。</p>
+     */
+    private static LocalDate effectiveFeeStart(Bill bill, LocalDate policyStart) {
+        LocalDate start = lateFeeStart(bill);
+        return policyStart != null && policyStart.isAfter(start) ? policyStart : start;
     }
 
     /**

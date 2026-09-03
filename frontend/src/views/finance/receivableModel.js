@@ -32,6 +32,8 @@ export const receivableColumns = [
   { label: '物业保证金', prop: 'propertyDeposit', minWidth: 140, format: money, align: 'right' },
   { label: '收款时间', prop: 'collectionTimingRaw', minWidth: 220 },
   { label: '开始收取租金时间', prop: 'firstCollectionRaw', minWidth: 180 },
+  // 收缴政策字段:该日之前不计滞纳金(逾期状态照标),空 = 默认口径
+  { label: '滞纳金起算日', prop: 'lateFeeStartDate', minWidth: 130 },
   { label: '租金收款账户', prop: 'rentAccountMasked', minWidth: 260 },
   { label: '物业管理、水电收款账户', prop: 'propertyAccountMasked', minWidth: 280 },
   { label: '备注', prop: 'notesRaw', minWidth: 240 },

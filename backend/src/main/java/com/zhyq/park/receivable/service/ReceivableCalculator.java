@@ -247,19 +247,18 @@ public class ReceivableCalculator {
         });
         String combined = text(register.getFreePeriodRaw()) + "；" + text(register.getDiscountRaw());
         boolean recurringLastMonth = parser.isYearlyLastMonthWaiver(combined);
-        boolean waiveProperty = containsAny(register.getDiscountRaw(),
-                "免物业", "无需支付物业", "免缴物业", "物业管理费按0", "无需支付租赁费及物业管理费");
-        if ("RENT".equals(feeType) || waiveProperty) {
-            List<ReceivableRuleParser.DateRange> freeRanges = new java.util.ArrayList<>(
-                    parser.parseDateRanges(register.getFreePeriodRaw()));
-            // 免租月按年循环时,「免租期N个月」是循环月数的合计,不能当成起租日起连免N个月
-            if (freeRanges.isEmpty() && !recurringLastMonth && register.getContractStartDate() != null) {
-                parser.parseMonthCount(register.getFreeTermRaw()).ifPresent(months -> freeRanges.add(
-                        new ReceivableRuleParser.DateRange(register.getContractStartDate(),
-                                register.getContractStartDate().plusMonths(months).minusDays(1))));
-            }
-            freeRanges.forEach(range -> inferred.add(dateRule(feeType, "WAIVER", range)));
+        // 免租期限内租金与物业费同免(2026-09-03 负责人拍板口径):免租期只收水电等实际
+        // 发生费用,物业管理费不再要求优惠备注里明写「免物业」才免。循环免租月(每合同
+        // 年度末月)不在此列,仍只免租金
+        List<ReceivableRuleParser.DateRange> freeRanges = new java.util.ArrayList<>(
+                parser.parseDateRanges(register.getFreePeriodRaw()));
+        // 免租月按年循环时,「免租期N个月」是循环月数的合计,不能当成起租日起连免N个月
+        if (freeRanges.isEmpty() && !recurringLastMonth && register.getContractStartDate() != null) {
+            parser.parseMonthCount(register.getFreeTermRaw()).ifPresent(months -> freeRanges.add(
+                    new ReceivableRuleParser.DateRange(register.getContractStartDate(),
+                            register.getContractStartDate().plusMonths(months).minusDays(1))));
         }
+        freeRanges.forEach(range -> inferred.add(dateRule(feeType, "WAIVER", range)));
         if ("RENT".equals(feeType) && recurringLastMonth) {
             ReceivableRule rule = rule(feeType, "RECURRING_WAIVER");
             rule.setRecurrenceRule("YEARLY_LAST_MONTH");

@@ -46,7 +46,8 @@ class ReceivableControllerMutationTest {
                 mock(ReceivableProvisionService.class),
                 mock(ReceivableExportService.class),
                 mock(FieldEncryptionService.class), mock(ImportBatchMapper.class),
-                mock(ImportRowMapper.class), mock(ReceivableCalculator.class));
+                mock(ImportRowMapper.class), mock(ReceivableCalculator.class),
+                mock(com.zhyq.park.finance.service.LateFeeService.class));
         when(registers.insert(any(ReceivableRegister.class))).thenAnswer(invocation -> {
             ((ReceivableRegister) invocation.getArgument(0)).setId(99L);
             return 1;

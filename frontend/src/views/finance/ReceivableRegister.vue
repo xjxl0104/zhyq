@@ -87,11 +87,13 @@
         <el-table-column label="状态" width="100" fixed="right">
           <template #default="{ row }"><el-tag :type="statusType(row.status)">{{ statusLabel(row.status) }}</el-tag></template>
         </el-table-column>
-        <el-table-column label="操作" width="250" fixed="right">
+        <el-table-column label="操作" width="300" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click="openDetail(row)">详情</el-button>
             <el-button v-if="capabilities.edit && ['DRAFT', 'PENDING_REVIEW'].includes(row.status)" link type="primary" @click="openEditor(row)">编辑</el-button>
             <el-button v-if="capabilities.generate" link type="success" @click="generate(row)">生成账单</el-button>
+            <!-- 收缴政策,不是合同真相:已确认/已生效的登记也可调,后端普通编辑仍锁死 -->
+            <el-button v-if="capabilities.edit" link type="warning" @click="openLateFee(row)">滞纳金</el-button>
             <el-popconfirm v-if="capabilities.deleteData" title="确认删除该登记表?" @confirm="remove(row)">
               <template #reference><el-button link type="danger">删除</el-button></template>
             </el-popconfirm>
@@ -155,6 +157,24 @@
       </el-form>
       <template #footer><el-button @click="editor.visible = false">取消</el-button><el-button type="primary" @click="saveEditor">保存</el-button></template>
     </el-dialog>
+
+    <el-dialog v-model="lateFee.visible" title="滞纳金起算日" width="460px">
+      <el-form label-width="110px">
+        <el-form-item label="租户"><span>{{ lateFee.tenantName }}</span></el-form-item>
+        <el-form-item label="起算日">
+          <el-date-picker v-model="lateFee.date" type="date" value-format="YYYY-MM-DD"
+                          placeholder="留空 = 默认口径" clearable style="width: 100%" />
+        </el-form-item>
+        <div class="late-fee-tip">
+          该日之前不计滞纳金（账单仍照实标逾期）；从该日起按万分之五/天计。
+          留空恢复默认口径（应收日与建单日取较晚者）。保存后立即对全部逾期账单重算。
+        </div>
+      </el-form>
+      <template #footer>
+        <el-button @click="lateFee.visible = false">取消</el-button>
+        <el-button type="primary" :loading="lateFee.saving" @click="saveLateFee">保存</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -179,6 +199,7 @@ const importVisible = ref(false)
 const detailVisible = ref(false)
 const detailId = ref(null)
 const editor = reactive({ visible: false, form: {} })
+const lateFee = reactive({ visible: false, saving: false, id: null, tenantName: '', date: null })
 const capabilities = ref({ query: false, add: false, edit: false, importData: false, confirm: false, generate: false, exportData: false, deleteData: false, accountView: false })
 const lastCompletedBatch = ref(null)
 const statusMap = { DRAFT: '草稿', PENDING_REVIEW: '待核对', CONFIRMED: '已确认', ACTIVE: '已生效', TERMINATED: '已终止' }
@@ -238,6 +259,18 @@ function monthlySummaryMethod({ columns }) {
 }
 function openDetail(row) { detailId.value = row.id; detailVisible.value = true }
 function openEditor(row) { editor.form = row ? { ...row } : { monthlyRent: 0, monthlyProperty: 0, monthlyTotal: 0 }; editor.visible = true }
+function openLateFee(row) {
+  Object.assign(lateFee, { visible: true, saving: false, id: row.id, tenantName: row.tenantNameRaw || '-', date: row.lateFeeStartDate || null })
+}
+async function saveLateFee() {
+  lateFee.saving = true
+  try {
+    await receivableApi.updateLateFeeStart(lateFee.id, lateFee.date || null)
+    ElMessage.success(lateFee.date ? `滞纳金将从 ${lateFee.date} 起算，逾期账单已重算` : '已恢复默认滞纳金口径，逾期账单已重算')
+    lateFee.visible = false
+    await load()
+  } finally { lateFee.saving = false }
+}
 async function saveEditor() { editor.form.id ? await receivableApi.update(editor.form) : await receivableApi.add(editor.form); editor.visible = false; ElMessage.success('保存成功'); load() }
 async function generate(row) { await ElMessageBox.confirm('将按登记明细中的合同期限、免租期和收款约定生成或同步账单，是否继续？'); const result = await receivableApi.generate(row.id); ElMessage.success(`新增 ${result?.inserted || 0} 条，同步 ${result?.updated || 0} 条，跳过 ${result?.skipped || 0} 条`); await load() }
 async function remove(row) { await receivableApi.remove(row.id); ElMessage.success('删除成功'); load() }
@@ -282,4 +315,5 @@ onActivated(() => {
 .summary-card.property .card-value { color: #409eff; }
 .summary-card.total .card-value { color: #67c23a; }
 .amount-highlight { font-weight: 600; color: var(--el-color-primary); }
+.late-fee-tip { margin: 4px 12px 0 110px; font-size: 12px; line-height: 1.6; color: var(--el-text-color-secondary); }
 </style>

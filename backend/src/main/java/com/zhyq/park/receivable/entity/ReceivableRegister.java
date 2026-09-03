@@ -46,6 +46,8 @@ public class ReceivableRegister extends BaseEntity {
     private String propertyAccountMasked;
     private String notesRaw;
     private BigDecimal depositDifference;
+    /** 滞纳金起算日:该日之前不计滞纳金(逾期状态照标);空=默认口径(应收日与建单日取晚者) */
+    private LocalDate lateFeeStartDate;
     private Long tenantRefId;
     private Long spaceId;
     private Long roomId;
