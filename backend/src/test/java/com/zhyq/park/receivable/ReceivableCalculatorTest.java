@@ -341,6 +341,47 @@ class ReceivableCalculatorTest {
         assertEquals(new BigDecimal("27000.00"), property(register, YearMonth.of(2026, 12)));
     }
 
+    /**
+     * 云山 -001/-002:免租期限改「每年12月免租金及物业费」后(2026-09-03 负责人口径),
+     * 每年 12 月租金与物业费同免,且全期租金合计仍与合同租金总额对平
+     * —— 12 月与次年 5 月落在同一递增档,两种口径总额等价。
+     */
+    @Test
+    void yunshanDecemberWaiverFreesRentAndPropertyAndStillReconciles() {
+        ReceivableRegister register = yunshanRegister(
+                LocalDate.of(2026, 6, 1), LocalDate.of(2041, 5, 31),
+                "256500", "27000",
+                "20260601-20261130为免缴期，无需支付物业管理服务费，但仍需全额支付公共事业费等其它应付费用（续下）；\n"
+                        + "搬迁期补助：补助金额5个月租赁费，抵扣20260601-20261031租赁费；\n"
+                        + "免租期计算：2026年11月1日至2026年11月30日，且2027年起至合同期满，每年最后一个月免租一个月，合计15个月；");
+        register.setFreePeriodRaw("每年12月免租金及物业费");
+
+        // 12 月租金与物业费同免(旧口径下 2026-12 收 256,500、物业 27,000)
+        assertEquals(new BigDecimal("0.00"), rent(register, YearMonth.of(2026, 12)));
+        assertEquals(new BigDecimal("0.00"), property(register, YearMonth.of(2026, 12)));
+        assertEquals(new BigDecimal("0.00"), rent(register, YearMonth.of(2027, 12)));
+        assertEquals(new BigDecimal("0.00"), property(register, YearMonth.of(2027, 12)));
+        assertEquals(new BigDecimal("0.00"), rent(register, YearMonth.of(2040, 12)));
+        // 合同年度末月(5月)不再免:该口径已被「每年12月」取代,不会两个月都免
+        assertEquals(new BigDecimal("256500.00"), rent(register, YearMonth.of(2027, 5)));
+        assertEquals(new BigDecimal("27000.00"), property(register, YearMonth.of(2027, 5)));
+        // 「免租期15个月」不得被当成起租日起连免 15 个月
+        assertEquals(new BigDecimal("27000.00"), property(register, YearMonth.of(2027, 1)));
+
+        BigDecimal total = totalRent(register, YearMonth.of(2026, 6), YearMonth.of(2041, 5));
+        assertTrue(new BigDecimal("48118843.83").subtract(total).abs().compareTo(BigDecimal.ONE) < 0,
+                "12月口径下全期租金合计 " + total + " 仍应与合同租金总额 48118843.83 相差 <1 元");
+
+        // -002:同结构、月租 168,750,总额 31,657,134.10
+        ReceivableRegister second = yunshanRegister(
+                LocalDate.of(2026, 6, 1), LocalDate.of(2041, 5, 31),
+                "168750", "27000", register.getDiscountRaw());
+        second.setFreePeriodRaw("每年12月免租金及物业费");
+        BigDecimal secondTotal = totalRent(second, YearMonth.of(2026, 6), YearMonth.of(2041, 5));
+        assertTrue(new BigDecimal("31657134.10").subtract(secondTotal).abs().compareTo(BigDecimal.ONE) < 0,
+                "-002 12月口径全期合计 " + secondTotal + " 应与 31657134.10 相差 <1 元");
+    }
+
     private ReceivableRegister yunshanRegister(LocalDate start, LocalDate end,
                                                String monthlyRent, String monthlyProperty,
                                                String discountRaw) {

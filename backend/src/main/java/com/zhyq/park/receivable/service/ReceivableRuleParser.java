@@ -109,6 +109,23 @@ public class ReceivableRuleParser {
     }
 
     /**
+     * 「每年12月免租金及物业费」——按自然年 12 月循环免，租金与物业费同免。
+     *
+     * <p>与 {@link #isYearlyLastMonthWaiver} 的区别:那条按合同年度末月(6月起租免5月)
+     * 且只免租金。云山 -001/-002 补充协议的「每年最后一个月」= 自然年 12 月
+     * (2026-09-03 负责人拍板);两种口径对 6 月起租的合同全期总额等价,
+     * 靠合同总额对账区分不开,所以由条款措辞显式指定。</p>
+     */
+    public boolean isYearlyDecemberWaiver(String raw) {
+        if (raw == null) {
+            return false;
+        }
+        String text = raw.replaceAll("\\s+", "");
+        return text.contains("每年12月免") || text.contains("每年十二月免")
+                || text.contains("每年12月份免");
+    }
+
+    /**
      * 「2027年起…每年最后一个月免租」里的生效年份,循环免租从该年 1 月 1 日起才适用。
      * 只在包含循环免租措辞的那个子句里找「XXXX年起」,避免误取其它条款的年份。
      */
