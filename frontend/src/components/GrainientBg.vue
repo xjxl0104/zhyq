@@ -12,10 +12,8 @@ const props = defineProps({
   palettes: {
     type: Array,
     default: () => [
-      ['#5b4be0', '#1c1650', '#3b2f9e'],  // 靛紫
-      ['#7c3aed', '#231a5c', '#4c1d95'],  // 紫罗兰
-      ['#8b5cf6', '#1e1b4b', '#5b21b6'],  // 电光紫
-      ['#6366f1', '#191645', '#4338ca'],  // 蓝紫过渡
+      // React Bits 官方 demo 色调:深青 / 深蓝紫 / 亮紫(用户指定,2026-09-03)
+      ['#00788c', '#170074', '#a140fc'],
     ],
   },
   cycleSeconds: { type: Number, default: 14 },

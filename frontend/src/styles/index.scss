@@ -487,3 +487,28 @@ body {
 /* 链接按钮悬浮微移 */
 .el-button.is-link { transition: transform .12s; }
 .el-button.is-link:hover { transform: translateY(-1px); }
+
+/* ===== 全局滚动条:细、圆、克制(2026-09-03) ===== */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(71, 70, 110, 0.28) transparent;
+}
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: rgba(71, 70, 110, 0.24);
+  border-radius: 8px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(71, 70, 110, 0.45);
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-corner { background: transparent; }
+/* Element Plus 表格/滚动区的自绘滚动条同步克制 */
+.el-scrollbar__bar.is-horizontal { height: 8px; }
+.el-scrollbar__bar.is-vertical { width: 8px; }
+.el-scrollbar__thumb { background: rgba(71, 70, 110, 0.3); }
+.el-scrollbar__thumb:hover { background: rgba(71, 70, 110, 0.5); }
