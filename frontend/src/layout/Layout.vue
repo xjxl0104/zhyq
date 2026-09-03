@@ -1,6 +1,6 @@
 <template>
   <div class="app-wrapper">
-    <el-container class="body-row">
+    <el-container class="body-row" :style="{ '--aside-w': asideWidth }">
       <GrainientBg class="chrome-aurora" />
       <!-- 侧边栏可收起:财务几张宽表(所有账单、应收明细登记表 28 列)在 232px 侧边栏下
            右侧列会被挤出可视区,收起后表格独占整宽。
@@ -8,7 +8,8 @@
            改 --el-aside-width 会被内容的 min-content 宽度顶住,收放两头都不干净 -->
       <!-- 收起 = 64px 图标栏,不是整块消失:宽表要横向空间时收窄,但品牌条与图标导航还在,
            视觉上不塌。折叠态 el-menu 走官方 collapse,子菜单变悬浮弹层 -->
-      <el-aside :width="collapsed ? '64px' : '232px'" class="sidebar" :class="{ collapsed }">
+      <!-- 宽度从 .body-row 的 --aside-w 取:内容纸的玻璃层(.body-row::after)也靠它定位,收起时一起走 -->
+      <el-aside width="var(--aside-w)" class="sidebar" :class="{ collapsed }">
         <div class="brand-zone">
           <img class="brand-logo" src="@/assets/brand/dipark.svg" alt="DIPARK" />
           <StrokeBrand v-show="!collapsed" />
@@ -81,6 +82,9 @@ const projectStore = useProjectStore()
 // 收起状态存 localStorage:切页面/刷新后保持,不然每次进宽表页都要重按一次
 const COLLAPSE_KEY = 'zhyq_sidebar_collapsed'
 const collapsed = ref(localStorage.getItem(COLLAPSE_KEY) === '1')
+// 侧栏两档宽度只在这里定义,经 .body-row 的 --aside-w 同时喂给 el-aside 和内容纸的玻璃层
+const SIDEBAR_WIDTH = { open: '232px', rail: '64px' }
+const asideWidth = computed(() => (collapsed.value ? SIDEBAR_WIDTH.rail : SIDEBAR_WIDTH.open))
 function toggleSidebar() {
   collapsed.value = !collapsed.value
   localStorage.setItem(COLLAPSE_KEY, collapsed.value ? '1' : '0')
@@ -143,8 +147,7 @@ function onClick(c) {
   position: relative;
   height: 100%;
   background: linear-gradient(160deg, #1e1b4b 0%, #312e81 42%, #4c42d9 100%);
-  /* 画框几何:侧栏宽 / 内容纸留缝 / 圆角,纸与玻璃层共用同一组数 */
-  --aside-w: 232px;
+  /* 画框几何:内容纸留缝 / 圆角,纸与玻璃层共用同一组数;侧栏宽 --aside-w 由模板按收起状态写在本元素上 */
   --paper-gap: 12px;
   --paper-radius: 22px;
   /* 毛玻璃配方:选中舌头与内容纸同一材质,拼接处才看不出缝 */
@@ -160,8 +163,9 @@ function onClick(c) {
   top: var(--paper-gap);
   right: var(--paper-gap);
   bottom: var(--paper-gap);
-  left: var(--aside-w);
+  left: var(--aside-w, 232px);
   z-index: 0;
+  transition: left .2s ease;   /* 与 .sidebar 的 width 过渡同步,收起/展开时玻璃跟着侧栏走 */
   border-radius: var(--paper-radius);
   background: var(--glass-bg);
   -webkit-backdrop-filter: var(--glass-filter);
