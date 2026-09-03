@@ -9,7 +9,10 @@ import { billApi, paymentApi } from '@/api/finance'
 vi.mock('@/api/finance', () => ({
   billApi: {
     payableTenants: vi.fn(),
-    page: vi.fn()
+    page: vi.fn(),
+    // 挂载时拉按钮权限(滞纳金调整入口),不 mock 会让 onMounted 抛错
+    capabilities: vi.fn().mockResolvedValue({ lateFeeAdjust: true }),
+    adjustLateFee: vi.fn()
   },
   paymentApi: {
     pay: vi.fn(),

@@ -32,9 +32,16 @@
             <template #default="{ row }">¥{{ money(row.amount) }}</template>
           </el-table-column>
           <!-- 滞纳金计入欠款口径,不单列出来的话"欠款 > 应收-已收"会让收银员一头雾水 -->
-          <el-table-column label="滞纳金" width="100" align="right">
+          <el-table-column label="滞纳金" width="140" align="right">
             <template #default="{ row }">
-              <span :class="{ 'late-fee': Number(row.lateFee) > 0 }">¥{{ money(row.lateFee) }}</span>
+              <!-- 现场常有"这笔滞纳金不收"的情况:收款前就地改,不用切到逾期账单页 -->
+              <el-link v-if="canAdjust" type="primary" :underline="false" @click="openAdjust(row)">
+                <span :class="{ 'late-fee': Number(row.lateFee) > 0 }">¥{{ money(row.lateFee) }}</span>
+              </el-link>
+              <span v-else :class="{ 'late-fee': Number(row.lateFee) > 0 }">¥{{ money(row.lateFee) }}</span>
+              <el-tooltip v-if="row.lateFeeManual === 1" :content="row.lateFeeRemark || '已人工调整，不参与自动重算'">
+                <el-tag type="warning" size="small" effect="plain" class="manual-tag">人工</el-tag>
+              </el-tooltip>
             </template>
           </el-table-column>
           <el-table-column label="已收" width="110" align="right">
@@ -80,6 +87,8 @@
         </div>
       </div>
     </div>
+    <!-- 调整后重拉账单:欠款含滞纳金,金额变了收银结算的合计要跟着变 -->
+    <LateFeeAdjustDialog v-model="adjustVisible" :bill="adjustBill" @saved="loadBills" />
   </div>
 </template>
 
@@ -87,6 +96,7 @@
 import { reactive, ref, computed, onMounted, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { billApi, paymentApi } from '@/api/finance'
+import LateFeeAdjustDialog from './components/LateFeeAdjustDialog.vue'
 import { billOwe, billOweCents, buildPaymentPlan, hasOutstanding, tenantOptionBadge, tenantOptionLabel } from './cashierModel'
 
 const PAYABLE = [3, 4, 6] // 待收付/部分结清/逾期
@@ -100,6 +110,10 @@ const selected = ref([])
 const payAmount = ref(0)
 const payMethod = ref('现金')
 const paying = ref(false)
+const canAdjust = ref(false)
+const adjustVisible = ref(false)
+const adjustBill = ref(null)
+function openAdjust(row) { adjustBill.value = row; adjustVisible.value = true }
 const payMethods = ['现金', '转账', 'POS', '微信', '支付宝', '聚合']
 
 function money(v) {
@@ -198,7 +212,10 @@ async function confirmPay() {
   }
 }
 
-onMounted(loadTenants)
+onMounted(async () => {
+  const [caps] = await Promise.allSettled([billApi.capabilities(), loadTenants()])
+  canAdjust.value = caps.status === 'fulfilled' && !!caps.value?.lateFeeAdjust
+})
 </script>
 
 <style scoped>
@@ -212,6 +229,7 @@ onMounted(loadTenants)
 .bill-table { --el-table-row-hover-bg-color: var(--bg-hover, #f5f7fa); }
 .owe { color: var(--el-color-danger); font-weight: 650; font-variant-numeric: tabular-nums; }
 .late-fee { color: var(--el-color-warning); font-weight: 600; }
+.manual-tag { margin-left: 6px; }
 .opt-owe { float: right; color: var(--el-color-danger); font-size: 12px; margin-left: 20px; }
 .opt-owe.clear { color: var(--text-secondary); }
 .empty-tip { text-align: center; color: var(--text-secondary); padding: 30px 0; }

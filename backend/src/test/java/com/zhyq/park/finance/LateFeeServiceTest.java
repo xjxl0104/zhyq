@@ -143,6 +143,29 @@ class LateFeeServiceTest {
     }
 
     @Test
+    @DisplayName("人工调整过的账单:查询与条件更新两处都带 late_fee_manual 守卫,不被自动重算覆盖")
+    void manuallyAdjustedBillsAreExcludedFromRecalc() {
+        when(billMapper.selectList(any())).thenReturn(List.of(overdueBill(5L, "1000", "0", 10)));
+        when(billMapper.update(any(), any())).thenReturn(1);
+
+        service().recalc();
+
+        // 查询侧:必须把人工锁定的行排除在候选之外
+        @SuppressWarnings({"unchecked", "rawtypes"})
+        ArgumentCaptor<com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<Bill>> query =
+                ArgumentCaptor.forClass((Class) com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper.class);
+        verify(billMapper).selectList(query.capture());
+        assertThat(query.getValue().getCustomSqlSegment()).contains("late_fee_manual");
+
+        // 更新侧:快照后可能刚被锁定,WHERE 里要再验一次
+        @SuppressWarnings({"unchecked", "rawtypes"})
+        ArgumentCaptor<LambdaUpdateWrapper<Bill>> wrapper =
+                ArgumentCaptor.forClass((Class) LambdaUpdateWrapper.class);
+        verify(billMapper).update(any(), wrapper.capture());
+        assertThat(wrapper.getValue().getCustomSqlSegment()).contains("late_fee_manual");
+    }
+
+    @Test
     @DisplayName("登记表滞纳金起算日在未来:滞纳金 0,但仍标逾期、逾期天数照真实应收日")
     void policyStartDateInFutureSuppressesLateFee() {
         overdueBillWithPolicy(9L, LocalDate.now().plusDays(28), 96);

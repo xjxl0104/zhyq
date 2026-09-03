@@ -51,6 +51,9 @@ public class LateFeeService {
         qw.eq(Bill::getDirection, 1)
           .in(Bill::getStatus, 3, 4, 6)
           .lt(Bill::getDueDate, today)
+          // 人工调整过的滞纳金(如现场协商减免)锁定,自动重算整条跳过,
+          // 否则管理员改成 0 后第二天就被自愈任务算回去了
+          .ne(Bill::getLateFeeManual, 1)
           .orderByAsc(Bill::getId);
         List<Bill> list = billMapper.selectList(qw);
         Map<Long, LocalDate> policyStarts = policyStartDates(list);
@@ -91,6 +94,8 @@ public class LateFeeService {
             int updated = billMapper.update(patch, new LambdaUpdateWrapper<Bill>()
                     .eq(Bill::getId, b.getId())
                     .in(Bill::getStatus, 3, 4, 6)
+                    // 快照后可能刚被人工锁定:条件更新里再验一次,不覆盖人工值
+                    .ne(Bill::getLateFeeManual, 1)
                     .apply("paid_amount < amount"));
             if (updated == 1) {
                 count++;

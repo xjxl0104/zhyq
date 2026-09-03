@@ -25,6 +25,8 @@ public final class BillMetrics {
     /** 方向:付款(应付) */
     public static final int DIRECTION_PAY = 2;
 
+    /** 状态:已结清。判定口径 = 实收 >= 本金 + 滞纳金(与 PaymentService 收款后置状态一致) */
+    public static final int STATUS_SETTLED = 5;
     /** 状态:已逾期 */
     public static final int STATUS_OVERDUE = 6;
 
