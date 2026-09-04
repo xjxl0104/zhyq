@@ -42,19 +42,22 @@
             <el-option label="付款" :value="2" />
           </el-select>
         </el-form-item>
-        <!-- 来源筛选:区分"由应收明细登记表生成"的账单与历史/演示账单。
-             登记表账单才带协议编号与登记明细口径的租客名 -->
-        <el-form-item label="来源">
-          <el-select v-model="query.source" placeholder="全部" clearable style="width: 150px">
-            <el-option v-for="s in sources" :key="s" :label="s" :value="s" />
+        <!-- 按租客查账是台账最常用的入口(负责人 2026-09-04 要求把这一栏从「来源」换过来)。
+             数据源用租客档案而不是收银台的 payable-tenants:后者只含有欠款账单的租客,
+             全部结清的租客会从下拉里消失,反而查不到他的历史账单。来源仍在表格里显示 -->
+        <el-form-item label="对方租客">
+          <el-select v-model="query.tenantRefId" placeholder="全部" clearable filterable style="width: 220px">
+            <el-option v-for="t in tenants" :key="t.id" :label="t.name" :value="t.id" />
           </el-select>
         </el-form-item>
         <el-form-item label="只看到期">
           <el-switch v-model="query.onlyDue" />
         </el-form-item>
         <el-form-item>
-          <el-button type="primary" @click="load"><el-icon><Search /></el-icon>查询</el-button>
-          <el-button type="danger" plain @click="reset">重置</el-button>
+          <el-button type="primary" @click="search"><el-icon><Search /></el-icon>查询</el-button>
+          <!-- 这里原来放的是「重置」,但它做的是作废账单,不是清筛选条件。
+               筛选栏里紧挨查询的位置只能放清筛选,破坏性操作已挪到上方工具条 -->
+          <el-button @click="clearFilters">清空筛选</el-button>
         </el-form-item>
       </el-form>
     </div>
@@ -76,6 +79,9 @@
       </el-alert>
       <div class="toolbar">
         <el-button type="warning" @click="calcLateFee"><el-icon><Money /></el-icon>计算滞纳金</el-button>
+        <!-- 原来叫「重置」且摆在筛选栏里,和收支流水页「清筛选」那个重置同名同位,
+             实际做的却是作废账单。改名 + 挪到动作区,避免点错 -->
+        <el-button type="danger" plain @click="resetPushedBills">重置推送账单</el-button>
       </div>
       <el-table :data="list" v-loading="loading" border stripe>
         <el-table-column type="index" label="#" width="55" />
@@ -243,12 +249,12 @@ import { computed, reactive, ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { billApi, paymentApi, invoiceApi } from '@/api/finance'
+import { tenantApi } from '@/api/tenant'
 import { billOwe } from './cashierModel'
 
 // 保证金按实际费用类型拆分:登记表生成的就是「租金保证金/物业保证金」两类
 const feeTypes = ['租金', '物业费', '租金保证金', '物业保证金', '能源费', '服务费', '一次性']
 // 账单来源。'应收登记表' = 由应收明细登记表生成(带协议编号与登记明细口径的租客名)
-const sources = ['应收登记表', '合同计划', '抄表', '人工', '商城', '预约', '工单', '接口']
 const payMethods = ['现金', '转账', 'POS', '微信', '支付宝', '聚合']
 const statusMap = {
   1: { label: '草稿', type: 'info' },
@@ -270,7 +276,10 @@ const loading = ref(false)
 const list = ref([])
 const total = ref(0)
 const stats = reactive({ receivable: 0, received: 0, needReceive: 0, lateFee: 0, overdueCount: 0 })
-const query = reactive({ pageNo: 1, pageSize: 10, code: '', feeType: null, status: null, direction: null, source: null, billId: null, onlyDue: false })
+const EMPTY_FILTERS = { code: '', feeType: null, status: null, direction: null, tenantRefId: null, billId: null, onlyDue: false }
+const query = reactive({ pageNo: 1, pageSize: 10, ...EMPTY_FILTERS })
+// 租客下拉用档案全量,结清的租客也要能查到他的历史账单
+const tenants = ref([])
 
 const router = useRouter()
 // 从流水/收据/发票/收款通知点「关联账单」跳来时,url 上带 billId,把列表筛成那一张
@@ -312,7 +321,7 @@ async function loadStats() {
  * 作废所有「由应收明细登记表推送、且未收款未开票」的账单(已收款/已开票保留),
  * 之后回登记表逐行点「生成账单」重新推送即可。
  */
-async function reset() {
+async function resetPushedBills() {
   try {
     await ElMessageBox.confirm(
       '将作废所有由应收明细登记表推送、且未收款未开票的账单(已收款/已开票的保留)。重置后请回登记表重新点「生成账单」推送。确定重置?',
@@ -324,9 +333,20 @@ async function reset() {
   }
   const res = await billApi.reset()
   ElMessage.success(`已重置:作废 ${res.deleted} 张账单,保留 ${res.kept} 张(已收款/已开票)`)
-  Object.assign(query, { pageNo: 1, code: '', feeType: null, status: null, direction: null, source: null, billId: null, onlyDue: false })
+  Object.assign(query, { pageNo: 1, ...EMPTY_FILTERS })
   locatedBillId.value = null
   refresh()
+}
+// 查询永远回第 1 页:留在第 3 页换条件多半是一屏空白
+function search() {
+  query.pageNo = 1
+  return load()
+}
+function clearFilters() {
+  Object.assign(query, { pageNo: 1, ...EMPTY_FILTERS })
+  locatedBillId.value = null
+  ElMessage.success('已清空筛选条件，显示全部账单')
+  return load()
 }
 async function refresh() {
   await Promise.all([load(), loadStats()])
@@ -457,8 +477,12 @@ onMounted(async () => {
   // 先落定位条件再取数,顺序反了会先查全量再被覆盖
   applyRouteLocate()
   // 能力位取不到不该拖垮整页:拿不到就按"没权限"渲染,列表照常出
-  const [caps] = await Promise.allSettled([billApi.capabilities(), refresh()])
+  // 能力位/租客名册取不到都不该拖垮整页:拿不到就少一个按钮、少一个下拉,列表照常出
+  const [caps, tenantList] = await Promise.allSettled([
+    billApi.capabilities(), tenantApi.list(), refresh()
+  ])
   if (caps.status === 'fulfilled' && caps.value) capabilities.value = caps.value
+  if (tenantList.status === 'fulfilled') tenants.value = tenantList.value || []
 })
 </script>
 
