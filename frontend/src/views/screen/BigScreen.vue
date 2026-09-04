@@ -134,7 +134,7 @@
 </template>
 
 <script setup>
-import { nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
+import { nextTick, onActivated, onDeactivated, onMounted, onUnmounted, reactive, ref } from 'vue'
 import * as echarts from 'echarts'
 import { dashboardApi } from '@/api/dashboard'
 import { leadApi } from '@/api/crm'
@@ -165,9 +165,29 @@ const lightAxis = {
   splitLine: { lineStyle: { color: PALETTE.splitLine, type: 'dashed' } }
 }
 
-const timers = []
+// 定时器随页面可见性起停。Layout.vue 用了 <keep-alive>,切走触发 deactivated 而不是
+// unmounted —— 原来只在 onUnmounted 清理,等于切走之后这些 1s/15s/30s/60s 的轮询
+// 全都还在后台空转,白烧请求;切回来又要等下一个 tick(最长 60 秒)才更新,
+// 大屏上挂着的是一分钟前的旧数
+let timers = []
 const charts = {}
 function addTimer(fn, ms) { fn(); timers.push(setInterval(fn, ms)) }
+function stopTimers() {
+  timers.forEach(clearInterval)
+  timers = []
+}
+// 每个 addTimer 都会先立即跑一次,所以重新进页面即刻是最新数据,不用等轮询周期
+async function startTimers() {
+  stopTimers()
+  addTimer(tick, 1000)
+  addTimer(loadAlarms, 15000)
+  addTimer(loadOverview, 30000)
+  addTimer(loadFunnel, 60000)
+  await nextTick()
+  addTimer(loadRoomChart, 60000)
+  addTimer(loadTrendChart, 60000)
+  addTimer(loadWoChart, 60000)
+}
 const fmtW = (v) => (Number(v || 0) / 10000).toFixed(1)
 const pct = (a, b) => b ? Math.round(Number(a || 0) * 100 / Number(b)) : 0
 
@@ -268,19 +288,20 @@ async function loadWoChart() {
 function resizeAll() { Object.values(charts).forEach(chart => chart?.resize?.()) }
 
 onMounted(async () => {
-  addTimer(tick, 1000)
-  addTimer(loadAlarms, 15000)
-  addTimer(loadOverview, 30000)
-  addTimer(loadFunnel, 60000)
-  await nextTick()
-  addTimer(loadRoomChart, 60000)
-  addTimer(loadTrendChart, 60000)
-  addTimer(loadWoChart, 60000)
+  await startTimers()
   window.addEventListener('resize', resizeAll)
 })
 
+// keep-alive 下的可见性切换:回来立刻重拉一轮,离开就把轮询停掉
+let activatedBefore = false
+onActivated(() => {
+  if (!activatedBefore) { activatedBefore = true; return }
+  startTimers()
+})
+onDeactivated(stopTimers)
+
 onUnmounted(() => {
-  timers.forEach(clearInterval)
+  stopTimers()
   window.removeEventListener('resize', resizeAll)
   Object.values(charts).forEach(chart => chart?.dispose?.())
 })

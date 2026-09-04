@@ -17,8 +17,23 @@
             <el-option label="停用" :value="0" />
           </el-select>
         </el-form-item>
+        <el-form-item label="租户">
+          <el-select v-model="query.tenantRefId" placeholder="全部" clearable filterable style="width: 220px">
+            <el-option v-for="t in tenants" :key="t.id" :label="t.name" :value="t.id" />
+          </el-select>
+        </el-form-item>
+        <!-- 按月查水电:选了账期就只看那个月的抄表结果,不选看最近一次 -->
+        <el-form-item label="账期">
+          <el-date-picker v-model="query.period" type="month" placeholder="不选=最近一次"
+                          format="YYYY年M月" value-format="YYYY-MM" clearable style="width: 170px" />
+        </el-form-item>
+        <el-form-item label="表计角色">
+          <el-select v-model="query.meterRole" placeholder="全部" clearable style="width: 150px">
+            <el-option v-for="r in METER_ROLES" :key="r.value" :label="r.label" :value="r.value" />
+          </el-select>
+        </el-form-item>
         <el-form-item>
-          <el-button type="primary" @click="load"><el-icon><Search /></el-icon>查询</el-button>
+          <el-button type="primary" @click="search"><el-icon><Search /></el-icon>查询</el-button>
           <el-button @click="reset">重置</el-button>
         </el-form-item>
       </el-form>
@@ -30,7 +45,7 @@
         <el-button type="primary" @click="openDialog()"><el-icon><Plus /></el-icon>新增表计</el-button>
       </div>
       <el-table :data="list" v-loading="loading" border stripe>
-        <el-table-column type="index" label="#" width="55" />
+        <el-table-column type="index" label="序号" width="70" />
         <el-table-column prop="code" label="表计编号" min-width="140" />
         <el-table-column prop="name" label="名称" min-width="120" />
         <el-table-column label="能源类型" width="110">
@@ -38,8 +53,39 @@
             <el-tag :type="energyTagType(row.energyType)">{{ row.energyType }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="ratio" label="倍率" width="90" />
-        <el-table-column prop="lastReading" label="上次读数" width="120" />
+        <el-table-column label="角色" width="110">
+          <template #default="{ row }">
+            <el-tag :type="roleTagType(row.meterRole)" effect="plain">{{ roleLabel(row.meterRole) }}</el-tag>
+          </template>
+        </el-table-column>
+        <!-- 租户经 房间 → 执行中合同 → 租客 反查:表计本身只挂房间,已退租的旧合同不算 -->
+        <el-table-column prop="tenantName" label="租户" min-width="170" show-overflow-tooltip>
+          <template #default="{ row }">
+            <div class="cell-main">{{ row.tenantName || '-' }}</div>
+            <div v-if="row.roomCode" class="cell-sub">{{ row.roomCode }}</div>
+          </template>
+        </el-table-column>
+        <!-- 「日期」按本期账期理解:上次抄表日 ~ 本次抄表日,也就是这笔用量对应的区间 -->
+        <el-table-column label="账期" width="185">
+          <template #default="{ row }">
+            <span v-if="row.periodEnd">{{ row.periodStart || '首次' }} ~ {{ row.periodEnd }}</span>
+            <span v-else>-</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="usageAmount" label="用电量" width="110" align="right">
+          <template #default="{ row }">
+            <span v-if="row.usageAmount != null" class="usage">{{ row.usageAmount }}</span>
+            <span v-else>-</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="currReading" label="当前读数" width="115" align="right">
+          <template #default="{ row }">{{ row.currReading ?? '-' }}</template>
+        </el-table-column>
+        <el-table-column prop="lastReadTime" label="最近抄表时间" width="170">
+          <template #default="{ row }">{{ row.lastReadTime || '未抄表' }}</template>
+        </el-table-column>
+        <el-table-column prop="ratio" label="倍率" width="80" />
+        <el-table-column prop="lastReading" label="上次读数" width="110" align="right" />
         <el-table-column label="状态" width="90">
           <template #default="{ row }">
             <el-tag :type="row.status === 1 ? 'success' : 'info'">
@@ -47,10 +93,13 @@
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="createTime" label="创建时间" width="170" />
-        <el-table-column label="操作" width="220" fixed="right">
+        <el-table-column label="操作" width="300" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click="openReadings(row)">抄表记录</el-button>
+            <!-- 一次抄表只出一张账单:已出过就置灰,不给用户重复点的机会 -->
+            <el-button v-if="row.billed" link type="info" disabled>已出账</el-button>
+            <el-button v-else link type="success" :loading="billing === row.id" @click="createBill(row)">计费</el-button>
+            <el-button link type="info" @click="openLogs(row)">操作日志</el-button>
             <el-button link type="primary" @click="openDialog(row)">编辑</el-button>
             <el-popconfirm title="确认删除?" @confirm="remove(row.id)">
               <template #reference><el-button link type="danger">删除</el-button></template>
@@ -75,6 +124,26 @@
             <el-option v-for="t in energyTypes" :key="t" :label="t" :value="t" />
           </el-select>
         </el-form-item>
+        <!-- 角色决定这块表在公摊里的位置,不是装饰:总表是被减数、物业表计入分母不出账 -->
+        <el-form-item label="表计角色" prop="meterRole">
+          <el-select v-model="form.meterRole" style="width: 100%">
+            <el-option v-for="r in METER_ROLES" :key="r.value" :label="r.label" :value="r.value" />
+          </el-select>
+          <div class="form-tip">{{ roleTip(form.meterRole) }}</div>
+        </el-form-item>
+        <!-- 租户不直接存在表计上:换租后合同一改,租户就该跟着变。这里选房间,
+             租户由「房间 → 执行中合同」实时反查,不会出现表还挂在上一家名下 -->
+        <el-form-item label="所属房间">
+          <el-select v-model="form.roomId" placeholder="选房间，租户由合同带出" clearable filterable style="width: 100%">
+            <el-option v-for="r in rooms" :key="r.id" :label="r.code + (r.roomNo ? ` (${r.roomNo})` : '')" :value="r.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="租户">
+          <el-input :model-value="currentTenantName" disabled placeholder="选了房间后自动带出" />
+          <div class="form-tip">
+            按房间当前「执行中」的合同实时带出；房间没挂合同时这里是空的，公摊出账会跳过该表。
+          </div>
+        </el-form-item>
         <el-form-item label="倍率"><el-input-number v-model="form.ratio" :min="0" :precision="2" /></el-form-item>
         <el-form-item label="上次读数"><el-input-number v-model="form.lastReading" :min="0" :precision="2" /></el-form-item>
         <el-form-item label="状态">
@@ -96,7 +165,7 @@
         <el-button type="primary" @click="openReadingDialog()"><el-icon><Plus /></el-icon>新增抄表</el-button>
       </div>
       <el-table :data="readingList" v-loading="readingLoading" border stripe>
-        <el-table-column type="index" label="#" width="55" />
+        <el-table-column type="index" label="序号" width="70" />
         <el-table-column prop="prevReading" label="上次读数" min-width="110" />
         <el-table-column prop="currReading" label="本次读数" min-width="110" />
         <el-table-column prop="usageAmount" label="用量" min-width="100" />
@@ -139,13 +208,43 @@
         <el-button type="primary" @click="submitReading">确定</el-button>
       </template>
     </el-dialog>
+
+    <!-- 操作日志:sys_oper_log 没有业务对象 id 列,后端按 模块 + 表计编号/路径 匹配 -->
+    <el-dialog v-model="logDialog.visible" width="820px"
+               :title="`操作日志 - ${logDialog.meter?.code || ''} ${logDialog.meter?.name || ''}`">
+      <el-table :data="logDialog.rows" v-loading="logDialog.loading" border stripe size="small" max-height="420">
+        <el-table-column type="index" label="序号" width="70" />
+        <el-table-column prop="action" label="操作" width="150" />
+        <el-table-column prop="operator" label="操作人" width="120" />
+        <el-table-column label="结果" width="90">
+          <template #default="{ row }">
+            <el-tag :type="row.success === 1 ? 'success' : 'danger'">
+              {{ row.success === 1 ? '成功' : '失败' }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="errorMsg" label="失败原因" min-width="180" show-overflow-tooltip>
+          <template #default="{ row }">{{ row.errorMsg || '-' }}</template>
+        </el-table-column>
+        <el-table-column prop="ip" label="来源 IP" min-width="140" show-overflow-tooltip />
+        <el-table-column prop="costMs" label="耗时" width="90" align="right">
+          <template #default="{ row }">{{ row.costMs }} ms</template>
+        </el-table-column>
+        <el-table-column prop="createTime" label="时间" width="170" />
+      </el-table>
+      <div v-if="!logDialog.loading && !logDialog.rows.length" class="empty-tip">
+        暂无操作日志（新增/修改/删除/计费会记录在这里）
+      </div>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { reactive, ref, onMounted } from 'vue'
-import { ElMessage } from 'element-plus'
+import { computed, reactive, ref, onMounted } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { meterApi, readingApi } from '@/api/energy'
+import { tenantApi } from '@/api/tenant'
+import { roomApi } from '@/api/building'
 
 const energyTypes = ['电', '水', '燃气', '热力']
 const readSources = ['自动采集', '人工', '估算', '补录', '换表']
@@ -153,7 +252,23 @@ const readSources = ['自动采集', '人工', '估算', '补录', '换表']
 const loading = ref(false)
 const list = ref([])
 const total = ref(0)
-const query = reactive({ pageNo: 1, pageSize: 10, code: '', energyType: null, status: null })
+// 表计角色:决定它在公摊里的位置(见 V51 迁移与 AllocationService 的公式注释)
+const METER_ROLES = [
+  { value: 'TENANT', label: '租户分表', tip: '计入分摊分母，并按分摊结果给该租户出账' },
+  { value: 'MAIN', label: '园区总表', tip: '对应对外发票口径，是公共区域用量的被减数，本身不出账' },
+  { value: 'PROPERTY', label: '物业公司表', tip: '计入分摊分母，但不出账（属园区内部成本）' }
+]
+const roleLabel = (v) => METER_ROLES.find(r => r.value === v)?.label || '租户分表'
+const roleTip = (v) => METER_ROLES.find(r => r.value === v)?.tip || ''
+const roleTagType = (v) => (v === 'MAIN' ? 'danger' : v === 'PROPERTY' ? 'warning' : 'success')
+
+const EMPTY_QUERY = { code: '', energyType: null, status: null, tenantRefId: null, period: null, meterRole: null }
+const query = reactive({ pageNo: 1, pageSize: 10, ...EMPTY_QUERY })
+// 租户下拉用租客档案全量:表计的租户是经合同反查出来的,档案才是名册的真相源
+const tenants = ref([])
+const rooms = ref([])
+const billing = ref(null)
+const logDialog = reactive({ visible: false, meter: null, loading: false, rows: [] })
 
 function energyTagType(type) {
   const map = { '电': 'warning', '水': 'primary', '燃气': 'danger', '热力': 'success' }
@@ -171,13 +286,56 @@ async function load() {
   }
 }
 function reset() {
-  Object.assign(query, { pageNo: 1, code: '', energyType: null, status: null })
+  Object.assign(query, { pageNo: 1, ...EMPTY_QUERY })
   load()
+}
+// 查询回第 1 页,换条件后停在旧页码多半是一屏空白
+function search() {
+  query.pageNo = 1
+  return load()
+}
+
+// 计费:把最近一次抄表变成一张能源费账单。后端按「表计+抄表记录」做幂等,
+// 重复点不会出两张;出账后本行按钮变「已出账」
+async function createBill(row) {
+  const period = row.periodEnd ? `${row.periodStart || '首次'} ~ ${row.periodEnd}` : '最近一次抄表'
+  await ElMessageBox.confirm(
+    `将按 ${period} 的抄表结果为「${row.tenantName || '该表计'}」生成一张能源费账单` +
+    `（用量 ${row.usageAmount ?? '-'}，金额 ¥${row.latestFee ?? '-'}）。`,
+    '生成能源费账单', { type: 'warning', confirmButtonText: '确认生成', cancelButtonText: '取消' })
+  billing.value = row.id
+  try {
+    const bill = await meterApi.createBill(row.id)
+    ElMessage.success(`已生成账单 ${bill?.code || ''}，可在「财务 → 所有账单」收款`)
+    await load()
+  } finally {
+    billing.value = null
+  }
+}
+
+async function openLogs(row) {
+  Object.assign(logDialog, { visible: true, meter: row, loading: true, rows: [] })
+  try {
+    logDialog.rows = await meterApi.operLogs(row.id) || []
+  } finally {
+    logDialog.loading = false
+  }
 }
 
 const formRef = ref()
 const dialog = reactive({ visible: false, title: '' })
-const form = reactive({ id: null, code: '', name: '', energyType: '电', ratio: 1, lastReading: 0, status: 1 })
+const EMPTY_FORM = {
+  id: null, code: '', name: '', energyType: '电', meterRole: 'TENANT',
+  roomId: null, ratio: 1, lastReading: 0, status: 1
+}
+const form = reactive({ ...EMPTY_FORM })
+// 租户不存在表计上,由所选房间的执行中合同实时反查;列表接口已按同一口径填好 tenantName
+const currentTenantName = computed(() => {
+  if (!form.roomId) return ''
+  const hit = list.value.find(m => m.roomId === form.roomId && m.tenantName)
+  return hit?.tenantName || (roomTenantMap.value[form.roomId] || '')
+})
+const roomTenantMap = ref({})
 const rules = {
   code: [{ required: true, message: '请输入表计编号', trigger: 'blur' }],
   energyType: [{ required: true, message: '请选择能源类型', trigger: 'change' }]
@@ -186,8 +344,26 @@ const rules = {
 function openDialog(row) {
   dialog.visible = true
   dialog.title = row ? '编辑表计' : '新增表计'
-  if (row) Object.assign(form, row)
-  else Object.assign(form, { id: null, code: '', name: '', energyType: '电', ratio: 1, lastReading: 0, status: 1 })
+  Object.assign(form, row ? { ...EMPTY_FORM, ...row } : { ...EMPTY_FORM })
+  loadRooms()
+}
+
+// 房间清单只在开弹窗时拉一次;取不到不挡住新增,只是选不了房间
+let roomsLoaded = false
+async function loadRooms() {
+  if (roomsLoaded) return
+  roomsLoaded = true
+  try {
+    const res = await roomApi.page({ pageNo: 1, pageSize: 500 })
+    rooms.value = res?.records || []
+    const map = {}
+    for (const r of rooms.value) {
+      if (r.tenantName) map[r.id] = r.tenantName
+    }
+    roomTenantMap.value = map
+  } catch (e) {
+    roomsLoaded = false
+  }
 }
 async function submit() {
   await formRef.value.validate()
@@ -255,10 +431,19 @@ async function submitReading() {
   loadReadings()
 }
 
-onMounted(load)
+onMounted(async () => {
+  // 租客名册取不到只是少一个下拉,不该拖垮表计列表
+  const [tenantList] = await Promise.allSettled([tenantApi.list(), load()])
+  if (tenantList.status === 'fulfilled') tenants.value = tenantList.value || []
+})
 </script>
 
 <style scoped>
+.cell-main { line-height: 1.4; }
+.cell-sub { margin-top: 2px; font-size: 12px; line-height: 1.3; color: var(--el-text-color-secondary); }
+.usage { font-weight: 600; font-variant-numeric: tabular-nums; }
+.empty-tip { text-align: center; color: var(--el-text-color-secondary); padding: 20px 0; font-size: 13px; }
+.form-tip { margin-top: 4px; font-size: 12px; line-height: 1.5; color: var(--el-text-color-secondary); }
 .pager { margin-top: 16px; justify-content: flex-end; }
 .toolbar { margin-bottom: 12px; }
 </style>

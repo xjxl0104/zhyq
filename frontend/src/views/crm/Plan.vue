@@ -27,7 +27,7 @@
         <el-button type="primary" @click="openDialog()"><el-icon><Plus /></el-icon>新增计划</el-button>
       </div>
       <el-table :data="list" v-loading="loading" border stripe>
-        <el-table-column type="index" label="#" width="55" />
+        <el-table-column type="index" label="序号" width="70" />
         <el-table-column prop="title" label="标题" min-width="180" />
         <el-table-column prop="owner" label="负责人" width="110" />
         <el-table-column prop="period" label="周期" width="110" />

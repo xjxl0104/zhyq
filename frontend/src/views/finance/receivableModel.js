@@ -51,9 +51,35 @@ export const COMMON_COLUMN_PROPS = [
   'monthlyRent', 'monthlyProperty', 'monthlyTotal'
 ]
 
-const COLUMN_PREF_KEY = 'zhyq_receivable_visible_cols'
+// 默认隐藏的列(2026-09-04 负责人点名):这些要么是详情页看更合适的长文本(账户、备注、
+// 优惠条款),要么是单价/面积这类推导得出、日常翻台账用不上的口径字段。
+// 全都还在「列设置」里,勾一下就回来 —— 是默认不显示,不是删掉。
+export const DEFAULT_HIDDEN_COLUMN_PROPS = [
+  'rentAccountMasked',      // 租金收款账户
+  'propertyAccountMasked',  // 物业管理、水电收款账户
+  'notesRaw',               // 备注
+  'discountRaw',            // 优惠期/备注
+  'rentRateRaw',            // 租金(单价)
+  'propertyRateRaw',        // 物业管理费(单价)
+  'freeTermRaw',            // 免租期(时长;免租期限那列保留)
+  'chargeArea',             // 计租总面积
+  'actualArea',             // 其中:实际房产面积
+  'sharedArea',             // 其中:分摊面积
+  'escalationRaw',          // 递增年限及幅度
+  'collectionTimingRaw',    // 收款时间
+  'lateFeeStartDate'        // 滞纳金起算日
+]
 
-/** 读取列偏好;没存过或存的列已不存在(版本升级删过列)时回落到全列 */
+/** 首次进页面显示的列 = 全列去掉默认隐藏的那批 */
+export const DEFAULT_COLUMN_PROPS = receivableColumns
+  .map(column => column.prop)
+  .filter(prop => !DEFAULT_HIDDEN_COLUMN_PROPS.includes(prop))
+
+// 版本号跟着默认列集走:改了默认集必须换 key,否则老用户 localStorage 里存的
+// 「全列」偏好会一直赢过新默认,改了等于没改
+const COLUMN_PREF_KEY = 'zhyq_receivable_visible_cols_v2'
+
+/** 读取列偏好;没存过或存的列已不存在(版本升级删过列)时回落到默认列集 */
 export function loadVisibleColumns() {
   const all = receivableColumns.map(column => column.prop)
   let saved = null
@@ -62,7 +88,7 @@ export function loadVisibleColumns() {
   } catch {
     saved = null
   }
-  if (!Array.isArray(saved) || !saved.length) return all
+  if (!Array.isArray(saved) || !saved.length) return [...DEFAULT_COLUMN_PROPS]
   const kept = saved.filter(prop => all.includes(prop))
   // 锁定列即便偏好里没有也要补回来,否则表格会认不出是哪一行
   return all.filter(prop => kept.includes(prop) || LOCKED_COLUMN_PROPS.includes(prop))

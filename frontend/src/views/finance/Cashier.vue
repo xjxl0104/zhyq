@@ -80,10 +80,16 @@
               <el-option v-for="m in payMethods" :key="m" :label="m" :value="m" />
             </el-select>
           </div>
+          <!-- 合计欠款为 0(整批都是免租期账单)时不该卡住:换成零元核销,只推状态不产生资金记录 -->
           <el-button type="primary" class="confirm-btn" :loading="paying"
-                     :disabled="!selected.length || payAmount <= 0" @click="confirmPay">
-            确认收款  ¥{{ money(payAmount) }}
+                     :disabled="!selected.length || (totalOwe > 0 && payAmount <= 0)" @click="confirmPay">
+            {{ totalOwe > 0 ? `确认收款  ¥${money(payAmount)}` : `零元核销  ${selected.length} 张` }}
           </el-button>
+          <!-- 点错了当场能退:红冲留痕,不删记录。刷新页面后到「所有账单 → 详情」里也能撤 -->
+          <div v-if="lastPayments.length" class="undo-bar">
+            <span>刚收款 {{ lastPayments.length }} 笔 · ¥{{ money(lastPaidAmount) }}</span>
+            <el-button link type="danger" :loading="voiding" @click="undoLastPay">撤销这笔收款</el-button>
+          </div>
         </div>
       </div>
     </div>
@@ -94,7 +100,7 @@
 
 <script setup>
 import { reactive, ref, computed, onMounted, watch } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { billApi, paymentApi } from '@/api/finance'
 import LateFeeAdjustDialog from './components/LateFeeAdjustDialog.vue'
 import { billOwe, billOweCents, buildPaymentPlan, hasOutstanding, tenantOptionBadge, tenantOptionLabel } from './cashierModel'
@@ -115,6 +121,14 @@ const adjustVisible = ref(false)
 const adjustBill = ref(null)
 function openAdjust(row) { adjustBill.value = row; adjustVisible.value = true }
 const payMethods = ['现金', '转账', 'POS', '微信', '支付宝', '聚合']
+// 本次刚生成的支付单,用于「撤销这笔收款」;换租客或刷新即清空
+const lastPayments = ref([])
+const voiding = ref(false)
+const canWriteOff = ref(false)
+const canVoid = ref(false)
+const lastPaidAmount = computed(() =>
+  lastPayments.value.reduce((sum, p) => sum + Math.round(Number(p.amount || 0) * 100), 0) / 100
+)
 
 function money(v) {
   return Number(v || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -142,7 +156,9 @@ async function loadBills() {
   try {
     // status 不传,前端过滤可收款状态
     const res = await billApi.page({ pageNo: 1, pageSize: 100, tenantRefId: tenantRefId.value, direction: 1 })
-    bills.value = (res.records || []).filter(b => PAYABLE.includes(b.status) && owe(b) > 0)
+    // 原来还带 owe(b) > 0:免租期账单应收就是 0,被这条过滤掉后在收银台根本看不见,
+    // 收银员既结不了也不知道它存在。改为全部列出,0 应收的走「零元核销」
+    bills.value = (res.records || []).filter(b => PAYABLE.includes(b.status))
   } finally {
     loading.value = false
   }
@@ -166,28 +182,38 @@ function payNoFor(billId, cents) {
   return payNo
 }
 // 换租客清空:keep-alive 下组件实例常驻,旧租客的中断记录不该一直攒着
-watch(tenantRefId, () => payNos.clear())
+watch(tenantRefId, () => { payNos.clear(); lastPayments.value = [] })
 
 async function confirmPay() {
   if (!selected.value.length) return
+  // 免租期账单(应收 0)与正常账单常常混选:0 应收的走核销,其余的走收款,
+  // 一次点击两条路都走完 —— 分两次操作只会让收银员漏掉其中一半
+  const zeroBills = canWriteOff.value ? selected.value.filter(row => billOweCents(row) === 0) : []
   // 整数分拆单,永不产生 0 元支付请求
   const plan = buildPaymentPlan(selected.value, payAmount.value)
-  if (!plan.length) {
+  if (!plan.length && !zeroBills.length) {
     ElMessage.warning('没有可收款的金额,请检查收款金额与所选账单')
     return
   }
   paying.value = true
   let paidCount = 0
+  let writtenOff = 0
   let failed = false
+  const created = []
   try {
+    for (const row of zeroBills) {
+      await paymentApi.writeOff({ billId: row.id, remark: '收银台零元核销' })
+      writtenOff++
+    }
     for (const item of plan) {
       const cents = Math.round(item.amount * 100)
-      await paymentApi.pay({
+      const payment = await paymentApi.pay({
         billId: item.billId,
         amount: item.amount,
         payMethod: payMethod.value,
         payNo: payNoFor(item.billId, cents)
       })
+      if (payment?.id) created.push(payment)
       payNos.delete(item.billId)
       paidCount++
     }
@@ -195,6 +221,8 @@ async function confirmPay() {
     // request.js 已经弹过具体错误;这里只负责别让循环把刷新逻辑一起带走
     failed = true
   }
+  // 已经落地的这几笔要留住入口,哪怕后面的中断了 —— 收错的往往就是先成功的那几笔
+  lastPayments.value = canVoid.value ? created : []
   // 无论成败都要刷新:把服务端真实入账状态拉回来。中断时界面停在旧欠款上,
   // 用户拿着旧数字再点一次就是重复收款。刷新自己失败也不能吞掉下面的结果提示
   try {
@@ -204,17 +232,56 @@ async function confirmPay() {
   } finally {
     paying.value = false
   }
+  const writeOffTip = writtenOff > 0 ? `,零元核销 ${writtenOff} 张` : ''
   if (!failed) {
     // 收款已在后端一笔事务里落了:支付单 + 账单实收 + 收支流水 + 收据
-    ElMessage.success(`收款成功,共 ${paidCount} 张账单,已生成收据与收支流水`)
-  } else if (paidCount > 0) {
-    ElMessage.warning(`前 ${paidCount} 张已收款成功,其余中断;欠款已刷新,可直接重试`)
+    if (paidCount > 0) {
+      ElMessage.success(`收款成功,共 ${paidCount} 张账单${writeOffTip},已生成收据与收支流水`)
+    } else {
+      ElMessage.success(`已零元核销 ${writtenOff} 张账单(免租期,无资金记录)`)
+    }
+  } else if (paidCount > 0 || writtenOff > 0) {
+    ElMessage.warning(`已完成收款 ${paidCount} 张${writeOffTip},其余中断;欠款已刷新,可直接重试`)
   }
+}
+
+// 撤销刚才这批收款:逐笔红冲,失败的那笔由 request.js 报错,已撤的从列表里摘掉
+async function undoLastPay() {
+  try {
+    await ElMessageBox.confirm(
+      `将撤销刚才的 ${lastPayments.value.length} 笔收款(合计 ¥${money(lastPaidAmount.value)})。` +
+      '原单标记为已撤销并生成负额红冲单,账单实收同步回退,记录可查。',
+      '撤销收款', { confirmButtonText: '确认撤销', cancelButtonText: '再想想', type: 'warning' }
+    )
+  } catch {
+    return
+  }
+  voiding.value = true
+  const remaining = []
+  let done = 0
+  try {
+    for (const payment of lastPayments.value) {
+      try {
+        await paymentApi.voidPay(payment.id, { reason: '收银台误收款,当场撤销' })
+        done++
+      } catch (e) {
+        remaining.push(payment)
+      }
+    }
+  } finally {
+    lastPayments.value = remaining
+    voiding.value = false
+  }
+  await Promise.allSettled([loadBills(), loadTenants()])
+  if (done > 0) ElMessage.success(`已撤销 ${done} 笔收款,已生成红冲单`)
 }
 
 onMounted(async () => {
   const [caps] = await Promise.allSettled([billApi.capabilities(), loadTenants()])
-  canAdjust.value = caps.status === 'fulfilled' && !!caps.value?.lateFeeAdjust
+  const value = caps.status === 'fulfilled' ? caps.value : null
+  canAdjust.value = !!value?.lateFeeAdjust
+  canWriteOff.value = !!value?.writeOff
+  canVoid.value = !!value?.paymentVoid
 })
 </script>
 
@@ -253,6 +320,12 @@ onMounted(async () => {
 }
 .field { margin-bottom: 16px; }
 .field-lbl { font-size: 13px; color: var(--text-secondary); margin-bottom: 6px; }
+.undo-bar {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-top: 12px; padding: 8px 10px; border-radius: 8px;
+  background: var(--el-color-danger-light-9, #fef0f0);
+  color: var(--el-color-danger); font-size: 12px;
+}
 .confirm-btn {
   width: 100%; height: 52px; font-size: 17px; font-weight: 650;
   margin-top: 8px; letter-spacing: 1px;

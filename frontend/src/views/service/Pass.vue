@@ -25,7 +25,7 @@
         <el-button @click="expireCheck"><el-icon><Refresh /></el-icon>失效检查</el-button>
       </div>
       <el-table :data="list" v-loading="loading" border stripe>
-        <el-table-column type="index" label="#" width="55" />
+        <el-table-column type="index" label="序号" width="70" />
         <el-table-column prop="passNo" label="放行单号" min-width="130" />
         <el-table-column prop="item" label="物品" min-width="160" show-overflow-tooltip />
         <el-table-column prop="qty" label="数量" width="80" />

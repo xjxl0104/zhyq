@@ -49,7 +49,7 @@
         <el-button type="primary" @click="openDialog()"><el-icon><Plus /></el-icon>新增设备</el-button>
       </div>
       <el-table :data="list" v-loading="loading" border stripe>
-        <el-table-column type="index" label="#" width="55" />
+        <el-table-column type="index" label="序号" width="70" />
         <el-table-column prop="code" label="设备编号" min-width="140" />
         <el-table-column prop="name" label="名称" min-width="140" />
         <el-table-column prop="category" label="分类" min-width="100" />

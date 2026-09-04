@@ -26,7 +26,7 @@
         <el-button type="primary" @click="openAdd()"><el-icon><Plus /></el-icon>新增资源</el-button>
       </div>
       <el-table :data="list" v-loading="loading" border stripe>
-        <el-table-column type="index" label="#" width="55" />
+        <el-table-column type="index" label="序号" width="70" />
         <el-table-column label="类型" width="100">
           <template #default="{ row }">{{ typeLabel(row.type) }}</template>
         </el-table-column>

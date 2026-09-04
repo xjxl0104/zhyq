@@ -5,6 +5,7 @@ import com.zhyq.park.common.result.Result;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
+import com.zhyq.park.common.setting.BizSettings;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -24,6 +25,7 @@ import java.util.*;
 public class DashboardController {
 
     private final JdbcTemplate jdbc;
+    private final BizSettings settings;
 
     private long count(String sql) {
         Long n = jdbc.queryForObject(sql, Long.class);
@@ -41,7 +43,13 @@ public class DashboardController {
         Map<String, Object> m = new LinkedHashMap<>();
         // 待办类指标
         m.put("contractPending", count("SELECT COUNT(*) FROM biz_contract WHERE status=2 AND deleted=0"));
-        m.put("contractExpiring", count("SELECT COUNT(*) FROM biz_contract WHERE status=5 AND deleted=0 AND end_date <= DATE_ADD(CURDATE(), INTERVAL 30 DAY)"));
+        // 提前天数读 contract.expire_remind_days,不再写死 —— 原来这里是 30 天,
+        // 而设置页配的是 90 天,两边对不上,用户改配置也没反应
+        int remindDays = settings.getInt("contract", "expire_remind_days", 90);
+        m.put("contractExpiringDays", remindDays);
+        m.put("contractExpiring", count(
+                "SELECT COUNT(*) FROM biz_contract WHERE status=5 AND deleted=0 AND end_date <= DATE_ADD(CURDATE(), INTERVAL "
+                        + remindDays + " DAY)"));
         m.put("leadFollow", count("SELECT COUNT(*) FROM crm_lead WHERE status=3 AND deleted=0"));
         m.put("approvalPending", count("SELECT COUNT(*) FROM biz_approval WHERE status=2 AND deleted=0"));
         m.put("todoCount", count("SELECT COUNT(*) FROM sys_todo WHERE status=1 AND deleted=0"));

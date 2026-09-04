@@ -30,7 +30,7 @@
         <el-button type="primary" @click="openDialog()"><el-icon><Plus /></el-icon>新增{{ ctype }}检查</el-button>
       </div>
       <el-table :data="list" v-loading="loading" border stripe :row-class-name="rowClass">
-        <el-table-column type="index" label="#" width="55" />
+        <el-table-column type="index" label="序号" width="70" />
         <el-table-column prop="location" label="位置" min-width="150" show-overflow-tooltip />
         <el-table-column prop="checker" label="检查人" width="100" />
         <el-table-column prop="checkTime" label="检查时间" width="170" />

@@ -24,7 +24,7 @@
         <el-button type="primary" @click="openDialog()"><el-icon><Plus /></el-icon>新增发票</el-button>
       </div>
       <el-table :data="list" v-loading="loading" border stripe>
-        <el-table-column type="index" label="#" width="55" />
+        <el-table-column type="index" label="序号" width="70" />
         <el-table-column prop="title" label="发票抬头" min-width="160" show-overflow-tooltip />
         <el-table-column prop="taxNo" label="税号" min-width="160" />
         <el-table-column label="金额" min-width="110" align="right">

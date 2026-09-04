@@ -25,7 +25,7 @@
       </div>
 
       <el-table :data="list" v-loading="loading" border stripe>
-        <el-table-column type="index" label="#" width="55" />
+        <el-table-column type="index" label="序号" width="70" />
         <el-table-column prop="name" label="单位名称" min-width="180" />
         <el-table-column prop="unitType" label="类型" width="120">
           <template #default="{ row }">

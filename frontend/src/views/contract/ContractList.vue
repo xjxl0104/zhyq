@@ -42,7 +42,7 @@
         <el-button type="primary" @click="openDialog()"><el-icon><Plus /></el-icon>新增合同</el-button>
       </div>
       <el-table :data="list" v-loading="loading" border stripe>
-        <el-table-column type="index" label="#" width="55" />
+        <el-table-column type="index" label="序号" width="70" />
         <el-table-column prop="code" label="合同编号" min-width="150" />
         <el-table-column label="租客" min-width="150">
           <template #default="{ row }">{{ tenantName(row.tenantRefId) }}</template>
@@ -131,7 +131,9 @@
           </el-col>
           <el-col :span="12">
             <el-form-item label="起始日期" prop="startDate">
-              <el-date-picker v-model="form.startDate" type="date" value-format="YYYY-MM-DD" style="width: 100%" />
+              <!-- 填了起租日就按「合同设置」的默认租期自动推到期日;已填过到期日则不覆盖 -->
+              <el-date-picker v-model="form.startDate" type="date" value-format="YYYY-MM-DD"
+                              style="width: 100%" @change="onStartDateChange" />
             </el-form-item>
           </el-col>
           <el-col :span="12">
@@ -141,7 +143,7 @@
           </el-col>
           <el-col :span="12">
             <el-form-item label="租赁单价">
-              <el-input v-model.number="form.rentPrice" placeholder="元/㎡/月" />
+              <el-input v-model.number="form.rentPrice" placeholder="元/㎡/月" @change="onRentBasisChange" />
             </el-form-item>
           </el-col>
           <el-col :span="12">
@@ -151,7 +153,7 @@
           </el-col>
           <el-col :span="12">
             <el-form-item label="租赁面积">
-              <el-input v-model.number="form.rentArea" placeholder="㎡" />
+              <el-input v-model.number="form.rentArea" placeholder="㎡" @change="onRentBasisChange" />
             </el-form-item>
           </el-col>
           <el-col :span="12">
@@ -312,12 +314,15 @@ const emptyForm = () => ({
 const form = reactive(emptyForm())
 const attachFiles = ref([])
 const rules = {
-  code: [{ required: true, message: '请输入合同编号', trigger: 'blur' }],
+  code: [{ required: true, message: '请输入合同编号（留空保存时按设置自动生成）', trigger: 'blur' }],
   tenantRefId: [{ required: true, message: '请选择租客', trigger: 'change' }],
   projectId: [{ required: true, message: '请选择园区', trigger: 'change' }],
   startDate: [{ required: true, message: '请选择起始日期', trigger: 'change' }],
   endDate: [{ required: true, message: '请选择结束日期', trigger: 'change' }]
 }
+
+// 合同设置里的默认值,openDialog 时取一次;取不到就用表单自带的空值,不挡住新增
+const settingDefaults = reactive({ termYears: null, depositMonths: null })
 
 async function openDialog(row) {
   dialog.visible = true
@@ -327,8 +332,33 @@ async function openDialog(row) {
     Object.assign(form, row)
     // 编辑:载入已关联附件
     try { attachFiles.value = await fileApi.list('contract', row.id) } catch (e) { /* 忽略 */ }
-  } else {
-    Object.assign(form, emptyForm())
+    return
+  }
+  Object.assign(form, emptyForm())
+  // 新增:编号与租期/保证金规则都来自「合同设置」,用户不必对着空框猜格式
+  try {
+    const d = await contractApi.defaults()
+    if (d?.code) form.code = d.code
+    settingDefaults.termYears = d?.termYears ?? null
+    settingDefaults.depositMonths = d?.depositMonths ?? null
+  } catch (e) { /* 设置取不到不影响手工填写 */ }
+}
+
+// 起租日一填,按设置里的默认租期推到期日;用户改过到期日就不覆盖
+function onStartDateChange(value) {
+  if (!value || form.id || !settingDefaults.termYears || form.endDate) return
+  const start = new Date(value)
+  const end = new Date(start.getFullYear() + settingDefaults.termYears, start.getMonth(), start.getDate())
+  end.setDate(end.getDate() - 1)   // 6 年租期 2026-07-01 起 → 2032-06-30 止
+  form.endDate = `${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, '0')}-${String(end.getDate()).padStart(2, '0')}`
+}
+
+// 月租金 = 单价 × 面积;保证金 = 月租金 × 设置里的月数。用户手改过保证金就不再覆盖
+function onRentBasisChange() {
+  if (form.id || !settingDefaults.depositMonths) return
+  const monthly = Number(form.rentPrice || 0) * Number(form.rentArea || 0)
+  if (monthly > 0 && !form.deposit) {
+    form.deposit = Math.round(monthly * settingDefaults.depositMonths * 100) / 100
   }
 }
 async function submitForm() {

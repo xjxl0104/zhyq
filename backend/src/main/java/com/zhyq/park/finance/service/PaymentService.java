@@ -18,7 +18,9 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.UUID;
 
 /**
@@ -38,6 +40,8 @@ public class PaymentService {
     private static final int ST_PARTIAL = 4;
     private static final int ST_SETTLED = 5;
     private static final int ST_OVERDUE = 6;
+    /** fin_receipt.receipt_no 列宽,拼号时不能超 */
+    private static final int RECEIPT_NO_MAX = 64;
 
     /**
      * 收款。
@@ -144,7 +148,7 @@ public class PaymentService {
 
         // ④ 自动生成收据
         Receipt receipt = new Receipt();
-        receipt.setReceiptNo("SJ" + UUID.randomUUID().toString().replace("-", "").substring(0, 12));
+        receipt.setReceiptNo(buildReceiptNo(bill.getCode(), billId));
         receipt.setPaymentId(payment.getId());
         receipt.setBillId(billId);
         receipt.setTenantRefId(bill.getTenantRefId());
@@ -153,5 +157,199 @@ public class PaymentService {
         receiptMapper.insert(receipt);
 
         return payment;
+    }
+
+    /**
+     * 零元核销。
+     *
+     * 免租期/抵扣期的账单应收本来就是 0.00,没有钱可收,却因为「收款金额必须大于0」
+     * 永远卡在「待收付」。这里不给 0 元收款开口子(0 元支付单/流水/收据是噪音,
+     * 还会把"收了多少笔款"撑虚),而是单开一条核销通道:只推状态 + 留痕。
+     *
+     * 幂等:已结清的账单重复调用直接返回,不报错 —— 收银员手快点两下不该出红字。
+     *
+     * @param billId   账单 id
+     * @param remark   核销说明(留空按「免租期零元核销」记)
+     * @param operator 操作人
+     * @return 核销后的账单
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public Bill 零元核销(Long billId, String remark, String operator) {
+        Bill bill = billMapper.selectById(billId);
+        if (bill == null) {
+            throw new BizException("账单不存在: " + billId);
+        }
+        if (bill.getStatus() != null && bill.getStatus() == ST_SETTLED) {
+            return bill;
+        }
+        Integer st = bill.getStatus();
+        if (st == null || (st != ST_UNPAID && st != ST_PARTIAL && st != ST_OVERDUE)) {
+            throw new BizException("当前账单状态不可核销(仅待收付/部分结清/逾期账单可核销)");
+        }
+        BigDecimal remaining = remainingOf(bill);
+        if (remaining.compareTo(BigDecimal.ZERO) != 0) {
+            throw new BizException("该账单还有 " + remaining.stripTrailingZeros().toPlainString()
+                    + " 元应收,不能零元核销,请走正常收款");
+        }
+        String note = StringUtils.hasText(remark) ? remark : "免租期零元核销";
+        // 条件更新:并发下账单金额若被改过(不再是 0 应收)就不核销,避免把真有欠款的单推成已结清
+        int updated = billMapper.update(null, new LambdaUpdateWrapper<Bill>()
+                .eq(Bill::getId, billId)
+                .in(Bill::getStatus, ST_UNPAID, ST_PARTIAL, ST_OVERDUE)
+                .apply("amount + late_fee - paid_amount = 0")
+                .set(Bill::getStatus, ST_SETTLED)
+                .set(Bill::getRemark, cut(appendRemark(bill.getRemark(), note + "(" + operator + ")"), 255)));
+        if (updated == 0) {
+            throw new BizException("核销失败:账单状态或金额已变化,请刷新后重试");
+        }
+        return billMapper.selectById(billId);
+    }
+
+    /**
+     * 撤销收款(红冲)。
+     *
+     * 收款是一笔事务(支付单 + 账单实收 + 收支流水 + 收据),撤销就要把这四样一起退回来。
+     * 走会计红冲而不是物理删除:删掉之后再也查不到「谁在什么时候撤了哪一笔」,
+     * 对不上账时无从追。原单打 void_status=1,另生成一张负额红冲单指回原单。
+     *
+     * @param paymentId 要撤销的支付单 id
+     * @param reason    撤销原因(收银员填,如「点错租客」)
+     * @param operator  操作人
+     * @return 生成的红冲单
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public Payment 撤销收款(Long paymentId, String reason, String operator) {
+        Payment origin = paymentMapper.selectById(paymentId);
+        if (origin == null) {
+            throw new BizException("收款记录不存在: " + paymentId);
+        }
+        int voidStatus = origin.getVoidStatus() == null ? Payment.VOID_NONE : origin.getVoidStatus();
+        if (voidStatus == Payment.VOID_ORIGINAL) {
+            throw new BizException("该笔收款已撤销,不能重复撤销");
+        }
+        if (voidStatus == Payment.VOID_REVERSAL) {
+            throw new BizException("这是一张红冲单,不能再撤销");
+        }
+        BigDecimal amount = origin.getAmount();
+        if (amount == null || amount.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new BizException("该笔收款金额异常,无法红冲");
+        }
+        Bill bill = billMapper.selectById(origin.getBillId());
+        if (bill == null) {
+            throw new BizException("收款关联的账单不存在: " + origin.getBillId());
+        }
+        // 已开票的先别撤:发票金额与收款脱钩会留下一张对不上的票,财务比丢一笔收款更难收拾
+        if (bill.getInvoiceStatus() != null && bill.getInvoiceStatus() == 1) {
+            throw new BizException("该账单已开票,请先作废发票再撤销收款");
+        }
+
+        // ① 原单打撤销标记,带 void_status=0 守卫:并发下只有一次能成功,不会红冲两遍
+        int marked = paymentMapper.update(null, new LambdaUpdateWrapper<Payment>()
+                .eq(Payment::getId, paymentId)
+                .eq(Payment::getVoidStatus, Payment.VOID_NONE)
+                .set(Payment::getVoidStatus, Payment.VOID_ORIGINAL)
+                .set(Payment::getVoidReason, cut(reason, 255))
+                .set(Payment::getVoidTime, LocalDateTime.now())
+                .set(Payment::getVoidBy, operator));
+        if (marked == 0) {
+            throw new BizException("撤销失败:该笔收款已被其它操作撤销,请刷新后重试");
+        }
+
+        // ② 账单实收回退 + 状态重算。MySQL 的 SET 从左到右生效,IF 里读到的已是回退后的 paid_amount;
+        //    退到 0 时按应收日决定回「逾期」还是「待收付」,不能一律回待收付把逾期洗白
+        int updated = billMapper.update(null, new LambdaUpdateWrapper<Bill>()
+                .eq(Bill::getId, bill.getId())
+                .setSql("paid_amount = paid_amount - " + amount.toPlainString())
+                .setSql("status = IF(paid_amount >= amount + late_fee, " + ST_SETTLED
+                        + ", IF(paid_amount > 0, " + ST_PARTIAL
+                        + ", IF(due_date IS NOT NULL AND due_date < CURDATE(), "
+                        + ST_OVERDUE + ", " + ST_UNPAID + ")))")
+                .apply("paid_amount >= {0}", amount));
+        if (updated == 0) {
+            throw new BizException("撤销失败:账单实收已不足以回退这笔收款,请核对后重试");
+        }
+
+        // ③ 负额红冲单,指回原单
+        Payment reversal = new Payment();
+        reversal.setPayNo("HC" + UUID.randomUUID().toString().replace("-", "").substring(0, 24));
+        reversal.setBillId(bill.getId());
+        reversal.setAmount(amount.negate());
+        reversal.setPayMethod(origin.getPayMethod());
+        reversal.setVoidStatus(Payment.VOID_REVERSAL);
+        reversal.setOriginalPaymentId(origin.getId());
+        reversal.setVoidReason(cut(reason, 255));
+        reversal.setVoidTime(LocalDateTime.now());
+        reversal.setVoidBy(operator);
+        reversal.setPayTime(LocalDateTime.now());
+        reversal.setOperator(operator);
+        reversal.setRemark(cut("红冲原收款 " + origin.getPayNo(), 255));
+        paymentMapper.insert(reversal);
+
+        // ④ 负额收支流水:方向仍是「收入」,金额取负 —— 会计红冲口径。
+        //    写成 direction=2(支出)的话,园区的支出统计会被退款撑出来,报表就废了
+        Flow flow = new Flow();
+        flow.setFlowNo("LS" + UUID.randomUUID().toString().replace("-", "").substring(0, 24));
+        flow.setDirection(1);
+        flow.setAmount(amount.negate());
+        flow.setBillId(bill.getId());
+        flow.setPaymentId(reversal.getId());
+        flow.setMatchStatus(1);
+        flow.setFlowTime(LocalDateTime.now());
+        flow.setRemark(cut("红冲原收款 " + origin.getPayNo()
+                + (StringUtils.hasText(reason) ? " · " + reason : ""), 255));
+        flowMapper.insert(flow);
+
+        // ⑤ 作废原收款生成的收据(不删:打过的收据号要能追)
+        receiptMapper.update(null, new LambdaUpdateWrapper<Receipt>()
+                .eq(Receipt::getPaymentId, origin.getId())
+                .set(Receipt::getVoidStatus, 1));
+
+        return reversal;
+    }
+
+    /**
+     * 收据号 = 账单号 + 开票日期,例如 {@code RR3V1R202606-20260904}。
+     *
+     * <p>原来是 {@code SJ + UUID 前 12 位},打出来是一串没有含义的乱码,对账时既看不出
+     * 是哪张账单的,也排不了序。改成「账单号-日期」后,收据、账单、流水三样能对着看。</p>
+     *
+     * <p>同一张账单同一天可能收多次款(分次付),第一张用干净的
+     * {@code 账单号-日期},之后依次加 {@code -02}、{@code -03}。</p>
+     *
+     * <p>历史收据号不动:已经打印出去的号改了就对不上了。</p>
+     */
+    private String buildReceiptNo(String billCode, Long billId) {
+        String day = LocalDate.now().format(DateTimeFormatter.BASIC_ISO_DATE);
+        String base = StringUtils.hasText(billCode) ? billCode.trim() : ("BILL" + billId);
+        // receipt_no 是 VARCHAR(64):账单号过长时先给日期和序号留位置,
+        // 不然超出部分会被 MySQL 静默截断,不同账单可能截出同一个号
+        int room = RECEIPT_NO_MAX - day.length() - 4; // '-' + 日期 + '-NN'
+        if (base.length() > room) {
+            base = base.substring(0, room);
+        }
+        String prefix = base + "-" + day;
+        long sameDay = receiptMapper.selectCount(
+                new LambdaQueryWrapper<Receipt>().likeRight(Receipt::getReceiptNo, prefix));
+        return sameDay == 0 ? prefix : prefix + "-" + String.format("%02d", sameDay + 1);
+    }
+
+    /** 剩余应收 = 本金 + 滞纳金 - 实收,与 BillMetrics.outstandingOf 同口径 */
+    private static BigDecimal remainingOf(Bill bill) {
+        BigDecimal paid = bill.getPaidAmount() == null ? BigDecimal.ZERO : bill.getPaidAmount();
+        BigDecimal billAmount = bill.getAmount() == null ? BigDecimal.ZERO : bill.getAmount();
+        BigDecimal lateFee = bill.getLateFee() == null ? BigDecimal.ZERO : bill.getLateFee();
+        return billAmount.add(lateFee).subtract(paid);
+    }
+
+    private static String appendRemark(String origin, String addition) {
+        return StringUtils.hasText(origin) ? origin + "；" + addition : addition;
+    }
+
+    /** VARCHAR(255) 列写超长会被 MySQL 静默截断,这里先截好,别让备注把留痕吃掉 */
+    private static String cut(String value, int max) {
+        if (value == null) {
+            return null;
+        }
+        return value.length() <= max ? value : value.substring(0, max);
     }
 }

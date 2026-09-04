@@ -50,7 +50,7 @@
         <el-button type="primary" @click="openDialog()"><el-icon><Plus /></el-icon>新增巡更</el-button>
       </div>
       <el-table :data="list" v-loading="loading" border stripe :row-class-name="rowClass">
-        <el-table-column type="index" label="#" width="55" />
+        <el-table-column type="index" label="序号" width="70" />
         <el-table-column prop="routeName" label="路线" min-width="140" show-overflow-tooltip />
         <el-table-column prop="point" label="点位" min-width="120" show-overflow-tooltip />
         <el-table-column prop="patroller" label="巡更人" width="100" />

@@ -25,7 +25,7 @@
         <el-button type="primary" @click="openDialog()"><el-icon><Plus /></el-icon>新增公告</el-button>
       </div>
       <el-table :data="list" v-loading="loading" border stripe>
-        <el-table-column type="index" label="#" width="55" />
+        <el-table-column type="index" label="序号" width="70" />
         <el-table-column prop="title" label="公告标题" min-width="220" />
         <el-table-column prop="publishTime" label="发布时间" width="170" />
         <el-table-column label="状态" width="100">

@@ -8,6 +8,9 @@
       </div>
       <div class="commerce-page__actions">
         <span class="commerce-chip"><el-icon><Calendar /></el-icon>近 30 天</span>
+        <!-- 使用度是「近 30 天累计」,本页自己的请求又不计入埋点,所以刷新后数字常常
+             原地不动。没有更新时间的话,用户没法判断刷新到底生效没有 -->
+        <span v-if="updatedAt" class="commerce-chip">更新于 {{ updatedAt }}</span>
         <el-button class="commerce-action" type="primary" :loading="loading" @click="load">
           <el-icon><Refresh /></el-icon><span>刷新分析</span>
         </el-button>
@@ -74,7 +77,7 @@
       <div class="table-wrap">
         <el-table :data="feedbackData" stripe>
           <el-table-column prop="module" label="模块" min-width="180">
-            <template #default="{ row }"><span class="module-name"><i></i>{{ row.module }}</span></template>
+            <template #default="{ row }"><span class="module-name"><i></i>{{ moduleLabel(row.module) }}</span></template>
           </el-table-column>
           <el-table-column prop="status" label="状态" min-width="140">
             <template #default="{ row }">
@@ -91,8 +94,9 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onActivated, onMounted, ref } from 'vue'
 import { biApi } from '@/api/bi'
+import { moduleLabel } from '@/constants/modules'
 import { useChart } from '@/composables/useChart'
 
 const statusMap = { 1: '待处理', 2: '已确认', 3: '处理中', 4: '已解决', 5: '已采纳', 6: '已关闭' }
@@ -103,6 +107,7 @@ const moduleData = ref([])
 const flow = ref({})
 const feedbackData = ref([])
 const loading = ref(false)
+const updatedAt = ref('')
 const moduleChartRef = ref(null)
 const gaugeChartRef = ref(null)
 const feedbackChartRef = ref(null)
@@ -133,7 +138,7 @@ const moduleChart = useChart(moduleChartRef, (theme) => {
   return {
     tooltip: { trigger: 'axis', backgroundColor: '#0b0d17', borderWidth: 0, textStyle: { color: '#fff' } },
     grid: { left: 18, right: 18, top: 34, bottom: 18, containLabel: true },
-    xAxis: { type: 'category', data: data.map(x => x.module), axisTick: { show: false }, axisLabel: { color: theme.axisLabel, interval: 0, rotate: data.length > 7 ? 24 : 0 }, axisLine: { lineStyle: { color: theme.axisLine } } },
+    xAxis: { type: 'category', data: data.map(x => moduleLabel(x.module)), axisTick: { show: false }, axisLabel: { color: theme.axisLabel, interval: 0, rotate: data.length > 7 ? 24 : 0 }, axisLine: { lineStyle: { color: theme.axisLine } } },
     yAxis: [
       { type: 'value', axisLine: { show: false }, axisTick: { show: false }, axisLabel: { color: theme.axisLabel }, splitLine: { lineStyle: { color: theme.splitLine, type: 'dashed' } } },
       { type: 'value', axisLine: { show: false }, axisTick: { show: false }, axisLabel: { color: theme.axisLabel }, splitLine: { show: false } }
@@ -198,12 +203,20 @@ async function load() {
     moduleChart.refresh()
     gauge.refresh()
     feedbackChart.refresh()
+    updatedAt.value = new Date().toLocaleTimeString('zh-CN', { hour12: false })
   } finally {
     loading.value = false
   }
 }
 
 onMounted(load)
+// Layout.vue 把每个路由页都包在 <keep-alive> 里:组件被缓存后 onMounted 不再触发,
+// 切走再切回来看到的是离开前的快照。首次挂载已经 load 过,这里跳过第一次避免双拉
+let activatedBefore = false
+onActivated(() => {
+  if (!activatedBefore) { activatedBefore = true; return }
+  load()
+})
 </script>
 
 <style scoped>

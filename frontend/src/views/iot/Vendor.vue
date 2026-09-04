@@ -24,7 +24,7 @@
         <el-button type="primary" @click="openDialog()"><el-icon><Plus /></el-icon>新增厂商</el-button>
       </div>
       <el-table :data="list" v-loading="loading" border stripe>
-        <el-table-column type="index" label="#" width="55" />
+        <el-table-column type="index" label="序号" width="70" />
         <el-table-column prop="name" label="厂商" min-width="130" />
         <el-table-column prop="platform" label="平台" min-width="140" />
         <el-table-column prop="apiUrl" label="API地址" min-width="220" show-overflow-tooltip />

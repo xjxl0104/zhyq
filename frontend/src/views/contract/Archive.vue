@@ -26,7 +26,7 @@
     <!-- 表格区 -->
     <div class="table-card">
       <el-table :data="list" v-loading="loading" border stripe>
-        <el-table-column type="index" label="#" width="55" />
+        <el-table-column type="index" label="序号" width="70" />
         <el-table-column prop="code" label="合同编号" min-width="160" />
         <!-- 与合同列表同口径:后端已填好 tenantName,页面上不再露裸 ID -->
         <el-table-column prop="tenantName" label="租客" min-width="180" show-overflow-tooltip>

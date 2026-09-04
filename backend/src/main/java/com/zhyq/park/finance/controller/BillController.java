@@ -155,7 +155,11 @@ public class BillController {
     }
 
     /** 账单页按钮可见性:前端据此决定显示哪些操作入口(与 @PreAuthorize 同一权限点) */
-    public record BillCapabilities(boolean lateFeeAdjust) {}
+    /**
+     * 前端按钮的可见性开关。lateFeeAdjust=改滞纳金;writeOff=零元核销(免租期账单);
+     * paymentVoid=撤销收款(红冲)。少一个权限就少一个按钮,不靠前端猜。
+     */
+    public record BillCapabilities(boolean lateFeeAdjust, boolean writeOff, boolean paymentVoid) {}
 
     @Operation(summary = "账单页操作权限(前端按钮可见性)")
     @GetMapping("/capabilities")
@@ -163,7 +167,9 @@ public class BillController {
         var authentication = org.springframework.security.core.context.SecurityContextHolder
                 .getContext().getAuthentication();
         return Result.ok(new BillCapabilities(
-                hasAuthority(authentication, "finance:bill:lateFee:adjust")));
+                hasAuthority(authentication, "finance:bill:lateFee:adjust"),
+                hasAuthority(authentication, "finance:bill:writeOff"),
+                hasAuthority(authentication, "finance:payment:void")));
     }
 
     private static boolean hasAuthority(org.springframework.security.core.Authentication authentication,

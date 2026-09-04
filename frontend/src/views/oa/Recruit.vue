@@ -28,7 +28,7 @@
         <el-button type="primary" @click="openDialog()"><el-icon><Plus /></el-icon>新增招聘</el-button>
       </div>
       <el-table :data="list" v-loading="loading" border stripe>
-        <el-table-column type="index" label="#" width="55" />
+        <el-table-column type="index" label="序号" width="70" />
         <el-table-column prop="postName" label="职位" min-width="150" />
         <el-table-column prop="dept" label="部门" min-width="120" />
         <el-table-column prop="headcount" label="名额" width="80" />
