@@ -8,6 +8,8 @@
       </div>
       <div class="commerce-page__actions">
         <span class="commerce-chip"><el-icon><Calendar /></el-icon>最近 6 个月</span>
+        <!-- 刷新是否真的生效,光看数字看不出来(数字常常本来就没变)。给出更新时间 -->
+        <span v-if="updatedAt" class="commerce-chip">更新于 {{ updatedAt }}</span>
         <el-button class="commerce-action" type="primary" :loading="loading" @click="load">
           <el-icon><Refresh /></el-icon><span>刷新数据</span>
         </el-button>
@@ -120,9 +122,15 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, reactive, ref } from 'vue'
 import * as echarts from 'echarts'
 import { dashboardApi } from '@/api/dashboard'
+
+// 看板每 60 秒自己拉一次:财务数字随收款/出账随时在变,让用户靠手点刷新才看到新数
+// 等于把「实时」做成了「手动」。定时器只在页面可见时跑,见下面 onActivated/onDeactivated
+const AUTO_REFRESH_MS = 60000
+const updatedAt = ref('')
+let autoTimer = null
 
 const fin = reactive({})
 const contract = reactive({})
@@ -213,16 +221,39 @@ async function load() {
       series: [{ type: 'bar', data: wo.map(x => x.value), itemStyle: { color: '#0a24e9', borderRadius: [7, 7, 0, 0] }, barMaxWidth: 24 }]
     }, true)
   } catch (e) { /* 工单图独立容错 */ }
+  updatedAt.value = new Date().toLocaleTimeString('zh-CN', { hour12: false })
   loading.value = false
+}
+
+function startAuto() {
+  stopAuto()
+  autoTimer = setInterval(load, AUTO_REFRESH_MS)
+}
+function stopAuto() {
+  if (autoTimer) { clearInterval(autoTimer); autoTimer = null }
 }
 
 function resizeAll() { Object.values(charts).forEach(chart => chart?.resize?.()) }
 
 onMounted(() => {
   load()
+  startAuto()
   window.addEventListener('resize', resizeAll)
 })
+
+// Layout.vue 把路由页包在 <keep-alive> 里,切走触发的是 deactivated 而不是 unmounted。
+// 只写 onMounted/onBeforeUnmount 的话:切回来看到的是离开前的旧快照,而定时器又一直在
+// 后台空转。改成随页面可见性起停,切回来立刻补一次
+let activatedBefore = false
+onActivated(() => {
+  if (activatedBefore) load()
+  activatedBefore = true
+  startAuto()
+})
+onDeactivated(stopAuto)
+
 onBeforeUnmount(() => {
+  stopAuto()
   window.removeEventListener('resize', resizeAll)
   Object.values(charts).forEach(chart => chart?.dispose?.())
 })
