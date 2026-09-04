@@ -53,11 +53,15 @@ public class MeterController {
                                           @RequestParam(required = false) String code,
                                           @RequestParam(required = false) String energyType,
                                           @RequestParam(required = false) Integer status,
-                                          @RequestParam(required = false) Long tenantRefId) {
+                                          @RequestParam(required = false) Long tenantRefId,
+                                          @RequestParam(required = false) String meterRole,
+                                          // 账期 yyyy-MM:给了就看那个月的抄表结果,不给看最近一次
+                                          @RequestParam(required = false) String period) {
         LambdaQueryWrapper<Meter> qw = new LambdaQueryWrapper<>();
         qw.like(StringUtils.hasText(code), Meter::getCode, code)
           .eq(StringUtils.hasText(energyType), Meter::getEnergyType, energyType)
           .eq(status != null, Meter::getStatus, status)
+          .eq(StringUtils.hasText(meterRole), Meter::getMeterRole, meterRole)
           // 租户不是表计自己的字段(表计只挂房间),按租户筛要经 房间→合同 绕一层,
           // 故用子查询而不是给 eng_meter 冗余一列 —— 冗余列会和换租后不同步
           .inSql(tenantRefId != null, Meter::getRoomId,
@@ -66,7 +70,7 @@ public class MeterController {
                   + "WHERE cr.deleted = 0 AND c.tenant_ref_id = " + tenantRefId)
           .orderByDesc(Meter::getId);
         IPage<Meter> p = meterMapper.selectPage(new Page<>(pageNo, pageSize), qw);
-        enrich(p.getRecords());
+        enrich(p.getRecords(), period);
         return Result.ok(PageResult.of(p.getTotal(), p.getRecords()));
     }
 
@@ -75,7 +79,7 @@ public class MeterController {
     public Result<Meter> get(@PathVariable Long id) {
         Meter meter = meterMapper.selectById(id);
         if (meter != null) {
-            enrich(List.of(meter));
+            enrich(List.of(meter), null);
         }
         return Result.ok(meter);
     }
@@ -121,7 +125,7 @@ public class MeterController {
         if (meter == null) {
             throw new BizException("表计不存在: " + id);
         }
-        enrich(List.of(meter));
+        enrich(List.of(meter), null);
         if (meter.getLatestReadingId() == null) {
             throw new BizException("该表计还没有抄表记录,先抄表再计费");
         }
@@ -235,7 +239,7 @@ public class MeterController {
      *
      * <p>逐条查会 N+1,这里按整页 id 批量查三次(租户 / 最近抄表 / 上次抄表日)。</p>
      */
-    private void enrich(List<Meter> meters) {
+    private void enrich(List<Meter> meters, String period) {
         if (meters == null || meters.isEmpty()) {
             return;
         }
@@ -267,16 +271,23 @@ public class MeterController {
             tenantByMeter.putIfAbsent(asLong(row.get("meter_id")), row);
         }
 
-        // 最近一次抄表:先按 read_time 取最新,同一时刻并列时取 id 最大的那条
+        // 抄表数据:不给账期看最近一次;给了账期就只看那个月(按月查水电多少用这条)。
+        // 同一时刻并列时取 id 最大的那条,结果稳定不随机
+        boolean byPeriod = StringUtils.hasText(period);
+        String periodFilter = byPeriod ? " AND DATE_FORMAT(o.read_time, '%Y-%m') = ? " : "";
+        String periodFilterInner = byPeriod ? " AND DATE_FORMAT(x.read_time, '%Y-%m') = ? " : "";
+        Object[] args = byPeriod ? new Object[]{period, period} : new Object[0];
         Map<Long, Map<String, Object>> readingByMeter = new LinkedHashMap<>();
         for (Map<String, Object> row : jdbc.queryForList(
                 "SELECT e.meter_id, e.id AS reading_id, e.curr_reading, e.usage_amount, e.fee, e.read_time "
                         + "FROM eng_reading e JOIN ("
-                        + "  SELECT meter_id, MAX(id) AS max_id FROM eng_reading o"
+                        + "  SELECT o.meter_id, MAX(o.id) AS max_id FROM eng_reading o"
                         + "  WHERE o.deleted = 0 AND o.meter_id IN (" + idList + ")"
+                        + periodFilter
                         + "    AND o.read_time = (SELECT MAX(x.read_time) FROM eng_reading x"
-                        + "                       WHERE x.deleted = 0 AND x.meter_id = o.meter_id)"
-                        + "  GROUP BY o.meter_id) latest ON latest.max_id = e.id")) {
+                        + "                       WHERE x.deleted = 0 AND x.meter_id = o.meter_id"
+                        + periodFilterInner + ")"
+                        + "  GROUP BY o.meter_id) latest ON latest.max_id = e.id", args)) {
             readingByMeter.put(asLong(row.get("meter_id")), row);
         }
 

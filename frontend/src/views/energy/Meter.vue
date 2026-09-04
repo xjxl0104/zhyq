@@ -22,6 +22,16 @@
             <el-option v-for="t in tenants" :key="t.id" :label="t.name" :value="t.id" />
           </el-select>
         </el-form-item>
+        <!-- 按月查水电:选了账期就只看那个月的抄表结果,不选看最近一次 -->
+        <el-form-item label="账期">
+          <el-date-picker v-model="query.period" type="month" placeholder="不选=最近一次"
+                          format="YYYY年M月" value-format="YYYY-MM" clearable style="width: 170px" />
+        </el-form-item>
+        <el-form-item label="表计角色">
+          <el-select v-model="query.meterRole" placeholder="全部" clearable style="width: 150px">
+            <el-option v-for="r in METER_ROLES" :key="r.value" :label="r.label" :value="r.value" />
+          </el-select>
+        </el-form-item>
         <el-form-item>
           <el-button type="primary" @click="search"><el-icon><Search /></el-icon>查询</el-button>
           <el-button @click="reset">重置</el-button>
@@ -41,6 +51,11 @@
         <el-table-column label="能源类型" width="110">
           <template #default="{ row }">
             <el-tag :type="energyTagType(row.energyType)">{{ row.energyType }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="角色" width="110">
+          <template #default="{ row }">
+            <el-tag :type="roleTagType(row.meterRole)" effect="plain">{{ roleLabel(row.meterRole) }}</el-tag>
           </template>
         </el-table-column>
         <!-- 租户经 房间 → 执行中合同 → 租客 反查:表计本身只挂房间,已退租的旧合同不算 -->
@@ -78,7 +93,6 @@
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="createTime" label="创建时间" width="170" />
         <el-table-column label="操作" width="300" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click="openReadings(row)">抄表记录</el-button>
@@ -109,6 +123,26 @@
           <el-select v-model="form.energyType" placeholder="请选择" style="width: 100%">
             <el-option v-for="t in energyTypes" :key="t" :label="t" :value="t" />
           </el-select>
+        </el-form-item>
+        <!-- 角色决定这块表在公摊里的位置,不是装饰:总表是被减数、物业表计入分母不出账 -->
+        <el-form-item label="表计角色" prop="meterRole">
+          <el-select v-model="form.meterRole" style="width: 100%">
+            <el-option v-for="r in METER_ROLES" :key="r.value" :label="r.label" :value="r.value" />
+          </el-select>
+          <div class="form-tip">{{ roleTip(form.meterRole) }}</div>
+        </el-form-item>
+        <!-- 租户不直接存在表计上:换租后合同一改,租户就该跟着变。这里选房间,
+             租户由「房间 → 执行中合同」实时反查,不会出现表还挂在上一家名下 -->
+        <el-form-item label="所属房间">
+          <el-select v-model="form.roomId" placeholder="选房间，租户由合同带出" clearable filterable style="width: 100%">
+            <el-option v-for="r in rooms" :key="r.id" :label="r.code + (r.roomNo ? ` (${r.roomNo})` : '')" :value="r.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="租户">
+          <el-input :model-value="currentTenantName" disabled placeholder="选了房间后自动带出" />
+          <div class="form-tip">
+            按房间当前「执行中」的合同实时带出；房间没挂合同时这里是空的，公摊出账会跳过该表。
+          </div>
         </el-form-item>
         <el-form-item label="倍率"><el-input-number v-model="form.ratio" :min="0" :precision="2" /></el-form-item>
         <el-form-item label="上次读数"><el-input-number v-model="form.lastReading" :min="0" :precision="2" /></el-form-item>
@@ -206,10 +240,11 @@
 </template>
 
 <script setup>
-import { reactive, ref, onMounted } from 'vue'
+import { computed, reactive, ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { meterApi, readingApi } from '@/api/energy'
 import { tenantApi } from '@/api/tenant'
+import { roomApi } from '@/api/building'
 
 const energyTypes = ['电', '水', '燃气', '热力']
 const readSources = ['自动采集', '人工', '估算', '补录', '换表']
@@ -217,10 +252,21 @@ const readSources = ['自动采集', '人工', '估算', '补录', '换表']
 const loading = ref(false)
 const list = ref([])
 const total = ref(0)
-const EMPTY_QUERY = { code: '', energyType: null, status: null, tenantRefId: null }
+// 表计角色:决定它在公摊里的位置(见 V51 迁移与 AllocationService 的公式注释)
+const METER_ROLES = [
+  { value: 'TENANT', label: '租户分表', tip: '计入分摊分母，并按分摊结果给该租户出账' },
+  { value: 'MAIN', label: '园区总表', tip: '对应对外发票口径，是公共区域用量的被减数，本身不出账' },
+  { value: 'PROPERTY', label: '物业公司表', tip: '计入分摊分母，但不出账（属园区内部成本）' }
+]
+const roleLabel = (v) => METER_ROLES.find(r => r.value === v)?.label || '租户分表'
+const roleTip = (v) => METER_ROLES.find(r => r.value === v)?.tip || ''
+const roleTagType = (v) => (v === 'MAIN' ? 'danger' : v === 'PROPERTY' ? 'warning' : 'success')
+
+const EMPTY_QUERY = { code: '', energyType: null, status: null, tenantRefId: null, period: null, meterRole: null }
 const query = reactive({ pageNo: 1, pageSize: 10, ...EMPTY_QUERY })
 // 租户下拉用租客档案全量:表计的租户是经合同反查出来的,档案才是名册的真相源
 const tenants = ref([])
+const rooms = ref([])
 const billing = ref(null)
 const logDialog = reactive({ visible: false, meter: null, loading: false, rows: [] })
 
@@ -278,7 +324,18 @@ async function openLogs(row) {
 
 const formRef = ref()
 const dialog = reactive({ visible: false, title: '' })
-const form = reactive({ id: null, code: '', name: '', energyType: '电', ratio: 1, lastReading: 0, status: 1 })
+const EMPTY_FORM = {
+  id: null, code: '', name: '', energyType: '电', meterRole: 'TENANT',
+  roomId: null, ratio: 1, lastReading: 0, status: 1
+}
+const form = reactive({ ...EMPTY_FORM })
+// 租户不存在表计上,由所选房间的执行中合同实时反查;列表接口已按同一口径填好 tenantName
+const currentTenantName = computed(() => {
+  if (!form.roomId) return ''
+  const hit = list.value.find(m => m.roomId === form.roomId && m.tenantName)
+  return hit?.tenantName || (roomTenantMap.value[form.roomId] || '')
+})
+const roomTenantMap = ref({})
 const rules = {
   code: [{ required: true, message: '请输入表计编号', trigger: 'blur' }],
   energyType: [{ required: true, message: '请选择能源类型', trigger: 'change' }]
@@ -287,8 +344,26 @@ const rules = {
 function openDialog(row) {
   dialog.visible = true
   dialog.title = row ? '编辑表计' : '新增表计'
-  if (row) Object.assign(form, row)
-  else Object.assign(form, { id: null, code: '', name: '', energyType: '电', ratio: 1, lastReading: 0, status: 1 })
+  Object.assign(form, row ? { ...EMPTY_FORM, ...row } : { ...EMPTY_FORM })
+  loadRooms()
+}
+
+// 房间清单只在开弹窗时拉一次;取不到不挡住新增,只是选不了房间
+let roomsLoaded = false
+async function loadRooms() {
+  if (roomsLoaded) return
+  roomsLoaded = true
+  try {
+    const res = await roomApi.page({ pageNo: 1, pageSize: 500 })
+    rooms.value = res?.records || []
+    const map = {}
+    for (const r of rooms.value) {
+      if (r.tenantName) map[r.id] = r.tenantName
+    }
+    roomTenantMap.value = map
+  } catch (e) {
+    roomsLoaded = false
+  }
 }
 async function submit() {
   await formRef.value.validate()
@@ -368,6 +443,7 @@ onMounted(async () => {
 .cell-sub { margin-top: 2px; font-size: 12px; line-height: 1.3; color: var(--el-text-color-secondary); }
 .usage { font-weight: 600; font-variant-numeric: tabular-nums; }
 .empty-tip { text-align: center; color: var(--el-text-color-secondary); padding: 20px 0; font-size: 13px; }
+.form-tip { margin-top: 4px; font-size: 12px; line-height: 1.5; color: var(--el-text-color-secondary); }
 .pager { margin-top: 16px; justify-content: flex-end; }
 .toolbar { margin-bottom: 12px; }
 </style>

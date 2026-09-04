@@ -21,6 +21,19 @@ export const readingApi = {
   remove: (id) => request.delete(`/energy/reading/${id}`)
 }
 
+// 月度公用事业账单与公摊(《附件二》口径:总表 - 各分表 = 公区+损耗,按用量占比摊回)
+export const utilityBillApi = {
+  page: (params) => request.get('/energy/utility-bill/page', { params }),
+  add: (data) => request.post('/energy/utility-bill', data),
+  update: (data) => request.put('/energy/utility-bill', data),
+  remove: (id) => request.delete(`/energy/utility-bill/${id}`),
+  // 测算可反复重跑(幂等),确认出账后锁定
+  calculate: (id) => request.post(`/energy/utility-bill/${id}/calculate`),
+  allocations: (id) => request.get(`/energy/utility-bill/${id}/allocations`),
+  confirm: (id) => request.post(`/energy/utility-bill/${id}/confirm`),
+  revoke: (id) => request.post(`/energy/utility-bill/${id}/revoke`)
+}
+
 // 能耗统计(§14 概览/趋势/表计排行)
 export const energyStatsApi = {
   overview: () => request.get('/energy/stats-api/overview'),

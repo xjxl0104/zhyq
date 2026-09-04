@@ -17,6 +17,12 @@ public class Meter extends BaseEntity {
     private String code;
     private String name;
     private String energyType;
+    /**
+     * 表计角色,决定它在公摊里的位置:
+     * TENANT=租户分表(分摊分母 + 出账对象) MAIN=园区总表(分摊被减数,不出账)
+     * PROPERTY=物业公司分表(计入分母但不出账,是园区内部成本)
+     */
+    private String meterRole;
     private Long projectId;
     private Long buildingId;
     private Long roomId;

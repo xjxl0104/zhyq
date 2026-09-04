@@ -111,7 +111,8 @@ export const menuTree = [
       {
         title: '能耗', icon: 'Lightning', children: [
           { title: '能耗统计', path: '/energy/stats' },
-          { title: '智能表计', path: '/energy/meter' }
+          { title: '智能表计', path: '/energy/meter' },
+          { title: '水电公摊', path: '/energy/allocation' }
         ]
       },
       {
