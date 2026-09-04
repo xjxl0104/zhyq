@@ -21,8 +21,7 @@ export const menuTree = [
           { title: '建筑管理', path: '/building/building' }
         ]
       },
-      { title: '资产管理', path: '/property/asset' },
-      { title: '资产管理', path: '/am/asset' }
+      { title: '资产管理', path: '/property/asset' }
     ]
   },
   {

@@ -70,9 +70,6 @@ const routes = [
       { path: 'rsv/resource', meta: { title: '资源目录' }, component: () => import('@/views/rsv/Resource.vue') },
       { path: 'rsv/booking', meta: { title: '资源预订' }, component: () => import('@/views/rsv/Booking.vue') },
 
-      // 资产管理(#20,台账+签出签入/报废/维修/盘点)
-      { path: 'am/asset', meta: { title: '资产管理' }, component: () => import('@/views/am/Asset.vue') },
-
       // 采购管理(办公下:计划→申请→审批链;一组件多路由靠 meta.planType 区分计划类型)
       { path: 'pur/plan-year', meta: { title: '年度采购计划', planType: 1 }, component: () => import('@/views/pur/Plan.vue') },
       { path: 'pur/plan-month', meta: { title: '月度采购计划', planType: 2 }, component: () => import('@/views/pur/Plan.vue') },
