@@ -26,7 +26,7 @@
         </el-popconfirm>
       </div>
       <el-table :data="list" v-loading="loading" border stripe>
-        <el-table-column type="index" label="#" width="55" />
+        <el-table-column type="index" label="序号" width="70" />
         <el-table-column prop="noticeNo" label="通知单号" min-width="180" />
         <!-- 联动:后端按登记明细口径填好租客名与账单号,点账单号跳到所有账单页定位该单 -->
         <el-table-column prop="tenantName" label="对方租客" min-width="160">

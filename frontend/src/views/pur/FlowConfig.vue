@@ -7,7 +7,7 @@
       </div>
       <el-table :data="definitions" v-loading="loading" border stripe
                 highlight-current-row @current-change="selectDefinition">
-        <el-table-column type="index" label="#" width="55" />
+        <el-table-column type="index" label="序号" width="70" />
         <el-table-column prop="name" label="流程名称" min-width="180" />
         <el-table-column prop="bizType" label="绑定业务" width="140" />
         <el-table-column label="状态" width="100">

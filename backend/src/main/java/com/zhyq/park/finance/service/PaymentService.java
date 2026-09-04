@@ -18,7 +18,9 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.UUID;
 
 /**
@@ -38,6 +40,8 @@ public class PaymentService {
     private static final int ST_PARTIAL = 4;
     private static final int ST_SETTLED = 5;
     private static final int ST_OVERDUE = 6;
+    /** fin_receipt.receipt_no 列宽,拼号时不能超 */
+    private static final int RECEIPT_NO_MAX = 64;
 
     /**
      * 收款。
@@ -144,7 +148,7 @@ public class PaymentService {
 
         // ④ 自动生成收据
         Receipt receipt = new Receipt();
-        receipt.setReceiptNo("SJ" + UUID.randomUUID().toString().replace("-", "").substring(0, 12));
+        receipt.setReceiptNo(buildReceiptNo(bill.getCode(), billId));
         receipt.setPaymentId(payment.getId());
         receipt.setBillId(billId);
         receipt.setTenantRefId(bill.getTenantRefId());
@@ -301,6 +305,32 @@ public class PaymentService {
                 .set(Receipt::getVoidStatus, 1));
 
         return reversal;
+    }
+
+    /**
+     * 收据号 = 账单号 + 开票日期,例如 {@code RR3V1R202606-20260904}。
+     *
+     * <p>原来是 {@code SJ + UUID 前 12 位},打出来是一串没有含义的乱码,对账时既看不出
+     * 是哪张账单的,也排不了序。改成「账单号-日期」后,收据、账单、流水三样能对着看。</p>
+     *
+     * <p>同一张账单同一天可能收多次款(分次付),第一张用干净的
+     * {@code 账单号-日期},之后依次加 {@code -02}、{@code -03}。</p>
+     *
+     * <p>历史收据号不动:已经打印出去的号改了就对不上了。</p>
+     */
+    private String buildReceiptNo(String billCode, Long billId) {
+        String day = LocalDate.now().format(DateTimeFormatter.BASIC_ISO_DATE);
+        String base = StringUtils.hasText(billCode) ? billCode.trim() : ("BILL" + billId);
+        // receipt_no 是 VARCHAR(64):账单号过长时先给日期和序号留位置,
+        // 不然超出部分会被 MySQL 静默截断,不同账单可能截出同一个号
+        int room = RECEIPT_NO_MAX - day.length() - 4; // '-' + 日期 + '-NN'
+        if (base.length() > room) {
+            base = base.substring(0, room);
+        }
+        String prefix = base + "-" + day;
+        long sameDay = receiptMapper.selectCount(
+                new LambdaQueryWrapper<Receipt>().likeRight(Receipt::getReceiptNo, prefix));
+        return sameDay == 0 ? prefix : prefix + "-" + String.format("%02d", sameDay + 1);
     }
 
     /** 剩余应收 = 本金 + 滞纳金 - 实收,与 BillMetrics.outstandingOf 同口径 */

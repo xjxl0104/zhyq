@@ -49,7 +49,7 @@
     <!-- 表格区 -->
     <div class="table-card">
       <el-table :data="list" v-loading="loading" border stripe>
-        <el-table-column type="index" label="#" width="55" />
+        <el-table-column type="index" label="序号" width="70" />
         <el-table-column prop="flowNo" label="流水号" min-width="160" />
         <el-table-column label="方向" width="90">
           <template #default="{ row }">

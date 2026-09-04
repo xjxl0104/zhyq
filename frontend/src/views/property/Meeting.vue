@@ -7,7 +7,7 @@
         <el-button type="primary" @click="openRoomDialog()"><el-icon><Plus /></el-icon>新增会议室</el-button>
       </div>
       <el-table :data="rooms" v-loading="roomLoading" border stripe>
-        <el-table-column type="index" label="#" width="55" />
+        <el-table-column type="index" label="序号" width="70" />
         <el-table-column prop="name" label="名称" min-width="140" />
         <el-table-column label="容量" width="100">
           <template #default="{ row }">{{ row.capacity || 0 }} 人</template>
@@ -48,7 +48,7 @@
         </div>
       </div>
       <el-table :data="bookings" v-loading="bookingLoading" border stripe>
-        <el-table-column type="index" label="#" width="55" />
+        <el-table-column type="index" label="序号" width="70" />
         <el-table-column label="会议室" min-width="140">
           <template #default="{ row }">{{ roomName(row.roomId) }}</template>
         </el-table-column>

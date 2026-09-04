@@ -30,7 +30,7 @@
         <el-button type="primary" @click="openAdd()"><el-icon><Plus /></el-icon>登记预约</el-button>
       </div>
       <el-table :data="list" v-loading="loading" border stripe>
-        <el-table-column type="index" label="#" width="55" />
+        <el-table-column type="index" label="序号" width="70" />
         <el-table-column prop="name" label="访客姓名" width="110" />
         <el-table-column prop="phone" label="电话" width="130" />
         <el-table-column prop="hostUser" label="被访人" width="110" />

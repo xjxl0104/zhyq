@@ -23,7 +23,7 @@
         <el-button type="primary" @click="openAdd()"><el-icon><Plus /></el-icon>新建项目</el-button>
       </div>
       <el-table :data="list" v-loading="loading" border stripe>
-        <el-table-column type="index" label="#" width="55" />
+        <el-table-column type="index" label="序号" width="70" />
         <el-table-column prop="code" label="项目编码" width="110" />
         <el-table-column prop="name" label="项目名称" min-width="160" />
         <el-table-column prop="type" label="类型" width="110" />

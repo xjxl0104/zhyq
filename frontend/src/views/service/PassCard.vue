@@ -32,7 +32,7 @@
         <el-button type="primary" @click="openDialog()"><el-icon><Plus /></el-icon>新增出入证</el-button>
       </div>
       <el-table :data="list" v-loading="loading" border stripe>
-        <el-table-column type="index" label="#" width="55" />
+        <el-table-column type="index" label="序号" width="70" />
         <el-table-column prop="cardNo" label="证件号" min-width="110" />
         <el-table-column prop="holder" label="持有人" min-width="100" />
         <el-table-column prop="phone" label="电话" min-width="130" />

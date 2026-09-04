@@ -32,7 +32,7 @@
         <el-button type="primary" @click="openDialog()"><el-icon><Plus /></el-icon>新增告警</el-button>
       </div>
       <el-table :data="list" v-loading="loading" border stripe :row-class-name="rowClass">
-        <el-table-column type="index" label="#" width="55" />
+        <el-table-column type="index" label="序号" width="70" />
         <el-table-column prop="alarmType" label="告警类型" min-width="130" />
         <el-table-column label="级别" width="90">
           <template #default="{ row }">

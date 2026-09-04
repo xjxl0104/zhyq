@@ -28,7 +28,7 @@
         <el-button type="primary" @click="openDialog()"><el-icon><Plus /></el-icon>新增渠道</el-button>
       </div>
       <el-table :data="list" v-loading="loading" border stripe>
-        <el-table-column type="index" label="#" width="55" />
+        <el-table-column type="index" label="序号" width="70" />
         <el-table-column prop="name" label="渠道名称" min-width="160" />
         <el-table-column prop="contact" label="联系人" min-width="100" />
         <el-table-column prop="phone" label="电话" min-width="130" />

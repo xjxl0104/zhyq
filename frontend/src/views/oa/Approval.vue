@@ -52,7 +52,7 @@
     <!-- 表格区 -->
     <div class="table-card">
       <el-table :data="list" v-loading="loading" border stripe>
-        <el-table-column type="index" label="#" width="55" />
+        <el-table-column type="index" label="序号" width="70" />
         <el-table-column prop="title" label="标题" min-width="200" />
         <el-table-column label="业务类型" width="100">
           <template #default="{ row }">

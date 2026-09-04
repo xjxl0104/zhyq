@@ -24,7 +24,7 @@
         <el-button type="primary" @click="openAdd()"><el-icon><Plus /></el-icon>新增资产</el-button>
       </div>
       <el-table :data="list" v-loading="loading" border stripe>
-        <el-table-column type="index" label="#" width="55" />
+        <el-table-column type="index" label="序号" width="70" />
         <el-table-column prop="assetNo" label="资产编号" min-width="150" />
         <el-table-column prop="name" label="资产名称" min-width="150" show-overflow-tooltip />
         <el-table-column prop="category" label="分类" width="110" />

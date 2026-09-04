@@ -42,7 +42,7 @@
         <el-button type="primary" @click="openDialog()"><el-icon><Plus /></el-icon>新增合同</el-button>
       </div>
       <el-table :data="list" v-loading="loading" border stripe>
-        <el-table-column type="index" label="#" width="55" />
+        <el-table-column type="index" label="序号" width="70" />
         <el-table-column prop="code" label="合同编号" min-width="150" />
         <el-table-column label="租客" min-width="150">
           <template #default="{ row }">{{ tenantName(row.tenantRefId) }}</template>

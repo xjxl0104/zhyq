@@ -7,7 +7,10 @@ export const meterApi = {
   stats: () => request.get('/energy/meter/stats'),
   add: (data) => request.post('/energy/meter', data),
   update: (data) => request.put('/energy/meter', data),
-  remove: (id) => request.delete(`/energy/meter/${id}`)
+  remove: (id) => request.delete(`/energy/meter/${id}`),
+  // 按最近一次抄表出能源费账单;一次抄表只出一张(后端幂等键挡重复)
+  createBill: (id) => request.post(`/energy/meter/${id}/bill`),
+  operLogs: (id) => request.get(`/energy/meter/${id}/oper-logs`)
 }
 
 // 抄表读数

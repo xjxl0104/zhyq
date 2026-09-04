@@ -5,7 +5,7 @@
         <span class="title">逾期账单</span>
       </div>
       <el-table :data="list" v-loading="loading" border stripe>
-        <el-table-column type="index" label="#" width="55" />
+        <el-table-column type="index" label="序号" width="70" />
         <el-table-column prop="code" label="账单号" min-width="150" />
         <!-- 与所有账单页同一口径:后端已按登记明细优先填好 tenantName。
              这里原先渲染的是 tenantRefId,界面上就是一个裸数字"2",看不出是谁 -->

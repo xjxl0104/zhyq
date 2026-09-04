@@ -24,7 +24,7 @@
         <el-button type="primary" @click="openDialog()"><el-icon><Plus /></el-icon>新增装修申请</el-button>
       </div>
       <el-table :data="list" v-loading="loading" border stripe>
-        <el-table-column type="index" label="#" width="55" />
+        <el-table-column type="index" label="序号" width="70" />
         <el-table-column prop="tenantRefId" label="申请租客ID" width="100" />
         <el-table-column prop="roomId" label="房间ID" width="90" />
         <el-table-column prop="contractor" label="施工单位" min-width="140" />

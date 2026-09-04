@@ -33,7 +33,7 @@
         <el-button type="primary" @click="openDialog()"><el-icon><Plus /></el-icon>新增流程</el-button>
       </div>
       <el-table :data="list" v-loading="loading" border stripe>
-        <el-table-column type="index" label="#" width="55" />
+        <el-table-column type="index" label="序号" width="70" />
         <el-table-column prop="flowName" label="流程名称" min-width="140" />
         <el-table-column label="业务类型" width="100">
           <template #default="{ row }">

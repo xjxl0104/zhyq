@@ -84,7 +84,7 @@
         <el-button type="danger" plain @click="resetPushedBills">重置推送账单</el-button>
       </div>
       <el-table :data="list" v-loading="loading" border stripe>
-        <el-table-column type="index" label="#" width="55" />
+        <el-table-column type="index" label="序号" width="70" />
         <el-table-column prop="code" label="账单号" min-width="150" />
         <!-- 租客与协议编号合并成双行:两列平铺要 300px,表格就得横向滚动、
              右侧固定列会盖住内容;合并后 180px 且信息一个不少 -->

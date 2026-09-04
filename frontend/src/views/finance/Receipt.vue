@@ -6,8 +6,15 @@
         <el-form-item label="收据号">
           <el-input v-model="query.receiptNo" placeholder="请输入收据号" clearable style="width: 200px" />
         </el-form-item>
+        <!-- 按租客翻收据是日常最常用的查法。后端 ReceiptController.page 早就支持
+             tenantRefId,只是前端一直没接;下拉用租客档案全量,结清的租客也要能查到 -->
+        <el-form-item label="对方租客">
+          <el-select v-model="query.tenantRefId" placeholder="全部" clearable filterable style="width: 220px">
+            <el-option v-for="t in tenants" :key="t.id" :label="t.name" :value="t.id" />
+          </el-select>
+        </el-form-item>
         <el-form-item>
-          <el-button type="primary" @click="load"><el-icon><Search /></el-icon>查询</el-button>
+          <el-button type="primary" @click="search"><el-icon><Search /></el-icon>查询</el-button>
           <el-button @click="reset">重置</el-button>
         </el-form-item>
       </el-form>
@@ -16,7 +23,7 @@
     <!-- 表格区 -->
     <div class="table-card">
       <el-table :data="list" v-loading="loading" border stripe>
-        <el-table-column type="index" label="#" width="55" />
+        <el-table-column type="index" label="序号" width="70" />
         <el-table-column prop="receiptNo" label="收据号" min-width="170" />
         <!-- 联动:后端按登记明细口径填好租客名与账单号,点账单号跳到所有账单页定位该单 -->
         <el-table-column prop="tenantName" label="对方租客" min-width="160">
@@ -56,7 +63,7 @@
     <!-- 打印日志抽屉 -->
     <el-drawer v-model="drawer.visible" :title="`打印日志 - ${drawer.receiptNo}`" size="480px">
       <el-table :data="logs" v-loading="drawer.loading" border stripe>
-        <el-table-column type="index" label="#" width="55" />
+        <el-table-column type="index" label="序号" width="70" />
         <el-table-column prop="operator" label="操作人" min-width="120" />
         <el-table-column prop="printTime" label="打印时间" min-width="180" />
       </el-table>
@@ -70,6 +77,7 @@ import { reactive, ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { receiptApi } from '@/api/finance'
+import { tenantApi } from '@/api/tenant'
 
 
 const router = useRouter()
@@ -83,7 +91,9 @@ function gotoBill(billId) {
 const loading = ref(false)
 const list = ref([])
 const total = ref(0)
-const query = reactive({ pageNo: 1, pageSize: 10, receiptNo: '' })
+const EMPTY_QUERY = { receiptNo: '', tenantRefId: null }
+const query = reactive({ pageNo: 1, pageSize: 10, ...EMPTY_QUERY })
+const tenants = ref([])
 
 function money(v) {
   return Number(v || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -100,7 +110,7 @@ async function load() {
   }
 }
 function reset() {
-  Object.assign(query, { pageNo: 1, receiptNo: '' })
+  Object.assign(query, { pageNo: 1, ...EMPTY_QUERY })
   load()
 }
 
@@ -124,7 +134,17 @@ async function openLogs(row) {
   }
 }
 
-onMounted(load)
+// 查询回第 1 页,否则换条件后停在旧页码多半是一屏空白
+function search() {
+  query.pageNo = 1
+  return load()
+}
+
+onMounted(async () => {
+  // 租客名册取不到只是少一个下拉,不该拖垮收据列表
+  const [tenantList] = await Promise.allSettled([tenantApi.list(), load()])
+  if (tenantList.status === 'fulfilled') tenants.value = tenantList.value || []
+})
 </script>
 
 <style scoped>

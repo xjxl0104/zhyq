@@ -42,7 +42,7 @@
         <el-button type="primary" @click="openGen"><el-icon><Plus /></el-icon>生成佣金</el-button>
       </div>
       <el-table :data="list" v-loading="loading" border stripe>
-        <el-table-column type="index" label="#" width="55" />
+        <el-table-column type="index" label="序号" width="70" />
         <el-table-column prop="channelId" label="渠道ID" width="90" align="center" />
         <el-table-column prop="contractId" label="合同ID" width="90" align="center" />
         <el-table-column label="计佣基数" width="150" align="right">

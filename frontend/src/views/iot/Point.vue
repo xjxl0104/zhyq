@@ -24,7 +24,7 @@
         <el-button type="primary" @click="openDialog()"><el-icon><Plus /></el-icon>新增点位</el-button>
       </div>
       <el-table :data="list" v-loading="loading" border stripe>
-        <el-table-column type="index" label="#" width="55" />
+        <el-table-column type="index" label="序号" width="70" />
         <el-table-column prop="name" label="名称" min-width="150" />
         <el-table-column prop="projectId" label="项目ID" min-width="90" />
         <el-table-column prop="buildingId" label="楼宇ID" min-width="90" />

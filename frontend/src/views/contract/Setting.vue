@@ -8,7 +8,7 @@
         </el-button>
       </div>
       <el-table :data="list" v-loading="loading" border stripe>
-        <el-table-column type="index" label="#" width="55" />
+        <el-table-column type="index" label="序号" width="70" />
         <el-table-column prop="skey" label="配置键" width="220" />
         <el-table-column label="配置值" min-width="220">
           <template #default="{ row }">

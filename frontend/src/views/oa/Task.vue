@@ -27,7 +27,7 @@
         <el-button type="primary" @click="openDialog()"><el-icon><Plus /></el-icon>新增任务</el-button>
       </div>
       <el-table :data="list" v-loading="loading" border stripe>
-        <el-table-column type="index" label="#" width="55" />
+        <el-table-column type="index" label="序号" width="70" />
         <el-table-column prop="title" label="任务标题" min-width="180" />
         <el-table-column prop="owner" label="负责人" min-width="100" />
         <el-table-column label="优先级" width="90">

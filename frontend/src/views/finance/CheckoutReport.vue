@@ -19,7 +19,7 @@
     <!-- 表格区 -->
     <div class="table-card">
       <el-table :data="list" v-loading="loading" border stripe>
-        <el-table-column type="index" label="#" width="55" />
+        <el-table-column type="index" label="序号" width="70" />
         <el-table-column prop="code" label="合同编号" min-width="160" />
         <!-- 租客列显示名字而不是裸 id:账单口径的登记明细名优先,档案名兜底(后端拼好),
              兜底文案与收银台同一份 tenantOptionLabel -->

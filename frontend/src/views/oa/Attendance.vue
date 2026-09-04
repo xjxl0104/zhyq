@@ -65,7 +65,7 @@
         <el-button type="primary" @click="openDialog()"><el-icon><Plus /></el-icon>新增补录</el-button>
       </div>
       <el-table :data="list" v-loading="loading" border stripe>
-        <el-table-column type="index" label="#" width="55" />
+        <el-table-column type="index" label="序号" width="70" />
         <el-table-column prop="userName" label="姓名" min-width="110" />
         <el-table-column prop="attDate" label="日期" width="110" />
         <el-table-column prop="checkin" label="签到时间" width="170" />

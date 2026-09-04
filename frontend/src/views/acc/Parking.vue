@@ -36,7 +36,7 @@
         <el-button type="primary" @click="openEnter"><el-icon><Plus /></el-icon>车辆入场</el-button>
       </div>
       <el-table :data="list" v-loading="loading" border stripe>
-        <el-table-column type="index" label="#" width="55" />
+        <el-table-column type="index" label="序号" width="70" />
         <el-table-column prop="plateNo" label="车牌号" width="130" />
         <el-table-column label="车主类型" width="100">
           <template #default="{ row }">{{ ownerTypeLabel(row.ownerType) }}</template>

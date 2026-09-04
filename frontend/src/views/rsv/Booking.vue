@@ -24,7 +24,7 @@
         <el-button type="primary" @click="openBookDialog()"><el-icon><Plus /></el-icon>新增预订</el-button>
       </div>
       <el-table :data="slots" v-loading="slotsLoading" border stripe>
-        <el-table-column type="index" label="#" width="55" />
+        <el-table-column type="index" label="序号" width="70" />
         <el-table-column prop="startTime" label="开始时间" min-width="170" />
         <el-table-column prop="endTime" label="结束时间" min-width="170" />
         <el-table-column prop="booker" label="预订人" min-width="120" />
@@ -54,7 +54,7 @@
         </el-select>
       </div>
       <el-table :data="bookingList" v-loading="bookingLoading" border stripe>
-        <el-table-column type="index" label="#" width="55" />
+        <el-table-column type="index" label="序号" width="70" />
         <el-table-column label="资源" min-width="150">
           <template #default="{ row }">{{ resourceName(row.resourceId) }}</template>
         </el-table-column>

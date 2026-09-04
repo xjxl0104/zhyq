@@ -61,7 +61,7 @@
         <el-button type="primary" @click="openDialog()"><el-icon><Plus /></el-icon>新增工单</el-button>
       </div>
       <el-table :data="list" v-loading="loading" border stripe :row-class-name="rowClass">
-        <el-table-column type="index" label="#" width="55" />
+        <el-table-column type="index" label="序号" width="70" />
         <el-table-column prop="code" label="工单号" min-width="150" />
         <el-table-column prop="title" label="标题" min-width="140" show-overflow-tooltip />
         <el-table-column prop="location" label="位置" min-width="120" show-overflow-tooltip />
