@@ -124,7 +124,10 @@
         </el-table-column>
         <el-table-column label="操作" width="240" fixed="right">
           <template #default="{ row }">
-            <el-button link type="primary" @click="openPay(row)">收款</el-button>
+            <!-- 免租期账单应收就是 0,没钱可收:给「核销」而不是「收款」,
+                 否则收款弹窗里填什么金额都会被后端拒(0 不让收、0.01 又超额) -->
+            <el-button v-if="canWriteOff(row)" link type="warning" @click="confirmWriteOff(row)">核销</el-button>
+            <el-button v-else link type="primary" @click="openPay(row)">收款</el-button>
             <el-button link type="primary" @click="openDetail(row)">详情</el-button>
             <el-button link type="success" @click="openInvoice(row)">开票</el-button>
             <el-popconfirm title="确认删除?" @confirm="remove(row.id)">
@@ -154,7 +157,9 @@
           <el-input :model-value="money(payDialog.bill?.paidAmount)" disabled />
         </el-form-item>
         <el-form-item label="本次收款" prop="amount">
-          <el-input-number v-model="payForm.amount" :min="0.01" :precision="2" style="width: 100%" />
+          <!-- min 曾是 0.01:免租期账单剩余应收为 0 时,输入框把金额顶到 0.01,
+               后端「不得超过剩余应收」再拒一次,账单就永远结不掉。放开到 0 并锁上限 -->
+          <el-input-number v-model="payForm.amount" :min="0" :max="payMax" :precision="2" style="width: 100%" />
         </el-form-item>
         <el-form-item label="支付方式" prop="payMethod">
           <el-select v-model="payForm.payMethod" placeholder="请选择" style="width: 100%">
@@ -183,10 +188,26 @@
       <el-table :data="payRecords" border stripe size="small">
         <el-table-column prop="payNo" label="支付流水号" min-width="180" />
         <el-table-column label="金额" width="110" align="right">
-          <template #default="{ row }">¥{{ money(row.amount) }}</template>
+          <template #default="{ row }">
+            <span :class="{ reversal: Number(row.amount) < 0 }">¥{{ money(row.amount) }}</span>
+          </template>
         </el-table-column>
         <el-table-column prop="payMethod" label="方式" width="90" />
+        <!-- 红冲留痕:撤销不删记录,原单标「已撤销」、另有一张负额红冲单,谁在什么时候撤的都查得到 -->
+        <el-table-column label="状态" width="90">
+          <template #default="{ row }">
+            <el-tag v-if="row.voidStatus === 1" type="info" effect="plain">已撤销</el-tag>
+            <el-tag v-else-if="row.voidStatus === 2" type="danger" effect="plain">红冲单</el-tag>
+            <el-tag v-else type="success" effect="plain">正常</el-tag>
+          </template>
+        </el-table-column>
         <el-table-column prop="payTime" label="收款时间" min-width="170" />
+        <el-table-column label="操作" width="80" v-if="capabilities.paymentVoid">
+          <template #default="{ row }">
+            <el-button v-if="!row.voidStatus" link type="danger" @click="confirmVoid(row)">撤销</el-button>
+            <span v-else class="void-note">{{ row.voidReason || '-' }}</span>
+          </template>
+        </el-table-column>
       </el-table>
     </el-dialog>
 
@@ -218,7 +239,7 @@
 </template>
 
 <script setup>
-import { reactive, ref, onMounted } from 'vue'
+import { computed, reactive, ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { billApi, paymentApi, invoiceApi } from '@/api/finance'
@@ -317,6 +338,9 @@ async function calcLateFee() {
   refresh()
 }
 
+// 按钮可见性由后端权限决定,不在前端猜
+const capabilities = ref({ lateFeeAdjust: false, writeOff: false, paymentVoid: false })
+
 // 收款
 const payFormRef = ref()
 const payDialog = reactive({ visible: false, bill: null })
@@ -333,11 +357,61 @@ function openPay(row) {
   // 默认收满剩余欠款(本金 + 滞纳金 - 实收),与后端剩余可收同口径
   Object.assign(payForm, { billId: row.id, amount: billOwe(row), payMethod: '转账', payNo })
 }
+// 收款上限 = 剩余应收(本金 + 滞纳金 - 实收),与后端超额校验同口径
+const payMax = computed(() => billOwe(payDialog.bill || {}))
+
 async function submitPay() {
   await payFormRef.value.validate()
+  // 剩余应收为 0 的账单走核销通道:后端收款接口不收 0 元,硬提交只会拿到一句报错
+  if (payMax.value === 0) {
+    payDialog.visible = false
+    return confirmWriteOff(payDialog.bill)
+  }
   await paymentApi.pay({ billId: payForm.billId, amount: payForm.amount, payMethod: payForm.payMethod, payNo: payForm.payNo })
   ElMessage.success('收款成功')
   payDialog.visible = false
+  refresh()
+}
+
+// 零元核销:免租期/抵扣期账单应收 0,只推状态不产生资金记录
+function canWriteOff(row) {
+  return capabilities.value.writeOff && row.status !== 5 && billOwe(row) === 0
+}
+async function confirmWriteOff(row) {
+  if (!row) return
+  let remark = ''
+  try {
+    const input = await ElMessageBox.prompt(
+      `账单 ${row.code} 本期应收 ¥0.00(免租期/抵扣期),核销后直接标记为已结清,不产生收款记录。`,
+      '零元核销',
+      { confirmButtonText: '确认核销', cancelButtonText: '取消', inputPlaceholder: '核销说明(可留空)', inputValue: '' }
+    )
+    remark = input.value || ''
+  } catch {
+    return
+  }
+  await paymentApi.writeOff({ billId: row.id, remark })
+  ElMessage.success('已核销,账单标记为已结清')
+  refresh()
+}
+
+// 撤销收款(红冲):点错了能退回来,记录不删
+async function confirmVoid(row) {
+  let reason = ''
+  try {
+    const input = await ElMessageBox.prompt(
+      `将撤销支付流水号 ${row.payNo}(¥${money(row.amount)})。原单标记为已撤销并生成一张负额红冲单,账单实收同步回退。`,
+      '撤销收款',
+      { confirmButtonText: '确认撤销', cancelButtonText: '再想想', type: 'warning', inputPlaceholder: '撤销原因(建议填写)', inputValue: '' }
+    )
+    reason = input.value || ''
+  } catch {
+    return
+  }
+  await paymentApi.voidPay(row.id, { reason })
+  ElMessage.success('已撤销,已生成红冲单')
+  // 弹窗还开着:重拉这张账单的收款记录,让用户当场看见红冲单
+  payRecords.value = await paymentApi.list(row.id)
   refresh()
 }
 
@@ -379,10 +453,12 @@ async function remove(id) {
   refresh()
 }
 
-onMounted(() => {
+onMounted(async () => {
   // 先落定位条件再取数,顺序反了会先查全量再被覆盖
   applyRouteLocate()
-  refresh()
+  // 能力位取不到不该拖垮整页:拿不到就按"没权限"渲染,列表照常出
+  const [caps] = await Promise.allSettled([billApi.capabilities(), refresh()])
+  if (caps.status === 'fulfilled' && caps.value) capabilities.value = caps.value
 })
 </script>
 
@@ -406,4 +482,7 @@ onMounted(() => {
 .stat-value.warning { color: #ea9a13; }
 .stat-value.danger { color: #e5484d; }
 .pager { margin-top: 16px; justify-content: flex-end; }
+/* 红冲单金额为负,标红提醒这是一笔退回而不是收入 */
+.reversal { color: #e5484d; font-weight: 600; }
+.void-note { font-size: 12px; color: var(--el-text-color-secondary); }
 </style>

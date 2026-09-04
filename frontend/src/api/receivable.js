@@ -7,6 +7,9 @@ export const receivableApi = {
   get: (id) => request.get(`/finance/receivable/${id}`),
   add: (data) => request.post('/finance/receivable', data),
   update: (data) => request.put('/finance/receivable', data),
+  // 单行确认(草稿→已确认)。手工新增写死草稿,而生成账单只认已确认/已生效,
+  // 原先只有导入批次能确认,手工新增的行就永远推不出账单
+  confirmRow: (id) => request.put(`/finance/receivable/${id}/confirm`),
   remove: (id) => request.delete(`/finance/receivable/${id}`),
   preview: (file) => {
     const body = new FormData()

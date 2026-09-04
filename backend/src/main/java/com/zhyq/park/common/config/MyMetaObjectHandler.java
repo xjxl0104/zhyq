@@ -16,6 +16,12 @@ import java.time.LocalDateTime;
 @Component
 public class MyMetaObjectHandler implements MetaObjectHandler {
 
+    /**
+     * 默认运营主体 id(单租户部署)。新建实体尚未落库、拿不到自身 tenantId 时,
+     * 需要按运营主体做校验的地方引用这里,别各自散写 1L。
+     */
+    public static final Long DEFAULT_TENANT_ID = 1L;
+
     @Override
     public void insertFill(MetaObject metaObject) {
         LocalDateTime now = LocalDateTime.now();
@@ -24,7 +30,7 @@ public class MyMetaObjectHandler implements MetaObjectHandler {
         this.strictInsertFill(metaObject, "updateTime", LocalDateTime.class, now);
         this.strictInsertFill(metaObject, "createBy", String.class, operator);
         this.strictInsertFill(metaObject, "updateBy", String.class, operator);
-        fillIfNull(metaObject, "tenantId", 1L);
+        fillIfNull(metaObject, "tenantId", DEFAULT_TENANT_ID);
         fillIfNull(metaObject, "version", 1);
         fillIfNull(metaObject, "deleted", 0);
     }

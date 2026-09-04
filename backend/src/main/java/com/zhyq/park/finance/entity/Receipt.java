@@ -26,6 +26,8 @@ public class Receipt extends BaseEntity {
     private BigDecimal amount;
     /** 收款人 */
     private String payee;
+    /** 0=正常 1=已作废(对应收款被撤销红冲) */
+    private Integer voidStatus;
     /** 打印次数 */
     private Integer printCount;
     /** 最后打印时间 */

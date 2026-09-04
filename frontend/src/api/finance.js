@@ -23,6 +23,10 @@ export const billApi = {
 // 收款
 export const paymentApi = {
   pay: (data) => request.post('/finance/payment', data),
+  // 零元核销:免租期等 0 应收账单直接结清,不产生支付单/流水/收据
+  writeOff: (data) => request.post('/finance/payment/write-off', data),
+  // 撤销收款(红冲):原单作废 + 负额红冲单 + 账单实收回退,留痕不删记录
+  voidPay: (id, data) => request.post(`/finance/payment/${id}/void`, data || {}),
   list: (billId) => request.get('/finance/payment/list', { params: { billId } })
 }
 

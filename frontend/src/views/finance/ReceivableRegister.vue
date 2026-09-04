@@ -116,6 +116,8 @@
               <template #dropdown>
                 <el-dropdown-menu>
                   <el-dropdown-item v-if="capabilities.edit && ['DRAFT', 'PENDING_REVIEW'].includes(row.status)" command="edit">编辑</el-dropdown-item>
+                  <!-- 草稿推不出账单:没有这个入口,手工新增的行就是一条永远出不了账的死数据 -->
+                  <el-dropdown-item v-if="capabilities.confirm && ['DRAFT', 'PENDING_REVIEW'].includes(row.status)" command="confirm">确认登记</el-dropdown-item>
                   <el-dropdown-item v-if="capabilities.generate" command="generate">生成账单</el-dropdown-item>
                   <!-- 收缴政策,不是合同真相:已确认/已生效的登记也可调,后端普通编辑仍锁死 -->
                   <el-dropdown-item v-if="capabilities.edit" command="lateFee">滞纳金</el-dropdown-item>
@@ -169,19 +171,77 @@
     <ReceivableImportDialog v-model="importVisible" @confirmed="afterImport" />
     <ReceivableDetailDrawer v-model="detailVisible" :register-id="detailId" :can-view-account="capabilities.accountView" />
 
-    <el-dialog v-model="editor.visible" :title="editor.form.id ? '编辑应收登记表' : '新增应收登记表'" width="720px">
+    <!-- 字段从 6 个补到出账所需的最小集:原来新增出来的行没有面积、没有合同起止、
+         没有免租期,既推不出账单也看不出是谁的单,等于建了一条死数据 -->
+    <el-dialog v-model="editor.visible" :title="editor.form.id ? '编辑应收登记表' : '新增应收登记表'" width="820px">
       <el-form :model="editor.form" label-width="120px">
+        <el-divider content-position="left">基本信息</el-divider>
         <el-row :gutter="16">
-          <el-col :span="12"><el-form-item label="协议编号"><el-input v-model="editor.form.agreementNoRaw" /></el-form-item></el-col>
-          <el-col :span="12"><el-form-item label="状态"><el-input model-value="草稿（由系统控制）" disabled /></el-form-item></el-col>
-          <el-col :span="12"><el-form-item label="租户"><el-input v-model="editor.form.tenantNameRaw" /></el-form-item></el-col>
-          <el-col :span="12"><el-form-item label="楼层/空间"><el-input v-model="editor.form.spaceNameRaw" /></el-form-item></el-col>
-          <el-col :span="8"><el-form-item label="月租金"><el-input-number v-model="editor.form.monthlyRent" :precision="2" /></el-form-item></el-col>
-          <el-col :span="8"><el-form-item label="月物业费"><el-input-number v-model="editor.form.monthlyProperty" :precision="2" /></el-form-item></el-col>
-          <el-col :span="8"><el-form-item label="月合计"><el-input-number v-model="editor.form.monthlyTotal" :precision="2" /></el-form-item></el-col>
+          <el-col :span="12"><el-form-item label="协议编号"><el-input v-model="editor.form.agreementNoRaw" placeholder="多份协议可换行分隔" /></el-form-item></el-col>
+          <el-col :span="12"><el-form-item label="状态"><el-input model-value="草稿（保存后需「确认」才能生成账单）" disabled /></el-form-item></el-col>
+          <el-col :span="12"><el-form-item label="租户" required><el-input v-model="editor.form.tenantNameRaw" /></el-form-item></el-col>
+          <el-col :span="12"><el-form-item label="楼层/空间" required><el-input v-model="editor.form.spaceNameRaw" /></el-form-item></el-col>
+          <el-col :span="12"><el-form-item label="计租总面积/㎡"><el-input-number v-model="editor.form.chargeArea" :precision="2" :min="0" style="width: 100%" /></el-form-item></el-col>
+          <el-col :span="12"><el-form-item label="实际房套面积/㎡"><el-input-number v-model="editor.form.actualArea" :precision="2" :min="0" style="width: 100%" /></el-form-item></el-col>
+        </el-row>
+
+        <!-- 出账认的是这两个 id,不是上面的文本名。原来编辑器根本不给绑,
+             于是新增的行确认完点「生成账单」就撞「尚未完整绑定」 -->
+        <el-divider content-position="left">绑定（确认时必填，生成账单靠它）</el-divider>
+        <el-row :gutter="16">
+          <el-col :span="12">
+            <el-form-item label="租户档案">
+              <el-select v-model="editor.form.tenantRefId" filterable clearable placeholder="从租客档案里选" style="width: 100%">
+                <el-option v-for="t in tenantOptions" :key="t.id" :label="t.name" :value="t.id" />
+              </el-select>
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="空间">
+              <el-select v-model="editor.form.spaceId" filterable clearable placeholder="从空间树里选" style="width: 100%">
+                <el-option v-for="s in spaceOptions" :key="s.id" :label="s.label" :value="s.id" />
+              </el-select>
+            </el-form-item>
+          </el-col>
+        </el-row>
+
+        <el-divider content-position="left">合同期限（确认时必填，账期按它推）</el-divider>
+        <el-row :gutter="16">
+          <el-col :span="12"><el-form-item label="合同起始日"><el-date-picker v-model="editor.form.contractStartDate" type="date" value-format="YYYY-MM-DD" style="width: 100%" /></el-form-item></el-col>
+          <el-col :span="12"><el-form-item label="合同结束日"><el-date-picker v-model="editor.form.contractEndDate" type="date" value-format="YYYY-MM-DD" style="width: 100%" /></el-form-item></el-col>
+        </el-row>
+
+        <el-divider content-position="left">单价与金额</el-divider>
+        <el-row :gutter="16">
+          <el-col :span="12"><el-form-item label="租金单价"><el-input v-model="editor.form.rentRateRaw" placeholder="如：每月每平方含税10.12元" /></el-form-item></el-col>
+          <el-col :span="12"><el-form-item label="物业费单价"><el-input v-model="editor.form.propertyRateRaw" placeholder="如：每月每平方含税2元" /></el-form-item></el-col>
+          <el-col :span="8"><el-form-item label="月租金"><el-input-number v-model="editor.form.monthlyRent" :precision="2" :min="0" style="width: 100%" @change="syncTotal" /></el-form-item></el-col>
+          <el-col :span="8"><el-form-item label="月物业费"><el-input-number v-model="editor.form.monthlyProperty" :precision="2" :min="0" style="width: 100%" @change="syncTotal" /></el-form-item></el-col>
+          <!-- 后端强制「月合计 = 月租金 + 月物业费」,让用户自己敲只会敲出一个保存不了的数 -->
+          <el-col :span="8"><el-form-item label="月合计"><el-input-number v-model="editor.form.monthlyTotal" :precision="2" disabled style="width: 100%" /></el-form-item></el-col>
+          <el-col :span="12"><el-form-item label="租金保证金"><el-input-number v-model="editor.form.rentDeposit" :precision="2" :min="0" style="width: 100%" /></el-form-item></el-col>
+          <el-col :span="12"><el-form-item label="物业保证金"><el-input-number v-model="editor.form.propertyDeposit" :precision="2" :min="0" style="width: 100%" /></el-form-item></el-col>
+        </el-row>
+
+        <el-divider content-position="left">免租与收款约定</el-divider>
+        <el-row :gutter="16">
+          <el-col :span="12"><el-form-item label="免租期"><el-input v-model="editor.form.freePeriodRaw" placeholder="如：20260601-20260731" /></el-form-item></el-col>
+          <el-col :span="12"><el-form-item label="免租时长"><el-input v-model="editor.form.freeTermRaw" placeholder="如：2个月" /></el-form-item></el-col>
+          <el-col :span="24">
+            <el-form-item label="优惠期/备注">
+              <el-input v-model="editor.form.discountRaw" type="textarea" :rows="2"
+                        placeholder="出账规则从这里解析（免租/折扣/抵扣条款），一条一行" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="24"><el-form-item label="收款约定"><el-input v-model="editor.form.collectionTimingRaw" placeholder="如：当月30日前收取下个月租金" /></el-form-item></el-col>
+          <el-col :span="24">
+            <el-form-item label="备注">
+              <el-input v-model="editor.form.notesRaw" type="textarea" :rows="2" placeholder="纯说明文字，不参与出账计算" />
+            </el-form-item>
+          </el-col>
         </el-row>
       </el-form>
-      <template #footer><el-button @click="editor.visible = false">取消</el-button><el-button type="primary" @click="saveEditor">保存</el-button></template>
+      <template #footer><el-button @click="editor.visible = false">取消</el-button><el-button type="primary" :loading="editor.saving" @click="saveEditor">保存</el-button></template>
     </el-dialog>
 
     <el-dialog v-model="lateFee.visible" title="滞纳金起算日" width="460px">
@@ -209,6 +269,8 @@ import { computed, onActivated, onMounted, reactive, ref } from 'vue'
 import { ArrowDown } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { receivableApi } from '@/api/receivable'
+import { flattenSpaceOptions, spaceApi } from '@/api/space'
+import { tenantApi } from '@/api/tenant'
 import ReceivableDetailDrawer from './components/ReceivableDetailDrawer.vue'
 import ReceivableImportDialog from './components/ReceivableImportDialog.vue'
 import {
@@ -228,7 +290,11 @@ const monthlySummary = ref(null)
 const importVisible = ref(false)
 const detailVisible = ref(false)
 const detailId = ref(null)
-const editor = reactive({ visible: false, form: {} })
+const editor = reactive({ visible: false, saving: false, form: {} })
+// 绑定下拉的候选:租客档案 + 统一空间树。只在第一次打开编辑器时拉,不拖慢列表首屏
+const tenantOptions = ref([])
+const spaceOptions = ref([])
+let bindingLoaded = false
 const lateFee = reactive({ visible: false, saving: false, id: null, tenantName: '', date: null })
 const visibleCols = ref(loadVisibleColumns())
 // 按 receivableColumns 的原始顺序渲染,不跟着勾选顺序走
@@ -298,7 +364,40 @@ function monthlySummaryMethod({ columns }) {
   })
 }
 function openDetail(row) { detailId.value = row.id; detailVisible.value = true }
-function openEditor(row) { editor.form = row ? { ...row } : { monthlyRent: 0, monthlyProperty: 0, monthlyTotal: 0 }; editor.visible = true }
+// 新增默认值:数字列给 0 而不是 undefined,el-input-number 拿到 undefined 会显示空白,
+// 用户以为没填,保存时又被后端「月合计必须等于月租金+月物业费」拦下
+const BLANK_FORM = {
+  agreementNoRaw: '', tenantNameRaw: '', spaceNameRaw: '',
+  chargeArea: 0, actualArea: 0,
+  contractStartDate: null, contractEndDate: null,
+  rentRateRaw: '', propertyRateRaw: '',
+  freePeriodRaw: '', freeTermRaw: '', discountRaw: '',
+  monthlyRent: 0, monthlyProperty: 0, monthlyTotal: 0,
+  rentDeposit: 0, propertyDeposit: 0,
+  collectionTimingRaw: '', notesRaw: ''
+}
+function openEditor(row) {
+  editor.form = row ? { ...row } : { ...BLANK_FORM }
+  editor.visible = true
+  loadBindingOptions()
+}
+
+// 取不到候选不该挡住编辑:下拉空着,用户仍可先把文本字段存成草稿
+async function loadBindingOptions() {
+  if (bindingLoaded) return
+  bindingLoaded = true
+  const [tenants, spaces] = await Promise.allSettled([tenantApi.list(), spaceApi.tree()])
+  if (tenants.status === 'fulfilled') tenantOptions.value = tenants.value || []
+  else bindingLoaded = false
+  if (spaces.status === 'fulfilled') spaceOptions.value = flattenSpaceOptions(spaces.value)
+  else bindingLoaded = false
+}
+// 月合计只读、自动跟随:后端强制两者相等,让用户手敲只会敲出一个保存不了的数
+function syncTotal() {
+  const rent = Number(editor.form.monthlyRent || 0)
+  const property = Number(editor.form.monthlyProperty || 0)
+  editor.form.monthlyTotal = Math.round((rent + property) * 100) / 100
+}
 function openLateFee(row) {
   Object.assign(lateFee, { visible: true, saving: false, id: row.id, tenantName: row.tenantNameRaw || '-', date: row.lateFeeStartDate || null })
 }
@@ -311,7 +410,32 @@ async function saveLateFee() {
     await load()
   } finally { lateFee.saving = false }
 }
-async function saveEditor() { editor.form.id ? await receivableApi.update(editor.form) : await receivableApi.add(editor.form); editor.visible = false; ElMessage.success('保存成功'); load() }
+async function saveEditor() {
+  // 保存前先把合计对齐:用户可能只改了租金就直接点保存,没触发过 change
+  syncTotal()
+  editor.saving = true
+  try {
+    const isNew = !editor.form.id
+    if (isNew) await receivableApi.add(editor.form)
+    else await receivableApi.update(editor.form)
+    editor.visible = false
+    // 新增落地是「草稿」,不说清楚用户会以为已经能出账了 —— 这正是「新增了没用」的由来
+    ElMessage.success(isNew ? '已保存为草稿，在「更多 → 确认登记」后才能生成账单' : '保存成功')
+    await load()
+  } finally {
+    editor.saving = false
+  }
+}
+
+// 确认登记:草稿 → 已确认。确认后「生成账单」才认这条数据
+async function confirmRow(row) {
+  await ElMessageBox.confirm(
+    `确认「${row.tenantNameRaw || '该登记'}」这条应收登记？确认后不能再用普通编辑修改，但可以生成账单。`,
+    '确认登记', { type: 'warning' })
+  await receivableApi.confirmRow(row.id)
+  ElMessage.success('已确认，现在可以「生成账单」了')
+  await load()
+}
 async function generate(row) { await ElMessageBox.confirm('将按登记明细中的合同期限、免租期和收款约定生成或同步账单，是否继续？'); const result = await receivableApi.generate(row.id); ElMessage.success(`新增 ${result?.inserted || 0} 条，同步 ${result?.updated || 0} 条，跳过 ${result?.skipped || 0} 条`); await load() }
 async function remove(row) {
   await ElMessageBox.confirm(`确认删除「${row.tenantNameRaw || '该登记表'}」这条应收登记？`, '确认删除', { type: 'warning' })
@@ -323,6 +447,7 @@ function hasRowActions(row) {
 }
 function onRowAction(command, row) {
   if (command === 'edit') return openEditor(row)
+  if (command === 'confirm') return confirmRow(row)
   if (command === 'generate') return generate(row)
   if (command === 'lateFee') return openLateFee(row)
   if (command === 'delete') return remove(row)
