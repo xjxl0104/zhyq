@@ -44,6 +44,12 @@ uploads/
 deploy.sh
 webhook-listener.sh
 
+# ---- 服务器本地数据目录(只存在于 /opt/zhyq) ----
+# backups/ 是改库前的 mysqldump(含账号哈希),import/ 是待导入数据包与脚本(含银行账号等业务数据)。
+# 仓库公开,一律不入库;流程见 docs/memory/zhyq-data-import-runbook.md
+backups/
+import/
+
 # Claude Code 本机产物(勿提交)
 .claude/worktrees/
 .claude/launch.json
