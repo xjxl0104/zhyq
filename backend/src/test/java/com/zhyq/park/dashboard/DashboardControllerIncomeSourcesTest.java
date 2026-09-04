@@ -1,5 +1,6 @@
 package com.zhyq.park.dashboard;
 
+import com.zhyq.park.common.setting.BizSettings;
 import com.zhyq.park.dashboard.controller.DashboardController;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -26,7 +27,8 @@ class DashboardControllerIncomeSourcesTest {
         when(jdbc.queryForObject(contains("ops_vending_sale"), eq(BigDecimal.class)))
                 .thenReturn(new BigDecimal("3500.50"));
 
-        Map<String, Object> overview = new DashboardController(jdbc).overview().getData();
+        // BizSettings 走同一个 mock jdbc:查不到配置就回默认值,不影响本用例关心的收入口径
+        Map<String, Object> overview = new DashboardController(jdbc, new BizSettings(jdbc)).overview().getData();
         @SuppressWarnings("unchecked")
         Map<String, Object> sources = (Map<String, Object>) overview.get("incomeSources");
 

@@ -47,7 +47,8 @@ class ReceivableControllerMutationTest {
                 mock(ReceivableExportService.class),
                 mock(FieldEncryptionService.class), mock(ImportBatchMapper.class),
                 mock(ImportRowMapper.class), mock(ReceivableCalculator.class),
-                mock(com.zhyq.park.finance.service.LateFeeService.class));
+                mock(com.zhyq.park.finance.service.LateFeeService.class),
+                mock(com.zhyq.park.receivable.service.ReceivableBindingValidator.class));
         when(registers.insert(any(ReceivableRegister.class))).thenAnswer(invocation -> {
             ((ReceivableRegister) invocation.getArgument(0)).setId(99L);
             return 1;
@@ -90,9 +91,15 @@ class ReceivableControllerMutationTest {
         verify(registers).deleteById(8L);
     }
 
+    /** 只填这几个用例关心的字段;面积/合同起止/免租/保证金等编辑器新增字段留空,由 copyEditable 兜底为 0/null */
     private static ReceivableUpsertRequest request(Long id, String rent, String property, String total) {
-        return new ReceivableUpsertRequest(id, "HT-1", "租户甲", "A-101",
+        return new ReceivableUpsertRequest(id, 1, "HT-1", "租户甲", "A-101",
+                null, null,                      // chargeArea, actualArea
+                null, null,                      // contractStartDate, contractEndDate
+                null, null, null, null, null,    // rentRateRaw, propertyRateRaw, freePeriodRaw, freeTermRaw, discountRaw
                 new BigDecimal(rent), new BigDecimal(property), new BigDecimal(total),
-                11L, 12L, null, 13L);
+                null, null,                      // rentDeposit, propertyDeposit
+                null, null, null,                // collectionTimingRaw, firstCollectionRaw, notesRaw
+                11L, 12L, null, 13L);            // tenantRefId, spaceId, roomId, contractId
     }
 }

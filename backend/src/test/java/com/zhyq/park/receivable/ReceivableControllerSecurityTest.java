@@ -59,6 +59,9 @@ class ReceivableControllerSecurityTest {
         @Bean com.zhyq.park.finance.service.LateFeeService lateFeeService() {
             return mock(com.zhyq.park.finance.service.LateFeeService.class);
         }
+        @Bean com.zhyq.park.receivable.service.ReceivableBindingValidator bindingValidator() {
+            return mock(com.zhyq.park.receivable.service.ReceivableBindingValidator.class);
+        }
         @Bean ReceivableController controller(
                 ReceivableRegisterMapper registers, ReceivableRuleMapper rules,
                 DepositLedgerMapper deposits, BillMapper bills, CollectionAccountMapper accounts,
@@ -68,10 +71,11 @@ class ReceivableControllerSecurityTest {
                 ReceivableExportService exports, FieldEncryptionService encryption,
                 ImportBatchMapper batches, ImportRowMapper rows,
                 ReceivableCalculator calculator,
-                com.zhyq.park.finance.service.LateFeeService lateFees) {
+                com.zhyq.park.finance.service.LateFeeService lateFees,
+                com.zhyq.park.receivable.service.ReceivableBindingValidator bindingValidator) {
             return new ReceivableController(registers, rules, deposits, bills, accounts,
                     imports, plans, autoBills, provisions, exports, encryption, batches, rows,
-                    calculator, lateFees);
+                    calculator, lateFees, bindingValidator);
         }
     }
 

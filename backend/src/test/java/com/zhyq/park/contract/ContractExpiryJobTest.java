@@ -3,6 +3,7 @@ package com.zhyq.park.contract;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
+import com.zhyq.park.common.setting.BizSettings;
 import com.zhyq.park.contract.entity.Contract;
 import com.zhyq.park.contract.mapper.ContractMapper;
 import com.zhyq.park.contract.service.ContractExpiryJob;
@@ -29,6 +30,7 @@ import static org.mockito.Mockito.when;
 class ContractExpiryJobTest {
 
     @Mock private ContractMapper contractMapper;
+    @Mock private BizSettings settings;
 
     @BeforeAll
     static void initMpLambdaCache() {
@@ -41,7 +43,7 @@ class ContractExpiryJobTest {
     void expiresOnlyRunningContractsPastEndDate() {
         when(contractMapper.update(isNull(), any())).thenReturn(3);
 
-        ContractExpiryJob job = new ContractExpiryJob(contractMapper);
+        ContractExpiryJob job = new ContractExpiryJob(contractMapper, settings);
         assertThat(job.expireDueContracts()).isEqualTo(3);
 
         @SuppressWarnings({"unchecked", "rawtypes"})
@@ -59,8 +61,10 @@ class ContractExpiryJobTest {
     @DisplayName("没有到期合同时命中 0 行,不报错、不打日志噪声")
     void noDueContractsIsNoOp() {
         when(contractMapper.update(isNull(), any())).thenReturn(0);
+        // 开关打开,sync() 才会真正走到条件更新;mock 默认 false 会直接跳过,用例就空转了
+        when(settings.getBoolean("contract", "auto_expire_enabled", true)).thenReturn(true);
 
-        ContractExpiryJob job = new ContractExpiryJob(contractMapper);
+        ContractExpiryJob job = new ContractExpiryJob(contractMapper, settings);
         assertThat(job.expireDueContracts()).isZero();
         job.sync(); // 不应抛异常
     }
