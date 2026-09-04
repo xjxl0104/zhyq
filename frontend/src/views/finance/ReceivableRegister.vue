@@ -177,8 +177,9 @@
       <el-form :model="editor.form" label-width="120px">
         <el-divider content-position="left">基本信息</el-divider>
         <el-row :gutter="16">
+          <el-col :span="6"><el-form-item label="序号"><el-input-number v-model="editor.form.seqNo" :min="1" :precision="0" controls-position="right" style="width: 100%" /></el-form-item></el-col>
+          <el-col :span="6"><el-form-item label="状态"><el-input model-value="草稿" disabled /></el-form-item></el-col>
           <el-col :span="12"><el-form-item label="协议编号"><el-input v-model="editor.form.agreementNoRaw" placeholder="多份协议可换行分隔" /></el-form-item></el-col>
-          <el-col :span="12"><el-form-item label="状态"><el-input model-value="草稿（保存后需「确认」才能生成账单）" disabled /></el-form-item></el-col>
           <el-col :span="12"><el-form-item label="租户" required><el-input v-model="editor.form.tenantNameRaw" /></el-form-item></el-col>
           <el-col :span="12"><el-form-item label="楼层/空间" required><el-input v-model="editor.form.spaceNameRaw" /></el-form-item></el-col>
           <el-col :span="12"><el-form-item label="计租总面积/㎡"><el-input-number v-model="editor.form.chargeArea" :precision="2" :min="0" style="width: 100%" /></el-form-item></el-col>
@@ -233,7 +234,9 @@
                         placeholder="出账规则从这里解析（免租/折扣/抵扣条款），一条一行" />
             </el-form-item>
           </el-col>
-          <el-col :span="24"><el-form-item label="收款约定"><el-input v-model="editor.form.collectionTimingRaw" placeholder="如：当月30日前收取下个月租金" /></el-form-item></el-col>
+          <el-col :span="12"><el-form-item label="收款约定"><el-input v-model="editor.form.collectionTimingRaw" placeholder="如：当月30日前收取下个月租金" /></el-form-item></el-col>
+          <!-- 早于这个日子的应收日会被推到它,免租期后第一张账单的应收日靠它 -->
+          <el-col :span="12"><el-form-item label="开始收取租金"><el-input v-model="editor.form.firstCollectionRaw" placeholder="如：20261130前租客开始支付租金" /></el-form-item></el-col>
           <el-col :span="24">
             <el-form-item label="备注">
               <el-input v-model="editor.form.notesRaw" type="textarea" :rows="2" placeholder="纯说明文字，不参与出账计算" />
@@ -367,14 +370,14 @@ function openDetail(row) { detailId.value = row.id; detailVisible.value = true }
 // 新增默认值:数字列给 0 而不是 undefined,el-input-number 拿到 undefined 会显示空白,
 // 用户以为没填,保存时又被后端「月合计必须等于月租金+月物业费」拦下
 const BLANK_FORM = {
-  agreementNoRaw: '', tenantNameRaw: '', spaceNameRaw: '',
+  seqNo: undefined, agreementNoRaw: '', tenantNameRaw: '', spaceNameRaw: '',
   chargeArea: 0, actualArea: 0,
   contractStartDate: null, contractEndDate: null,
   rentRateRaw: '', propertyRateRaw: '',
   freePeriodRaw: '', freeTermRaw: '', discountRaw: '',
   monthlyRent: 0, monthlyProperty: 0, monthlyTotal: 0,
   rentDeposit: 0, propertyDeposit: 0,
-  collectionTimingRaw: '', notesRaw: ''
+  collectionTimingRaw: '', firstCollectionRaw: '', notesRaw: ''
 }
 function openEditor(row) {
   editor.form = row ? { ...row } : { ...BLANK_FORM }

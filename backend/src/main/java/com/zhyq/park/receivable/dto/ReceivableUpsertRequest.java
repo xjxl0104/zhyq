@@ -12,6 +12,9 @@ import java.time.LocalDate;
  */
 public record ReceivableUpsertRequest(
         Long id,
+        // 表里的「序号」。列表按它排序,手工新增不给填的话新行只能挂在最前面,
+        // 和用户那张 Excel 的行序对不上
+        Integer seqNo,
         String agreementNoRaw,
         String tenantNameRaw,
         String spaceNameRaw,
@@ -30,6 +33,9 @@ public record ReceivableUpsertRequest(
         BigDecimal rentDeposit,
         BigDecimal propertyDeposit,
         String collectionTimingRaw,
+        // 「开始收取租金时间」。不是摆设:早于它的应收日会被 ReceivableCalculator 推到它,
+        // 缺了这栏,免租期后的第一张账单应收日会算早
+        String firstCollectionRaw,
         String notesRaw,
         Long tenantRefId,
         Long spaceId,

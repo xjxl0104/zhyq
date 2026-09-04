@@ -511,6 +511,7 @@ public class ReceivableController {
     }
 
     private static void copyEditable(ReceivableUpsertRequest request, ReceivableRegister target) {
+        target.setSeqNo(request.seqNo());
         target.setAgreementNoRaw(request.agreementNoRaw());
         target.setTenantNameRaw(request.tenantNameRaw().trim());
         target.setSpaceNameRaw(request.spaceNameRaw().trim());
@@ -529,6 +530,7 @@ public class ReceivableController {
         target.setRentDeposit(zero(request.rentDeposit()));
         target.setPropertyDeposit(zero(request.propertyDeposit()));
         target.setCollectionTimingRaw(request.collectionTimingRaw());
+        target.setFirstCollectionRaw(request.firstCollectionRaw());
         target.setNotesRaw(request.notesRaw());
         target.setTenantRefId(request.tenantRefId());
         target.setSpaceId(request.spaceId());
