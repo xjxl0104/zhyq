@@ -7,6 +7,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.zhyq.park.common.exception.BizException;
 import com.zhyq.park.common.result.PageResult;
 import com.zhyq.park.common.result.Result;
+import com.zhyq.park.common.setting.BizSettings;
 import com.zhyq.park.contract.entity.Contract;
 import com.zhyq.park.contract.entity.ContractRoom;
 import com.zhyq.park.contract.mapper.ContractMapper;
@@ -28,6 +29,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -47,6 +49,7 @@ public class ContractController {
     private final BillMapper billMapper;
     private final ReceivableRegisterMapper receivableRegisterMapper;
     private final BizTenantMapper bizTenantMapper;
+    private final BizSettings settings;
 
     @Operation(summary = "分页查询合同")
     @PreAuthorize("hasAuthority('contract:query')")
@@ -83,12 +86,72 @@ public class ContractController {
         return Result.ok(data);
     }
 
+    /**
+     * 新增合同前端要用的默认值,全部来自「合同设置」。
+     *
+     * <p>设置页此前是个摆设:配了 code_prefix / expire_remind_days 也没有任何代码读,
+     * 改了不生效。这个端点把它们真正接到新增合同这条路径上 —— 改设置立刻能在
+     * 新增弹窗里看到效果。</p>
+     *
+     * @param startDate 起租日,给了就按默认租期推到期日
+     */
+    @Operation(summary = "新增合同的默认值(编号/租期/保证金月数,来自合同设置)")
+    @PreAuthorize("hasAuthority('contract:query')")
+    @GetMapping("/defaults")
+    public Result<Map<String, Object>> defaults(
+            @RequestParam(required = false)
+            @org.springframework.format.annotation.DateTimeFormat(iso =
+                    org.springframework.format.annotation.DateTimeFormat.ISO.DATE) LocalDate startDate) {
+        int termYears = settings.getInt("contract", "default_term_years", 6);
+        Map<String, Object> m = new java.util.LinkedHashMap<>();
+        m.put("code", nextContractCode());
+        m.put("termYears", termYears);
+        m.put("depositMonths", settings.getInt("contract", "deposit_months", 2));
+        m.put("expireRemindDays", settings.getInt("contract", "expire_remind_days", 90));
+        if (startDate != null) {
+            // 到期日 = 起租日 + N 年 - 1 天(6 年租期 2026-07-01 起 → 2032-06-30 止)
+            m.put("endDate", startDate.plusYears(termYears).minusDays(1));
+        }
+        return Result.ok(m);
+    }
+
+    /**
+     * 下一个合同编号 = 前缀 + 年份 + 4 位流水,例如 HT2026-0009。
+     *
+     * <p>流水按「同前缀同年份」里已有编号的最大尾号 +1;取不出尾号就从已有条数续,
+     * 保证不会给出一个已经存在的号。手工编号(如 HT2026-YP-001)不参与流水计算,
+     * 但会被唯一性检查挡住重号。</p>
+     */
+    private String nextContractCode() {
+        String prefix = settings.getString("contract", "code_prefix", "HT");
+        String head = prefix + LocalDate.now().getYear() + "-";
+        List<Contract> sameYear = contractMapper.selectList(new LambdaQueryWrapper<Contract>()
+                .likeRight(Contract::getCode, head).select(Contract::getCode));
+        int max = 0;
+        for (Contract c : sameYear) {
+            String tail = c.getCode().substring(head.length());
+            if (tail.matches("\\d+")) {
+                max = Math.max(max, Integer.parseInt(tail));
+            }
+        }
+        return head + String.format("%04d", max + 1);
+    }
+
     @Operation(summary = "新增合同")
     @PreAuthorize("hasAuthority('contract:add')")
     @PostMapping
     public Result<Long> add(@RequestBody Contract contract) {
         if (contract.getStatus() == null) {
             contract.setStatus(1); // 默认草稿
+        }
+        // 编号留空时按合同设置的前缀自动生成,不让用户对着空框猜格式
+        if (!org.springframework.util.StringUtils.hasText(contract.getCode())) {
+            contract.setCode(nextContractCode());
+        }
+        Long dup = contractMapper.selectCount(new LambdaQueryWrapper<Contract>()
+                .eq(Contract::getCode, contract.getCode()));
+        if (dup != null && dup > 0) {
+            throw new BizException("合同编号已存在: " + contract.getCode());
         }
         contractMapper.insert(contract);
         return Result.ok(contract.getId());

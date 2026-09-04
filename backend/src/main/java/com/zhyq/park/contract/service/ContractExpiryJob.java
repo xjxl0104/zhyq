@@ -2,6 +2,7 @@ package com.zhyq.park.contract.service;
 
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.zhyq.park.contract.entity.Contract;
+import com.zhyq.park.common.setting.BizSettings;
 import com.zhyq.park.contract.mapper.ContractMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -33,11 +34,17 @@ public class ContractExpiryJob {
     private static final int ST_EXPIRED = 8;
 
     private final ContractMapper contractMapper;
+    private final BizSettings settings;
 
     /** 启动 3 分钟后首跑(错开账单自愈任务),此后每 24 小时一次 */
     @Scheduled(initialDelay = 180_000, fixedDelay = 86_400_000)
     public void sync() {
         try {
+            // 开关来自合同设置:有些园区习惯到期后人工确认再改状态,给他们关掉的余地
+            if (!settings.getBoolean("contract", "auto_expire_enabled", true)) {
+                log.debug("[contract-expiry] 合同设置里已关闭「到期自动置为已到期」,跳过本轮");
+                return;
+            }
             int updated = expireDueContracts();
             if (updated > 0) {
                 log.info("[contract-expiry] 合同到期状态同步:{} 份执行中合同已置为已到期", updated);
