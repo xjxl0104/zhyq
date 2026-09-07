@@ -291,12 +291,21 @@ public class ReceivableCalculator {
                     || containsAny(clause, "免租期", "免租金", "免缴", "无需支付", "免物业", "免管理费");
             List<ReceivableRuleParser.DateRange> ranges = own.isEmpty() ? pendingRanges : own;
             pendingRanges = !own.isEmpty() && !actionable ? own : List.of();
-            if (!actionable || ranges.isEmpty() || !mentionsFee(clause, feeType)) continue;
-            parser.parseDiscountRate(clause).ifPresent(rate -> ranges.forEach(range -> {
-                ReceivableRule rule = dateRule(feeType, "DISCOUNT", range);
-                rule.setDiscountRate(rate);
-                inferred.add(rule);
-            }));
+            if (!actionable || ranges.isEmpty()) continue;
+            boolean feeMentioned = mentionsFee(clause, feeType);
+            // 优惠折扣期内租金与物业费同折(2026-09-07 负责人拍板口径,与免租期同免对齐):
+            // 条款只写「租金按5折」时物业管理费一并同折;明写物业的折扣仍只作用于物业。
+            // 抵扣/免缴分支不在此列,仍要求条款点名对应费用
+            boolean discountApplies = feeMentioned
+                    || ("PROPERTY".equals(feeType) && clause.contains("折"));
+            if (discountApplies) {
+                parser.parseDiscountRate(clause).ifPresent(rate -> ranges.forEach(range -> {
+                    ReceivableRule rule = dateRule(feeType, "DISCOUNT", range);
+                    rule.setDiscountRate(rate);
+                    inferred.add(rule);
+                }));
+            }
+            if (!feeMentioned) continue;
             boolean offset = clause.contains("抵扣");
             if (offset) ranges.forEach(range -> {
                 ReceivableRule rule = dateRule(feeType, "OFFSET", range);

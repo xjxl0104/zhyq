@@ -274,8 +274,24 @@ class ReceivableCalculatorTest {
         assertEquals(new BigDecimal("28200.00"), rent(register, YearMonth.of(2026, 6)));
         assertEquals(new BigDecimal("28200.00"), rent(register, YearMonth.of(2026, 9)));
         assertEquals(new BigDecimal("56400.00"), rent(register, YearMonth.of(2026, 10)));
-        // 条款只写了租金打折,物业费不打折
-        assertEquals(new BigDecimal("9447.00"), property(register, YearMonth.of(2026, 6)));
+        // 优惠折扣期内租金与物业费同折(2026-09-07 拍板):条款只写租金5折,物业也按5折
+        assertEquals(new BigDecimal("4723.50"), property(register, YearMonth.of(2026, 6)));
+        assertEquals(new BigDecimal("4723.50"), property(register, YearMonth.of(2026, 9)));
+        assertEquals(new BigDecimal("9447.00"), property(register, YearMonth.of(2026, 10)));
+    }
+
+    @Test
+    void propertyOnlyDiscountDoesNotTouchRent() {
+        // 同折口径是单向的:明写「物业管理费按8折」的条款只作用于物业,租金不跟折
+        ReceivableRegister register = new ReceivableRegister();
+        register.setContractStartDate(LocalDate.of(2026, 5, 1));
+        register.setContractEndDate(LocalDate.of(2032, 4, 30));
+        register.setMonthlyRent(new BigDecimal("56400"));
+        register.setMonthlyProperty(new BigDecimal("9447"));
+        register.setDiscountRaw("20260601-20260930物业管理费按8折");
+
+        assertEquals(new BigDecimal("7557.60"), property(register, YearMonth.of(2026, 6)));
+        assertEquals(new BigDecimal("56400.00"), rent(register, YearMonth.of(2026, 6)));
     }
 
     @Test
