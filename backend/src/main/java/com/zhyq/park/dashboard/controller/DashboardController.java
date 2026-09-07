@@ -68,9 +68,15 @@ public class DashboardController {
         Map<String, Object> fin = new LinkedHashMap<>();
         fin.put("dueReceivable", sum("SELECT COALESCE(SUM(amount+late_fee-paid_amount),0) FROM fin_bill WHERE direction=1 AND status IN (3,4,6) AND deleted=0"));
         fin.put("future30", sum("SELECT COALESCE(SUM(amount),0) FROM fin_bill WHERE direction=1 AND status=3 AND due_date BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 30 DAY) AND deleted=0"));
-        // 逾期口径与逾期账单页一致:status=6 或 已到期未结清。status=6 只有手动点
-        // "计算滞纳金"才产生,只认它的话驾驶舱逾期长期是 0
-        fin.put("overdue", sum("SELECT COALESCE(SUM(amount+late_fee-paid_amount),0) FROM fin_bill WHERE direction=1 AND (status=6 OR (due_date<CURDATE() AND status IN (3,4))) AND deleted=0"));
+        // 逾期口径与逾期账单页一致:未结清且已过「逾期起算日」。起算日 = 应收日与
+        // 登记表 late_fee_start_date 取较晚者(2026-09-07 口径:试运行期账单 10 月起算,
+        // 之前不算逾期)。不再单看 status=6:重算任务会同步状态,这里直接按日期判定
+        fin.put("overdue", sum("""
+                SELECT COALESCE(SUM(b.amount+b.late_fee-b.paid_amount),0) FROM fin_bill b
+                LEFT JOIN fin_receivable_register r ON r.id = b.receivable_register_id
+                WHERE b.direction=1 AND b.status IN (3,4,6) AND b.deleted=0 AND b.due_date IS NOT NULL
+                  AND GREATEST(b.due_date, COALESCE(r.late_fee_start_date, b.due_date)) < CURDATE()
+                """));
         fin.put("received", sum("SELECT COALESCE(SUM(paid_amount),0) FROM fin_bill WHERE direction=1 AND deleted=0"));
         m.put("finance", fin);
 

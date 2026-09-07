@@ -26,6 +26,10 @@ import java.util.stream.Collectors;
  * 登记表生成的账单到期后自动进入逾期口径。</p>
  *
  * <p>万分之五/天,基数为剩余本金欠款(amount - paid),每次全量重算,重复调用幂等。</p>
+ *
+ * <p>逾期与滞纳金统一从「应收日与登记表起算日(late_fee_start_date)取较晚者」开始:
+ * 起算日之前不标逾期、不出天数、不计费(2026-09-07 负责人口径,用于试运行期账单
+ * 从 10 月起算);已按旧口径标成逾期的,重算时自动退回待收付/部分结清。</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -62,20 +66,34 @@ public class LateFeeService {
             if (b.getDueDate() == null) {
                 continue;
             }
-            // 逾期天数按真实应收日展示;滞纳金天数从起算日(应收日与账单创建日取较晚者)计。
-            // 自动回填的历史账单(创建晚于应收日)从补录日起算、不追溯 —— 2026-09-01 用户
-            // 拍板的口径:欠款照实进收银台,但不会一上线就冒出追溯几个月的滞纳金
-            long overdueDays = today.toEpochDay() - b.getDueDate().toEpochDay();
+            // 不可变 Map 对 null 键 get 会 NPE:没挂登记表的历史账单 registerId 为空
+            LocalDate policyStart = b.getReceivableRegisterId() == null
+                    ? null : policyStarts.get(b.getReceivableRegisterId());
+            // 逾期天数从「应收日与登记表起算日取较晚者」起算 —— 2026-09-07 负责人拍板:
+            // 试运行期(10 月前)的账单不算逾期,起算日之前既不标逾期也不出天数。
+            // (旧口径"天数照真实应收日展示"同日作废)
+            LocalDate overdueStart = policyStart != null && policyStart.isAfter(b.getDueDate())
+                    ? policyStart : b.getDueDate();
+            long overdueDays = today.toEpochDay() - overdueStart.toEpochDay();
             if (overdueDays <= 0) {
+                // 还没到起算日:老口径下已被标成逾期的账单要退回可收款状态,
+                // 天数与滞纳金一并清零,否则改完口径页面上还挂着 97 天的旧数
+                if (b.getStatus() != null && b.getStatus() == 6) {
+                    Bill revert = new Bill();
+                    revert.setOverdueDays(0);
+                    revert.setLateFee(BigDecimal.ZERO.setScale(2));
+                    revert.setStatus(nz(b.getPaidAmount()).compareTo(BigDecimal.ZERO) > 0 ? 4 : 3);
+                    count += billMapper.update(revert, new LambdaUpdateWrapper<Bill>()
+                            .eq(Bill::getId, b.getId())
+                            .eq(Bill::getStatus, 6)
+                            .ne(Bill::getLateFeeManual, 1));
+                }
                 continue;
             }
             BigDecimal outstanding = nz(b.getAmount()).subtract(nz(b.getPaidAmount()));
             if (outstanding.compareTo(BigDecimal.ZERO) <= 0) {
                 continue;
             }
-            // 不可变 Map 对 null 键 get 会 NPE:没挂登记表的历史账单 registerId 为空
-            LocalDate policyStart = b.getReceivableRegisterId() == null
-                    ? null : policyStarts.get(b.getReceivableRegisterId());
             long feeDays = today.toEpochDay() - effectiveFeeStart(b, policyStart).toEpochDay();
             BigDecimal lateFee = feeDays <= 0 ? BigDecimal.ZERO.setScale(2)
                     : outstanding

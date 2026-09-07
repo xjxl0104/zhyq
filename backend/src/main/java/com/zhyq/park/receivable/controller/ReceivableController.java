@@ -312,7 +312,7 @@ public class ReceivableController {
     /** 滞纳金起算日设置请求:日期为空 = 恢复默认口径(应收日与建单日取晚者) */
     public record LateFeeStartRequest(LocalDate lateFeeStartDate) {}
 
-    @Operation(summary = "设置滞纳金起算日(该日之前不计滞纳金,逾期状态照标;传空恢复默认口径)")
+    @Operation(summary = "设置逾期/滞纳金起算日(该日之前不算逾期也不计滞纳金;传空恢复默认口径)")
     @PutMapping("/{id}/late-fee-start")
     @PreAuthorize("hasAuthority('finance:receivable:edit')")
     @OperationLog(module = "应收明细", action = "设置滞纳金起算日")

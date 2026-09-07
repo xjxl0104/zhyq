@@ -116,17 +116,20 @@ public class BillController {
         return Result.ok(m);
     }
 
-    @Operation(summary = "逾期账单分页(应收方向:status=6 或 应收日<今天且未结清)")
+    @Operation(summary = "逾期账单分页(应收方向:未结清且已过逾期起算日;起算日=应收日与登记表起算日取较晚者)")
     @PreAuthorize("hasAuthority('finance:bill:query')")
     @GetMapping("/overdue")
     public Result<PageResult<Bill>> overdue(@RequestParam(defaultValue = "1") int pageNo,
                                             @RequestParam(defaultValue = "10") int pageSize) {
         LocalDate today = LocalDate.now();
         LambdaQueryWrapper<Bill> qw = new LambdaQueryWrapper<>();
-        // direction=1 AND ( status=6  OR  (due_date<today AND status in (3,4)) )
+        // 未结清且已过「逾期起算日」(应收日与登记表 late_fee_start_date 取较晚者)。
+        // 2026-09-07 口径:试运行期账单 10 月起算,之前不进逾期页
         qw.eq(Bill::getDirection, 1)
-          .and(w -> w.eq(Bill::getStatus, 6)
-                     .or(o -> o.lt(Bill::getDueDate, today).in(Bill::getStatus, 3, 4)))
+          .in(Bill::getStatus, 3, 4, 6)
+          .isNotNull(Bill::getDueDate)
+          .apply("GREATEST(due_date, COALESCE((SELECT r.late_fee_start_date FROM fin_receivable_register r"
+                  + " WHERE r.id = receivable_register_id), due_date)) < {0}", today)
           .orderByDesc(Bill::getDueDate);
         IPage<Bill> p = billMapper.selectPage(new Page<>(pageNo, pageSize), qw);
         enrich(p.getRecords());

@@ -260,9 +260,13 @@ public class PaymentService {
         int updated = billMapper.update(null, new LambdaUpdateWrapper<Bill>()
                 .eq(Bill::getId, bill.getId())
                 .setSql("paid_amount = paid_amount - " + amount.toPlainString())
+                // 退到 0 时回「逾期」还是「待收付」按逾期起算日判(应收日与登记表
+                // late_fee_start_date 取较晚者),与 LateFeeService/逾期页同口径
                 .setSql("status = IF(paid_amount >= amount + late_fee, " + ST_SETTLED
                         + ", IF(paid_amount > 0, " + ST_PARTIAL
-                        + ", IF(due_date IS NOT NULL AND due_date < CURDATE(), "
+                        + ", IF(due_date IS NOT NULL AND GREATEST(due_date,"
+                        + " COALESCE((SELECT r.late_fee_start_date FROM fin_receivable_register r"
+                        + " WHERE r.id = fin_bill.receivable_register_id), due_date)) < CURDATE(), "
                         + ST_OVERDUE + ", " + ST_UNPAID + ")))")
                 .apply("paid_amount >= {0}", amount));
         if (updated == 0) {
