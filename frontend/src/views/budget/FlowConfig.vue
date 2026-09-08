@@ -110,7 +110,7 @@
           </span>
         </div>
         <el-table :data="todoList" v-loading="todoLoading" border stripe>
-          <el-table-column type="index" label="#" width="55" />
+          <el-table-column type="index" label="序号" width="70" />
           <el-table-column label="单据类型" width="120">
             <template #default="{ row }">
               <el-tag :type="bizTagType(row.bizType)">{{ bizTypeLabel(row.bizType) }}</el-tag>
