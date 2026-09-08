@@ -21,7 +21,16 @@ watch(() => props.modelValue, (val) => {
 
 // computed:跟随 props 变化与当前 token(直传不走 axios 拦截器,需手动带头)
 const headers = computed(() => ({ Authorization: `Bearer ${localStorage.getItem('zhyq_token') || ''}` }))
-const uploadData = computed(() => ({ bizType: props.bizType, bizId: props.bizId }))
+// bizId 为空时必须整个不发这个字段:FormData 只装字符串,null 会被转成字面量 "null",
+// 后端 @RequestParam Long bizId 拿它转 Long 直接抛 NumberFormatException(整个上传 500)。
+// 新建单据时本就还没有 ID —— 附件先传后回填(见各页面 persist 里的 fileApi.attach)。
+const uploadData = computed(() => {
+  const data = { bizType: props.bizType }
+  if (props.bizId !== null && props.bizId !== undefined && props.bizId !== '') {
+    data.bizId = props.bizId
+  }
+  return data
+})
 
 function onSuccess(res) {
   // 后端 Result 结构 { code, message, data }
@@ -88,7 +97,10 @@ async function onPreview(uploadFile) {
     >
       <el-button type="primary">选择文件</el-button>
       <template #tip>
-        <div class="el-upload__tip">支持 jpg/png/pdf/doc/xls/dwg 等,单个不超过 20MB;点击文件名下载</div>
+        <div class="el-upload__tip">
+          支持各种格式(文档/表格/图片/图纸/压缩包/音视频等),可执行与脚本类文件除外;
+          单个不超过 20MB;点击文件名下载
+        </div>
       </template>
     </el-upload>
   </GlassSurface>

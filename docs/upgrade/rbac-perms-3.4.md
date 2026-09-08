@@ -144,4 +144,24 @@
 |---|---|
 | definitionPage, nodes | workflow:definition:manage |
 | addDefinition, updateDefinition, removeDefinition, saveNodes | workflow:definition:manage |
-| start, approve, reject, myTasks, instancePage, instanceTasks | (未收口,见上) |
+| start, approve, reject, myTasks, myPendingTasks, instancePage, instanceTasks | (未收口,见上) |
+
+> myPendingTasks(`/workflow/task/my-pending`)是预算管理板块加的,属同一组运行时接口:
+> 它只是 myTasks 的展示增强(补上所属实例的 bizType/bizId),不新增可读数据 ——
+> 同一登录用户本就能从 instancePage 拿到这些字段。运行时接口整体收口时应一并处理。
+
+## budget — 预算管理(随预算管理板块并入)
+> 迁移:V42__budget_management.sql。ver6.6 已占用 V41,故排 V42。
+> 口径对齐 pur:提交申请 / 归档 / 取消各自独立设点,不被 edit 覆盖 ——
+> 能改草稿不等于能推进审批状态。
+
+### BudgetController `/budget`
+| 方法 | perm |
+|---|---|
+| page, get/{id} | budget:query |
+| add | budget:add |
+| update | budget:edit |
+| remove | budget:delete |
+| submit | budget:submit |
+| archive | budget:archive |
+| cancel | budget:cancel |
