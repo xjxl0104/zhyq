@@ -60,11 +60,8 @@
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
 import { reportApi } from '@/api/finance'
+import { money } from '@/utils/format'
 
-function money(v) {
-  if (v == null) return '0.00'
-  return Number(v).toFixed(2)
-}
 function pct(part, whole) {
   const w = Number(whole || 0)
   if (w === 0) return 0

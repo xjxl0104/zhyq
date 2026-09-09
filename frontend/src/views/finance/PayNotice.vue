@@ -98,6 +98,7 @@ import { reactive, ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { payNoticeApi } from '@/api/finance'
+import { money } from '@/utils/format'
 
 
 const router = useRouter()
@@ -113,9 +114,6 @@ const list = ref([])
 const total = ref(0)
 const query = reactive({ pageNo: 1, pageSize: 10, status: null })
 
-function money(v) {
-  return Number(v || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-}
 
 async function load() {
   loading.value = true
