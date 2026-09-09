@@ -15,37 +15,50 @@
         <div class="stat-value">{{ stats.monthNew }}</div>
       </el-card>
       <el-card class="stat-card" shadow="never">
-        <div class="stat-label">无效数</div>
+        <div class="stat-label">已流失/暂缓</div>
         <div class="stat-value">{{ stats.invalid }}</div>
       </el-card>
       <el-card class="stat-card" shadow="never">
-        <div class="stat-label">月度转化率</div>
+        <div class="stat-label">月度成交率</div>
         <div class="stat-value">{{ stats.convertRate }}%</div>
       </el-card>
     </div>
 
-    <!-- Tab 切换 -->
-    <el-tabs v-model="activeTab" @tab-change="onTabChange" class="lead-tabs">
-      <el-tab-pane label="我的线索" name="mine" />
-      <el-tab-pane label="全部线索" name="all" />
-      <el-tab-pane label="线索公海" name="pool" />
-      <el-tab-pane label="审核中" name="review" />
-    </el-tabs>
-
     <!-- 查询区 -->
     <div class="search-bar">
       <el-form :inline="true" :model="query">
-        <el-form-item label="联系人">
-          <el-input v-model="query.contact" placeholder="请输入联系人" clearable style="width: 160px" />
+        <el-form-item label="客户编号">
+          <el-input v-model="query.leadNo" placeholder="如 KH-0001" clearable style="width: 130px" />
         </el-form-item>
-        <el-form-item label="电话">
-          <el-input v-model="query.phone" placeholder="请输入电话" clearable style="width: 160px" />
+        <el-form-item label="客户姓名">
+          <el-input v-model="query.contact" placeholder="请输入姓名" clearable style="width: 130px" />
         </el-form-item>
-        <el-form-item label="公司">
-          <el-input v-model="query.company" placeholder="请输入公司" clearable style="width: 180px" />
+        <el-form-item label="联系电话">
+          <el-input v-model="query.phone" placeholder="请输入电话" clearable style="width: 150px" />
+        </el-form-item>
+        <el-form-item label="公司/店铺">
+          <el-input v-model="query.company" placeholder="请输入名称" clearable style="width: 160px" />
+        </el-form-item>
+        <el-form-item label="客户类型">
+          <el-select v-model="query.customerType" placeholder="全部" clearable style="width: 200px">
+            <el-option v-for="t in CUSTOMER_TYPE_OPTIONS" :key="t" :label="t" :value="t" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="客户等级">
+          <el-select v-model="query.grade" placeholder="全部" clearable style="width: 150px">
+            <el-option v-for="g in GRADE_OPTIONS" :key="g" :label="g" :value="g" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="当前状态">
+          <el-select v-model="query.status" placeholder="全部" clearable style="width: 150px">
+            <el-option v-for="s in STATUS_OPTIONS" :key="s.value" :label="s.label" :value="s.value" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="负责人">
+          <el-input v-model="query.ownerName" placeholder="跟进负责人" clearable style="width: 120px" />
         </el-form-item>
         <el-form-item>
-          <el-button type="primary" @click="load"><el-icon><Search /></el-icon>查询</el-button>
+          <el-button type="primary" @click="search"><el-icon><Search /></el-icon>查询</el-button>
           <el-button @click="reset">重置</el-button>
         </el-form-item>
       </el-form>
@@ -54,272 +67,385 @@
     <!-- 表格区 -->
     <div class="table-card">
       <div class="toolbar">
-        <el-button type="primary" @click="openDialog()"><el-icon><Plus /></el-icon>新增线索</el-button>
+        <span class="section-title">
+          客户信息登记表
+          <span class="hint">— 「最近跟进」「跟进次数」由跟进记录自动维护，不用手填</span>
+        </span>
+        <div>
+          <el-button @click="importVisible = true"><el-icon><Upload /></el-icon>导入登记表</el-button>
+          <el-button type="primary" @click="openDialog()"><el-icon><Plus /></el-icon>新增线索</el-button>
+        </div>
       </div>
+
       <el-table :data="list" v-loading="loading" border stripe>
         <el-table-column type="index" label="序号" width="70" />
-        <el-table-column prop="contact" label="联系人" min-width="100" />
-        <el-table-column prop="phone" label="电话" min-width="130" />
-        <el-table-column prop="company" label="公司" min-width="160" />
-        <el-table-column prop="source" label="来源" width="100" />
-        <el-table-column prop="demandArea" label="需求面积" width="110" />
-        <el-table-column label="状态" width="100">
+        <el-table-column prop="leadNo" label="客户编号" width="110" fixed />
+        <el-table-column prop="registerDate" label="登记日期" width="110" />
+        <el-table-column prop="contact" label="客户姓名" width="100" fixed />
+        <el-table-column prop="phone" label="联系电话" width="130" />
+        <el-table-column prop="company" label="公司/店铺" min-width="150" show-overflow-tooltip />
+        <el-table-column prop="source" label="客户来源" width="120" />
+        <el-table-column prop="customerType" label="客户类型" min-width="150" show-overflow-tooltip />
+        <el-table-column prop="coopMode" label="意向合作方式" min-width="150" show-overflow-tooltip />
+        <el-table-column prop="demandArea" label="面积/库容(㎡)" width="120" />
+        <el-table-column prop="goodsType" label="主营品类" width="110" show-overflow-tooltip />
+        <el-table-column prop="orderVolume" label="日均/月单量" width="120" />
+        <el-table-column prop="budgetPrice" label="心理价位" width="110" show-overflow-tooltip />
+        <el-table-column prop="intentPark" label="意向园区/仓库" min-width="150" show-overflow-tooltip />
+        <el-table-column prop="region" label="所在地区" min-width="140" show-overflow-tooltip />
+        <el-table-column label="等级" width="90">
+          <template #default="{ row }">
+            <el-tag v-if="row.grade" :type="gradeType(row.grade)" size="small">{{ row.grade.charAt(0) }}</el-tag>
+            <span v-else>—</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="ownerName" label="负责人" width="100" />
+        <el-table-column label="当前状态" width="140">
           <template #default="{ row }">
             <el-tag :type="statusType(row.status)">{{ statusText(row.status) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="nextFollow" label="下次跟进" width="170" />
-        <el-table-column prop="createTime" label="创建时间" width="170" />
-        <el-table-column label="操作" width="230" fixed="right">
+        <el-table-column prop="lastFollowDate" label="最近跟进" width="110" />
+        <el-table-column prop="followCount" label="跟进次数" width="100" align="center" />
+        <el-table-column prop="nextFollow" label="下次跟进计划" width="170" />
+        <el-table-column label="操作" width="260" fixed="right">
           <template #default="{ row }">
+            <el-button link type="primary" @click="openFollow(row)">跟进记录</el-button>
             <el-button link type="primary" @click="openDialog(row)">编辑</el-button>
-            <el-button link type="primary" @click="openFollow(row)">跟进</el-button>
-            <el-button link type="success" @click="convert(row)">转客户</el-button>
-            <el-popconfirm title="确认删除?" @confirm="remove(row.id)">
+            <el-button v-if="row.status !== 5" link type="success" @click="convert(row)">转客户</el-button>
+            <el-popconfirm title="确认删除该线索?" @confirm="remove(row.id)">
               <template #reference><el-button link type="danger">删除</el-button></template>
             </el-popconfirm>
           </template>
         </el-table-column>
       </el-table>
+
       <el-pagination class="pager" background layout="total, prev, pager, next, sizes"
                      :total="total" v-model:current-page="query.pageNo"
-                     v-model:page-size="query.pageSize" :page-sizes="[10,20,50]" @change="load" />
+                     v-model:page-size="query.pageSize" :page-sizes="[10, 20, 50]" @change="load" />
     </div>
 
-    <!-- 表单弹窗 -->
-    <el-dialog v-model="dialog.visible" :title="dialog.title" width="560px">
-      <el-form :model="form" label-width="90px" ref="formRef" :rules="rules">
-        <el-form-item label="联系人" prop="contact"><el-input v-model="form.contact" /></el-form-item>
-        <el-form-item label="电话" prop="phone"><el-input v-model="form.phone" /></el-form-item>
-        <el-form-item label="公司"><el-input v-model="form.company" /></el-form-item>
-        <el-form-item label="来源">
-          <el-select v-model="form.source" placeholder="请选择" clearable style="width: 100%">
-            <el-option label="网页" value="网页" />
-            <el-option label="小程序" value="小程序" />
-            <el-option label="活动" value="活动" />
-            <el-option label="渠道" value="渠道" />
-            <el-option label="电话" value="电话" />
-            <el-option label="人工" value="人工" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="需求面积"><el-input v-model="form.demandArea" /></el-form-item>
-        <el-form-item label="状态">
-          <el-select v-model="form.status" placeholder="请选择" style="width: 100%">
-            <el-option v-for="s in statusOptions" :key="s.value" :label="s.label" :value="s.value" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="下次跟进">
-          <el-date-picker v-model="form.nextFollow" type="datetime" value-format="YYYY-MM-DD HH:mm:ss"
-                          placeholder="选择时间" style="width: 100%" />
-        </el-form-item>
-        <el-form-item label="备注"><el-input v-model="form.remark" type="textarea" :rows="2" /></el-form-item>
-        <el-form-item label="附件">
-          <FileUpload v-model="attachFiles" biz-type="crm_lead" :biz-id="form.id" />
-        </el-form-item>
+    <!-- 新增/编辑 -->
+    <el-dialog v-model="dialogVisible" :title="form.id ? `编辑线索 ${form.leadNo || ''}` : '新增线索'" width="880px">
+      <el-form :model="form" label-width="130px" ref="formRef" :rules="rules">
+        <el-divider content-position="left">基本信息</el-divider>
+        <el-row :gutter="16">
+          <el-col :span="8">
+            <el-form-item label="登记日期" prop="registerDate">
+              <el-date-picker v-model="form.registerDate" type="date" value-format="YYYY-MM-DD"
+                              placeholder="选择日期" style="width: 100%" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="8">
+            <el-form-item label="客户来源">
+              <el-select v-model="form.source" placeholder="请选择" clearable style="width: 100%">
+                <el-option v-for="s in SOURCE_OPTIONS" :key="s" :label="s" :value="s" />
+              </el-select>
+            </el-form-item>
+          </el-col>
+          <el-col :span="8">
+            <el-form-item label="客户姓名" prop="contact">
+              <el-input v-model="form.contact" placeholder="如：陈总" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="8">
+            <el-form-item label="联系电话">
+              <el-input v-model="form.phone" placeholder="手机号" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="16">
+            <el-form-item label="公司名称/店铺名称">
+              <el-input v-model="form.company" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="客户类型">
+              <el-select v-model="form.customerType" placeholder="请选择" clearable style="width: 100%">
+                <el-option v-for="t in CUSTOMER_TYPE_OPTIONS" :key="t" :label="t" :value="t" />
+              </el-select>
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="意向合作方式">
+              <el-select v-model="form.coopMode" placeholder="请选择" clearable style="width: 100%">
+                <el-option v-for="m in COOP_MODE_OPTIONS" :key="m" :label="m" :value="m" />
+              </el-select>
+            </el-form-item>
+          </el-col>
+        </el-row>
+
+        <el-divider content-position="left">需求信息</el-divider>
+        <el-row :gutter="16">
+          <el-col :span="8">
+            <el-form-item label="面积/库容(㎡)">
+              <el-input v-model="form.demandArea" placeholder="如：5000" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="8">
+            <el-form-item label="主营品类/货物">
+              <el-input v-model="form.goodsType" placeholder="如：化妆品" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="8">
+            <el-form-item label="日均/月发货量">
+              <el-input v-model="form.orderVolume" placeholder="如：1万单" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="8">
+            <el-form-item label="意向合作周期">
+              <el-input v-model="form.coopPeriod" placeholder="如：1年" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="8">
+            <el-form-item label="预算/心理价位">
+              <el-input v-model="form.budgetPrice" placeholder="如：7元/㎡·月" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="8">
+            <el-form-item label="意向园区/仓库">
+              <el-input v-model="form.intentPark" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="24">
+            <el-form-item label="客户所在地区">
+              <el-input v-model="form.region" placeholder="如：广州市海珠区…" />
+            </el-form-item>
+          </el-col>
+        </el-row>
+
+        <el-divider content-position="left">跟进管理</el-divider>
+        <el-row :gutter="16">
+          <el-col :span="8">
+            <el-form-item label="客户等级">
+              <el-select v-model="form.grade" placeholder="请选择" clearable style="width: 100%">
+                <el-option v-for="g in GRADE_OPTIONS" :key="g" :label="g" :value="g" />
+              </el-select>
+            </el-form-item>
+          </el-col>
+          <el-col :span="8">
+            <el-form-item label="跟进负责人">
+              <el-input v-model="form.ownerName" placeholder="如：丁超" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="8">
+            <el-form-item label="当前状态" prop="status">
+              <el-select v-model="form.status" style="width: 100%">
+                <el-option v-for="s in STATUS_OPTIONS" :key="s.value" :label="s.label" :value="s.value" />
+              </el-select>
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="下次跟进计划">
+              <el-date-picker v-model="form.nextFollow" type="datetime" value-format="YYYY-MM-DD HH:mm:ss"
+                              placeholder="选择时间" style="width: 100%" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="24">
+            <el-form-item label="跟进记录速记">
+              <el-input v-model="form.remark" type="textarea" :rows="2"
+                        placeholder="随手记；逐次明细请用列表里的「跟进记录」" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="24">
+            <el-form-item label="附件">
+              <FileUpload v-model="attachFiles" biz-type="crm_lead" :biz-id="form.id" />
+            </el-form-item>
+          </el-col>
+        </el-row>
       </el-form>
       <template #footer>
-        <el-button @click="dialog.visible = false">取消</el-button>
-        <el-button type="primary" @click="submit">确定</el-button>
+        <el-button @click="dialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="saving" @click="submit">保存</el-button>
       </template>
     </el-dialog>
 
-    <!-- 跟进弹窗 -->
-    <el-dialog v-model="followDialog.visible" title="跟进记录" width="600px">
-      <div class="follow-header">
-        <span>联系人:{{ followDialog.lead.contact }}</span>
-        <span>公司:{{ followDialog.lead.company }}</span>
+    <!-- 导入 -->
+    <el-dialog v-model="importVisible" title="导入客户信息登记表" width="560px" @close="importResult = null">
+      <el-alert type="info" :closable="false" show-icon style="margin-bottom: 14px"
+                title="按表头文字认列，不要求列顺序一致；只读取「客户信息登记表」这一页。同姓名+电话已存在的会自动跳过，重复导入不会产生副本。" />
+      <el-upload drag :auto-upload="false" :limit="1" accept=".xlsx,.xls"
+                 :on-change="onFileChange" :on-remove="() => (importFile = null)" :file-list="[]">
+        <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
+        <div class="el-upload__text">把 Excel 拖到这里，或<em>点击选择</em></div>
+        <template #tip><div class="el-upload__tip">支持 .xlsx / .xls</div></template>
+      </el-upload>
+      <div v-if="importFile" class="picked">已选择：{{ importFile.name }}</div>
+
+      <div v-if="importResult" class="import-result">
+        <el-descriptions :column="3" border size="small">
+          <el-descriptions-item label="导入成功">{{ importResult.imported }} 条</el-descriptions-item>
+          <el-descriptions-item label="重复跳过">{{ importResult.skipped }} 条</el-descriptions-item>
+          <el-descriptions-item label="失败">{{ importResult.errors.length }} 条</el-descriptions-item>
+        </el-descriptions>
+        <ul v-if="importResult.errors.length" class="err-list">
+          <li v-for="(e, i) in importResult.errors" :key="i">{{ e }}</li>
+        </ul>
       </div>
-      <el-timeline v-if="followList.length" class="follow-timeline">
-        <el-timeline-item v-for="f in followList" :key="f.id" :timestamp="f.createTime" placement="top">
-          <div class="follow-item">
-            <el-tag size="small" v-if="f.type">{{ f.type }}</el-tag>
-            <span class="follow-content">{{ f.content }}</span>
-            <div class="follow-meta" v-if="f.nextFollow">下次跟进:{{ f.nextFollow }}</div>
-          </div>
-        </el-timeline-item>
-      </el-timeline>
-      <el-empty v-else description="暂无跟进记录" :image-size="80" />
 
-      <el-divider>新增跟进</el-divider>
-      <el-form :model="followForm" label-width="90px" ref="followFormRef" :rules="followRules">
-        <el-form-item label="方式" prop="type">
-          <el-select v-model="followForm.type" placeholder="请选择" style="width: 100%">
-            <el-option label="电话" value="电话" />
-            <el-option label="拜访" value="拜访" />
-            <el-option label="微信" value="微信" />
-            <el-option label="邮件" value="邮件" />
-            <el-option label="会议" value="会议" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="内容" prop="content">
-          <el-input v-model="followForm.content" type="textarea" :rows="3" />
-        </el-form-item>
-        <el-form-item label="下次跟进">
-          <el-date-picker v-model="followForm.nextFollow" type="datetime" value-format="YYYY-MM-DD HH:mm:ss"
-                          placeholder="选择时间" style="width: 100%" />
-        </el-form-item>
-      </el-form>
       <template #footer>
-        <el-button @click="followDialog.visible = false">关闭</el-button>
-        <el-button type="primary" @click="submitFollow">提交跟进</el-button>
+        <el-button @click="importVisible = false">关闭</el-button>
+        <el-button type="primary" :loading="importing" :disabled="!importFile" @click="doImport">开始导入</el-button>
       </template>
     </el-dialog>
+
+    <LeadFollowDrawer v-model="followVisible" :lead="currentLead" @saved="load" />
   </div>
 </template>
 
 <script setup>
-import { reactive, ref, onMounted } from 'vue'
+import { onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { leadApi, followApi, customerApi } from '@/api/crm'
+import { leadApi } from '@/api/crm'
 import { fileApi } from '@/api/file'
 import FileUpload from '@/components/FileUpload.vue'
-
-const statusOptions = [
-  { value: 1, label: '新建', type: 'warning' },
-  { value: 2, label: '待分配', type: 'warning' },
-  { value: 3, label: '跟进中', type: 'primary' },
-  { value: 4, label: '意向', type: 'primary' },
-  { value: 5, label: '已转化', type: 'success' },
-  { value: 6, label: '无效', type: 'danger' },
-  { value: 7, label: '公海', type: 'info' },
-  { value: 8, label: '审核中', type: 'warning' }
-]
-function statusText(v) {
-  const s = statusOptions.find(o => o.value === v)
-  return s ? s.label : '-'
-}
-function statusType(v) {
-  const s = statusOptions.find(o => o.value === v)
-  return s ? s.type : 'info'
-}
-
-// tab -> status 过滤
-const tabStatus = { mine: null, all: null, pool: 7, review: 8 }
-const activeTab = ref('mine')
+import LeadFollowDrawer from './LeadFollowDrawer.vue'
+import {
+  SOURCE_OPTIONS, CUSTOMER_TYPE_OPTIONS, COOP_MODE_OPTIONS, GRADE_OPTIONS, STATUS_OPTIONS,
+  statusText, statusType, gradeType
+} from './leadOptions'
 
 const loading = ref(false)
 const list = ref([])
 const total = ref(0)
-const query = reactive({ pageNo: 1, pageSize: 10, contact: '', phone: '', company: '', status: null })
+const stats = ref({ total: 0, todayNew: 0, monthNew: 0, invalid: 0, convertRate: 0 })
 
-const stats = reactive({ total: 0, todayNew: 0, monthNew: 0, invalid: 0, convertRate: 0 })
-
-async function loadStats() {
-  const res = await leadApi.stats()
-  Object.assign(stats, res)
-}
+const defaultQuery = () => ({
+  pageNo: 1, pageSize: 10,
+  leadNo: '', contact: '', phone: '', company: '',
+  customerType: '', grade: '', status: null, ownerName: ''
+})
+const query = reactive(defaultQuery())
 
 async function load() {
   loading.value = true
   try {
     const res = await leadApi.page(query)
-    list.value = res.records
-    total.value = res.total
+    list.value = res.records || []
+    total.value = res.total || 0
   } finally {
     loading.value = false
   }
 }
-function onTabChange(name) {
-  query.pageNo = 1
-  query.status = tabStatus[name]
-  load()
+async function loadStats() {
+  try { stats.value = await leadApi.stats() } catch (e) { /* 统计失败不挡列表 */ }
 }
-function reset() {
-  Object.assign(query, { pageNo: 1, contact: '', phone: '', company: '', status: tabStatus[activeTab.value] })
-  load()
-}
+function search() { query.pageNo = 1; load() }
+function reset() { Object.assign(query, defaultQuery()); load() }
 
+// 新增/编辑
 const formRef = ref()
-const dialog = reactive({ visible: false, title: '' })
-const emptyForm = () => ({ id: null, contact: '', phone: '', company: '', source: '', demandArea: '', status: 1, nextFollow: null, remark: '' })
-const form = reactive(emptyForm())
+const dialogVisible = ref(false)
+const saving = ref(false)
+const today = () => new Date().toISOString().slice(0, 10)
+const defaultForm = () => ({
+  id: null, leadNo: '', registerDate: today(), source: '', contact: '', phone: '', company: '',
+  customerType: '', coopMode: '', demandArea: '', goodsType: '', orderVolume: '', coopPeriod: '',
+  budgetPrice: '', intentPark: '', region: '', grade: '', ownerName: '', status: 1,
+  nextFollow: '', remark: ''
+})
+const form = reactive(defaultForm())
 const attachFiles = ref([])
 const rules = {
-  contact: [{ required: true, message: '请输入联系人', trigger: 'blur' }],
-  phone: [{ required: true, message: '请输入电话', trigger: 'blur' }]
+  contact: [{ required: true, message: '请填写客户姓名', trigger: 'blur' }],
+  registerDate: [{ required: true, message: '请选择登记日期', trigger: 'change' }],
+  status: [{ required: true, message: '请选择当前状态', trigger: 'change' }]
 }
 
 async function openDialog(row) {
-  dialog.visible = true
-  dialog.title = row ? '编辑线索' : '新增线索'
+  Object.assign(form, defaultForm())
   attachFiles.value = []
   if (row) {
-    Object.assign(form, row)
+    Object.assign(form, await leadApi.get(row.id))
     try { attachFiles.value = await fileApi.list('crm_lead', row.id) } catch (e) { /* 忽略 */ }
-  } else {
-    Object.assign(form, emptyForm())
   }
+  dialogVisible.value = true
 }
+
 async function submit() {
   await formRef.value.validate()
-  let leadId = form.id
-  if (form.id) await leadApi.update(form)
-  else leadId = await leadApi.add(form)
-  const pendingIds = (attachFiles.value || []).filter(f => f && f.id && !f.bizId).map(f => f.id)
-  if (leadId && pendingIds.length) {
-    try { await fileApi.attach('crm_lead', leadId, pendingIds) } catch (e) { /* 忽略,不阻断保存 */ }
+  saving.value = true
+  try {
+    let leadId = form.id
+    if (form.id) {
+      await leadApi.update(form)
+      ElMessage.success('已保存')
+    } else {
+      leadId = await leadApi.add(form)
+      ElMessage.success('新增成功，客户编号已自动生成')
+    }
+    // 先传后回填:新建时上传的附件此刻才拿到 bizId
+    const pendingIds = (attachFiles.value || []).filter((f) => f && f.id && !f.bizId).map((f) => f.id)
+    if (pendingIds.length > 0) {
+      try {
+        await fileApi.attach('crm_lead', leadId, pendingIds)
+      } catch (e) {
+        ElMessage.warning('线索已保存，但附件关联失败，请在编辑里重新上传')
+      }
+    }
+    dialogVisible.value = false
+    await Promise.all([load(), loadStats()])
+  } finally {
+    saving.value = false
   }
-  ElMessage.success('保存成功')
-  dialog.visible = false
-  load()
-  loadStats()
 }
+
+// 转客户:后端置为「已签约/已成交」,与意向客户页的既有流程衔接
+async function convert(row) {
+  await leadApi.convert(row.id)
+  ElMessage.success('已转为客户，状态置为已签约/已成交')
+  await Promise.all([load(), loadStats()])
+}
+
 async function remove(id) {
   await leadApi.remove(id)
-  ElMessage.success('删除成功')
-  load()
-  loadStats()
-}
-async function convert(row) {
-  await customerApi.fromLead(row.id)
-  ElMessage.success('已转为意向客户')
-  load()
-  loadStats()
+  ElMessage.success('已删除')
+  await Promise.all([load(), loadStats()])
 }
 
-// 跟进
-const followFormRef = ref()
-const followDialog = reactive({ visible: false, lead: {} })
-const followList = ref([])
-const followForm = reactive({ leadId: null, type: '', content: '', nextFollow: null })
-const followRules = {
-  type: [{ required: true, message: '请选择跟进方式', trigger: 'change' }],
-  content: [{ required: true, message: '请输入跟进内容', trigger: 'blur' }]
+// 跟进记录
+const followVisible = ref(false)
+const currentLead = ref(null)
+function openFollow(row) {
+  currentLead.value = row
+  followVisible.value = true
 }
 
-async function openFollow(row) {
-  followDialog.visible = true
-  followDialog.lead = row
-  Object.assign(followForm, { leadId: row.id, type: '', content: '', nextFollow: null })
-  await loadFollows(row.id)
+// 导入
+const importVisible = ref(false)
+const importing = ref(false)
+const importFile = ref(null)
+const importResult = ref(null)
+function onFileChange(f) {
+  importFile.value = f.raw
+  importResult.value = null
 }
-async function loadFollows(leadId) {
-  followList.value = await followApi.list(leadId)
-}
-async function submitFollow() {
-  await followFormRef.value.validate()
-  await followApi.add(followForm)
-  ElMessage.success('跟进已提交')
-  Object.assign(followForm, { type: '', content: '', nextFollow: null })
-  loadFollows(followDialog.lead.id)
+async function doImport() {
+  importing.value = true
+  try {
+    const fd = new FormData()
+    fd.append('file', importFile.value)
+    importResult.value = await leadApi.importExcel(fd)
+    ElMessage.success(`导入完成：成功 ${importResult.value.imported} 条`)
+    importFile.value = null
+    await Promise.all([load(), loadStats()])
+  } finally {
+    importing.value = false
+  }
 }
 
-onMounted(() => {
-  query.status = tabStatus[activeTab.value]
-  load()
-  loadStats()
-})
+onMounted(() => { load(); loadStats() })
 </script>
 
 <style scoped>
-.stat-row { display: flex; gap: 16px; margin-bottom: 16px; }
-.stat-card { flex: 1; }
-.stat-label { color: var(--text-secondary); font-size: 13px; }
-.stat-value { font-size: 26px; font-weight: 600; margin-top: 8px; }
-.lead-tabs { margin-bottom: 8px; }
-.follow-header { display: flex; gap: 24px; color: #606266; margin-bottom: 12px; }
-.follow-timeline { max-height: 260px; overflow-y: auto; }
-.follow-content { margin-left: 8px; }
-.follow-meta { color: var(--text-secondary); font-size: 12px; margin-top: 4px; }
+.stat-row { display: flex; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; }
+.stat-card { flex: 1; min-width: 150px; }
+.stat-label { font-size: 13px; color: #909399; }
+.stat-value { font-size: 24px; font-weight: 700; color: #303133; margin-top: 4px; }
+.section-title { font-size: 15px; font-weight: 600; color: #303133; }
+.hint { font-size: 13px; font-weight: 400; color: #909399; }
+.toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
 .pager { margin-top: 16px; justify-content: flex-end; }
+.picked { margin-top: 10px; font-size: 13px; color: #606266; }
+.import-result { margin-top: 14px; }
+.err-list { margin: 10px 0 0; padding-left: 18px; color: #f56c6c; font-size: 13px; max-height: 160px; overflow: auto; }
 </style>

@@ -8,7 +8,11 @@ export const leadApi = {
   add: (data) => request.post('/crm/lead', data),
   update: (data) => request.put('/crm/lead', data),
   remove: (id) => request.delete(`/crm/lead/${id}`),
-  convert: (id) => request.post(`/crm/lead/${id}/convert`)
+  convert: (id) => request.post(`/crm/lead/${id}/convert`),
+  // 导入《客户信息收集与回访登记表》的「客户信息登记表」页,formData 里带 file
+  importExcel: (formData) => request.post('/crm/lead/import', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  })
 }
 
 // 跟进记录
