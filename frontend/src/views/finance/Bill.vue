@@ -249,6 +249,7 @@ import { computed, reactive, ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { billApi, paymentApi, invoiceApi } from '@/api/finance'
+import { money } from '@/utils/format'
 import { tenantApi } from '@/api/tenant'
 import { billOwe } from './cashierModel'
 
@@ -267,10 +268,6 @@ const statusMap = {
   8: { label: '作废', type: 'info' }
 }
 
-function money(v) {
-  if (v == null) return '0.00'
-  return Number(v).toFixed(2)
-}
 
 const loading = ref(false)
 const list = ref([])

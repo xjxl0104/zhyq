@@ -102,6 +102,7 @@
 import { reactive, ref, computed, onMounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { billApi, paymentApi } from '@/api/finance'
+import { money } from '@/utils/format'
 import LateFeeAdjustDialog from './components/LateFeeAdjustDialog.vue'
 import { billOwe, billOweCents, buildPaymentPlan, hasOutstanding, tenantOptionBadge, tenantOptionLabel } from './cashierModel'
 
@@ -130,9 +131,6 @@ const lastPaidAmount = computed(() =>
   lastPayments.value.reduce((sum, p) => sum + Math.round(Number(p.amount || 0) * 100), 0) / 100
 )
 
-function money(v) {
-  return Number(v || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-}
 // 欠款 = 本金 + 滞纳金 - 实收,与后端 BillMetrics.outstandingOf 同口径
 const owe = billOwe
 
