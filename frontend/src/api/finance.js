@@ -46,7 +46,7 @@ export const flowApi = {
 
 // 财务报表
 export const reportApi = {
-  summary: () => request.get('/finance/report/summary')
+  summary: (params) => request.get('/finance/report/summary', { params })
 }
 
 // 收据

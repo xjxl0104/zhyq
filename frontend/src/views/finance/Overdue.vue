@@ -61,6 +61,7 @@
 <script setup>
 import { reactive, ref, onMounted } from 'vue'
 import { billApi } from '@/api/finance'
+import { money } from '@/utils/format'
 import LateFeeAdjustDialog from './components/LateFeeAdjustDialog.vue'
 
 const statusMap = {
@@ -74,10 +75,6 @@ const statusMap = {
   8: { label: '作废', type: 'info' }
 }
 
-function money(v) {
-  if (v == null) return '0.00'
-  return Number(v).toFixed(2)
-}
 
 const loading = ref(false)
 const list = ref([])

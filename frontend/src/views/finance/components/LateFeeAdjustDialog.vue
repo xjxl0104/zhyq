@@ -36,13 +36,13 @@
 import { reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { billApi } from '@/api/finance'
+import { money } from '@/utils/format'
 
 const props = defineProps({ modelValue: Boolean, bill: Object })
 const emit = defineEmits(['update:modelValue', 'saved'])
 const saving = ref(false)
 const form = reactive({ lateFee: 0, remark: '' })
 
-function money(v) { return v == null ? '0.00' : Number(v).toFixed(2) }
 
 // 每次打开都用当前账单的值重置,避免上一张单的输入串到下一张
 watch(() => [props.modelValue, props.bill], ([open, bill]) => {

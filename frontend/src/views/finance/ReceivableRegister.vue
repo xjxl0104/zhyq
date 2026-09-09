@@ -50,7 +50,6 @@
       </el-form-item>
       <el-form-item label="租户"><el-input v-model="query.tenantName" clearable /></el-form-item>
       <template v-if="viewMode === 'list'">
-        <el-form-item label="空间"><el-input v-model="query.spaceName" clearable /></el-form-item>
         <el-form-item label="协议编号"><el-input v-model="query.agreementNo" clearable /></el-form-item>
         <el-form-item label="状态">
           <el-select v-model="query.status" clearable style="width: 130px">
@@ -177,9 +176,9 @@
       <el-form :model="editor.form" label-width="120px">
         <el-divider content-position="left">基本信息</el-divider>
         <el-row :gutter="16">
-          <el-col :span="6"><el-form-item label="序号"><el-input-number v-model="editor.form.seqNo" :min="1" :precision="0" controls-position="right" style="width: 100%" /></el-form-item></el-col>
+          <el-col :span="8"><el-form-item label="序号"><el-input-number v-model="editor.form.seqNo" :min="1" :precision="0" controls-position="right" placeholder="可手动录入" style="width: 100%" /></el-form-item></el-col>
           <el-col :span="6"><el-form-item label="状态"><el-input model-value="草稿" disabled /></el-form-item></el-col>
-          <el-col :span="12"><el-form-item label="协议编号"><el-input v-model="editor.form.agreementNoRaw" placeholder="多份协议可换行分隔" /></el-form-item></el-col>
+          <el-col :span="10"><el-form-item label="协议编号"><el-input v-model="editor.form.agreementNoRaw" placeholder="多份协议可换行分隔" /></el-form-item></el-col>
           <el-col :span="12"><el-form-item label="租户" required><el-input v-model="editor.form.tenantNameRaw" /></el-form-item></el-col>
           <el-col :span="12"><el-form-item label="楼层/空间" required><el-input v-model="editor.form.spaceNameRaw" /></el-form-item></el-col>
           <el-col :span="12"><el-form-item label="计租总面积/㎡"><el-input-number v-model="editor.form.chargeArea" :precision="2" :min="0" style="width: 100%" /></el-form-item></el-col>
@@ -284,7 +283,7 @@ import {
 const loading = ref(false)
 const list = ref([])
 const total = ref(0)
-const query = reactive({ pageNo: 1, pageSize: 20, tenantName: '', spaceName: '', agreementNo: '', status: '' })
+const query = reactive({ pageNo: 1, pageSize: 20, tenantName: '', agreementNo: '', status: '' })
 const viewMode = ref('list')
 const monthFilter = ref(new Date().toISOString().slice(0, 7)) // default current month
 const monthlyLoading = ref(false)
@@ -335,7 +334,7 @@ async function rollbackLastBatch() {
   ElMessage.success('导入批次已撤销')
   await Promise.all([load(), loadBatches()])
 }
-function reset() { Object.assign(query, { pageNo: 1, tenantName: '', spaceName: '', agreementNo: '', status: '' }); viewMode.value === 'list' ? load() : loadMonthlySummary() }
+function reset() { Object.assign(query, { pageNo: 1, tenantName: '', agreementNo: '', status: '' }); viewMode.value === 'list' ? load() : loadMonthlySummary() }
 
 function formatMoney(value) {
   if (value == null) return '0.00'

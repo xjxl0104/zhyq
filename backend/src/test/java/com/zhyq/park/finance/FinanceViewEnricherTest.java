@@ -19,6 +19,8 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
@@ -151,7 +153,7 @@ class FinanceViewEnricherTest {
     @Test
     @DisplayName("流水/收据/发票/通知按 billId 批量取展示信息,拿到的是同一套口径")
     void resolvesBillViewsForDownstreamPages() {
-        when(billMapper.selectList(any())).thenReturn(List.of(bill(11L, 7L, 2L)));
+        when(billMapper.selectByIdsIncludingDeleted(any())).thenReturn(List.of(bill(11L, 7L, 2L)));
         when(registerMapper.selectBatchIds(any())).thenReturn(List.of(register(7L, "登记表里的租户", "XY-2026-001")));
         when(registerMapper.selectList(any())).thenReturn(List.of());
         when(tenantMapper.selectBatchIds(any())).thenReturn(List.of(tenant(2L, "旧名字")));
@@ -166,6 +168,30 @@ class FinanceViewEnricherTest {
         assertThat(v.tenantName()).isEqualTo("登记表里的租户");
         assertThat(v.billCode()).isEqualTo("RR1V1R202601");
         assertThat(v.feeType()).isEqualTo("租金");
+    }
+
+    @Test
+    @DisplayName("引用的账单被软删(重新生成删旧换新)时,展示仍要还原租客/单号/费用,不能整列变空")
+    void resolvesDeletedBillForDisplay() {
+        // 走绕过 @TableLogic 的查询:软删账单也能查到,否则收款通知/流水/收据/发票整列 "-"
+        Bill deleted = bill(2194L, 1L, 5L);
+        deleted.setCode("RR1V1P202609");
+        deleted.setFeeType("物业费");
+        deleted.setDeleted(1);
+        when(billMapper.selectByIdsIncludingDeleted(any())).thenReturn(List.of(deleted));
+        when(registerMapper.selectBatchIds(any())).thenReturn(List.of(register(1L, "李万能", "XY-2026-李")));
+        when(registerMapper.selectList(any())).thenReturn(List.of());
+        when(tenantMapper.selectBatchIds(any())).thenReturn(List.of(tenant(5L, "李万能档案")));
+
+        Map<Long, FinanceViewEnricher.BillView> views = enricher.resolveBillViews(List.of(2194L));
+
+        FinanceViewEnricher.BillView v = views.get(2194L);
+        assertThat(v).isNotNull();
+        assertThat(v.tenantName()).isEqualTo("李万能");
+        assertThat(v.billCode()).isEqualTo("RR1V1P202609");
+        assertThat(v.feeType()).isEqualTo("物业费");
+        // 绝不能回到会过滤软删的 selectList 上,否则本用例覆盖的场景又会退化成空列
+        verify(billMapper, never()).selectList(any());
     }
 
     @Test

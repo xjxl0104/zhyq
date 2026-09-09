@@ -47,6 +47,7 @@
 <script setup>
 import { reactive, ref, onMounted } from 'vue'
 import { checkoutApi } from '@/api/finance'
+import { money } from '@/utils/format'
 import { tenantOptionLabel } from './cashierModel'
 
 const loading = ref(false)
@@ -55,9 +56,6 @@ const total = ref(0)
 const stats = ref({})
 const query = reactive({ pageNo: 1, pageSize: 10 })
 
-function money(v) {
-  return Number(v || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-}
 
 async function load() {
   loading.value = true
