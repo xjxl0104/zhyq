@@ -99,8 +99,8 @@ public class FinanceViewEnricher {
         if (ids.isEmpty()) {
             return Collections.emptyMap();
         }
-        List<Bill> bills = billMapper.selectList(
-                new LambdaQueryWrapper<Bill>().in(Bill::getId, ids));
+        // 含软删:通知/流水/收据/发票引用的账单可能已被重新生成删除,展示仍需还原它的租客/费用/单号
+        List<Bill> bills = billMapper.selectByIdsIncludingDeleted(ids);
         if (bills.isEmpty()) {
             return Collections.emptyMap();
         }
