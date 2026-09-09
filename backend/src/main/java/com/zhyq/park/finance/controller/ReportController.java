@@ -58,23 +58,43 @@ public class ReportController {
 
         LocalDate today = LocalDate.now();
 
-        BigDecimal receivable = BigDecimal.ZERO;   // 应收(direction=1,含滞纳金)
-        BigDecimal received = BigDecimal.ZERO;     // 实收
-        BigDecimal operating = BigDecimal.ZERO;    // 经营性应收:租金+物业费
-        BigDecimal deposit = BigDecimal.ZERO;      // 保证金应收:租金保证金+物业保证金
+        BigDecimal receivable = BigDecimal.ZERO;   // 应收(按月,含滞纳金)
+        BigDecimal received = BigDecimal.ZERO;     // 实收(按月)
 
-        // 应收结构:租户 → 费用类型 → 应收金额
+        // 应收结构(按月):租户 → 费用类型 → 应收金额
         Map<String, Map<String, BigDecimal>> structure = new LinkedHashMap<>();
-        // 需催收用户:租户 → 未结清欠款(应收 - 实收 > 0)
-        Map<String, BigDecimal> dunning = new LinkedHashMap<>();
 
+        // 账龄(按月,未结清欠款)
         BigDecimal agingNotOverdue = BigDecimal.ZERO;
         BigDecimal aging30 = BigDecimal.ZERO;
         BigDecimal aging30to90 = BigDecimal.ZERO;
         BigDecimal aging90 = BigDecimal.ZERO;
 
+        // 经营提示:全局累计欠款(应收-实收>0),不受年月过滤——保证金是一次性、账期落在
+        // 签约月,按月看多数月份为 0,但欠款一直存在,故这三个数按全部账单累计
+        BigDecimal operatingOutstanding = BigDecimal.ZERO; // 经营(租金+物业)未收
+        BigDecimal depositOutstanding = BigDecimal.ZERO;   // 保证金未收
+        Map<String, BigDecimal> dunning = new LinkedHashMap<>();
+
         for (Bill b : all) {
-            // 账期年月过滤:整个报表统一按 period_start 落在选定年(月)内
+            boolean isReceivable = BillMetrics.isReceivable(b);
+            String feeType = b.getFeeType() == null ? "其它" : b.getFeeType();
+            String tenant = tenantName(b, registerTenant, bizTenant);
+
+            // ① 全局累计欠款(不分月):经营提示三个数都基于「应收 - 实收 > 0」
+            if (isReceivable) {
+                BigDecimal owe = BillMetrics.outstandingOf(b);
+                if (owe.compareTo(BigDecimal.ZERO) > 0) {
+                    if (isDeposit(feeType)) {
+                        depositOutstanding = depositOutstanding.add(owe);
+                    } else if (isOperating(feeType)) {
+                        operatingOutstanding = operatingOutstanding.add(owe);
+                    }
+                    dunning.merge(tenant, owe, BigDecimal::add);
+                }
+            }
+
+            // ② 以下按年月过滤:收缴情况/应收结构/账龄只统计选定账期
             if (year != null) {
                 LocalDate ps = b.getPeriodStart();
                 if (ps == null || ps.getYear() != year) continue;
@@ -82,36 +102,25 @@ public class ReportController {
             }
 
             // 口径统一走 BillMetrics,与账单页顶部卡片同源
-            boolean isReceivable = BillMetrics.isReceivable(b);
-            BigDecimal amount = BillMetrics.receivableOf(b);
             received = received.add(BillMetrics.receivedOf(b));
             if (!isReceivable) continue;
-
+            BigDecimal amount = BillMetrics.receivableOf(b);
             receivable = receivable.add(amount);
-            String feeType = b.getFeeType() == null ? "其它" : b.getFeeType();
-            if (isDeposit(feeType)) {
-                deposit = deposit.add(amount);
-            } else if (isOperating(feeType)) {
-                operating = operating.add(amount);
-            }
-
-            String tenant = tenantName(b, registerTenant, bizTenant);
             structure.computeIfAbsent(tenant, k -> new LinkedHashMap<>())
                     .merge(feeType, amount, BigDecimal::add);
 
-            BigDecimal owe = BillMetrics.outstandingOf(b);
-            if (owe.compareTo(BigDecimal.ZERO) > 0) {
-                dunning.merge(tenant, owe, BigDecimal::add);
+            BigDecimal owePeriod = BillMetrics.outstandingOf(b);
+            if (owePeriod.compareTo(BigDecimal.ZERO) > 0) {
                 long overdueDays = b.getDueDate() == null ? 0
                         : today.toEpochDay() - b.getDueDate().toEpochDay();
                 if (overdueDays <= 0) {
-                    agingNotOverdue = agingNotOverdue.add(owe);
+                    agingNotOverdue = agingNotOverdue.add(owePeriod);
                 } else if (overdueDays <= 30) {
-                    aging30 = aging30.add(owe);
+                    aging30 = aging30.add(owePeriod);
                 } else if (overdueDays <= 90) {
-                    aging30to90 = aging30to90.add(owe);
+                    aging30to90 = aging30to90.add(owePeriod);
                 } else {
-                    aging90 = aging90.add(owe);
+                    aging90 = aging90.add(owePeriod);
                 }
             }
         }
@@ -158,8 +167,8 @@ public class ReportController {
         m.put("receivable", receivable);
         m.put("received", received);
         m.put("collectRate", collectRate);
-        m.put("operating", operating);
-        m.put("deposit", deposit);
+        m.put("operating", operatingOutstanding);
+        m.put("deposit", depositOutstanding);
         m.put("list", list);
         m.put("dunning", dunningList);
         m.put("aging", aging);

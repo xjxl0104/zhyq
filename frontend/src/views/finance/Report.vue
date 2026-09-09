@@ -14,27 +14,30 @@
       </div>
     </div>
 
-    <!-- 经营提示 -->
+    <!-- 经营提示:全局累计欠款,不随上方月份过滤(保证金是一次性、账期落在签约月,
+         按月看多为 0,但欠款一直存在) -->
     <div class="table-card block tip-card">
-      <div class="block-title">经营提示</div>
+      <div class="block-title">经营提示 · 全局累计欠款
+        <span class="tip-sub">（不随上方月份变化；下方收缴/结构/账龄按所选月份）</span>
+      </div>
       <div class="tip-row">
         <div class="tip-stat">
-          <span class="label">经营性应收（租金+物业）</span>
-          <span class="value">¥{{ money(data.operating) }}</span>
+          <span class="label">经营欠款（租金+物业·未收）</span>
+          <span class="value warn">¥{{ money(data.operating) }}</span>
         </div>
         <div class="tip-stat">
-          <span class="label">保证金应收</span>
-          <span class="value">¥{{ money(data.deposit) }}</span>
+          <span class="label">保证金欠款（未收）</span>
+          <span class="value warn">¥{{ money(data.deposit) }}</span>
         </div>
         <div class="tip-dunning">
-          <span class="label">需催收用户（应收未清）· {{ data.dunning.length }} 户</span>
+          <span class="label">需催收用户（累计欠款）· {{ data.dunning.length }} 户</span>
           <div v-if="data.dunning.length" class="dunning-list">
             <div v-for="d in data.dunning" :key="d.tenant" class="dunning-item">
               <span class="dunning-name" :title="d.tenant">{{ d.tenant }}</span>
               <span class="dunning-amount">¥{{ money(d.amount) }}</span>
             </div>
           </div>
-          <div v-else class="dunning-empty">该期间应收已全部结清，无需催收 🎉</div>
+          <div v-else class="dunning-empty">全部应收已结清，无欠款 🎉</div>
         </div>
       </div>
     </div>
@@ -196,6 +199,8 @@ onMounted(load)
 .tip-stat { display: flex; flex-direction: column; gap: 6px; min-width: 200px; }
 .tip-stat .label { color: #909399; font-size: 13px; }
 .tip-stat .value { font-size: 22px; font-weight: 700; }
+.tip-stat .value.warn { color: #ea9a13; }
+.tip-sub { font-size: 12px; font-weight: 400; color: #909399; margin-left: 6px; }
 .tip-dunning { flex: 1; min-width: 260px; display: flex; flex-direction: column; gap: 8px; }
 .tip-dunning .label { color: #909399; font-size: 13px; }
 .dunning-list { display: flex; flex-direction: column; gap: 6px; max-height: 160px; overflow-y: auto; }
