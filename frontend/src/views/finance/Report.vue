@@ -52,6 +52,10 @@
             <span class="label">实收</span>
             <span class="value success">¥{{ money(data.received) }}</span>
           </div>
+          <div class="rate-item">
+            <span class="label">未收</span>
+            <span class="value warning">¥{{ money(unreceived) }}</span>
+          </div>
         </div>
         <div class="rate-progress">
           <div class="label">收缴率</div>
@@ -132,6 +136,8 @@ const data = reactive({
 })
 
 const ratePercent = computed(() => Math.round(Number(data.collectRate || 0) * 100))
+// 未收 = 应收 - 实收:让收缴情况里"还差多少没收"一眼可见,不必去别处对
+const unreceived = computed(() => Number(data.receivable || 0) - Number(data.received || 0))
 
 const agingRows = computed(() => {
   const a = data.aging || {}
@@ -207,6 +213,7 @@ onMounted(load)
 .rate-item .label { color: #909399; font-size: 13px; }
 .rate-item .value { font-size: 22px; font-weight: 600; }
 .rate-item .value.success { color: #16a34a; }
+.rate-item .value.warning { color: #ea9a13; }
 .rate-progress { flex: 1; }
 .rate-progress .label { color: #909399; font-size: 13px; margin-bottom: 8px; }
 </style>
