@@ -457,6 +457,33 @@ class ReceivableCalculatorTest {
                 "-004 12月口径全期合计 " + fourthTotal + " 应 ≈ 30,552,848.55");
     }
 
+    /**
+     * 中印 -005:优惠期 20260801-20260930 由 5 折更正为 7 折(2026-09-07,V52)。
+     * 折扣同折口径下租金与物业费都按 7 折,把更正后的金额钉死为回归锁。
+     */
+    @Test
+    void zhongyinSeventyPercentDiscountAppliesToRentAndProperty() {
+        ReceivableRegister register = new ReceivableRegister();
+        register.setContractStartDate(LocalDate.of(2026, 6, 1));
+        register.setContractEndDate(LocalDate.of(2032, 5, 31));
+        register.setMonthlyRent(new BigDecimal("119000"));
+        register.setMonthlyProperty(new BigDecimal("7000"));
+        register.setFreePeriodRaw("20260601-20260731");
+        register.setDiscountRaw("20260801-20260930\n租金按7折");
+
+        // 免租期:租金物业同免
+        assertEquals(new BigDecimal("0.00"), rent(register, YearMonth.of(2026, 7)));
+        assertEquals(new BigDecimal("0.00"), property(register, YearMonth.of(2026, 7)));
+        // 优惠期 8/9 月:7 折 —— 租金 119000×0.7、物业 7000×0.7,不再是原先录错的 5 折
+        assertEquals(new BigDecimal("83300.00"), rent(register, YearMonth.of(2026, 8)));
+        assertEquals(new BigDecimal("4900.00"), property(register, YearMonth.of(2026, 8)));
+        assertEquals(new BigDecimal("83300.00"), rent(register, YearMonth.of(2026, 9)));
+        assertEquals(new BigDecimal("4900.00"), property(register, YearMonth.of(2026, 9)));
+        // 优惠期结束:10 月起恢复全额
+        assertEquals(new BigDecimal("119000.00"), rent(register, YearMonth.of(2026, 10)));
+        assertEquals(new BigDecimal("7000.00"), property(register, YearMonth.of(2026, 10)));
+    }
+
     private ReceivableRegister yunshanRegister(LocalDate start, LocalDate end,
                                                String monthlyRent, String monthlyProperty,
                                                String discountRaw) {
