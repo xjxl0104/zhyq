@@ -17,6 +17,7 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 
 @Tag(name = "能耗管理-抄表读数")
 @RestController
@@ -50,6 +51,11 @@ public class ReadingController {
     @Operation(summary = "新增抄表读数")
     @PostMapping
     public Result<Long> add(@RequestBody Reading reading) {
+        // 抄表时间为空会被后续 ORDER BY read_time DESC 排到最末,
+        // 该条抄表在统计/分摊/最新读数里会集体隐形,故兜底为当前时间
+        if (reading.getReadTime() == null) {
+            reading.setReadTime(LocalDateTime.now());
+        }
         reading.setUsageAmount(calcUsage(reading));
         if (reading.getFee() == null) {
             reading.setFee(BigDecimal.ZERO);
@@ -62,6 +68,20 @@ public class ReadingController {
     @Operation(summary = "修改抄表读数")
     @PutMapping
     public Result<Void> update(@RequestBody Reading reading) {
+        // 请求体可能只带 {id, currReading},此时 meterId 为空会让倍率静默按 1 算、
+        // 且回写上次读数时拿不到表计。先回查补齐。
+        if (reading.getMeterId() == null && reading.getId() != null) {
+            Reading exist = readingMapper.selectById(reading.getId());
+            if (exist != null) {
+                reading.setMeterId(exist.getMeterId());
+                if (reading.getPrevReading() == null) {
+                    reading.setPrevReading(exist.getPrevReading());
+                }
+                if (reading.getCurrReading() == null) {
+                    reading.setCurrReading(exist.getCurrReading());
+                }
+            }
+        }
         reading.setUsageAmount(calcUsage(reading));
         readingMapper.updateById(reading);
         syncMeterLastReading(reading.getMeterId());
@@ -95,7 +115,8 @@ public class ReadingController {
         if (diff.compareTo(BigDecimal.ZERO) < 0) {
             return BigDecimal.ZERO;
         }
-        return diff.multiply(ratioOf(reading.getMeterId()));
+        return diff.multiply(ratioOf(reading.getMeterId()))
+                .setScale(2, java.math.RoundingMode.HALF_UP);
     }
 
     private BigDecimal ratioOf(Long meterId) {
@@ -116,6 +137,7 @@ public class ReadingController {
      * <p>原先新增抄表只写 eng_reading、从不回写 eng_meter.last_reading,表计列表里
      * 「上次读数」会永远停在初始值。这里按 read_time/id 取最新一条重算,
      * 因此补录、改数、删除都能得到正确结果。
+     * 例外:删掉某块表的最后一条抄表时无从得知应回落到哪个值,保持原值不动。
      */
     private void syncMeterLastReading(Long meterId) {
         if (meterId == null) {

@@ -96,6 +96,32 @@ class ReadingUsageRatioTest {
     }
 
     @Test
+    @DisplayName("meterId 为空时按倍率1,不抛异常(PUT 只传部分字段的路径)")
+    void nullMeterIdFallsBackToOne() {
+        Reading r = new Reading();
+        r.setPrevReading(new BigDecimal("10"));
+        r.setCurrReading(new BigDecimal("35"));
+        assertEquals(0, new BigDecimal("25").compareTo(controller().calcUsage(r)));
+    }
+
+    @Test
+    @DisplayName("读数为空按0计,不抛 NPE")
+    void nullReadingsTreatedAsZero() {
+        givenRatio("30");
+        Reading r = new Reading();
+        r.setMeterId(1L);
+        assertEquals(0, BigDecimal.ZERO.compareTo(controller().calcUsage(r)));
+    }
+
+    @Test
+    @DisplayName("用量标度归一到2位小数")
+    void usageScaledToTwoDecimals() {
+        givenRatio("1.5");
+        // 0.333 x 1.5 = 0.4995 -> 0.50
+        assertEquals("0.50", controller().calcUsage(reading("0", "0.333")).toPlainString());
+    }
+
+    @Test
     @DisplayName("表计查不到时按倍率1,不抛异常")
     void unknownMeterFallsBackToOne() {
         when(meterMapper.selectById(anyLong())).thenReturn(null);

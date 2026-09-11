@@ -21,9 +21,20 @@ ALTER TABLE eng_meter
 ALTER TABLE eng_reading
     ADD COLUMN period VARCHAR(7) NULL COMMENT '账期 yyyy-MM,按月对齐,避免靠 read_time 推算' AFTER meter_id;
 
--- 表计编号唯一(恢复 V9 被降级的约束)。带 deleted 以便软删后编号可释放重用:
--- 表计编号来自现场铭牌、由人工录入,不是服务端发号,与供应商编号那种自动发号语义不同。
-CREATE UNIQUE INDEX uk_eng_meter_code ON eng_meter (code, deleted);
+-- 表计编号唯一(恢复 V9 被降级的约束),但**不能**用 (code, deleted) 复合键 ——
+-- V9__fix_unique_and_seed.sql:2-4 已写明那样会撞键:逻辑删除下软删行 deleted 恒为 1,
+-- 同一编码删两次时第二次的 (code,1) 与第一次冲突,直接 500。
+-- 改用本仓 V32__receivable_import.sql:163 的生成列写法:只对存活行(deleted=0)约束,
+-- 软删后编号释放可重用,再删也不会撞。
+ALTER TABLE eng_meter
+    ADD COLUMN code_active_key VARCHAR(64)
+        GENERATED ALWAYS AS (IF(deleted = 0, code, NULL)) STORED COMMENT '存活行的编号,用于唯一约束' AFTER code,
+    ADD UNIQUE KEY uk_eng_meter_code_active (code_active_key);
 
--- 同一块表同一账期只允许一条抄表记录 —— 让批量导入可重复执行不产生重复行
-CREATE UNIQUE INDEX uk_eng_reading_meter_period ON eng_reading (meter_id, period, deleted);
+-- 同一块表同一账期只允许一条抄表记录 —— 让批量导入可重复执行不产生重复行。
+-- 同样只约束存活行;period 为空时整体为 NULL 即不约束,与既有 11 条(period 全空)兼容。
+ALTER TABLE eng_reading
+    ADD COLUMN reading_active_key VARCHAR(40)
+        GENERATED ALWAYS AS (IF(deleted = 0 AND period IS NOT NULL, CONCAT(meter_id, ':', period), NULL)) STORED
+        COMMENT '存活行的表计+账期,用于唯一约束',
+    ADD UNIQUE KEY uk_eng_reading_active (reading_active_key);
