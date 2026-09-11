@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.zhyq.park.common.config.MyMetaObjectHandler;
 import com.zhyq.park.common.exception.BizException;
 import com.zhyq.park.common.result.PageResult;
 import com.zhyq.park.common.result.Result;
@@ -19,6 +20,7 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -116,6 +118,16 @@ public class SupplierContractController {
     @PreAuthorize("hasAuthority('pur:supplierContract:edit')")
     @PutMapping
     public Result<Void> update(@RequestBody SupplierContract contract) {
+        if (contract.getId() == null) {
+            throw new BizException("缺少合同 id");
+        }
+        // MyBatis-Plus 默认 NOT_NULL 策略只跳过 null,空串会照写进库,故必填项单独拦
+        if (contract.getName() != null && !StringUtils.hasText(contract.getName())) {
+            throw new BizException("合同名称不能为空");
+        }
+        if (contract.getSupplierId() != null && supplierMapper.selectById(contract.getSupplierId()) == null) {
+            throw new BizException("供应商不存在或已删除");
+        }
         if (contract.getStartDate() != null && contract.getEndDate() != null
                 && contract.getEndDate().isBefore(contract.getStartDate())) {
             throw new BizException("到期日期不能早于生效日期");
@@ -140,24 +152,31 @@ public class SupplierContractController {
     @PostMapping("/{id}/status")
     public Result<Void> changeStatus(@PathVariable Long id, @RequestParam Integer status) {
         List<Integer> from = allowedFrom(status);
+        // entity 传 null 时 MetaObjectHandler.updateFill 不触发,审计字段手工补
         int updated = contractMapper.update(null, new LambdaUpdateWrapper<SupplierContract>()
                 .eq(SupplierContract::getId, id)
                 .in(SupplierContract::getStatus, from)
-                .set(SupplierContract::getStatus, status));
+                .set(SupplierContract::getStatus, status)
+                .set(SupplierContract::getUpdateTime, LocalDateTime.now())
+                .set(SupplierContract::getUpdateBy, MyMetaObjectHandler.currentOperator()));
         if (updated == 0) {
             throw new BizException("当前状态不允许该操作,请刷新后重试");
         }
         return Result.ok();
     }
 
-    /** 目标状态允许的前置状态。生效后不退回草稿 —— 要结束用终止。 */
+    /**
+     * 目标状态允许的前置状态。
+     * 生效后不退回草稿(要结束用终止);但允许「已到期 → 执行中」撤销误标,
+     * 否则误点一次"标记到期"这份合同就永久卡死、只能改库。
+     */
     private static List<Integer> allowedFrom(Integer target) {
         if (target == null) {
             throw new BizException("目标状态不能为空");
         }
         switch (target) {
             case ST_RUNNING:
-                return List.of(ST_DRAFT);
+                return List.of(ST_DRAFT, ST_EXPIRED);
             case ST_EXPIRED:
                 return List.of(ST_RUNNING);
             case ST_TERMINATED:
@@ -199,21 +218,22 @@ public class SupplierContractController {
     }
 
     /**
-     * 生成合同编号 GYSHT-2026-0001(按年份分段)。
-     * 人工低频建档,极端并发重号由唯一键 uk_supplier_contract_code 兜底。
+     * 生成合同编号 GYSHT-2026-0001(按年份分段),取当年最大编号 +1。
+     *
+     * <p>已知边界同 SupplierController#nextCode:并发重号会让后插入者因唯一键失败
+     * 并提示重试(<b>不重试</b>);超过 9999 后字符串比较失真。取最大编号走
+     * selectMaxCodeIncludingDeleted(含软删行)——唯一键跨软删生效,发号必须看得见软删行。
      */
     private String nextCode() {
         String prefix = "GYSHT-" + LocalDate.now().getYear() + "-";
-        SupplierContract last = contractMapper.selectOne(new LambdaQueryWrapper<SupplierContract>()
-                .likeRight(SupplierContract::getCode, prefix)
-                .orderByDesc(SupplierContract::getCode)
-                .last("LIMIT 1"));
+        // 必须用含软删的查询,理由同 SupplierController#nextCode
+        String max = contractMapper.selectMaxCodeIncludingDeleted(prefix);
         int next = 1;
-        if (last != null && StringUtils.hasText(last.getCode())) {
+        if (StringUtils.hasText(max)) {
             try {
-                next = Integer.parseInt(last.getCode().substring(prefix.length())) + 1;
-            } catch (NumberFormatException ignored) {
-                // 历史编号格式异常时从 1 起,由唯一键兜底
+                next = Integer.parseInt(max.substring(prefix.length())) + 1;
+            } catch (NumberFormatException | IndexOutOfBoundsException ignored) {
+                // 历史编号格式异常:退回从 1 起,若撞号则本次请求失败提示重试
             }
         }
         return prefix + String.format("%04d", next);

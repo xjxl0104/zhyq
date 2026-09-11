@@ -92,7 +92,10 @@
           <template #default="{ row }">
             <el-button link type="primary" @click="openDialog(row)">编辑</el-button>
             <el-button v-if="row.status === 1" link type="success" @click="changeStatus(row, 2)">生效</el-button>
-            <el-button v-if="row.status === 2" link type="warning" @click="changeStatus(row, 3)">标记到期</el-button>
+            <el-popconfirm v-if="row.status === 2" title="确认标记为已到期?" @confirm="changeStatus(row, 3)">
+              <template #reference><el-button link type="warning">标记到期</el-button></template>
+            </el-popconfirm>
+            <el-button v-if="row.status === 3" link type="success" @click="changeStatus(row, 2)">撤销到期</el-button>
             <el-popconfirm v-if="row.status === 1 || row.status === 2" title="确认终止该合同?"
                            @confirm="changeStatus(row, 4)">
               <template #reference><el-button link type="info">终止</el-button></template>
@@ -193,14 +196,27 @@ const query = reactive({
   pageNo: 1, pageSize: 10, name: '', supplierId: null, contractType: null, status: null
 })
 
+// 与后端 SupplierContractController 的状态常量与「即将到期」口径保持一致
+const ST_RUNNING = 2
+const ST_EXPIRED = 3
+const EXPIRING_DAYS = 30
+
 const statusText = (s) => ({ 1: '草稿', 2: '执行中', 3: '已到期', 4: '已终止' }[s] ?? '-')
 const statusColor = (s) => ({ 1: 'info', 2: 'success', 3: 'warning', 4: 'danger' }[s] ?? 'info')
 
-/** 执行中且 30 天内到期 —— 与后端 stats 的 expiring 口径一致 */
+/**
+ * 执行中且 30 天内到期 —— 与后端 stats 的 expiring 口径对齐。
+ * 注意:new Date('YYYY-MM-DD') 按 UTC 零点解析,而 new Date() 是本地时间,
+ * 东八区差 8 小时会让边界日(今天 / 今天+30)与后端算出不同结果。
+ * 故两边都归一到「本地零点」后按整天比较。
+ */
 function expiringSoon(row) {
-  if (row.status !== 2 || !row.endDate) return false
-  const days = (new Date(row.endDate) - new Date()) / 86400000
-  return days >= 0 && days <= 30
+  if (row.status !== ST_RUNNING || !row.endDate) return false
+  const end = new Date(row.endDate + 'T00:00:00')
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const days = Math.round((end - today) / 86400000)
+  return days >= 0 && days <= EXPIRING_DAYS
 }
 
 async function loadTypes() {
@@ -260,6 +276,12 @@ async function openDialog(row) {
   attachFiles.value = []
   if (row) {
     Object.assign(form, row)
+    // 供应商下拉只取「正常」状态,编辑历史合同时其供应商可能已停用/归档,
+    // 不兜底会回显空白、一保存就把关联丢了。
+    if (row.supplierId && !suppliers.value.some(s => s.id === row.supplierId)) {
+      suppliers.value = [...suppliers.value,
+        { id: row.supplierId, name: (row.supplierName || '未知供应商') + '(已停用/归档)' }]
+    }
     try { attachFiles.value = await fileApi.list('supplier_contract', row.id) } catch (e) { /* 忽略 */ }
   }
 }

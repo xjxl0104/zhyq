@@ -15,8 +15,11 @@
 --      这是本次的明确需求("有一个自己增加入口")。合同类型同理。
 --
 -- 本次不动采购模块:pur_request.supplier 保持自由文本原样(负责人拍板"先不动采购")。
--- 路由映射复用 V40 已登记的 '/pur/**' → module 'pur', 供应商接口挂在 /pur/supplier*,
--- 故无需新增 route_module_mapping 行。
+-- 路由映射复用已登记的 '/pur/**' 行(V40 建、V42 已 UPDATE 改判为 module 'budget'/'预算管理'),
+-- 供应商接口挂在 /pur/supplier*, 归入预算管理模块口径,与菜单位置自洽,故无需新增映射行。
+-- 编号唯一键为单列 (code) 而非 (code, deleted):本表编号由服务端 max+1 生成,
+-- 若唯一键带 deleted, 软删行会"释放"编号,下次生成重复号、再删即撞键。
+-- 同仓所有自动生成编号的表(uk_plan_no/uk_request_no/uk_budget_no/uk_lead_no)皆为单列。
 -- =====================================================================
 
 -- ---------- 1) 供应商档案 ----------
@@ -40,7 +43,7 @@ CREATE TABLE pur_supplier (
     tenant_id      BIGINT       NOT NULL DEFAULT 1,
     create_by      VARCHAR(32), create_time DATETIME, update_by VARCHAR(32), update_time DATETIME,
     version        INT NOT NULL DEFAULT 1, deleted TINYINT NOT NULL DEFAULT 0,
-    UNIQUE KEY uk_supplier_code (code, deleted),
+    UNIQUE KEY uk_supplier_code (code),
     KEY idx_supplier_category (category),
     KEY idx_supplier_status (status),
     KEY idx_supplier_name (name)
@@ -64,7 +67,7 @@ CREATE TABLE pur_supplier_contract (
     tenant_id     BIGINT        NOT NULL DEFAULT 1,
     create_by     VARCHAR(32), create_time DATETIME, update_by VARCHAR(32), update_time DATETIME,
     version       INT NOT NULL DEFAULT 1, deleted TINYINT NOT NULL DEFAULT 0,
-    UNIQUE KEY uk_supplier_contract_code (code, deleted),
+    UNIQUE KEY uk_supplier_contract_code (code),
     KEY idx_sc_supplier (supplier_id),
     KEY idx_sc_status (status),
     KEY idx_sc_end_date (end_date)
