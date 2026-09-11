@@ -133,6 +133,30 @@
 | complete | pur:request:complete |
 | cancel | pur:request:cancel |
 
+### SupplierController `/pur/supplier`
+> 迁移:V53__supplier.sql。供应商档案(主数据)。
+> 注意 status 单独设点:「能改档案」不等于「能停用/归档」。
+
+| 方法 | perm |
+|---|---|
+| page, stats, get/{id}, list | pur:supplier:query |
+| add | pur:supplier:add |
+| update | pur:supplier:edit |
+| delete/{id} | pur:supplier:delete |
+| changeStatus(启用/停用/归档) | pur:supplier:status |
+
+### SupplierContractController `/pur/supplier-contract`
+> 迁移:V53__supplier.sql。供应商合同,与租赁合同 biz_contract 分表互不影响。
+> 同样把状态流转与编辑分权:只有 edit 不能推进合同状态。
+
+| 方法 | perm |
+|---|---|
+| page, stats, get/{id} | pur:supplierContract:query |
+| add | pur:supplierContract:add |
+| update | pur:supplierContract:edit |
+| delete/{id} | pur:supplierContract:delete |
+| changeStatus(生效/到期/撤销到期/终止) | pur:supplierContract:status |
+
 ## workflow — 审批链(ver6.6 补)
 > 流程定义/节点是合同、采购等多 bizType 共用的「谁能审批」配置,
 > 能改即可把审批人指向自己实现自审,故按管理级单独设点。

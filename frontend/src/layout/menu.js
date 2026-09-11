@@ -161,7 +161,9 @@ export const menuTree = [
           { title: '月度预算', path: '/budget/monthly' },
           { title: '年度采购计划', path: '/budget/plan-year' },
           { title: '月度采购计划', path: '/budget/plan-month' },
-          { title: '审批流程', path: '/budget/flow' }
+          { title: '审批流程', path: '/budget/flow' },
+          { title: '供应商档案', path: '/budget/supplier' },
+          { title: '供应商合同', path: '/budget/supplier-contract' }
         ]
       },
       { title: '应用中心', path: '/app/center' }

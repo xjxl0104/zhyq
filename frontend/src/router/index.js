@@ -78,6 +78,8 @@ const routes = [
       { path: 'budget/plan-year', meta: { title: '年度采购计划', planType: 1 }, component: () => import('@/views/budget/PurPlan.vue') },
       { path: 'budget/plan-month', meta: { title: '月度采购计划', planType: 2 }, component: () => import('@/views/budget/PurPlan.vue') },
       { path: 'budget/flow', meta: { title: '审批流程' }, component: () => import('@/views/budget/FlowConfig.vue') },
+      { path: 'budget/supplier', meta: { title: '供应商档案' }, component: () => import('@/views/budget/Supplier.vue') },
+      { path: 'budget/supplier-contract', meta: { title: '供应商合同' }, component: () => import('@/views/budget/SupplierContract.vue') },
 
       // 便捷通行(#21,门禁记录/访客登记/停车)
       { path: 'acc/access', meta: { title: '门禁通行记录' }, component: () => import('@/views/acc/Access.vue') },
