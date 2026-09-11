@@ -13,6 +13,8 @@ import java.time.LocalDateTime;
 @TableName("eng_reading")
 public class Reading extends BaseEntity {
     private Long meterId;
+    /** 账期 yyyy-MM。按月对齐,避免账期靠 read_time 相邻记录推算 */
+    private String period;
     private BigDecimal prevReading;
     private BigDecimal currReading;
     private BigDecimal usageAmount;

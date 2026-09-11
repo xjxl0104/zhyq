@@ -47,7 +47,8 @@
       <el-table :data="list" v-loading="loading" border stripe>
         <el-table-column type="index" label="序号" width="70" />
         <el-table-column prop="code" label="表计编号" min-width="140" />
-        <el-table-column prop="name" label="名称" min-width="120" />
+        <el-table-column prop="name" label="名称" min-width="120" show-overflow-tooltip />
+        <el-table-column prop="area" label="区域" width="100" />
         <el-table-column label="能源类型" width="110">
           <template #default="{ row }">
             <el-tag :type="energyTagType(row.energyType)">{{ row.energyType }}</el-tag>
@@ -59,7 +60,10 @@
           </template>
         </el-table-column>
         <!-- 租户经 房间 → 执行中合同 → 租客 反查:表计本身只挂房间,已退租的旧合同不算 -->
-        <el-table-column prop="tenantName" label="租户" min-width="170" show-overflow-tooltip>
+        <el-table-column prop="customerName" label="用户名" width="120" show-overflow-tooltip>
+          <template #default="{ row }">{{ row.customerName || '-' }}</template>
+        </el-table-column>
+        <el-table-column prop="tenantName" label="租户(合同)" min-width="150" show-overflow-tooltip>
           <template #default="{ row }">
             <div class="cell-main">{{ row.tenantName || '-' }}</div>
             <div v-if="row.roomCode" class="cell-sub">{{ row.roomCode }}</div>
@@ -119,6 +123,12 @@
           <el-input v-model="form.code" :disabled="!!form.id" />
         </el-form-item>
         <el-form-item label="名称"><el-input v-model="form.name" /></el-form-item>
+        <el-form-item label="区域">
+          <el-input v-model="form.area" placeholder="如 1层A区、室外(抄表表口径)" />
+        </el-form-item>
+        <el-form-item label="用户名">
+          <el-input v-model="form.customerName" placeholder="抄表表上的承租方简称;租户列以合同反查为准" />
+        </el-form-item>
         <el-form-item label="能源类型" prop="energyType">
           <el-select v-model="form.energyType" placeholder="请选择" style="width: 100%">
             <el-option v-for="t in energyTypes" :key="t" :label="t" :value="t" />
@@ -325,7 +335,7 @@ async function openLogs(row) {
 const formRef = ref()
 const dialog = reactive({ visible: false, title: '' })
 const EMPTY_FORM = {
-  id: null, code: '', name: '', energyType: '电', meterRole: 'TENANT',
+  id: null, code: '', name: '', area: '', customerName: '', energyType: '电', meterRole: 'TENANT',
   roomId: null, ratio: 1, lastReading: 0, status: 1
 }
 const form = reactive({ ...EMPTY_FORM })

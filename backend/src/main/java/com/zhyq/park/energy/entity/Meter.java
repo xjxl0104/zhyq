@@ -16,6 +16,10 @@ import java.time.LocalDateTime;
 public class Meter extends BaseEntity {
     private String code;
     private String name;
+    /** 区域,如 1层A区/室外(抄表表格口径) */
+    private String area;
+    /** 抄表表格上的用户名;租户以 room_id→执行中合同 反查为准,本字段仅在反查不到时兜底显示 */
+    private String customerName;
     private String energyType;
     /**
      * 表计角色,决定它在公摊里的位置:
