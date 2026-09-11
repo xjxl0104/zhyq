@@ -37,6 +37,10 @@
               <span class="dunning-amount">¥{{ money(d.amount) }}</span>
             </div>
           </div>
+          <div v-if="data.dunning.length" class="dunning-item dunning-total">
+            <span class="dunning-name">合计 · {{ data.dunning.length }} 户</span>
+            <span class="dunning-amount">¥{{ money(dunningTotal) }}</span>
+          </div>
           <div v-else class="dunning-empty">全部应收已结清，无欠款 🎉</div>
         </div>
       </div>
@@ -71,7 +75,8 @@
     <!-- 应收结构 -->
     <div class="table-card block">
       <div class="block-title">应收结构（按租户 / 费用类型）</div>
-      <el-table :data="data.list" border stripe :span-method="spanMethod">
+      <el-table :data="data.list" border stripe :span-method="spanMethod"
+                show-summary :summary-method="listSummary">
         <el-table-column prop="tenant" label="租户" min-width="220" show-overflow-tooltip />
         <el-table-column prop="feeType" label="费用类型" min-width="120" />
         <el-table-column label="应收金额" min-width="150" align="right">
@@ -89,7 +94,8 @@
     <!-- 账龄分布 -->
     <div class="table-card block">
       <div class="block-title">账龄分布(未结清欠款)</div>
-      <el-table :data="agingRows" border stripe>
+      <el-table :data="agingRows" border stripe
+                show-summary :summary-method="agingSummary">
         <el-table-column prop="label" label="账龄区间" min-width="140" />
         <el-table-column label="金额" min-width="160" align="right">
           <template #default="{ row }">¥{{ money(row.amount) }}</template>
@@ -154,6 +160,28 @@ const agingRows = computed(() => {
 const agingTotal = computed(() =>
   agingRows.value.reduce((s, r) => s + Number(r.amount || 0), 0))
 
+// 各表合计 —— 供人工核对:表内数字应与上方汇总卡对得上
+const sum = (rows, field) => rows.reduce((acc, r) => acc + Number(r[field] || 0), 0)
+const dunningTotal = computed(() => sum(data.dunning, 'amount'))
+
+/** 应收结构合计:列序为 租户0 / 费用类型1 / 应收金额2 / 占比3,只在金额列出合计 */
+function listSummary({ columns }) {
+  return columns.map((col, i) => {
+    if (i === 0) return '合计'
+    if (i === 2) return '¥' + money(sum(data.list, 'amount'))
+    return ''
+  })
+}
+
+/** 账龄合计:列序为 区间0 / 金额1 / 占比2 */
+function agingSummary({ columns }) {
+  return columns.map((col, i) => {
+    if (i === 0) return '合计'
+    if (i === 1) return '¥' + money(agingTotal.value)
+    return ''
+  })
+}
+
 // 应收结构按租户分组(后端已按租户聚在一起):合并同租户的「租户」单元格
 const spanMethod = ({ rowIndex, columnIndex }) => {
   if (columnIndex !== 0) return
@@ -201,6 +229,9 @@ onMounted(load)
 .tip-stat .value { font-size: 22px; font-weight: 700; }
 .tip-stat .value.warn { color: #ea9a13; }
 .tip-sub { font-size: 12px; font-weight: 400; color: #909399; margin-left: 6px; }
+.dunning-total { background: var(--bg-card); border-top: 1px solid var(--border);
+  font-weight: 600; margin-top: 2px; }
+.dunning-total .dunning-amount { color: #ea9a13; }
 .tip-dunning { flex: 1; min-width: 260px; display: flex; flex-direction: column; gap: 8px; }
 .tip-dunning .label { color: #909399; font-size: 13px; }
 .dunning-list { display: flex; flex-direction: column; gap: 6px; max-height: 160px; overflow-y: auto; }
