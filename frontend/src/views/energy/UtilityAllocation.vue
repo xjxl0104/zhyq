@@ -128,7 +128,7 @@
         <el-table-column prop="meterCode" label="表计编号" min-width="130" />
         <el-table-column label="角色" width="110">
           <template #default="{ row }">
-            <el-tag :type="row.meterRole === 'MAIN' ? 'danger' : row.meterRole === 'PROPERTY' ? 'warning' : 'success'"
+            <el-tag :type="row.meterRole === 'MAIN' ? 'danger' : row.meterRole === 'PROPERTY' ? 'warning' : row.meterRole === 'REFERENCE' ? 'info' : 'success'"
                     effect="plain">{{ roleLabel(row.meterRole) }}</el-tag>
           </template>
         </el-table-column>
@@ -167,7 +167,7 @@ import { Plus, Search } from '@element-plus/icons-vue'
 import { utilityBillApi } from '@/api/energy'
 
 const energyTypes = ['电', '水']
-const ROLE_LABELS = { TENANT: '租户分表', MAIN: '园区总表', PROPERTY: '物业公司表' }
+const ROLE_LABELS = { TENANT: '租户分表', MAIN: '发票总表', PROPERTY: '物业公司表', REFERENCE: '参考表' }
 const roleLabel = (v) => ROLE_LABELS[v] || v
 
 const loading = ref(false)

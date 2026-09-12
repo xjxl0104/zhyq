@@ -76,3 +76,17 @@
 **回滚**：`DELETE` 合同 21 与其 `biz_contract_room`；`biz_room`/登记/账单三张按 `bak_delta_20260912_*` 回写。
 
 **教训**：登记表按楼层名挂房间会撞名（第五层两家），挂房时要拿**面积**再核一次。
+
+## 五、2026-09-12 实战记录（能耗口径：园区总表 SB-4475 改参考表）
+
+**起因**：能耗统计「用水概览·当年用量」显示 2284.5，负责人口径 8 月是 **1012**（总表），租户分表 562.5、公摊 449.5。库里水表有两块 MAIN：大厦总表 1012、园区总表 SB-4475 710，旧概览把总表+分表+参考表全加了（1012+562.5+710）。
+
+**代码**（PR `fix/energy-stats-main-meter-scope`）：概览/趋势改成总表口径（总 = MAIN 读数；有总表时拆 租户/物业/公摊 = 总−租户−物业；无总表读数退分表合计并标 hasMain=false）；排行不含总表；新增表计角色 **REFERENCE 参考表**（只记读数，不进统计与公摊）；公摊分表查询改为只认 TENANT/PROPERTY。回归锁 `EnergyStatsScopeTest`。
+
+**数据**（脚本 `import/delta-20260912-water-reference-meter.sql`，幂等；`mysqldump eng_meter` 到 `backups/pre-delta-20260912-water-ref-*.sql`，另建 `bak_delta_20260912_meter`）：`eng_meter` SB-4475 `meter_role` MAIN → REFERENCE。本地与生产均已落（生产 13:50）。
+
+**验证**：本地 overview 接口 water.year=1012 / yearTenant=562.5 / yearPublic=449.5 / yearHasMain=true；electric.year=128598、yearHasMain=false（园区电表没装总表，退分表合计）；页面同显。
+
+**回滚**：`UPDATE eng_meter SET meter_role='MAIN' WHERE code='SB-4475'`（或按 `bak_delta_20260912_meter` 回写）。
+
+**待负责人拿捏**：SB-4475「园区总表」到底量的是什么（710 既不是分表合计也不是总表），如果它其实是发票总表、大厦总表才是分总表，把两块表的角色对调即可，代码不用动。
