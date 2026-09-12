@@ -167,7 +167,7 @@ import { Plus, Search } from '@element-plus/icons-vue'
 import { utilityBillApi } from '@/api/energy'
 
 const energyTypes = ['电', '水']
-const ROLE_LABELS = { TENANT: '租户分表', MAIN: '园区总表', PROPERTY: '物业公司表' }
+const ROLE_LABELS = { TENANT: '租户分表', MAIN: '园区总表', PROPERTY: '物业公司表', REFERENCE: '参考表' }
 const roleLabel = (v) => ROLE_LABELS[v] || v
 
 const loading = ref(false)

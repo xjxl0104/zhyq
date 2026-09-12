@@ -6,23 +6,26 @@
         <div class="ov-head">
           <el-icon class="ov-ic elec"><Lightning /></el-icon>
           <span class="ov-title">用电概览</span>
-          <span class="ov-unit">单位:kWh / 元</span>
+          <span class="ov-unit">单位:kWh / 元 · 总表口径</span>
         </div>
         <div class="stat-cards">
           <div class="stat-card">
             <div class="num" style="color:#4f46e5">{{ fmtNum(elec.today) }}</div>
             <div class="label">今日用量</div>
             <div class="sub">费用 ¥{{ fmtMoney(elec.todayFee) }}</div>
+            <div class="sub split">{{ splitText(elec, 'today') }}</div>
           </div>
           <div class="stat-card">
             <div class="num" style="color:#2563eb">{{ fmtNum(elec.month) }}</div>
             <div class="label">当月用量</div>
             <div class="sub">费用 ¥{{ fmtMoney(elec.monthFee) }}</div>
+            <div class="sub split">{{ splitText(elec, 'month') }}</div>
           </div>
           <div class="stat-card">
             <div class="num" style="color:#0ea5e9">{{ fmtNum(elec.year) }}</div>
             <div class="label">当年用量</div>
             <div class="sub">费用 ¥{{ fmtMoney(elec.yearFee) }}</div>
+            <div class="sub split">{{ splitText(elec, 'year') }}</div>
           </div>
         </div>
       </div>
@@ -31,23 +34,26 @@
         <div class="ov-head">
           <el-icon class="ov-ic water"><Coordinate /></el-icon>
           <span class="ov-title">用水概览</span>
-          <span class="ov-unit">单位:吨 / 元</span>
+          <span class="ov-unit">单位:吨 / 元 · 总表口径</span>
         </div>
         <div class="stat-cards">
           <div class="stat-card">
             <div class="num" style="color:#06b6d4">{{ fmtNum(water.today) }}</div>
             <div class="label">今日用量</div>
             <div class="sub">费用 ¥{{ fmtMoney(water.todayFee) }}</div>
+            <div class="sub split">{{ splitText(water, 'today') }}</div>
           </div>
           <div class="stat-card">
             <div class="num" style="color:#0891b2">{{ fmtNum(water.month) }}</div>
             <div class="label">当月用量</div>
             <div class="sub">费用 ¥{{ fmtMoney(water.monthFee) }}</div>
+            <div class="sub split">{{ splitText(water, 'month') }}</div>
           </div>
           <div class="stat-card">
             <div class="num" style="color:#0e7490">{{ fmtNum(water.year) }}</div>
             <div class="label">当年用量</div>
             <div class="sub">费用 ¥{{ fmtMoney(water.yearFee) }}</div>
+            <div class="sub split">{{ splitText(water, 'year') }}</div>
           </div>
         </div>
       </div>
@@ -100,6 +106,15 @@ const usageRef = ref(), feeRef = ref()
 
 const fmtNum = (v) => Number(v || 0).toLocaleString('zh-CN', { maximumFractionDigits: 1 })
 const fmtMoney = (v) => Number(v || 0).toLocaleString('zh-CN', { maximumFractionDigits: 0 })
+// 卡片下的拆分行:用量 = 总表读数(发票口径),有总表读数时拆「租户 · 物业 · 公摊」;
+// 该期没有总表读数(如电表没装总表)就是分表合计,要说明白,免得把分表合计当成园区总量
+const splitText = (o, k) => {
+  if (!o[k + 'HasMain']) return Number(o[k] || 0) ? '分表合计(无总表读数)' : ''
+  const parts = [`租户 ${fmtNum(o[k + 'Tenant'])}`]
+  if (Number(o[k + 'Property'] || 0)) parts.push(`物业 ${fmtNum(o[k + 'Property'])}`)
+  parts.push(`公摊 ${fmtNum(o[k + 'Public'])}`)
+  return parts.join(' · ')
+}
 
 const tagType = (t) => ({ '电': 'warning', '水': 'primary', '燃气': 'danger', '热力': 'success' }[t] || 'info')
 const barColor = (t) => (t === '水' ? '#06b6d4' : '#4f46e5')
@@ -163,6 +178,7 @@ onMounted(async () => {
 .stat-card .num { font-size: 24px; font-weight: 700; }
 .stat-card .label { font-size: 13px; color: #6b7280; margin-top: 4px; }
 .stat-card .sub { font-size: 12px; color: #9aa1ac; margin-top: 4px; }
+.stat-card .sub.split { color: #6b7280; min-height: 16px; }
 
 .rank-list { display: flex; flex-direction: column; gap: 12px; }
 .rank-row { display: flex; align-items: center; gap: 12px; }

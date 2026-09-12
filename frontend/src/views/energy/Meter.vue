@@ -270,11 +270,13 @@ const total = ref(0)
 const METER_ROLES = [
   { value: 'TENANT', label: '租户分表', tip: '计入分摊分母，并按分摊结果给该租户出账' },
   { value: 'MAIN', label: '园区总表', tip: '对应对外发票口径，是公共区域用量的被减数，本身不出账' },
-  { value: 'PROPERTY', label: '物业公司表', tip: '计入分摊分母，但不出账（属园区内部成本）' }
+  { value: 'PROPERTY', label: '物业公司表', tip: '计入分摊分母，但不出账（属园区内部成本）' },
+  // 参考表:总表之下的分总表/对照表,只记读数;能耗统计与公摊都不看它(否则同一方水会被算两遍)
+  { value: 'REFERENCE', label: '参考表', tip: '只记录读数，不参与能耗统计与公摊（如园区总表下的分总表）' }
 ]
 const roleLabel = (v) => METER_ROLES.find(r => r.value === v)?.label || '租户分表'
 const roleTip = (v) => METER_ROLES.find(r => r.value === v)?.tip || ''
-const roleTagType = (v) => (v === 'MAIN' ? 'danger' : v === 'PROPERTY' ? 'warning' : 'success')
+const roleTagType = (v) => (v === 'MAIN' ? 'danger' : v === 'PROPERTY' ? 'warning' : v === 'REFERENCE' ? 'info' : 'success')
 
 const EMPTY_QUERY = { code: '', energyType: null, status: null, tenantRefId: null, period: null, meterRole: null }
 const query = reactive({ pageNo: 1, pageSize: 10, ...EMPTY_QUERY })
