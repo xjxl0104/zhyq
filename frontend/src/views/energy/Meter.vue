@@ -182,7 +182,7 @@
         <el-table-column type="index" label="序号" width="70" />
         <el-table-column prop="prevReading" label="上次读数" min-width="110" />
         <el-table-column prop="currReading" label="本次读数" min-width="110" />
-        <el-table-column prop="usageAmount" :label="`用量(${usageUnit(readingDrawer.meter?.energyType)})`" min-width="100" />
+        <el-table-column prop="usageAmount" :label="usageUnit(readingDrawer.meter?.energyType) ? `用量(${usageUnit(readingDrawer.meter?.energyType)})` : '用量'" min-width="100" />
         <el-table-column prop="readSource" label="抄表方式" min-width="110" />
         <el-table-column prop="readTime" label="抄表时间" width="170" />
         <el-table-column prop="fee" label="费用" width="100" />
@@ -296,6 +296,8 @@ const ENERGY_UNITS = {
   '热力': { unit: 'GJ', label: '用热量' }
 }
 const usageUnit = (type) => ENERGY_UNITS[type]?.unit || ''
+// 「数值+单位」文案:没抄过表就只给 '-',不拼个孤零零的单位上去
+const usageText = (row) => (row.usageAmount == null ? '-' : `${row.usageAmount} ${usageUnit(row.energyType)}`.trim())
 // 表头跟「当前这页数据是按什么能源查出来的」走,而不是跟输入框里还没点查询的值走
 const loadedEnergyType = ref(null)
 const usageLabel = computed(() => {
@@ -306,10 +308,12 @@ const usageLabel = computed(() => {
 async function load() {
   loading.value = true
   try {
+    // 先记下这次是按什么能源查的,请求在途时用户改下拉不会让表头和数据错位
+    const requestedType = query.energyType || null
     const res = await meterApi.page(query)
     list.value = res.records
     total.value = res.total
-    loadedEnergyType.value = query.energyType || null
+    loadedEnergyType.value = requestedType
   } finally {
     loading.value = false
   }
@@ -330,7 +334,7 @@ async function createBill(row) {
   const period = row.periodEnd ? `${row.periodStart || '首次'} ~ ${row.periodEnd}` : '最近一次抄表'
   await ElMessageBox.confirm(
     `将按 ${period} 的抄表结果为「${row.tenantName || '该表计'}」生成一张能源费账单` +
-    `（用量 ${row.usageAmount ?? '-'} ${usageUnit(row.energyType)}，金额 ¥${row.latestFee ?? '-'}）。`,
+    `（用量 ${usageText(row)}，金额 ¥${row.latestFee ?? '-'}）。`,
     '生成能源费账单', { type: 'warning', confirmButtonText: '确认生成', cancelButtonText: '取消' })
   billing.value = row.id
   try {
