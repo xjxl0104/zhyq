@@ -22,9 +22,11 @@ public class Meter extends BaseEntity {
     private String customerName;
     private String energyType;
     /**
-     * 表计角色,决定它在公摊里的位置:
-     * TENANT=租户分表(分摊分母 + 出账对象) MAIN=园区总表(分摊被减数,不出账)
+     * 表计角色,决定它在公摊与能耗统计里的位置:
+     * TENANT=租户分表(分摊分母 + 出账对象) MAIN=发票总表(分摊被减数、能耗统计总量口径,不出账,一种能源只能有一块在用)
      * PROPERTY=物业公司分表(计入分母但不出账,是园区内部成本)
+     * REFERENCE=参考表(总表之下的分总表/对照表,只记读数,不进用量统计与分摊)
+     * 列是 VARCHAR(16),最长取值 REFERENCE(9),够放。
      */
     private String meterRole;
     private Long projectId;

@@ -179,7 +179,7 @@ public class AllocationService {
                      AND DATE_FORMAT(e.read_time, '%Y-%m') = ?
                 WHERE m.deleted = 0 AND m.status = 1
                   AND m.energy_type = ?
-                  AND m.meter_role <> 'MAIN'
+                  AND m.meter_role IN ('TENANT', 'PROPERTY')
                 """);
         List<Object> args = new ArrayList<>(List.of(bill.getPeriod(), bill.getEnergyType()));
         if (bill.getProjectId() != null) {
