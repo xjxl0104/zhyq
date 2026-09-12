@@ -41,7 +41,8 @@
       <div class="toolbar">
         <el-button type="primary" @click="openDialog()"><el-icon><Plus /></el-icon>新增合同</el-button>
       </div>
-      <el-table :data="list" v-loading="loading" border stripe>
+      <el-table :data="list" v-loading="loading" border stripe
+                show-summary :summary-method="pageSummary">
         <el-table-column type="index" label="序号" width="70" />
         <el-table-column prop="code" label="合同编号" min-width="150" />
         <el-table-column label="租客" min-width="150">
@@ -60,7 +61,7 @@
           <template #default="{ row }">{{ row.rentArea }} ㎡</template>
         </el-table-column>
         <el-table-column label="保证金" width="110">
-          <template #default="{ row }">{{ row.deposit }} 元</template>
+          <template #default="{ row }">{{ money(row.deposit) }} 元</template>
         </el-table-column>
         <el-table-column label="状态" width="100">
           <template #default="{ row }">
@@ -209,6 +210,7 @@
 <script setup>
 import { reactive, ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { money } from '@/utils/format'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { contractApi } from '@/api/contract'
 import { fileApi } from '@/api/file'
@@ -260,6 +262,21 @@ const list = ref([])
 const total = ref(0)
 const typeTab = ref('all')
 const query = reactive({ pageNo: 1, pageSize: 10, code: '', tenantRefId: null, status: null, contractType: null })
+
+/**
+ * 本页合计 —— 列表是分页的,只能合计当前页已加载的行,故标「本页合计」而非「合计」,
+ * 避免被当成全量总数去对账。列序:序号0/编号1/租客2/园区3/起止4/单价5/面积6/保证金7/状态8/操作9。
+ * 租赁单价是费率不是金额,合计无意义,留空。
+ */
+function pageSummary({ columns }) {
+  const sum = (f) => list.value.reduce((acc, r) => acc + Number(r[f] || 0), 0)
+  return columns.map((col, i) => {
+    if (i === 0) return `本页合计 · ${list.value.length} 份`
+    if (i === 6) return money(sum('rentArea')) + ' ㎡'
+    if (i === 7) return money(sum('deposit')) + ' 元'
+    return ''
+  })
+}
 
 function onTypeTab(name) {
   query.pageNo = 1
