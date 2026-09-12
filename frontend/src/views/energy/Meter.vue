@@ -76,9 +76,13 @@
             <span v-else>-</span>
           </template>
         </el-table-column>
-        <el-table-column prop="usageAmount" label="用电量" width="110" align="right">
+        <!-- 列表里电表水表混排,表头按当前查询的能源类型走(不筛就叫「用量」),每行再带自己的单位,
+             避免水表也顶着「用电量」的帽子 -->
+        <el-table-column prop="usageAmount" :label="usageLabel" width="120" align="right">
           <template #default="{ row }">
-            <span v-if="row.usageAmount != null" class="usage">{{ row.usageAmount }}</span>
+            <span v-if="row.usageAmount != null" class="usage">
+              {{ row.usageAmount }}<span class="usage-unit">{{ usageUnit(row.energyType) }}</span>
+            </span>
             <span v-else>-</span>
           </template>
         </el-table-column>
@@ -178,7 +182,7 @@
         <el-table-column type="index" label="序号" width="70" />
         <el-table-column prop="prevReading" label="上次读数" min-width="110" />
         <el-table-column prop="currReading" label="本次读数" min-width="110" />
-        <el-table-column prop="usageAmount" label="用量" min-width="100" />
+        <el-table-column prop="usageAmount" :label="usageUnit(readingDrawer.meter?.energyType) ? `用量(${usageUnit(readingDrawer.meter?.energyType)})` : '用量'" min-width="100" />
         <el-table-column prop="readSource" label="抄表方式" min-width="110" />
         <el-table-column prop="readTime" label="抄表时间" width="170" />
         <el-table-column prop="fee" label="费用" width="100" />
@@ -284,13 +288,32 @@ function energyTagType(type) {
   const map = { '电': 'warning', '水': 'primary', '燃气': 'danger', '热力': 'success' }
   return map[type] || 'info'
 }
+// 各能源的计量单位与「用X量」叫法;统计页(Stats.vue)同口径:电 kWh、水 吨
+const ENERGY_UNITS = {
+  '电': { unit: 'kWh', label: '用电量' },
+  '水': { unit: '吨', label: '用水量' },
+  '燃气': { unit: 'm³', label: '用气量' },
+  '热力': { unit: 'GJ', label: '用热量' }
+}
+const usageUnit = (type) => ENERGY_UNITS[type]?.unit || ''
+// 「数值+单位」文案:没抄过表就只给 '-',不拼个孤零零的单位上去
+const usageText = (row) => (row.usageAmount == null ? '-' : `${row.usageAmount} ${usageUnit(row.energyType)}`.trim())
+// 表头跟「当前这页数据是按什么能源查出来的」走,而不是跟输入框里还没点查询的值走
+const loadedEnergyType = ref(null)
+const usageLabel = computed(() => {
+  const e = ENERGY_UNITS[loadedEnergyType.value]
+  return e ? `${e.label}(${e.unit})` : '用量'
+})
 
 async function load() {
   loading.value = true
   try {
+    // 先记下这次是按什么能源查的,请求在途时用户改下拉不会让表头和数据错位
+    const requestedType = query.energyType || null
     const res = await meterApi.page(query)
     list.value = res.records
     total.value = res.total
+    loadedEnergyType.value = requestedType
   } finally {
     loading.value = false
   }
@@ -311,7 +334,7 @@ async function createBill(row) {
   const period = row.periodEnd ? `${row.periodStart || '首次'} ~ ${row.periodEnd}` : '最近一次抄表'
   await ElMessageBox.confirm(
     `将按 ${period} 的抄表结果为「${row.tenantName || '该表计'}」生成一张能源费账单` +
-    `（用量 ${row.usageAmount ?? '-'}，金额 ¥${row.latestFee ?? '-'}）。`,
+    `（用量 ${usageText(row)}，金额 ¥${row.latestFee ?? '-'}）。`,
     '生成能源费账单', { type: 'warning', confirmButtonText: '确认生成', cancelButtonText: '取消' })
   billing.value = row.id
   try {
@@ -452,6 +475,7 @@ onMounted(async () => {
 .cell-main { line-height: 1.4; }
 .cell-sub { margin-top: 2px; font-size: 12px; line-height: 1.3; color: var(--el-text-color-secondary); }
 .usage { font-weight: 600; font-variant-numeric: tabular-nums; }
+.usage-unit { margin-left: 3px; font-size: 12px; font-weight: 400; color: var(--el-text-color-secondary); }
 .empty-tip { text-align: center; color: var(--el-text-color-secondary); padding: 20px 0; font-size: 13px; }
 .form-tip { margin-top: 4px; font-size: 12px; line-height: 1.5; color: var(--el-text-color-secondary); }
 .pager { margin-top: 16px; justify-content: flex-end; }
