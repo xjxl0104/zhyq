@@ -12,7 +12,8 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * 能耗统计口径回归锁(2026-09-12):总用量 = 总表读数,不把总表和分表相加;
- * 有总表时拆 租户 / 物业 / 公摊;没总表退分表合计;参考表不进统计;费用只按分表算。
+ * 总表分表同期都有读数时拆 租户 / 物业 / 公摊;没总表退分表合计;参考表不进统计;费用只按分表算;
+ * 跨月窗口逐月合成,缺总表的月份不会让别的月的公摊算成负数。
  *
  * <p>取自园区 2026-08 真实抄表:大厦总表 1012 吨、21 块租户分表合计 562.5 吨、
  * 另有一块「园区总表 SB-4475」710 吨属参考表。修前概览把三者相加成 2284.5,
@@ -20,13 +21,23 @@ import static org.junit.jupiter.api.Assertions.*;
  */
 class EnergyStatsScopeTest {
 
-    private static Map<String, Object> row(String role, long cnt, String usage, String fee) {
+    private static Map<String, Object> row(String role, long meters, String usage, String fee) {
+        return row("2026-08", role, meters, usage, fee);
+    }
+
+    private static Map<String, Object> row(String ym, String role, long meters, String usage, String fee) {
         Map<String, Object> m = new LinkedHashMap<>();
+        m.put("ym", ym);
         m.put("meter_role", role);
-        m.put("cnt", cnt);
+        m.put("meters", meters);
         m.put("usage_amount", new BigDecimal(usage));
         m.put("fee", new BigDecimal(fee));
         return m;
+    }
+
+    private static void assertNum(String expected, BigDecimal actual) {
+        assertNotNull(actual);
+        assertEquals(0, new BigDecimal(expected).compareTo(actual), () -> "expected " + expected + " got " + actual);
     }
 
     @Test
@@ -37,10 +48,11 @@ class EnergyStatsScopeTest {
                 row("TENANT", 21, "562.50", "0"),
                 row("REFERENCE", 1, "710.00", "0")));
         assertTrue(u.hasMain());
-        assertEquals(0, new BigDecimal("1012.00").compareTo(u.total()));
-        assertEquals(0, new BigDecimal("562.50").compareTo(u.tenant()));
-        assertEquals(0, BigDecimal.ZERO.compareTo(u.property()));
-        assertEquals(0, new BigDecimal("449.50").compareTo(u.publicUsage()));
+        assertEquals(1, u.mainMeters());
+        assertNum("1012.00", u.total());
+        assertNum("562.50", u.tenant());
+        assertNum("0", u.property());
+        assertNum("449.50", u.publicUsage());
     }
 
     @Test
@@ -49,8 +61,28 @@ class EnergyStatsScopeTest {
         EnergyStatsController.Usage u = EnergyStatsController.combine(List.of(
                 row("TENANT", 23, "128598.00", "0")));
         assertFalse(u.hasMain());
-        assertEquals(0, new BigDecimal("128598.00").compareTo(u.total()));
+        assertNum("128598.00", u.total());
         assertNull(u.publicUsage());
+    }
+
+    @Test
+    @DisplayName("有总表但分表没抄:总量给总表,不拆公摊(否则公摊=总量是假数)")
+    void mainWithoutSubmetersDoesNotSplit() {
+        EnergyStatsController.Usage u = EnergyStatsController.combine(List.of(
+                row("MAIN", 1, "1012", "0")));
+        assertTrue(u.hasMain());
+        assertNum("1012", u.total());
+        assertNull(u.publicUsage());
+    }
+
+    @Test
+    @DisplayName("两块 MAIN 同期都有读数:mainMeters=2 带回前端提示,用量按两块相加")
+    void twoMainMetersAreReported() {
+        EnergyStatsController.Usage u = EnergyStatsController.combine(List.of(
+                row("MAIN", 2, "1722", "0"),
+                row("TENANT", 21, "562.5", "0")));
+        assertEquals(2, u.mainMeters());
+        assertNum("1722", u.total());
     }
 
     @Test
@@ -60,9 +92,9 @@ class EnergyStatsScopeTest {
                 row("MAIN", 1, "1000", "0"),
                 row("TENANT", 5, "600", "0"),
                 row("PROPERTY", 1, "100", "0")));
-        assertEquals(0, new BigDecimal("1000").compareTo(u.total()));
-        assertEquals(0, new BigDecimal("100").compareTo(u.property()));
-        assertEquals(0, new BigDecimal("300").compareTo(u.publicUsage()));
+        assertNum("1000", u.total());
+        assertNum("100", u.property());
+        assertNum("300", u.publicUsage());
     }
 
     @Test
@@ -73,15 +105,46 @@ class EnergyStatsScopeTest {
                 row("TENANT", 2, "600", "120.50"),
                 row("PROPERTY", 1, "100", "30"),
                 row("REFERENCE", 1, "50", "77")));
-        assertEquals(0, new BigDecimal("150.50").compareTo(u.fee()));
+        assertNum("150.50", u.fee());
+    }
+
+    @Test
+    @DisplayName("跨月窗口逐月合成:8月有总表、9月只有分表 → 总量相加、公摊只算8月、标 1 个月无总表")
+    void yearWindowSumsMonthsWithoutMixingScopes() {
+        Map<String, EnergyStatsController.Usage> byMonth = EnergyStatsController.monthly(List.of(
+                row("2026-09", "TENANT", 21, "300", "0"),
+                row("2026-08", "MAIN", 1, "1012", "0"),
+                row("2026-08", "TENANT", 21, "562.5", "0")));
+        assertEquals(List.of("2026-08", "2026-09"), List.copyOf(byMonth.keySet()));
+
+        EnergyStatsController.Usage year = EnergyStatsController.sumMonths(byMonth.values());
+        assertTrue(year.hasMain());
+        assertNum("1312", year.total());        // 1012(总表口径) + 300(分表合计)
+        assertNum("862.5", year.tenant());
+        assertNum("449.5", year.publicUsage()); // 不是 1012 − 862.5 = 149.5
+        assertEquals(1, year.monthsWithoutMain());
     }
 
     @Test
     @DisplayName("空窗口(今日无抄表):全 0、无总表、公摊为空")
     void emptyWindow() {
-        EnergyStatsController.Usage u = EnergyStatsController.combine(List.of());
+        EnergyStatsController.Usage u = EnergyStatsController.sumMonths(List.of());
         assertFalse(u.hasMain());
-        assertEquals(0, BigDecimal.ZERO.compareTo(u.total()));
+        assertNum("0", u.total());
         assertNull(u.publicUsage());
+        assertEquals(0, u.monthsWithoutMain());
+    }
+
+    @Test
+    @DisplayName("接口键名钉死:前端 Stats.vue 按 year/yearFee/yearTenant/yearProperty/yearPublic/yearHasMain/yearMainMeters/yearMonthsWithoutMain 取值")
+    void windowKeysAreStable() {
+        Map<String, Object> o = new LinkedHashMap<>();
+        EnergyStatsController.putWindow(o, "year", EnergyStatsController.combine(List.of(
+                row("MAIN", 1, "1012", "0"), row("TENANT", 21, "562.5", "12"))));
+        assertEquals(List.of("year", "yearFee", "yearTenant", "yearProperty", "yearPublic",
+                "yearHasMain", "yearMainMeters", "yearMonthsWithoutMain"), List.copyOf(o.keySet()));
+        assertNum("1012", (BigDecimal) o.get("year"));
+        assertNum("12", (BigDecimal) o.get("yearFee"));
+        assertEquals(Boolean.TRUE, o.get("yearHasMain"));
     }
 }

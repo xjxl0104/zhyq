@@ -62,7 +62,7 @@
     <!-- 双图:用量趋势 + 费用趋势 -->
     <el-row :gutter="16" style="margin-top: 16px">
       <el-col :span="12">
-        <el-card shadow="never" header="近6月用量趋势(电/水)">
+        <el-card shadow="never" header="近6月用量趋势(电/水 · 逐月总表口径，缺总表月份按分表计)">
           <div ref="usageRef" style="height: 300px"></div>
         </el-card>
       </el-col>
@@ -109,11 +109,19 @@ const fmtMoney = (v) => Number(v || 0).toLocaleString('zh-CN', { maximumFraction
 // 卡片下的拆分行:用量 = 总表读数(发票口径),有总表读数时拆「租户 · 物业 · 公摊」;
 // 该期没有总表读数(如电表没装总表)就是分表合计,要说明白,免得把分表合计当成园区总量
 const splitText = (o, k) => {
-  if (!o[k + 'HasMain']) return Number(o[k] || 0) ? '分表合计(无总表读数)' : ''
-  const parts = [`租户 ${fmtNum(o[k + 'Tenant'])}`]
-  if (Number(o[k + 'Property'] || 0)) parts.push(`物业 ${fmtNum(o[k + 'Property'])}`)
-  parts.push(`公摊 ${fmtNum(o[k + 'Public'])}`)
-  return parts.join(' · ')
+  // 两块以上总表同期有读数 = 角色配错了,概览会把同一方水算两遍,直接在卡上喊出来
+  const warn = Number(o[k + 'MainMeters'] || 0) > 1 ? ` ⚠ ${o[k + 'MainMeters']} 块总表，请核对表计角色` : ''
+  if (!o[k + 'HasMain']) return (Number(o[k] || 0) ? '分表合计(无总表读数)' : '') + warn
+  const parts = []
+  if (o[k + 'Public'] == null) {
+    parts.push('总表读数(分表未抄，暂不拆分)')
+  } else {
+    parts.push(`租户 ${fmtNum(o[k + 'Tenant'])}`)
+    if (Number(o[k + 'Property'] || 0)) parts.push(`物业 ${fmtNum(o[k + 'Property'])}`)
+    parts.push(`公摊 ${fmtNum(o[k + 'Public'])}`)
+  }
+  if (Number(o[k + 'MonthsWithoutMain'] || 0)) parts.push(`${o[k + 'MonthsWithoutMain']} 个月无总表读数按分表计`)
+  return parts.join(' · ') + warn
 }
 
 const tagType = (t) => ({ '电': 'warning', '水': 'primary', '燃气': 'danger', '热力': 'success' }[t] || 'info')
