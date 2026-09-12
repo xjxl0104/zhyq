@@ -88,6 +88,7 @@ public class MeterController {
     @PostMapping
     @OperationLog(module = "智能表计", action = "新增")
     public Result<Long> add(@RequestBody Meter meter) {
+        assertSingleMain(meter);
         meterMapper.insert(meter);
         return Result.ok(meter.getId());
     }
@@ -96,8 +97,41 @@ public class MeterController {
     @PutMapping
     @OperationLog(module = "智能表计", action = "修改")
     public Result<Void> update(@RequestBody Meter meter) {
+        assertSingleMain(meter);
         meterMapper.updateById(meter);
         return Result.ok();
+    }
+
+    /**
+     * 一种能源只能有一块在用的发票总表(MAIN)。第二块会让能耗概览把同一方水算两遍
+     * (2026-09-12 真测:两块水表都标 MAIN,当年用量 2284.5,真实 1012)。
+     * 另一块该设「参考表」或停用。update 时能源/状态可能没传,兜底读库里的旧值。
+     */
+    private void assertSingleMain(Meter meter) {
+        if (!"MAIN".equals(meter.getMeterRole())) {
+            return;
+        }
+        String energyType = meter.getEnergyType();
+        Integer status = meter.getStatus();
+        if ((energyType == null || status == null) && meter.getId() != null) {
+            Meter old = meterMapper.selectById(meter.getId());
+            if (old != null) {
+                energyType = energyType == null ? old.getEnergyType() : energyType;
+                status = status == null ? old.getStatus() : status;
+            }
+        }
+        if (energyType == null || (status != null && status != 1)) {
+            return; // 停用的总表不占名额
+        }
+        Long others = meterMapper.selectCount(new LambdaQueryWrapper<Meter>()
+                .eq(Meter::getEnergyType, energyType)
+                .eq(Meter::getMeterRole, "MAIN")
+                .eq(Meter::getStatus, 1)
+                .ne(meter.getId() != null, Meter::getId, meter.getId()));
+        if (others != null && others > 0) {
+            throw new BizException("「" + energyType + "」已有一块在用的发票总表,一种能源只能有一块;"
+                    + "分总表/对照表请设为「参考表」,换表请先停用旧总表");
+        }
     }
 
     @Operation(summary = "删除表计")
@@ -124,6 +158,10 @@ public class MeterController {
         Meter meter = meterMapper.selectById(id);
         if (meter == null) {
             throw new BizException("表计不存在: " + id);
+        }
+        // 只有租户分表出账:总表是发票口径、物业表是内部成本、参考表只记读数,都不该变成一张账单
+        if (!"TENANT".equals(meter.getMeterRole())) {
+            throw new BizException("只有租户分表可以出账,总表/物业公司表/参考表不出账");
         }
         enrich(List.of(meter), null);
         if (meter.getLatestReadingId() == null) {
