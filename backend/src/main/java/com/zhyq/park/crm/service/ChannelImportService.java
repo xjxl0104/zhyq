@@ -129,8 +129,12 @@ public class ChannelImportService {
                 channel.setAgencyNo(channelFollowService.nextAgencyNo());
                 channelMapper.insert(channel);
                 imported++;
+            } catch (org.springframework.dao.DuplicateKeyException ex) {
+                log.warn("[crm] 中介导入第 {} 行编号冲突", r + 1, ex);
+                errors.add("第 " + (r + 1) + " 行:「" + channel.getName() + "」编号冲突,请重新导入");
             } catch (Exception ex) {
-                errors.add("第 " + (r + 1) + " 行:" + ex.getMessage());
+                log.warn("[crm] 中介导入第 {} 行失败", r + 1, ex);
+                errors.add("第 " + (r + 1) + " 行:「" + channel.getName() + "」保存失败,请检查该行内容(如文字过长)");
             }
         }
         return new ImportResult(imported, skipped, errors);

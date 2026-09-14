@@ -68,12 +68,7 @@ public class FollowService {
 
     /** 下一个跟进编号:GF- + 4 位顺序号。 */
     String nextFollowNo() {
-        Follow last = followMapper.selectOne(new LambdaQueryWrapper<Follow>()
-                .isNotNull(Follow::getFollowNo)
-                .likeRight(Follow::getFollowNo, NO_PREFIX)
-                .orderByDesc(Follow::getFollowNo)
-                .last("limit 1"));
-        return NO_PREFIX + String.format("%04d", parseSeq(last == null ? null : last.getFollowNo()) + 1);
+        return NO_PREFIX + String.format("%04d", followMapper.maxNoSeq(NO_PREFIX) + 1);
     }
 
     static int parseSeq(String followNo) {

@@ -81,14 +81,9 @@ public class LeadService {
         }
     }
 
-    /** 下一个客户编号:KH- + 4 位顺序号,库中最大号 +1。 */
+    /** 下一个客户编号:KH- + 4 位顺序号,库中最大号 +1(含已删除的行,避免重发撞唯一键)。 */
     String nextLeadNo() {
-        Lead last = leadMapper.selectOne(new LambdaQueryWrapper<Lead>()
-                .isNotNull(Lead::getLeadNo)
-                .likeRight(Lead::getLeadNo, NO_PREFIX)
-                .orderByDesc(Lead::getLeadNo)
-                .last("limit 1"));
-        return NO_PREFIX + String.format("%04d", parseSeq(last == null ? null : last.getLeadNo()) + 1);
+        return NO_PREFIX + String.format("%04d", leadMapper.maxNoSeq(NO_PREFIX) + 1);
     }
 
     /** 从 KH-0007 取出 7;取不出按 0 计,让新号从 0001 开始。 */

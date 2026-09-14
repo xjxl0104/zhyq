@@ -60,29 +60,10 @@ public class ChannelFollowService {
 
     /** 下一个中介编号:ZJ- + 4 位顺序号。 */
     public String nextAgencyNo() {
-        Channel last = channelMapper.selectOne(new LambdaQueryWrapper<Channel>()
-                .likeRight(Channel::getAgencyNo, AGENCY_PREFIX)
-                .orderByDesc(Channel::getAgencyNo)
-                .last("limit 1"));
-        return AGENCY_PREFIX + String.format("%04d", parseSeq(last == null ? null : last.getAgencyNo(), AGENCY_PREFIX) + 1);
+        return AGENCY_PREFIX + String.format("%04d", channelMapper.maxNoSeq(AGENCY_PREFIX) + 1);
     }
 
     String nextFollowNo() {
-        ChannelFollow last = followMapper.selectOne(new LambdaQueryWrapper<ChannelFollow>()
-                .likeRight(ChannelFollow::getFollowNo, FOLLOW_PREFIX)
-                .orderByDesc(ChannelFollow::getFollowNo)
-                .last("limit 1"));
-        return FOLLOW_PREFIX + String.format("%04d", parseSeq(last == null ? null : last.getFollowNo(), FOLLOW_PREFIX) + 1);
-    }
-
-    static int parseSeq(String no, String prefix) {
-        if (no == null || !no.startsWith(prefix)) {
-            return 0;
-        }
-        try {
-            return Integer.parseInt(no.substring(prefix.length()).trim());
-        } catch (NumberFormatException e) {
-            return 0;
-        }
+        return FOLLOW_PREFIX + String.format("%04d", followMapper.maxNoSeq(FOLLOW_PREFIX) + 1);
     }
 }
