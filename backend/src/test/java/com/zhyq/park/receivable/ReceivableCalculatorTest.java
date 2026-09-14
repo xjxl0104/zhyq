@@ -133,6 +133,45 @@ class ReceivableCalculatorTest {
     }
 
     @Test
+    void freePeriodStartingMidMonthWaivesTheWholeStartMonth() {
+        // 云山 -004(登记 11):8/1 起租、免租期 20260808-20261231,2026-09-14 负责人口径
+        // 「8 月就是免租期」——8 月 1-7 日不按天补收(修复前算出 23,212.90 / 1,625.81)
+        ReceivableRegister register = new ReceivableRegister();
+        register.setContractStartDate(LocalDate.of(2026, 8, 1));
+        register.setContractEndDate(LocalDate.of(2041, 7, 31));
+        register.setMonthlyRent(new BigDecimal("102800"));
+        register.setMonthlyProperty(new BigDecimal("7200"));
+        register.setFreePeriodRaw("20260808-20261231;2027年起每年12月免租");
+        register.setDiscountRaw("20260808-20261231为免租期,2027年1月1日至合同期满,每年12月1日-12月31日免租,免租期为19个月");
+
+        assertEquals(new BigDecimal("0.00"), calculator.amountForMonth(
+                register, List.of(), "RENT", YearMonth.of(2026, 8)));
+        assertEquals(new BigDecimal("0.00"), calculator.amountForMonth(
+                register, List.of(), "PROPERTY", YearMonth.of(2026, 8)));
+        assertEquals(new BigDecimal("0.00"), calculator.amountForMonth(
+                register, List.of(), "RENT", YearMonth.of(2026, 12)));
+        assertEquals(new BigDecimal("102800.00"), calculator.amountForMonth(
+                register, List.of(), "RENT", YearMonth.of(2027, 1)));
+        assertEquals(new BigDecimal("7200.00"), calculator.amountForMonth(
+                register, List.of(), "PROPERTY", YearMonth.of(2027, 1)));
+    }
+
+    @Test
+    void freePeriodEndingMidMonthStillProratesTheTail() {
+        // 只放宽起始端:免租结束日仍精确到天,结束月按剩余天数计
+        ReceivableRegister register = new ReceivableRegister();
+        register.setContractStartDate(LocalDate.of(2026, 8, 1));
+        register.setContractEndDate(LocalDate.of(2027, 7, 31));
+        register.setMonthlyRent(new BigDecimal("31000"));
+        register.setFreePeriodRaw("20260808-20261010");
+
+        assertEquals(new BigDecimal("0.00"), calculator.amountForMonth(
+                register, List.of(), "RENT", YearMonth.of(2026, 8)));
+        assertEquals(new BigDecimal("21000.00"), calculator.amountForMonth(
+                register, List.of(), "RENT", YearMonth.of(2026, 10)));
+    }
+
+    @Test
     void derivesFreeRangeFromMonthCountWhenExactDatesAreMissing() {
         ReceivableRegister register = new ReceivableRegister();
         register.setContractStartDate(LocalDate.of(2026, 5, 1));

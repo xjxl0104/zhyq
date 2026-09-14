@@ -156,7 +156,12 @@ public class ReceivableCalculator {
 
     private boolean isWaived(ReceivableRule rule, LocalDate day, LocalDate contractStart) {
         if (!active(rule)) return false;
-        if ("WAIVER".equals(rule.getRuleType())) return appliesToDate(rule, day);
+        // 免租期起始日所在月整月免租(2026-09-14 负责人口径):云山 -004 合同 8/1 起租、免租期
+        // 20260808 起,8 月 1-7 日不再按天补收 23,212.90。只放宽起始端,免租结束日仍精确到天
+        if ("WAIVER".equals(rule.getRuleType())) {
+            return !waiverStart(rule).isAfter(day)
+                    && (rule.getEffectiveEnd() == null || !rule.getEffectiveEnd().isBefore(day));
+        }
         if (!"RECURRING_WAIVER".equals(rule.getRuleType()) || !appliesToDate(rule, day)) {
             return false;
         }
@@ -172,6 +177,12 @@ public class ReceivableCalculator {
         long monthIndex = ChronoUnit.MONTHS.between(
                 YearMonth.from(contractStart), YearMonth.from(day));
         return monthIndex >= 0 && monthIndex % 12 == 11;
+    }
+
+    /** 免租期的实际生效起点:条款起始日所在月的 1 号;没写起始日则不设下限 */
+    private LocalDate waiverStart(ReceivableRule rule) {
+        return rule.getEffectiveStart() == null
+                ? LocalDate.MIN : rule.getEffectiveStart().withDayOfMonth(1);
     }
 
     private boolean appliesToDate(ReceivableRule rule, LocalDate day) {
@@ -234,7 +245,9 @@ public class ReceivableCalculator {
                     : "每个合同年度最后一个月免租"
                     + (rule.getEffectiveStart() == null
                     ? "" : "(" + rule.getEffectiveStart().getYear() + "年起)");
-            case "WAIVER" -> "免收该费用: " + rule.getEffectiveStart() + " ~ " + rule.getEffectiveEnd();
+            case "WAIVER" -> "免收该费用: " + rule.getEffectiveStart() + " ~ " + rule.getEffectiveEnd()
+                    + (rule.getEffectiveStart() != null && rule.getEffectiveStart().getDayOfMonth() != 1
+                    ? "(起始月 " + YearMonth.from(rule.getEffectiveStart()) + " 整月免)" : "");
             case "OFFSET" -> "补助抵扣(每月按固定金额冲抵): "
                     + rule.getEffectiveStart() + " ~ " + rule.getEffectiveEnd();
             case "DISCOUNT" -> "按 " + rule.getDiscountRate() + "% 收取: "
