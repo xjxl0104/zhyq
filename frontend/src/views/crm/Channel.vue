@@ -1,5 +1,29 @@
 <template>
   <div class="page-container">
+    <!-- 统计卡 -->
+    <div class="stat-row">
+      <el-card class="stat-card" shadow="never">
+        <div class="stat-label">中介总数</div>
+        <div class="stat-value">{{ stats.total }}</div>
+      </el-card>
+      <el-card class="stat-card" shadow="never">
+        <div class="stat-label">合作中</div>
+        <div class="stat-value">{{ stats.active }}</div>
+      </el-card>
+      <el-card class="stat-card" shadow="never">
+        <div class="stat-label">A级核心中介</div>
+        <div class="stat-value">{{ stats.gradeA }}</div>
+      </el-card>
+      <el-card class="stat-card" shadow="never">
+        <div class="stat-label">当月新增</div>
+        <div class="stat-value">{{ stats.monthNew }}</div>
+      </el-card>
+      <el-card class="stat-card" shadow="never">
+        <div class="stat-label">累计推荐 / 成交</div>
+        <div class="stat-value">{{ stats.referral }} / {{ stats.deal }}</div>
+      </el-card>
+    </div>
+
     <!-- 查询区 -->
     <div class="search-bar">
       <el-form :inline="true" :model="query">
@@ -38,7 +62,14 @@
     <!-- 表格区 -->
     <div class="table-card">
       <div class="toolbar">
-        <el-button type="primary" @click="openDialog()"><el-icon><Plus /></el-icon>新增中介</el-button>
+        <span class="section-title">
+          中介登记表
+          <span class="hint">— 「最近跟进」「跟进次数」由跟进记录自动维护，不用手填</span>
+        </span>
+        <div>
+          <el-button @click="importVisible = true"><el-icon><Upload /></el-icon>导入登记表</el-button>
+          <el-button type="primary" @click="openDialog()"><el-icon><Plus /></el-icon>新增中介</el-button>
+        </div>
       </div>
       <el-table :data="list" v-loading="loading" border stripe>
         <el-table-column prop="agencyNo" label="中介编号" width="100">
@@ -188,6 +219,40 @@
       </template>
     </el-dialog>
 
+    <!-- 导入 -->
+    <el-dialog v-model="importVisible" title="导入中介登记表" width="580px" @close="importResult = null">
+      <el-alert type="info" :closable="false" show-icon style="margin-bottom: 14px"
+                title="按表头文字认列，不要求列顺序；表头至少要有「中介名称」或「公司名称」列。同名称+电话已存在的会自动跳过，重复导入不会产生副本。" />
+      <el-upload drag :auto-upload="false" :limit="1" :accept="IMPORT_ACCEPT"
+                 :on-change="onFileChange" :on-remove="() => (importFile = null)" :file-list="[]">
+        <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
+        <div class="el-upload__text">把文件拖到这里，或<em>点击选择</em></div>
+        <template #tip>
+          <div class="el-upload__tip">
+            支持 Excel(.xlsx / .xls / WPS .et)、CSV / TXT、Word(.docx 中的表格)
+            <el-button link type="primary" @click.stop="downloadTemplate">下载模板</el-button>
+          </div>
+        </template>
+      </el-upload>
+      <div v-if="importFile" class="picked">已选择：{{ importFile.name }}</div>
+
+      <div v-if="importResult" class="import-result">
+        <el-descriptions :column="3" border size="small">
+          <el-descriptions-item label="导入成功">{{ importResult.imported }} 条</el-descriptions-item>
+          <el-descriptions-item label="重复跳过">{{ importResult.skipped }} 条</el-descriptions-item>
+          <el-descriptions-item label="失败">{{ importResult.errors.length }} 条</el-descriptions-item>
+        </el-descriptions>
+        <ul v-if="importResult.errors.length" class="err-list">
+          <li v-for="(e, i) in importResult.errors" :key="i">{{ e }}</li>
+        </ul>
+      </div>
+
+      <template #footer>
+        <el-button @click="importVisible = false">关闭</el-button>
+        <el-button type="primary" :loading="importing" :disabled="!importFile" @click="doImport">开始导入</el-button>
+      </template>
+    </el-dialog>
+
     <ChannelFollowDrawer v-model="followVisible" :agency="followAgency" @saved="load" />
   </div>
 </template>
@@ -253,11 +318,13 @@ async function submit() {
   ElMessage.success('保存成功')
   dialog.visible = false
   load()
+  loadStats()
 }
 async function remove(id) {
   await channelApi.remove(id)
   ElMessage.success('删除成功')
   load()
+  loadStats()
 }
 
 const followVisible = ref(false)
@@ -267,10 +334,62 @@ function openFollow(row) {
   followVisible.value = true
 }
 
-onMounted(load)
+const stats = reactive({ total: 0, active: 0, gradeA: 0, monthNew: 0, referral: 0, deal: 0 })
+async function loadStats() {
+  Object.assign(stats, await channelApi.stats())
+}
+
+// 导入
+const IMPORT_ACCEPT = '.xlsx,.xls,.et,.csv,.txt,.tsv,.docx'
+const TEMPLATE_HEADERS = ['中介名称', '中介类型', '联系人', '联系电话', '微信号', '所在地区', '办公地址',
+  '擅长业务/资源', '合作等级', '对接负责人', '佣金比例', '合作协议', '累计推荐客户', '累计成交客户', '状态', '备注']
+const importVisible = ref(false)
+const importing = ref(false)
+const importFile = ref(null)
+const importResult = ref(null)
+function onFileChange(f) {
+  importFile.value = f.raw
+  importResult.value = null
+}
+async function doImport() {
+  importing.value = true
+  try {
+    const fd = new FormData()
+    fd.append('file', importFile.value)
+    importResult.value = await channelApi.importFile(fd)
+    ElMessage.success(`导入完成：成功 ${importResult.value.imported} 条`)
+    importFile.value = null
+    await Promise.all([load(), loadStats()])
+  } finally {
+    importing.value = false
+  }
+}
+function downloadTemplate() {
+  const sample = ['示例中介公司', '中介公司', '张三', '13800000000', 'zhangsan', '杭州余杭', '',
+    '电商卖家资源多', 'A-核心合作', '小林', '2', '已签', '0', '0', '合作中', '']
+  // 带 BOM，Excel 双击打开不乱码
+  const csv = String.fromCharCode(0xfeff) +[TEMPLATE_HEADERS, sample].map((r) => r.join(',')).join('\r\n')
+  const a = document.createElement('a')
+  a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }))
+  a.download = '中介登记表模板.csv'
+  a.click()
+  URL.revokeObjectURL(a.href)
+}
+
+onMounted(() => { load(); loadStats() })
 </script>
 
 <style scoped>
+.stat-row { display: flex; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; }
+.stat-card { flex: 1; min-width: 150px; }
+.stat-label { font-size: 13px; color: #909399; }
+.stat-value { font-size: 24px; font-weight: 700; color: #303133; margin-top: 4px; }
+.section-title { font-size: 15px; font-weight: 600; color: #303133; }
+.hint { font-size: 13px; font-weight: 400; color: #909399; }
+.toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+.picked { margin-top: 10px; font-size: 13px; color: #606266; }
+.import-result { margin-top: 14px; }
+.err-list { margin: 10px 0 0; padding-left: 18px; color: #f56c6c; font-size: 13px; max-height: 160px; overflow: auto; }
 .unit { margin-left: 8px; color: #909399; }
 .pager { margin-top: 16px; justify-content: flex-end; }
 </style>

@@ -28,6 +28,11 @@ export const channelApi = {
   add: (data) => request.post('/crm/channel', data),
   update: (data) => request.put('/crm/channel', data),
   remove: (id) => request.delete(`/crm/channel/${id}`),
+  stats: () => request.get('/crm/channel/stats'),
+  // 导入中介登记表,formData 里带 file
+  importFile: (formData) => request.post('/crm/channel/import', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  }),
   followList: (channelId) => request.get('/crm/channel/follow/list', { params: { channelId } }),
   addFollow: (data) => request.post('/crm/channel/follow', data)
 }

@@ -10,13 +10,18 @@ import com.zhyq.park.crm.entity.ChannelFollow;
 import com.zhyq.park.crm.mapper.ChannelFollowMapper;
 import com.zhyq.park.crm.mapper.ChannelMapper;
 import com.zhyq.park.crm.service.ChannelFollowService;
+import com.zhyq.park.crm.service.ChannelImportService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.time.LocalDate;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 @Tag(name = "招商-中介管理")
 @RestController
@@ -27,6 +32,7 @@ public class ChannelController {
     private final ChannelMapper channelMapper;
     private final ChannelFollowMapper channelFollowMapper;
     private final ChannelFollowService channelFollowService;
+    private final ChannelImportService channelImportService;
 
     @Operation(summary = "分页查询中介")
     @GetMapping("/page")
@@ -48,6 +54,28 @@ public class ChannelController {
           .orderByDesc(Channel::getId);
         IPage<Channel> p = channelMapper.selectPage(new Page<>(pageNo, pageSize), qw);
         return Result.ok(PageResult.of(p.getTotal(), p.getRecords()));
+    }
+
+    @Operation(summary = "中介统计卡片")
+    @GetMapping("/stats")
+    public Result<Map<String, Object>> stats() {
+        Map<String, Object> m = new HashMap<>();
+        m.put("total", channelMapper.selectCount(new LambdaQueryWrapper<>()));
+        m.put("active", channelMapper.selectCount(new LambdaQueryWrapper<Channel>().eq(Channel::getStatus, 1)));
+        m.put("gradeA", channelMapper.selectCount(new LambdaQueryWrapper<Channel>().likeRight(Channel::getGrade, "A")));
+        m.put("monthNew", channelMapper.selectCount(new LambdaQueryWrapper<Channel>()
+                .ge(Channel::getCreateTime, LocalDate.now().withDayOfMonth(1).atStartOfDay())));
+        List<Channel> counts = channelMapper.selectList(new LambdaQueryWrapper<Channel>()
+                .select(Channel::getReferralCount, Channel::getDealCount));
+        m.put("referral", counts.stream().mapToInt(c -> c.getReferralCount() == null ? 0 : c.getReferralCount()).sum());
+        m.put("deal", counts.stream().mapToInt(c -> c.getDealCount() == null ? 0 : c.getDealCount()).sum());
+        return Result.ok(m);
+    }
+
+    @Operation(summary = "导入中介登记表(xlsx/xls/et/csv/txt/docx)")
+    @PostMapping("/import")
+    public Result<ChannelImportService.ImportResult> importFile(@RequestParam("file") MultipartFile file) {
+        return Result.ok(channelImportService.importFile(file));
     }
 
     @Operation(summary = "中介详情")
