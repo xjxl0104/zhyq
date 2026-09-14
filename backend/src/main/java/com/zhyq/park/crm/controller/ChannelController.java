@@ -6,7 +6,10 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.zhyq.park.common.result.PageResult;
 import com.zhyq.park.common.result.Result;
 import com.zhyq.park.crm.entity.Channel;
+import com.zhyq.park.crm.entity.ChannelFollow;
+import com.zhyq.park.crm.mapper.ChannelFollowMapper;
 import com.zhyq.park.crm.mapper.ChannelMapper;
+import com.zhyq.park.crm.service.ChannelFollowService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
@@ -15,60 +18,95 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
-@Tag(name = "招商-渠道商")
+@Tag(name = "招商-中介管理")
 @RestController
 @RequestMapping("/crm/channel")
 @RequiredArgsConstructor
 public class ChannelController {
 
     private final ChannelMapper channelMapper;
+    private final ChannelFollowMapper channelFollowMapper;
+    private final ChannelFollowService channelFollowService;
 
-    @Operation(summary = "分页查询渠道")
+    @Operation(summary = "分页查询中介")
     @GetMapping("/page")
     public Result<PageResult<Channel>> page(@RequestParam(defaultValue = "1") int pageNo,
                                             @RequestParam(defaultValue = "10") int pageSize,
                                             @RequestParam(required = false) String name,
                                             @RequestParam(required = false) String contact,
+                                            @RequestParam(required = false) String agencyType,
+                                            @RequestParam(required = false) String grade,
+                                            @RequestParam(required = false) String ownerName,
                                             @RequestParam(required = false) Integer status) {
         LambdaQueryWrapper<Channel> qw = new LambdaQueryWrapper<>();
         qw.like(StringUtils.hasText(name), Channel::getName, name)
           .like(StringUtils.hasText(contact), Channel::getContact, contact)
+          .eq(StringUtils.hasText(agencyType), Channel::getAgencyType, agencyType)
+          .eq(StringUtils.hasText(grade), Channel::getGrade, grade)
+          .like(StringUtils.hasText(ownerName), Channel::getOwnerName, ownerName)
           .eq(status != null, Channel::getStatus, status)
           .orderByDesc(Channel::getId);
         IPage<Channel> p = channelMapper.selectPage(new Page<>(pageNo, pageSize), qw);
         return Result.ok(PageResult.of(p.getTotal(), p.getRecords()));
     }
 
-    @Operation(summary = "渠道详情")
+    @Operation(summary = "中介详情")
     @GetMapping("/{id}")
     public Result<Channel> get(@PathVariable Long id) {
         return Result.ok(channelMapper.selectById(id));
     }
 
-    @Operation(summary = "新增渠道")
+    @Operation(summary = "新增中介(自动发编号)")
     @PostMapping
     public Result<Long> add(@RequestBody Channel channel) {
+        channel.setId(null);
+        channel.setAgencyNo(channelFollowService.nextAgencyNo());
+        clearFollowStats(channel);
         channelMapper.insert(channel);
         return Result.ok(channel.getId());
     }
 
-    @Operation(summary = "修改渠道")
+    @Operation(summary = "修改中介")
     @PutMapping
     public Result<Void> update(@RequestBody Channel channel) {
+        // 编号与跟进统计由服务端维护,置空后 updateById 不会覆盖
+        channel.setAgencyNo(null);
+        clearFollowStats(channel);
         channelMapper.updateById(channel);
         return Result.ok();
     }
 
-    @Operation(summary = "删除渠道")
+    @Operation(summary = "删除中介")
     @DeleteMapping("/{id}")
     public Result<Void> delete(@PathVariable Long id) {
         channelMapper.deleteById(id);
         return Result.ok();
     }
 
-    @Operation(summary = "全部渠道(下拉)")
+    @Operation(summary = "全部合作中的中介(下拉)")
     @GetMapping("/list")
     public Result<List<Channel>> list() {
         return Result.ok(channelMapper.selectList(new LambdaQueryWrapper<Channel>().eq(Channel::getStatus, 1)));
+    }
+
+    @Operation(summary = "某个中介的跟进记录(按跟进日期倒序)")
+    @GetMapping("/follow/list")
+    public Result<List<ChannelFollow>> followList(@RequestParam Long channelId) {
+        return Result.ok(channelFollowMapper.selectList(new LambdaQueryWrapper<ChannelFollow>()
+                .eq(ChannelFollow::getChannelId, channelId)
+                .orderByDesc(ChannelFollow::getFollowDate)
+                .orderByDesc(ChannelFollow::getId)));
+    }
+
+    @Operation(summary = "新增中介跟进记录(自动发编号并回写跟进统计)")
+    @PostMapping("/follow")
+    public Result<Long> addFollow(@RequestBody ChannelFollow follow) {
+        return Result.ok(channelFollowService.add(follow));
+    }
+
+    private static void clearFollowStats(Channel channel) {
+        channel.setFollowCount(null);
+        channel.setLastFollowDate(null);
+        channel.setNextFollow(null);
     }
 }

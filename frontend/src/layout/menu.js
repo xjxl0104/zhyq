@@ -28,10 +28,10 @@ export const menuTree = [
     title: '招商租赁', icon: 'Promotion', children: [
       {
         title: '招商', icon: 'Promotion', children: [
+          { title: '中介管理', path: '/crm/channel' },
           { title: '线索管理', path: '/crm/lead' },
           { title: '意向客户', path: '/crm/customer' },
           { title: '销售计划', path: '/crm/plan' },
-          { title: '渠道管理', path: '/crm/channel' },
           { title: '佣金管理', path: '/crm/commission' },
           { title: '招商分析', path: '/crm/analysis' }
         ]

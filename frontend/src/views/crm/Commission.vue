@@ -19,7 +19,7 @@
     <!-- 查询区 -->
     <div class="search-bar">
       <el-form :inline="true" :model="query">
-        <el-form-item label="渠道">
+        <el-form-item label="中介">
           <el-select v-model="query.channelId" placeholder="全部" clearable filterable style="width: 180px">
             <el-option v-for="c in channels" :key="c.id" :label="c.name" :value="c.id" />
           </el-select>
@@ -43,7 +43,7 @@
       </div>
       <el-table :data="list" v-loading="loading" border stripe>
         <el-table-column type="index" label="序号" width="70" />
-        <el-table-column prop="channelId" label="渠道ID" width="90" align="center" />
+        <el-table-column prop="channelId" label="中介ID" width="90" align="center" />
         <el-table-column prop="contractId" label="合同ID" width="90" align="center" />
         <el-table-column label="计佣基数" width="150" align="right">
           <template #default="{ row }">¥{{ fmtMoney(row.baseAmount) }}</template>
@@ -89,8 +89,8 @@
             <el-option v-for="c in contracts" :key="c.id" :label="c.code" :value="c.id" />
           </el-select>
         </el-form-item>
-        <el-form-item label="渠道" prop="channelId">
-          <el-select v-model="genForm.channelId" placeholder="选择渠道" filterable style="width: 100%">
+        <el-form-item label="中介" prop="channelId">
+          <el-select v-model="genForm.channelId" placeholder="选择中介" filterable style="width: 100%">
             <el-option v-for="c in channels" :key="c.id" :label="c.name" :value="c.id" />
           </el-select>
         </el-form-item>
@@ -174,7 +174,7 @@ const genDialog = reactive({ visible: false })
 const genForm = reactive({ contractId: null, channelId: null })
 const genRules = {
   contractId: [{ required: true, message: '请选择合同', trigger: 'change' }],
-  channelId: [{ required: true, message: '请选择渠道', trigger: 'change' }]
+  channelId: [{ required: true, message: '请选择中介', trigger: 'change' }]
 }
 async function openGen() {
   Object.assign(genForm, { contractId: null, channelId: null })

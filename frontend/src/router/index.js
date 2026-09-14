@@ -23,7 +23,7 @@ const routes = [
       { path: 'crm/plan', meta: { title: '销售计划' }, component: () => import('@/views/crm/Plan.vue') },
       { path: 'crm/commission', meta: { title: '佣金管理' }, component: () => import('@/views/crm/Commission.vue') },
       { path: 'crm/analysis', meta: { title: '招商分析' }, component: () => import('@/views/crm/Analysis.vue') },
-      { path: 'crm/channel', meta: { title: '渠道管理' }, component: () => import('@/views/crm/Channel.vue') },
+      { path: 'crm/channel', meta: { title: '中介管理' }, component: () => import('@/views/crm/Channel.vue') },
 
       // 租客
       { path: 'tenant/list', meta: { title: '租客列表' }, component: () => import('@/views/tenant/TenantList.vue') },

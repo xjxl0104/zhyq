@@ -21,13 +21,15 @@ export const followApi = {
   add: (data) => request.post('/crm/follow', data)
 }
 
-// 渠道商
+// 中介(原渠道商,接口路径沿用 /crm/channel)
 export const channelApi = {
   page: (params) => request.get('/crm/channel/page', { params }),
   list: () => request.get('/crm/channel/list'),
   add: (data) => request.post('/crm/channel', data),
   update: (data) => request.put('/crm/channel', data),
-  remove: (id) => request.delete(`/crm/channel/${id}`)
+  remove: (id) => request.delete(`/crm/channel/${id}`),
+  followList: (channelId) => request.get('/crm/channel/follow/list', { params: { channelId } }),
+  addFollow: (data) => request.post('/crm/channel/follow', data)
 }
 
 // 意向客户
