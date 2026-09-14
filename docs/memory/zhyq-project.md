@@ -27,3 +27,9 @@ metadata:
 
 
 **2026-07-13 换机到 Mac + 升级调研启动**:项目正式位置改为 `~/Documents/zhyq`(Mac,从 Windows 机拷来;此副本 git 无提交历史)。升级调研方案 v2 已确认并执行中——25 家对标(国内商业8/国际商业7/开源7/前端标杆3),只看功能分类/流程编排/前端设计/架构与功能设计,不看别人后端实现;AI 暂缓只预留扩展点;产出先报告后实施。25 张对标卡片在 `docs/upgrade/cards/`,方案在 `docs/upgrade/调研方案.md`,状态详见 [[zhyq-upgrade-research]]。前端也建了 codegraph 索引,见 [[zhyq-frontend-map]]。**注意**:原 `~/Downloads` 里的 zhyq 旧副本、PLAYBOOK.md、两份需求规格书 docx 已被用户清理且废纸篓已空——PLAYBOOK.md 已从会话上下文原样恢复到项目根,docx 无法恢复(要点已沉淀在 CLAUDE.md 与本记忆)。
+
+**2026-09-14 GitHub 与推送约定（用户明确指定）**:
+- 当前本机项目路径为 `/Users/shuzhiyuncangchanyeyuan/Documents/系统开发/智慧园区系统/园区管理系统`，远程仓库为 `https://github.com/xjxl0104/zhyq.git`。
+- GitHub 操作统一使用已授权的 `dgsf2027` 账户。
+- 日常成果直接推送到远程 `test` 分支，不推送到 `main`；`main` 仍按项目上线纪律处理。
+- 开始工作前先同步远程并保护现有未提交改动；禁止为切换分支而覆盖或丢弃用户本地改动。
