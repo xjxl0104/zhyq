@@ -1,0 +1,38 @@
+<script setup>
+defineProps({ name: { type: String, default: 'building' }, size: { type: [Number, String], default: 20 } })
+const paths = {
+  building: 'M3 21V7l9-4v18M12 8h9v13M1 21h22M6 9h2m-2 4h2m-2 4h2m7-5h3m-3 4h3',
+  cube: 'm12 2 9 5v10l-9 5-9-5V7l9-5Zm0 10 9-5M12 12 3 7m9 5v10M7.5 4.5l9 5',
+  grid: 'M3 3h7v7H3V3Zm11 0h7v7h-7V3ZM3 14h7v7H3v-7Zm11 0h7v7h-7v-7Z',
+  tool: 'M14 6a5 5 0 0 0-6 6l-5 5a2.1 2.1 0 0 0 3 3l5-5a5 5 0 0 0 6-6l-3 3-3-3 3-3Z',
+  document: 'M14 2H5v20h14V7l-5-5Zm0 0v5h5M8 12h8m-8 4h6',
+  camera: 'M3 6h12v12H3V6Zm12 4 6-3v10l-6-3M7 10h4',
+  fire: 'M12 2c2 5-3 6-1 10 2 0 4-2 4-4 5 5 6 8 3 12-3 3-9 2-11-1-3-5 1-9 5-17Z',
+  bolt: 'm13 2-9 12h7l-1 8 10-13h-8l1-7Z',
+  layers: 'm12 3 10 5-10 5L2 8l10-5Zm-10 9 10 5 10-5M2 16l10 5 10-5',
+  arrow: 'M5 12h14m-5-5 5 5-5 5',
+  chevron: 'm9 5 7 7-7 7',
+  down: 'm6 9 6 6 6-6',
+  plus: 'M12 5v14M5 12h14',
+  minus: 'M5 12h14',
+  reset: 'M3 10a9 9 0 1 1 1 7M3 4v6h6',
+  expand: 'M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5',
+  rotate: 'M3 9c2-5 16-5 18 0s-4 9-12 8m0 0 4-4m-4 4 4 4M3 9l4 4m-4-4 4-4',
+  eye: 'M2 12s4-7 10-7 10 7 10 7-4 7-10 7-10-7-10-7Zm13 0a3 3 0 1 1-6 0 3 3 0 0 1 6 0',
+  close: 'm6 6 12 12M6 18 18 6',
+  search: 'M16 10a6 6 0 1 1-12 0 6 6 0 0 1 12 0Zm-2 4 7 7',
+  pin: 'M19 9c0 6-7 13-7 13S5 15 5 9a7 7 0 0 1 14 0Zm-4 0a3 3 0 1 1-6 0 3 3 0 0 1 6 0',
+  check: 'm5 12 4 4L19 6',
+  bell: 'M18 8a6 6 0 0 0-12 0c0 8-3 8-3 10h18c0-2-3-2-3-10M10 22h4',
+  help: 'M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0ZM9 9a3 3 0 0 1 6 0c0 2-3 2-3 5m0 3h.01',
+  photo: 'M3 3h18v18H3V3Zm0 13 5-5 4 4 3-3 6 6M15 7h.01',
+  clock: 'M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9-5v5l3 2',
+  sun: 'M16 12a4 4 0 1 1-8 0 4 4 0 0 1 8 0ZM12 1v2m0 18v2M1 12h2m18 0h2M4 4l2 2m12 12 2 2M4 20l2-2M18 6l2-2',
+  rain: 'M7 16H5a4 4 0 1 1 1-8 6 6 0 0 1 11-1 4.5 4.5 0 0 1 2 9M8 18l-1 3m6-3-1 3m6-3-1 3',
+  moon: 'M20.9 13a9 9 0 1 1-9.9-9.9A7 7 0 0 0 20.9 13Z',
+  gate: 'M3 21V6h18v15M1 6h22V3H1v3Zm6 2v13m10-13v13M7 13h10',
+  menu: 'M4 6h16M4 12h16M4 18h16',
+  export: 'M12 3v12m-4-4 4 4 4-4M4 15v6h16v-6',
+}
+</script>
+<template><svg :width="size" :height="size" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path :d="paths[name] || paths.cube" /></svg></template>

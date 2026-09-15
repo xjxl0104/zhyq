@@ -1,0 +1,77 @@
+import { mount } from '@vue/test-utils'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import TwinHome from '../TwinHome.vue'
+
+const { route, push, sceneReset } = vi.hoisted(() => ({ route: { path: '/twin-preview', params: {}, query: {}, meta: { twinPreview: true } }, push: vi.fn(), sceneReset: vi.fn() }))
+vi.mock('vue-router', () => ({ useRoute: () => route, useRouter: () => ({ push }) }))
+vi.mock('../WarehouseScene.vue', () => ({ default: { name: 'WarehouseScene', props: ['floor', 'mode', 'layer', 'focused', 'weather', 'viewpoint'], methods: { reset: sceneReset }, template: '<div class="mock-scene" />' } }))
+
+describe('warehouse workspace interactions', () => {
+  beforeEach(() => { push.mockClear(); sceneReset.mockClear(); route.params = {}; route.meta = { twinPreview: true } })
+  it('can return to the entrance again after the user has moved the camera', async () => {
+    const wrapper = mount(TwinHome)
+    await wrapper.get('[data-testid="view-entrance"]').trigger('click')
+    sceneReset.mockClear()
+    await wrapper.get('[data-testid="view-entrance"]').trigger('click')
+    expect(sceneReset).toHaveBeenCalledOnce()
+    wrapper.unmount()
+  })
+  it('changes weather without losing the selected floor and opens the entrance view', async () => {
+    const wrapper = mount(TwinHome)
+    await wrapper.get('[data-testid="floor-5"]').trigger('click')
+    await wrapper.get('[data-testid="weather-rain"]').trigger('click')
+    const scene = wrapper.findComponent({ name: 'WarehouseScene' })
+    expect(scene.props()).toMatchObject({ weather: 'rain', floor: 5 })
+    await wrapper.get('[data-testid="view-entrance"]').trigger('click')
+    expect(scene.props()).toMatchObject({ viewpoint: 'entrance', mode: 'exterior', focused: true })
+    await wrapper.get('[aria-label="查看全部楼层"]').trigger('click')
+    expect(scene.props()).toMatchObject({ viewpoint: 'overview', weather: 'rain', floor: null })
+    wrapper.unmount()
+  })
+  it('opens model focus and restores the surrounding operating panels without losing the selected floor', async () => {
+    const wrapper = mount(TwinHome)
+    await wrapper.get('[data-testid="floor-5"]').trigger('click')
+    await wrapper.get('[aria-label="专注查看模型"]').trigger('click')
+    expect(wrapper.findComponent({ name: 'WarehouseScene' }).props()).toMatchObject({ floor: 5, focused: true })
+    await wrapper.get('[aria-label="恢复运营看板"]').trigger('click')
+    expect(wrapper.findComponent({ name: 'WarehouseScene' }).props()).toMatchObject({ floor: 5, focused: false })
+    wrapper.unmount()
+  })
+  it('keeps the floor selector and interior view synchronized', async () => {
+    const wrapper = mount(TwinHome)
+    await wrapper.get('[data-testid="floor-5"]').trigger('click')
+    await wrapper.get('[data-testid="view-interior"]').trigger('click')
+    expect(wrapper.findComponent({ name: 'WarehouseScene' }).props()).toMatchObject({ floor: 5, mode: 'interior' })
+    expect(wrapper.text()).toContain('演示数据')
+    wrapper.unmount()
+  })
+  it('switches to a pending point system when locating it from an unrelated layer', async () => {
+    const wrapper = mount(TwinHome)
+    await wrapper.get('.layer-button:nth-of-type(5)').trigger('click')
+    const scene = wrapper.findComponent({ name: 'WarehouseScene' })
+    expect(scene.props('layer')).toBe('camera')
+    await wrapper.get('[aria-label="定位消防立管 · 东区，待巡检"]').trigger('click')
+    expect(scene.props()).toMatchObject({ floor: 3, layer: 'fire' })
+    expect(wrapper.get('[aria-label="空间点位详情"]').text()).toContain('HYD-032')
+    wrapper.unmount()
+  })
+  it('routes a model point into its local module without creating credentials', async () => {
+    localStorage.clear()
+    const wrapper = mount(TwinHome)
+    wrapper.findComponent({ name: 'WarehouseScene' }).vm.$emit('select-point', { id: 'camera-01', module: 'camera', name: '东侧装卸区监控', floor: 1, code: 'CAM-012', status: '演示在线', location: '1F', values: [] })
+    await wrapper.vm.$nextTick()
+    await wrapper.get('[data-testid="point-open-module"]').trigger('click')
+    expect(push).toHaveBeenCalledWith({ path: '/twin-preview/module/camera', query: { floor: '1' } })
+    expect(localStorage.getItem('zhyq_token')).toBeNull()
+    wrapper.unmount()
+  })
+  it('uses the existing protected business module on the real homepage', async () => {
+    route.meta = {}
+    const wrapper = mount(TwinHome, { props: { projectName: '测试项目' } })
+    expect(wrapper.find('.twin-sidebar').exists()).toBe(false)
+    expect(wrapper.get('.twin-breadcrumb').text()).toContain('测试项目')
+    wrapper.findComponent({ name: 'WarehouseScene' }).vm.$emit('open-module', { module: 'contract', floor: 3 })
+    expect(push).toHaveBeenCalledWith('/contract/list')
+    wrapper.unmount()
+  })
+})

@@ -2,6 +2,7 @@ export const menuTree = [
   {
     title: '工作台', icon: 'HomeFilled', children: [
       { title: '首页', path: '/dashboard' },
+      { title: '经营看板', path: '/overview' },
       {
         title: '数据中心', icon: 'DataLine', children: [
           { title: '数据看板', path: '/data/center' },
