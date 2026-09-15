@@ -28,9 +28,11 @@ export function bindWarehouse(root, extraGeometries = [], extraMaterials = []) {
   selection.userData.runtimeOnly = true
   building.add(selection)
   selection.visible = false
-  let current = { mode: 'exterior', floor: null, layer: 'all' }
-  function setState(state) { current = { ...current, ...state } }
+  let current = { mode: 'exterior', floor: null, layer: 'all' }, stateChanged = true
+  function setState(state) { current = { ...current, ...state }; stateChanged = true }
   function update(delta) {
+    let changed = stateChanged
+    stateChanged = false
     const ease = 1 - Math.exp(-delta * 8)
     const selected = current.floor || 3
     for (let i = 0; i < floors.length; i++) {
@@ -39,7 +41,11 @@ export function bindWarehouse(root, extraGeometries = [], extraMaterials = []) {
       const expanded = current.mode === 'exploded'
       item.group.visible = !inside || floor === selected
       const targetY = inside ? .4 : floorBase(floor) + (expanded ? i * 4 : 0)
-      item.group.position.y += (targetY - item.group.position.y) * ease
+      const distance = targetY - item.group.position.y
+      if (distance !== 0) {
+        item.group.position.y = Math.abs(distance) < .001 ? targetY : item.group.position.y + distance * ease
+        changed = true
+      }
       item.shell.visible = !inside
       item.interior.visible = inside || (expanded && floor === selected)
       item.fire.visible = inside || (current.layer === 'fire' && expanded && floor === selected)
@@ -53,6 +59,7 @@ export function bindWarehouse(root, extraGeometries = [], extraMaterials = []) {
       outline.scale.y = floorHeight(current.floor) / 5.7
       selection.position.y = y + .3
     }
+    return changed
   }
   function pointPosition(point) {
     if (current.mode === 'interior') {

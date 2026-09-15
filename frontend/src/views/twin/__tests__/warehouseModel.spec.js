@@ -4,6 +4,18 @@ import { MODEL, floorBase, floorHeight } from '../twinData'
 import { bindWarehouse } from '../warehouseController'
 
 describe('warehouse scene model', () => {
+  it('reports geometry changes only until the floor animation has settled', () => {
+    const model = createWarehouse()
+    model.update(1)
+    expect(model.update(1)).toBe(false)
+    model.setState({ mode: 'exploded', floor: 3 })
+    expect(model.update(1 / 60)).toBe(true)
+    for (let frame = 0; frame < 180; frame++) model.update(1 / 60)
+    expect(model.update(1 / 60)).toBe(false)
+    model.setState({ mode: 'interior', floor: 5 })
+    expect(model.update(1 / 60)).toBe(true)
+    model.dispose()
+  })
   it('restores floor interactions on a separately loaded model hierarchy', () => {
     const generated = createWarehouse()
     const importedRoot = generated.root.clone(true)

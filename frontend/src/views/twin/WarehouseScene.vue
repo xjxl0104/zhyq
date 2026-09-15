@@ -17,7 +17,7 @@ const pins = computed(() => props.mode === 'interior'
   : visiblePoints(props.layer, props.floor, props.mode))
 const moduleFor = id => MODULES.find(item => item.id === id)
 const markerElements = new Map()
-let renderer, scene, camera, controls, model, observer, environmentTarget, weatherEffects, frame = 0, lastTime = 0, disposed = false, tween = null, width = 1, height = 1
+let renderer, scene, camera, controls, model, observer, environmentTarget, weatherEffects, frame = 0, lastTime = 0, disposed = false, tween = null, width = 1, height = 1, needsRender = true
 const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
 const raycaster = new THREE.Raycaster(), pointer = new THREE.Vector2()
 let pointerDown = null
@@ -25,6 +25,7 @@ function resize() {
   if (!host.value || !renderer) return
   width = host.value.clientWidth; height = host.value.clientHeight
   if (!width || !height) return
+  needsRender = true
   renderer.setSize(width, height)
   // Preserve horizontal context in narrow windows without changing the user's orbit.
   camera.aspect = width / height
@@ -48,6 +49,7 @@ function reset() {
 function zoom(amount) {
   if (!camera) return
   tween = null
+  needsRender = true
   camera.zoom = THREE.MathUtils.clamp(camera.zoom * amount, .55, 3)
   camera.updateProjectionMatrix()
 }
@@ -76,7 +78,8 @@ function animate(time) {
   frame = requestAnimationFrame(animate)
   if (document.hidden) { lastTime = time; return }
   const delta = Math.min((time - (lastTime || time)) / 1000, .05); lastTime = time
-  model.update(delta)
+  const modelChanged = model.update(delta)
+  const cameraTweening = Boolean(tween)
   weatherEffects?.update(delta, time / 1000)
   controls.autoRotate = props.rotating && !reducedMotion
   if (tween) {
@@ -87,8 +90,13 @@ function animate(time) {
     camera.zoom = THREE.MathUtils.lerp(tween.fromZoom, 1, ease); camera.updateProjectionMatrix()
     if (progress === 1) tween = null
   }
-  controls.update(delta)
+  const cameraChanged = controls.update(delta)
+  const raining = props.weather === 'rain' && !reducedMotion
+  if (!needsRender && !modelChanged && !cameraTweening && !cameraChanged && !raining) return
+  // Camera movement does not change shadows. Rebuild only when geometry or lighting changes.
+  if (modelChanged) renderer.shadowMap.needsUpdate = true
   renderer.render(scene, camera)
+  needsRender = false
   for (const point of pins.value) {
     const element = markerElements.get(point.id)
     if (!element) continue
@@ -104,6 +112,7 @@ onMounted(async () => {
     renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' })
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.75))
     renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap
+    renderer.shadowMap.autoUpdate = false; renderer.shadowMap.needsUpdate = true
     renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.02
     const environment = new RoomEnvironment()
     const pmrem = new THREE.PMREMGenerator(renderer)
@@ -158,7 +167,12 @@ watch(() => [props.mode, props.floor, props.layer], () => {
 watch(() => props.mode, reset)
 watch(() => props.focused, reset)
 watch(() => props.viewpoint, reset)
-watch(() => props.weather, value => weatherEffects?.setWeather(value))
+watch(() => props.weather, value => {
+  weatherEffects?.setWeather(value)
+  needsRender = true
+  if (renderer) renderer.shadowMap.needsUpdate = true
+})
+watch(() => props.markers, () => { needsRender = true })
 onBeforeUnmount(() => {
   disposed = true; cancelAnimationFrame(frame); observer?.disconnect(); controls?.dispose()
   if (renderer) {

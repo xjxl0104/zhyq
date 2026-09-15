@@ -31,7 +31,6 @@
         </div>
         <el-table :data="rooms" v-loading="loading" border stripe>
           <el-table-column prop="roomNo" label="房号" width="120" />
-          <el-table-column prop="code" label="房间编码" width="140" />
           <el-table-column label="状态" width="120">
             <template #default="{ row }">
               <el-tag :type="statusType(row.status)">{{ statusText(row.status) }}</el-tag>
@@ -61,7 +60,25 @@
     <el-dialog v-model="dialog.visible" :title="dialog.title" width="560px">
       <el-form :model="form" label-width="90px" ref="formRef" :rules="rules">
         <el-row :gutter="12">
-          <el-col :span="12"><el-form-item label="房间编码" prop="code"><el-input v-model="form.code" /></el-form-item></el-col>
+          <el-col :span="12"><el-form-item label="所属楼宇" prop="buildingId">
+            <el-select v-model="form.buildingId" placeholder="请选择" filterable style="width:100%" @change="onBuildingChange">
+              <el-option v-for="b in buildingOptions" :key="b.buildingId" :label="b.label" :value="b.buildingId" />
+            </el-select>
+          </el-form-item></el-col>
+          <el-col :span="12"><el-form-item label="所属楼层" prop="floorId">
+            <el-select v-model="form.floorId" :placeholder="form.buildingId && !floors.length ? '该楼宇暂无楼层' : '请选择'"
+                       :disabled="!form.buildingId" style="width:100%">
+              <el-option v-for="f in floors" :key="f.id" :label="f.name || `${f.floorNo}层`" :value="f.id" />
+            </el-select>
+          </el-form-item></el-col>
+        </el-row>
+        <el-alert v-if="!buildingOptions.length" type="warning" :closable="false" show-icon style="margin: -6px 0 12px">
+          <template #title>
+            还没有楼宇，房间需要挂在楼宇下。
+            <el-button link type="primary" @click="goBuilding">去「建筑管理」新增楼宇</el-button>
+          </template>
+        </el-alert>
+        <el-row :gutter="12">
           <el-col :span="12"><el-form-item label="房号" prop="roomNo"><el-input v-model="form.roomNo" /></el-form-item></el-col>
         </el-row>
         <el-row :gutter="12">
@@ -170,15 +187,40 @@ async function loadRooms() {
 
 const formRef = ref()
 const dialog = reactive({ visible: false, title: '' })
-const blank = { id: null, code: '', roomNo: '', status: 1, usageType: '办公', rentArea: 0, buildArea: 0, orientation: '', decoration: '', basePrice: 0, propertyFee: 0 }
+const blank = { id: null, buildingId: null, floorId: null, roomNo: '', status: 1, usageType: '办公', rentArea: 0, buildArea: 0, orientation: '', decoration: '', basePrice: 0, propertyFee: 0 }
 const form = reactive({ ...blank })
 const rules = {
-  code: [{ required: true, message: '请输入房间编码', trigger: 'blur' }],
+  buildingId: [{ required: true, message: '请选择所属楼宇', trigger: 'change' }],
+  floorId: [{ required: true, message: '请选择所属楼层', trigger: 'change' }],
   roomNo: [{ required: true, message: '请输入房号', trigger: 'blur' }]
+}
+// 楼宇下拉取自左侧树:「项目 / 楼宇」
+const buildingOptions = computed(() => treeData.value.flatMap(p =>
+  p.children.map(b => ({ buildingId: b.buildingId, label: `${p.label} / ${b.label}` }))))
+const floors = ref([])
+const floorsLoading = ref(false)
+async function loadFloors(buildingId) {
+  floors.value = []
+  if (!buildingId) return
+  floorsLoading.value = true
+  try { floors.value = await floorApi.ensure(buildingId) } finally { floorsLoading.value = false }
+}
+function goBuilding() {
+  dialog.visible = false
+  router.push('/building/building')
+}
+function onBuildingChange(id) {
+  form.floorId = null
+  loadFloors(id)
 }
 function openDialog(row) {
   dialog.visible = true; dialog.title = row ? '编辑房间' : '新增房间'
-  Object.assign(form, row ? row : blank)
+  Object.assign(form, blank, row ? row : { buildingId: currentBuilding.value })
+  loadFloors(form.buildingId).then(() => {
+    // 新增时楼宇只有一层就直接选上
+    if (!row && floors.value.length === 1) form.floorId = floors.value[0].id
+  })
+  formRef.value?.clearValidate()
 }
 async function submit() {
   await formRef.value.validate()

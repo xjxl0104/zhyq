@@ -3,8 +3,11 @@ package com.zhyq.park.building.controller;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.zhyq.park.building.entity.Floor;
 import com.zhyq.park.building.entity.Room;
+import com.zhyq.park.building.mapper.FloorMapper;
 import com.zhyq.park.building.mapper.RoomMapper;
+import com.zhyq.park.common.exception.BizException;
 import com.zhyq.park.common.result.PageResult;
 import com.zhyq.park.common.result.Result;
 import com.zhyq.park.space.service.SpaceSyncService;
@@ -32,6 +35,7 @@ public class RoomController {
     private static final int STATUS_RENTED = 5;   // 在租
 
     private final RoomMapper roomMapper;
+    private final FloorMapper floorMapper;
     private final SpaceSyncService spaceSyncService;
 
     @Operation(summary = "分页查询房源")
@@ -61,6 +65,14 @@ public class RoomController {
     @Operation(summary = "新增房源")
     @PostMapping
     public Result<Long> add(@RequestBody Room room) {
+        fillLocation(room);
+        if (!StringUtils.hasText(room.getRoomNo())) {
+            throw new BizException("请输入房号");
+        }
+        // 页面已不再录入房间编码;库字段非空,沿用房号填充,电表等处按编码展示不受影响
+        if (!StringUtils.hasText(room.getCode())) {
+            room.setCode(room.getRoomNo().trim());
+        }
         roomMapper.insert(room);
         try { spaceSyncService.sync("room", room.getId()); } catch (Exception e) { log.warn("space sync fail room {}", room.getId(), e); }
         return Result.ok(room.getId());
@@ -69,9 +81,28 @@ public class RoomController {
     @Operation(summary = "修改房源")
     @PutMapping
     public Result<Void> update(@RequestBody Room room) {
+        if (room.getFloorId() != null) {
+            fillLocation(room);
+        }
+        if (!StringUtils.hasText(room.getCode())) {
+            room.setCode(null); // 空值不覆盖原编码
+        }
         roomMapper.updateById(room);
         try { spaceSyncService.sync("room", room.getId()); } catch (Exception e) { log.warn("space sync fail room {}", room.getId(), e); }
         return Result.ok();
+    }
+
+    /** 楼宇/项目以楼层为准回填,避免前端传错或漏传导致 NOT NULL 报错 */
+    private void fillLocation(Room room) {
+        if (room.getFloorId() == null) {
+            throw new BizException("请选择所属楼层");
+        }
+        Floor floor = floorMapper.selectById(room.getFloorId());
+        if (floor == null) {
+            throw new BizException("所选楼层不存在或已删除");
+        }
+        room.setBuildingId(floor.getBuildingId());
+        room.setProjectId(floor.getProjectId());
     }
 
     @Operation(summary = "删除房源")
