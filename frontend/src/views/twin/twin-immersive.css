@@ -1,5 +1,7 @@
 /* One spatial canvas, with operational information floating within the same environment. */
 .twin-workspace-v2 { --ops-panel-bg:rgba(248,250,255,.8); --ops-ink:#213e50; --ops-muted:#698392; --ops-line:rgba(119,154,172,.22); --scene-ui:#345a6e; --scene-ui-muted:#7895a5; --scene-ui-bg:rgba(248,253,255,.83); --scene-line:rgba(123,159,178,.25); background:#eef0f8; }
+/* Embedded pages reveal Layout's shared glass surface, matching the active menu. */
+.twin-workspace-v2.twin-embedded { background:transparent; }
 .twin-workspace-v2 .twin-topbar { height:44px; background:#f9faff; }
 .twin-workspace-v2 .twin-heading { min-height:54px;padding:7px 0; }
 .twin-workspace-v2 .twin-heading h1 { font-size:21px; }
