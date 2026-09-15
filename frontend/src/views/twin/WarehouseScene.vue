@@ -131,17 +131,17 @@ onMounted(async () => {
     controls.minDistance = 45; controls.maxDistance = 500
     controls.autoRotateSpeed = .45
     controls.addEventListener('start', () => { tween = null })
-    const hemisphere = new THREE.HemisphereLight('#f2f8ff', '#8e9c8b', 1.6)
+    const hemisphere = new THREE.HemisphereLight('#e8edff', '#858fb0', 1.6)
     scene.add(hemisphere)
-    const sunlight = new THREE.DirectionalLight('#fff7ed', 2.8)
+    const sunlight = new THREE.DirectionalLight('#f5f5ff', 2.8)
     sunlight.position.set(-55, 110, 70); sunlight.castShadow = true
     sunlight.shadow.mapSize.set(2048, 2048)
     Object.assign(sunlight.shadow.camera, { left: -145, right: 145, top: 130, bottom: -130, near: 1, far: 350 })
     sunlight.shadow.bias = -.0004; sunlight.shadow.normalBias = .06
     sunlight.shadow.radius = 4
     scene.add(sunlight)
-    const fill = new THREE.DirectionalLight('#d5ebf3', .65); fill.position.set(60, 70, -90); scene.add(fill)
-    const ground = new THREE.Mesh(new THREE.PlaneGeometry(1800, 1800), new THREE.MeshStandardMaterial({ color: '#9eafa0', roughness: .95 }))
+    const fill = new THREE.DirectionalLight('#dce2ff', .65); fill.position.set(60, 70, -90); scene.add(fill)
+    const ground = new THREE.Mesh(new THREE.PlaneGeometry(1800, 1800), new THREE.MeshStandardMaterial({ color: '#a2acc7', roughness: .95 }))
     ground.rotation.x = -Math.PI / 2; ground.position.y = -1.4; ground.receiveShadow = true; scene.add(ground)
     model = await loadWarehouse()
     if (disposed) { model.dispose(); return }

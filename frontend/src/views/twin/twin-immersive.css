@@ -1,15 +1,20 @@
 /* One spatial canvas, with operational information floating within the same environment. */
-.twin-workspace-v2 { --ops-panel-bg:rgba(247,252,255,.8); --ops-ink:#213e50; --ops-muted:#698392; --ops-line:rgba(119,154,172,.22); --scene-ui:#345a6e; --scene-ui-muted:#7895a5; --scene-ui-bg:rgba(248,253,255,.83); --scene-line:rgba(123,159,178,.25); background:#eaf1f5; }
-.twin-workspace-v2 .twin-topbar { height:44px; background:#f8fbfd; }
+.twin-workspace-v2 { --ops-panel-bg:rgba(248,250,255,.8); --ops-ink:#213e50; --ops-muted:#698392; --ops-line:rgba(119,154,172,.22); --scene-ui:#345a6e; --scene-ui-muted:#7895a5; --scene-ui-bg:rgba(248,253,255,.83); --scene-line:rgba(123,159,178,.25); background:#eef0f8; }
+.twin-workspace-v2 .twin-topbar { height:44px; background:#f9faff; }
 .twin-workspace-v2 .twin-heading { min-height:54px;padding:7px 0; }
 .twin-workspace-v2 .twin-heading h1 { font-size:21px; }
 .twin-workspace-v2 .twin-heading p { margin:2px 0 0;font-size:10px; }
 .twin-workspace-v2 .twin-kpi-strip { gap:9px;margin-bottom:10px; }
-.twin-workspace-v2 .twin-kpi { padding:8px 12px;background:#f8fcfe;border-color:#dce7ed; }
+.twin-workspace-v2 .twin-kpi { padding:8px 12px;background:#f9faff;border-color:#e0e4ef; }
 .twin-workspace-v2 .twin-kpi strong { font-size:21px; }
 .twin-workspace-v2 .kpi-icon { width:29px;height:31px;background:transparent; }
 .twin-workspace-v2 .kpi-note { font-size:8px; }
-.twin-workspace-v2 .twin-content-grid { position:relative;isolation:isolate;grid-template-columns:minmax(210px,.85fr) minmax(260px,2.2fr) minmax(210px,.85fr);height:clamp(630px,calc(100dvh - 270px),860px);padding:49px 12px 12px;gap:12px;background:#c3d5df;border:1px solid #bdcfda;border-radius:13px;overflow:hidden; }
+.twin-workspace-v2 .twin-content-grid { position:relative;isolation:isolate;grid-template-columns:minmax(210px,.85fr) minmax(260px,2.2fr) minmax(210px,.85fr);height:clamp(630px,calc(100dvh - 270px),860px);padding:49px 12px 12px;gap:12px;background:#d7dded;border:1px solid #c7cee2;border-radius:13px;overflow:hidden; }
+.twin-workspace-v2 .scene-loading,.twin-workspace-v2 .scene-error { background:#e1e5f2;color:#526080; }
+.twin-workspace-v2 .scene-spinner { border-color:#c2cbe0;border-top-color:#6264ba; }
+.twin-workspace-v2 .scene-error button { border-color:#afb9d5;background:#f8f9fe;color:#484f8a; }
+.twin-workspace-v2.is-night .scene-loading,.twin-workspace-v2.is-night .scene-error { background:#242e4b;color:#c8d1ed; }
+.twin-workspace-v2.is-night .scene-spinner { border-color:#475676;border-top-color:#a3aaf0; }
 .twin-workspace-v2 .twin-world-scene { position:absolute;inset:0;z-index:0; }
 .twin-workspace-v2 .twin-world-scene .warehouse-scene { width:100%;height:100%; }
 .twin-workspace-v2 .twin-board-rail { position:relative;z-index:3;min-height:0; }
