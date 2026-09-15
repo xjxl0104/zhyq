@@ -53,6 +53,7 @@
     <div class="table-card">
       <div class="toolbar">
         <el-button type="primary" @click="openDialog()"><el-icon><Plus /></el-icon>新增供应商</el-button>
+        <el-button @click="importVisible = true"><el-icon><Upload /></el-icon>表格导入</el-button>
         <span class="toolbar-tip">类别不够用?到「系统管理 → 字典管理 → 供应商类别」里自己加</span>
       </div>
       <el-table :data="list" v-loading="loading" border stripe>
@@ -129,6 +130,40 @@
       <template #footer>
         <el-button @click="dialog.visible = false">取消</el-button>
         <el-button type="primary" @click="submit">确定</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 表格导入 -->
+    <el-dialog v-model="importVisible" title="导入供应商档案" width="580px" @close="importResult = null">
+      <el-alert type="info" :closable="false" show-icon style="margin-bottom: 14px"
+                title="按表头文字认列，不要求列顺序；表头至少要有「供应商名称」或「公司名称」列。类别可填中文名（如 物业服务）。统一社会信用代码或名称已存在的会自动跳过，不会覆盖已有档案。" />
+      <el-upload drag :auto-upload="false" :limit="1" :accept="IMPORT_ACCEPT"
+                 :on-change="onFileChange" :on-remove="() => (importFile = null)" :file-list="[]">
+        <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
+        <div class="el-upload__text">把文件拖到这里，或<em>点击选择</em></div>
+        <template #tip>
+          <div class="el-upload__tip">
+            支持 Excel(.xlsx / .xls / WPS .et)、CSV / TXT、Word(.docx 中的表格)
+            <el-button link type="primary" @click.stop="downloadTemplate">下载模板</el-button>
+          </div>
+        </template>
+      </el-upload>
+      <div v-if="importFile" class="picked">已选择：{{ importFile.name }}</div>
+
+      <div v-if="importResult" class="import-result">
+        <el-descriptions :column="3" border size="small">
+          <el-descriptions-item label="导入成功">{{ importResult.imported }} 条</el-descriptions-item>
+          <el-descriptions-item label="已存在跳过">{{ importResult.skipped }} 条</el-descriptions-item>
+          <el-descriptions-item label="失败">{{ importResult.errors.length }} 条</el-descriptions-item>
+        </el-descriptions>
+        <ul v-if="importResult.errors.length" class="err-list">
+          <li v-for="(e, i) in importResult.errors" :key="i">{{ e }}</li>
+        </ul>
+      </div>
+
+      <template #footer>
+        <el-button @click="importVisible = false">关闭</el-button>
+        <el-button type="primary" :loading="importing" :disabled="!importFile" @click="doImport">开始导入</el-button>
       </template>
     </el-dialog>
   </div>
@@ -237,6 +272,42 @@ async function remove(id) {
   loadStats()
 }
 
+// 表格导入
+const IMPORT_ACCEPT = '.xlsx,.xls,.et,.csv,.txt,.tsv,.docx'
+const TEMPLATE_HEADERS = ['供应商名称', '类别', '统一社会信用代码', '法定代表人', '联系人', '联系电话', '邮箱',
+  '注册地址', '开户行', '银行账号', '经营范围', '资质说明', '状态', '备注']
+const importVisible = ref(false)
+const importing = ref(false)
+const importFile = ref(null)
+const importResult = ref(null)
+function onFileChange(f) {
+  importFile.value = f.raw
+  importResult.value = null
+}
+async function doImport() {
+  importing.value = true
+  try {
+    const fd = new FormData()
+    fd.append('file', importFile.value)
+    importResult.value = await supplierApi.importFile(fd)
+    ElMessage.success(`导入完成：成功 ${importResult.value.imported} 条`)
+    importFile.value = null
+    await Promise.all([load(), loadStats()])
+  } finally {
+    importing.value = false
+  }
+}
+function downloadTemplate() {
+  const sample = ['示例物业服务有限公司', categories.value[0]?.label || '物业服务', '', '', '张三', '13800000000', '',
+    '', '', '', '保洁、绿化', '', '正常', '']
+  const csv = String.fromCharCode(0xfeff) + [TEMPLATE_HEADERS, sample].map((r) => r.join(',')).join('\r\n')
+  const a = document.createElement('a')
+  a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }))
+  a.download = '供应商档案导入模板.csv'
+  a.click()
+  URL.revokeObjectURL(a.href)
+}
+
 onMounted(() => {
   loadCategories()
   loadStats()
@@ -253,4 +324,7 @@ onMounted(() => {
 .stat-value { font-size: 26px; font-weight: 600; margin-top: 8px; }
 .toolbar-tip { margin-left: 12px; color: var(--text-secondary); font-size: 12px; }
 .pager { margin-top: 16px; justify-content: flex-end; }
+.picked { margin-top: 10px; font-size: 13px; color: #606266; }
+.import-result { margin-top: 14px; }
+.err-list { margin: 10px 0 0; padding-left: 18px; color: #f56c6c; font-size: 13px; max-height: 160px; overflow: auto; }
 </style>
