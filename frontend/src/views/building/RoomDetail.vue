@@ -2,7 +2,7 @@
   <div class="page-container">
     <RecordDetail
       :loading="loading"
-      :title="room ? `${room.roomNo} (${room.code})` : '房源详情'"
+      :title="room ? `${room.roomNo}` : '房源详情'"
       :subtitle="room ? `${projectName(room.projectId)} · ${buildingName(room.buildingId)}` : ''"
       :status-text="statusText(room?.status)"
       :status-type="statusType(room?.status)"
