@@ -7,6 +7,7 @@ export const contractApi = {
   defaults: (startDate) => request.get('/contract/defaults', { params: { startDate } }),
   get: (id) => request.get(`/contract/${id}`),
   add: (data) => request.post('/contract', data),
+  importFile: (formData) => request.post('/contract/import', formData, { headers: { 'Content-Type': 'multipart/form-data' } }),
   update: (data) => request.put('/contract', data),
   remove: (id) => request.delete(`/contract/${id}`),
   // 真重置:作废未产生实收的全部合同(有收款的整份保留),清演示/试录数据用

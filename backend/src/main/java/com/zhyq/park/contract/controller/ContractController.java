@@ -13,6 +13,7 @@ import com.zhyq.park.contract.entity.ContractRoom;
 import com.zhyq.park.contract.mapper.ContractMapper;
 import com.zhyq.park.contract.mapper.ContractRoomMapper;
 import com.zhyq.park.contract.service.ContractService;
+import com.zhyq.park.contract.service.ContractImportService;
 import com.zhyq.park.finance.entity.Bill;
 import com.zhyq.park.finance.mapper.BillMapper;
 import com.zhyq.park.receivable.entity.ReceivableRegister;
@@ -25,6 +26,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 import org.springframework.transaction.annotation.Transactional;
 
@@ -46,6 +48,7 @@ public class ContractController {
     private final ContractMapper contractMapper;
     private final ContractRoomMapper contractRoomMapper;
     private final ContractService contractService;
+    private final ContractImportService contractImportService;
     private final BillMapper billMapper;
     private final ReceivableRegisterMapper receivableRegisterMapper;
     private final BizTenantMapper bizTenantMapper;
@@ -155,6 +158,13 @@ public class ContractController {
         }
         contractMapper.insert(contract);
         return Result.ok(contract.getId());
+    }
+
+    @Operation(summary = "导入合同表格")
+    @PreAuthorize("hasAuthority('contract:add')")
+    @PostMapping(value = "/import", consumes = "multipart/form-data")
+    public Result<ContractImportService.ImportResult> importFile(@RequestParam("file") MultipartFile file) {
+        return Result.ok(contractImportService.importFile(file));
     }
 
     @Operation(summary = "修改合同")

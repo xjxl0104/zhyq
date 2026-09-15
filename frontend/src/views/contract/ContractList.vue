@@ -40,6 +40,9 @@
     <div class="table-card">
       <div class="toolbar">
         <el-button type="primary" @click="openDialog()"><el-icon><Plus /></el-icon>新增合同</el-button>
+        <el-button @click="importDialog.visible = true"><el-icon><Upload /></el-icon>导入合同</el-button>
+        <el-button type="success" plain @click="triggerPhoto"><el-icon><Camera /></el-icon>拍照录入</el-button>
+        <input ref="photoInput" type="file" accept="image/*" capture="environment" hidden @change="onPhoto" />
       </div>
       <el-table :data="list" v-loading="loading" border stripe
                 show-summary :summary-method="pageSummary">
@@ -204,6 +207,22 @@
       </template>
     </el-dialog>
 
+    <el-dialog v-model="importDialog.visible" title="导入合同" width="520px">
+      <el-alert type="info" :closable="false" show-icon>
+        支持 Excel（.xlsx/.xls）或 CSV。导入结果会先保存为草稿，请在列表中核对后再提交审批。
+      </el-alert>
+      <el-upload class="import-upload" drag :auto-upload="false" :limit="1"
+                 accept=".xlsx,.xls,.csv" :on-change="onImportFile" :on-remove="() => importFile = null">
+        <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
+        <div class="el-upload__text">拖拽文件到这里，或 <em>点击选择</em></div>
+        <template #tip><div class="el-upload__tip">表头示例：合同编号、租客、园区、起始日期、结束日期、租赁单价、租赁面积、保证金</div></template>
+      </el-upload>
+      <template #footer>
+        <el-button @click="importDialog.visible = false">取消</el-button>
+        <el-button type="primary" :loading="importDialog.loading" :disabled="!importFile" @click="doImport">开始导入</el-button>
+      </template>
+    </el-dialog>
+
   </div>
 </template>
 
@@ -212,6 +231,7 @@ import { reactive, ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { money } from '@/utils/format'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { Upload, UploadFilled, Camera } from '@element-plus/icons-vue'
 import { contractApi } from '@/api/contract'
 import { fileApi } from '@/api/file'
 import FileUpload from '@/components/FileUpload.vue'
@@ -322,6 +342,35 @@ async function reset() {
 }
 
 const formRef = ref()
+const photoInput = ref()
+const importFile = ref(null)
+const importDialog = reactive({ visible: false, loading: false })
+function onImportFile(uploadFile) { importFile.value = uploadFile.raw }
+function triggerPhoto() { photoInput.value?.click() }
+async function onPhoto(event) {
+  const file = event.target.files?.[0]
+  event.target.value = ''
+  if (!file) return
+  try {
+    const body = new FormData(); body.append('file', file); body.append('bizType', 'contract')
+    const uploaded = await fileApi.upload(body)
+    await openDialog()
+    form.remark = `拍照附件：${file.name}（请核对合同字段后保存）`
+    attachFiles.value = [uploaded]
+    ElMessage.success('照片已加入合同草稿，请核对字段后保存')
+  } catch (e) { /* 请求拦截器已提示 */ }
+}
+async function doImport() {
+  if (!importFile.value) return
+  importDialog.loading = true
+  try {
+    const body = new FormData(); body.append('file', importFile.value)
+    const result = await contractApi.importFile(body)
+    const errors = result.errors?.length ? `，${result.errors.length} 行需检查` : ''
+    ElMessage.success(`成功导入 ${result.imported} 份，跳过 ${result.skipped} 份${errors}`)
+    importDialog.visible = false; importFile.value = null; load()
+  } finally { importDialog.loading = false }
+}
 const dialog = reactive({ visible: false, title: '' })
 const emptyForm = () => ({
   id: null, code: '', contractType: 1, tenantRefId: null, projectId: null,
@@ -427,4 +476,6 @@ onMounted(() => { loadRefs(); load() })
 
 <style scoped>
 .pager { margin-top: 16px; justify-content: flex-end; }
+.import-upload { margin-top: 20px; }
+.import-upload :deep(.el-upload), .import-upload :deep(.el-upload-dragger) { width: 100%; }
 </style>
