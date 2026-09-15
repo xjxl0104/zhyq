@@ -3,9 +3,9 @@ import { MODEL, modelHeight } from './twinData.js'
 
 // Local visual presets. These deliberately do not represent live weather observations.
 const PRESETS = {
-  sunny: { top: '#477fae', horizon: '#dbe8ed', fog: '#d5e4eb', density: .0009, cloud: .12, disc: .85, exposure: 1.03, environment: .4, sun: ['#fff1da', 2.9], fill: ['#d6e8ff', .6], sky: ['#d7eaff', '#8b9a80', 1.55] },
-  rain: { top: '#3e5264', horizon: '#a7b7c2', fog: '#8fa4b4', density: .0031, cloud: .7, disc: 0, exposure: .88, environment: .22, sun: ['#b9cddd', .65], fill: ['#9db5cf', .4], sky: ['#b5cadb', '#52676b', 1.05] },
-  night: { top: '#060e22', horizon: '#263b54', fog: '#172d43', density: .0019, cloud: .13, disc: .18, exposure: 1, environment: .085, sun: ['#a8c4ed', .32], fill: ['#779fcb', .12], sky: ['#799bc4', '#1b2c39', .32] },
+  sunny: { top: '#6578ac', horizon: '#e0e4f2', fog: '#d7dded', density: .0009, cloud: .12, disc: .85, exposure: 1.03, environment: .4, sun: ['#f5f5ff', 2.9], fill: ['#dce2ff', .6], sky: ['#e0e7ff', '#858fb0', 1.55] },
+  rain: { top: '#495775', horizon: '#b1bacf', fog: '#9aa8c0', density: .0031, cloud: .7, disc: 0, exposure: .88, environment: .22, sun: ['#b9cddd', .65], fill: ['#9db5cf', .4], sky: ['#b5cadb', '#58617d', 1.05] },
+  night: { top: '#0c1029', horizon: '#303b5a', fog: '#202b47', density: .0019, cloud: .13, disc: .18, exposure: 1, environment: .085, sun: ['#a8c4ed', .32], fill: ['#779fcb', .12], sky: ['#799bc4', '#232a48', .32] },
 }
 
 function captureMaterial(material) {
