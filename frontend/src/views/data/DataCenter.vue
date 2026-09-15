@@ -1,20 +1,29 @@
 <template>
-  <div class="commerce-page data-center">
+  <div ref="boardRef" class="commerce-page data-center">
     <header class="commerce-page__header">
       <div>
-        <div class="commerce-page__eyebrow">Business analytics</div>
         <h1 class="commerce-page__title">数据看板</h1>
-        <p class="commerce-page__subtitle">统一查看财务、房源、合同、设备与服务运营的关键表现。</p>
+        <p class="commerce-page__subtitle">经营数据与实时监控集中查看，告警每 15 秒、运营数据每分钟更新。</p>
       </div>
       <div class="commerce-page__actions">
         <span class="commerce-chip"><el-icon><Calendar /></el-icon>最近 6 个月</span>
         <!-- 刷新是否真的生效,光看数字看不出来(数字常常本来就没变)。给出更新时间 -->
         <span v-if="updatedAt" class="commerce-chip">更新于 {{ updatedAt }}</span>
-        <el-button class="commerce-action" type="primary" :loading="loading" @click="load">
+        <el-button class="commerce-action" data-testid="fullscreen-dashboard" :aria-pressed="fullscreen" @click="toggleFullscreen">
+          <el-icon><FullScreen /></el-icon><span>{{ fullscreen ? '退出全屏' : '全屏展示' }}</span>
+        </el-button>
+        <el-button class="commerce-action" type="primary" data-testid="refresh-dashboard" :loading="loading || refreshing" @click="refreshAll">
           <el-icon><Refresh /></el-icon><span>刷新数据</span>
         </el-button>
       </div>
     </header>
+
+    <dl class="operations-summary" aria-label="园区运营指标">
+      <div><dt>园区出租率</dt><dd>{{ room.rentRate || 0 }}<small>%</small></dd></div>
+      <div><dt>在租房间 / 全部房源</dt><dd>{{ room.rented || 0 }} / {{ room.total || 0 }}</dd></div>
+      <div><dt>在线设备 / 全部设备</dt><dd>{{ device.online || 0 }} / {{ device.total || 0 }}</dd></div>
+      <div><dt>进行中工单</dt><dd>{{ other.workOrderOpen || 0 }}</dd></div>
+    </dl>
 
     <div class="finance-kpis">
       <article v-for="item in financeCards" :key="item.key" class="finance-kpi commerce-card">
@@ -83,6 +92,8 @@
       </section>
     </div>
 
+    <MonitoringPanels ref="monitoringRef" />
+
     <div class="operations-grid">
       <section class="commerce-card operation-card">
         <div class="commerce-card__head">
@@ -124,18 +135,23 @@
 <script setup>
 import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, reactive, ref } from 'vue'
 import * as echarts from 'echarts'
+import { ElMessage } from 'element-plus'
 import { dashboardApi } from '@/api/dashboard'
+import MonitoringPanels from './MonitoringPanels.vue'
 
 // 看板每 60 秒自己拉一次:财务数字随收款/出账随时在变,让用户靠手点刷新才看到新数
 // 等于把「实时」做成了「手动」。定时器只在页面可见时跑,见下面 onActivated/onDeactivated
 const AUTO_REFRESH_MS = 60000
 const updatedAt = ref('')
 let autoTimer = null
+let disposed = false, resizeObserver
+const boardRef = ref(), monitoringRef = ref(), fullscreen = ref(false), refreshing = ref(false)
 
 const fin = reactive({})
 const contract = reactive({})
 const device = reactive({})
 const incomeSources = reactive({})
+const room = reactive({}), other = reactive({})
 const roomData = ref([])
 const loading = ref(false)
 const roomRef = ref()
@@ -155,7 +171,7 @@ const roomTotal = computed(() => roomData.value.reduce((sum, item) => sum + Numb
 const fmtMoney = (v) => Number(v || 0).toLocaleString('zh-CN', { maximumFractionDigits: 0 })
 
 function chartOf(key, el) {
-  if (!el) return null
+  if (!el || disposed) return null
   if (!charts[key]) charts[key] = echarts.init(el)
   return charts[key]
 }
@@ -176,6 +192,7 @@ function renderSourceChart() {
 }
 
 async function load() {
+  if (loading.value || disposed) return
   loading.value = true
   try {
     const ov = await dashboardApi.overview()
@@ -183,6 +200,8 @@ async function load() {
     Object.assign(contract, ov.contract || {})
     Object.assign(device, ov.device || {})
     Object.assign(incomeSources, ov.incomeSources || {})
+    Object.assign(room, ov.room || {})
+    Object.assign(other, ov.other || {})
     await nextTick()
     renderSourceChart()
   } catch (e) { /* 各区块保留现有值 */ }
@@ -225,6 +244,29 @@ async function load() {
   loading.value = false
 }
 
+async function refreshAll() {
+  if (refreshing.value) return
+  refreshing.value = true
+  try { await Promise.all([load(), monitoringRef.value?.refresh()]) }
+  finally { refreshing.value = false }
+}
+
+async function toggleFullscreen() {
+  try {
+    if (document.fullscreenElement === boardRef.value) await document.exitFullscreen()
+    else if (boardRef.value?.requestFullscreen) await boardRef.value.requestFullscreen()
+    else ElMessage.info('当前浏览器不支持全屏展示，请使用浏览器的全屏功能。')
+  } catch { ElMessage.warning('未能切换全屏，请重试或使用浏览器的全屏功能。') }
+}
+function syncFullscreen() {
+  fullscreen.value = document.fullscreenElement === boardRef.value
+  nextTick(resizeAll)
+}
+function leavePage() {
+  stopAuto()
+  if (document.fullscreenElement === boardRef.value) document.exitFullscreen()?.catch(() => {})
+}
+
 function startAuto() {
   stopAuto()
   autoTimer = setInterval(load, AUTO_REFRESH_MS)
@@ -239,6 +281,9 @@ onMounted(() => {
   load()
   startAuto()
   window.addEventListener('resize', resizeAll)
+  document.addEventListener('fullscreenchange', syncFullscreen)
+  resizeObserver = new ResizeObserver(resizeAll)
+  resizeObserver.observe(boardRef.value)
 })
 
 // Layout.vue 把路由页包在 <keep-alive> 里,切走触发的是 deactivated 而不是 unmounted。
@@ -249,17 +294,28 @@ onActivated(() => {
   if (activatedBefore) load()
   activatedBefore = true
   startAuto()
+  nextTick(resizeAll)
 })
-onDeactivated(stopAuto)
+onDeactivated(leavePage)
 
 onBeforeUnmount(() => {
-  stopAuto()
+  disposed = true
+  leavePage()
   window.removeEventListener('resize', resizeAll)
+  document.removeEventListener('fullscreenchange', syncFullscreen)
+  resizeObserver?.disconnect()
   Object.values(charts).forEach(chart => chart?.dispose?.())
 })
 </script>
 
 <style scoped>
+.data-center:fullscreen { overflow:auto;height:100%;width:100%;box-sizing:border-box;background:#f4f5fb;padding:24px; }
+.data-center:fullscreen .commerce-page__header { align-items:center; }
+.operations-summary { display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:20px;margin:0 0 18px;padding:18px 20px;background:var(--bg-card);border:1px solid var(--border);border-radius:14px; }
+.operations-summary dt { font-size:12px;color:var(--text-secondary); }
+.operations-summary dd { margin:7px 0 0;font-size:24px;font-weight:700;color:var(--text-title);font-variant-numeric:tabular-nums; }
+.operations-summary small { font-size:14px;margin-left:4px; }
+.data-center .commerce-page__actions { flex-shrink:0;max-width:52%; }
 .finance-kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 16px; }
 .finance-kpi { display: flex; flex-direction: column; gap: 7px; padding: 17px 18px; }
 .finance-kpi__top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
@@ -306,12 +362,16 @@ onBeforeUnmount(() => {
 .chart--small { height: 214px; padding: 0 10px 8px; }
 
 @media (max-width: 1100px) {
+  .data-center .commerce-page__header { align-items:flex-start;flex-direction:column;gap:14px; }
+  .data-center .commerce-page__actions { max-width:none;justify-content:flex-start; }
+  .operations-summary { grid-template-columns:1fr 1fr; }
   .finance-kpis { grid-template-columns: 1fr 1fr; }
   .analytics-grid { grid-template-columns: 1fr; }
   .income-card { grid-column: auto; }
   .operations-grid { grid-template-columns: 1fr 1fr; }
 }
 @media (max-width: 760px) {
+  .data-center:fullscreen { padding:16px; }
   .finance-kpis, .operations-grid { grid-template-columns: 1fr; }
   .income-layout { grid-template-columns: 1fr; }
 }
