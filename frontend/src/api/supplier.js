@@ -8,7 +8,11 @@ export const supplierApi = {
   update: (data) => request.put('/pur/supplier', data),
   remove: (id) => request.delete(`/pur/supplier/${id}`),
   changeStatus: (id, status) => request.post(`/pur/supplier/${id}/status`, null, { params: { status } }),
-  list: () => request.get('/pur/supplier/list')
+  list: () => request.get('/pur/supplier/list'),
+  // 导入供应商档案,formData 里带 file
+  importFile: (formData) => request.post('/pur/supplier/import', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  })
 }
 
 export const supplierContractApi = {

@@ -207,19 +207,35 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="importDialog.visible" title="导入合同" width="520px">
-      <el-alert type="info" :closable="false" show-icon>
-        支持 Excel（.xlsx/.xls）或 CSV。导入结果会先保存为草稿，请在列表中核对后再提交审批。
-      </el-alert>
-      <el-upload class="import-upload" drag :auto-upload="false" :limit="1"
-                 accept=".xlsx,.xls,.csv" :on-change="onImportFile" :on-remove="() => importFile = null">
-        <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
-        <div class="el-upload__text">拖拽文件到这里，或 <em>点击选择</em></div>
-        <template #tip><div class="el-upload__tip">表头示例：合同编号、租客、园区、起始日期、结束日期、租赁单价、租赁面积、保证金</div></template>
-      </el-upload>
+    <el-dialog v-model="importDialog.visible" title="导入合同" width="520px" @closed="resetImportFiles">
+      <el-tabs v-model="importDialog.mode">
+        <el-tab-pane label="合同台账" name="sheet">
+          <el-alert type="info" :closable="false" show-icon>
+            支持 Excel（.xlsx/.xls）或 CSV。导入结果会先保存为草稿，请在列表中核对后再提交审批。
+          </el-alert>
+          <el-upload class="import-upload" drag :auto-upload="false" :limit="1"
+                     accept=".xlsx,.xls,.csv" :on-change="onImportFile" :on-remove="() => importFile = null">
+            <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
+            <div class="el-upload__text">拖拽文件到这里，或 <em>点击选择</em></div>
+            <template #tip><div class="el-upload__tip">表头示例：合同编号、租客、园区、起始日期、结束日期、租赁单价、租赁面积、保证金</div></template>
+          </el-upload>
+        </el-tab-pane>
+        <el-tab-pane label="PDF 合同原件" name="pdf">
+          <el-alert type="info" :closable="false" show-icon>
+            上传 PDF 原件后会打开新增合同草稿。请补齐合同信息并保存，PDF 将自动关联到该合同。
+          </el-alert>
+          <el-upload class="import-upload" drag :auto-upload="false" :limit="1"
+                     accept="application/pdf,.pdf" :on-change="onPdfFile" :on-remove="() => pdfFile = null">
+            <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
+            <div class="el-upload__text">拖拽 PDF 到这里，或 <em>点击选择</em></div>
+            <template #tip><div class="el-upload__tip">单个文件不超过 20MB</div></template>
+          </el-upload>
+        </el-tab-pane>
+      </el-tabs>
       <template #footer>
         <el-button @click="importDialog.visible = false">取消</el-button>
-        <el-button type="primary" :loading="importDialog.loading" :disabled="!importFile" @click="doImport">开始导入</el-button>
+        <el-button v-if="importDialog.mode === 'sheet'" type="primary" :loading="importDialog.loading" :disabled="!importFile" @click="doImport">开始导入</el-button>
+        <el-button v-else type="primary" :loading="importDialog.loading" :disabled="!pdfFile" @click="doPdfImport">使用 PDF 新增合同</el-button>
       </template>
     </el-dialog>
 
@@ -344,19 +360,31 @@ async function reset() {
 const formRef = ref()
 const photoInput = ref()
 const importFile = ref(null)
-const importDialog = reactive({ visible: false, loading: false })
+const pdfFile = ref(null)
+const importDialog = reactive({ visible: false, loading: false, mode: 'sheet' })
 function onImportFile(uploadFile) { importFile.value = uploadFile.raw }
+function onPdfFile(uploadFile) { pdfFile.value = uploadFile.raw }
+function resetImportFiles() {
+  importFile.value = null
+  pdfFile.value = null
+  importDialog.mode = 'sheet'
+}
 function triggerPhoto() { photoInput.value?.click() }
+async function attachUploadedContractFile(file, description) {
+  const body = new FormData()
+  body.append('file', file)
+  body.append('bizType', 'contract')
+  const uploaded = await fileApi.upload(body)
+  await openDialog()
+  form.remark = `${description}：${file.name}（请核对合同字段后保存）`
+  attachFiles.value = [uploaded]
+}
 async function onPhoto(event) {
   const file = event.target.files?.[0]
   event.target.value = ''
   if (!file) return
   try {
-    const body = new FormData(); body.append('file', file); body.append('bizType', 'contract')
-    const uploaded = await fileApi.upload(body)
-    await openDialog()
-    form.remark = `拍照附件：${file.name}（请核对合同字段后保存）`
-    attachFiles.value = [uploaded]
+    await attachUploadedContractFile(file, '拍照附件')
     ElMessage.success('照片已加入合同草稿，请核对字段后保存')
   } catch (e) { /* 请求拦截器已提示 */ }
 }
@@ -369,6 +397,16 @@ async function doImport() {
     const errors = result.errors?.length ? `，${result.errors.length} 行需检查` : ''
     ElMessage.success(`成功导入 ${result.imported} 份，跳过 ${result.skipped} 份${errors}`)
     importDialog.visible = false; importFile.value = null; load()
+  } finally { importDialog.loading = false }
+}
+async function doPdfImport() {
+  if (!pdfFile.value) return
+  importDialog.loading = true
+  try {
+    const file = pdfFile.value
+    importDialog.visible = false
+    await attachUploadedContractFile(file, '导入 PDF 合同原件')
+    ElMessage.success('PDF 已加入合同草稿，请核对字段后保存')
   } finally { importDialog.loading = false }
 }
 const dialog = reactive({ visible: false, title: '' })

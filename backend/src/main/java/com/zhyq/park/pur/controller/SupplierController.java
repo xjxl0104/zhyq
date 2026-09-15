@@ -12,6 +12,8 @@ import com.zhyq.park.pur.entity.Supplier;
 import com.zhyq.park.pur.mapper.SupplierContractMapper;
 import com.zhyq.park.pur.entity.SupplierContract;
 import com.zhyq.park.pur.mapper.SupplierMapper;
+import com.zhyq.park.pur.service.SupplierImportService;
+import org.springframework.web.multipart.MultipartFile;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
@@ -36,9 +38,6 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class SupplierController {
 
-    /** 编号前缀 */
-    private static final String CODE_PREFIX = "GYS-";
-
     /** 1正常 2停用 3已归档 */
     private static final int ST_NORMAL = 1;
     private static final int ST_DISABLED = 2;
@@ -46,6 +45,7 @@ public class SupplierController {
 
     private final SupplierMapper supplierMapper;
     private final SupplierContractMapper contractMapper;
+    private final SupplierImportService supplierImportService;
 
     @Operation(summary = "分页查询供应商")
     @PreAuthorize("hasAuthority('pur:supplier:query')")
@@ -80,6 +80,13 @@ public class SupplierController {
         return Result.ok(map);
     }
 
+    @Operation(summary = "导入供应商档案(xlsx/xls/et/csv/txt/docx)")
+    @PreAuthorize("hasAuthority('pur:supplier:add')")
+    @PostMapping("/import")
+    public Result<SupplierImportService.ImportResult> importFile(@RequestParam("file") MultipartFile file) {
+        return Result.ok(supplierImportService.importFile(file));
+    }
+
     @Operation(summary = "供应商详情")
     @PreAuthorize("hasAuthority('pur:supplier:query')")
     @GetMapping("/{id}")
@@ -94,7 +101,7 @@ public class SupplierController {
         if (!StringUtils.hasText(supplier.getName())) {
             throw new BizException("供应商名称不能为空");
         }
-        supplier.setCode(nextCode());
+        supplier.setCode(supplierMapper.nextCode());
         if (supplier.getStatus() == null) {
             supplier.setStatus(ST_NORMAL);
         }
@@ -185,30 +192,4 @@ public class SupplierController {
                 new LambdaQueryWrapper<Supplier>().eq(Supplier::getStatus, status));
     }
 
-    /**
-     * 生成下一个供应商编号 GYS-0001:取当前最大编号 +1。建档是人工低频操作。
-     *
-     * <p>已知边界(均不改变正确性,只影响可用性,记在这里免得后人误判):
-     * <ul>
-     *   <li>极端并发下两个请求可能算出同号,后插入的那个会因唯一键 uk_supplier_code
-     *       失败并返回错误提示,本方法<b>不重试</b>;</li>
-     *   <li>编号按字符串倒序取最大,超过 9999 后位数变化会让排序失真;</li>
-     *   <li>历史脏数据(如 GYS-ABCD)取到 MAX 且解析失败时会退回 1,可能撞已有号。</li>
-     * </ul>
-     * 取最大编号走 {@link com.zhyq.park.pur.mapper.SupplierMapper#selectMaxCodeIncludingDeleted}
-     * 而非 BaseMapper 查询:唯一键 (code) 跨软删生效,发号必须看得见软删行,否则删除后重号。
-     */
-    private String nextCode() {
-        // 必须用含软删的查询:唯一键跨软删生效,若只看存活行,删一条后会再发同号并撞键
-        String max = supplierMapper.selectMaxCodeIncludingDeleted(CODE_PREFIX);
-        int next = 1;
-        if (StringUtils.hasText(max)) {
-            try {
-                next = Integer.parseInt(max.substring(CODE_PREFIX.length())) + 1;
-            } catch (NumberFormatException | IndexOutOfBoundsException ignored) {
-                // 历史编号格式异常:退回从 1 起,若撞号则本次请求失败提示重试
-            }
-        }
-        return CODE_PREFIX + String.format("%04d", next);
-    }
 }

@@ -16,4 +16,24 @@ public interface SupplierMapper extends BaseMapper<Supplier> {
      */
     @Select("SELECT MAX(code) FROM pur_supplier WHERE code LIKE CONCAT(#{prefix}, '%')")
     String selectMaxCodeIncludingDeleted(@Param("prefix") String prefix);
+
+    /**
+     * 生成下一个供应商编号 GYS-0001:取当前最大编号(含软删)+1。建档与导入共用。
+     *
+     * <p>已知边界:极端并发下可能算出同号,后插入的因唯一键失败并提示,不重试;
+     * 编号按字符串取最大,超过 9999 后排序失真;历史脏编号解析失败时退回 1。</p>
+     */
+    default String nextCode() {
+        final String prefix = "GYS-";
+        String max = selectMaxCodeIncludingDeleted(prefix);
+        int next = 1;
+        if (max != null && !max.isBlank()) {
+            try {
+                next = Integer.parseInt(max.substring(prefix.length())) + 1;
+            } catch (NumberFormatException | IndexOutOfBoundsException ignored) {
+                // 历史编号格式异常:退回从 1 起,若撞号则本次请求失败提示重试
+            }
+        }
+        return prefix + String.format("%04d", next);
+    }
 }

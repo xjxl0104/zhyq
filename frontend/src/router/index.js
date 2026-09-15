@@ -144,7 +144,7 @@ const routes = [
       { path: 'data/center', meta: { title: '数据看板' }, component: () => import('@/views/data/DataCenter.vue') },
       { path: 'data/section', meta: { title: '剖面图' }, component: () => import('@/views/data/SectionView.vue') },
       { path: 'data/report', meta: { title: '报表统计' }, component: () => import('@/views/data/ReportIndex.vue') },
-      { path: 'screen', name: 'Screen', meta: { title: '一体监控大屏' }, component: () => import('@/views/screen/BigScreen.vue') },
+      { path: 'screen', name: 'Screen', redirect: to => ({ path: '/data/center', query: to.query, hash: to.hash }) },
 
       // 建议与反馈
       { path: 'suggestion/mine', meta: { title: '我的建议' }, component: () => import('@/views/suggestion/MySuggestions.vue') },

@@ -160,6 +160,9 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, Plus, Upload, UploadFilled } from '@element-plus/icons-vue'
 import { responsibleUnitApi } from '@/api/property'
 import GlassSurface from '@/components/GlassSurface.vue'
+import { useProjectStore } from '@/stores/project'
+
+const projectStore = useProjectStore()
 
 const UNIT_TYPES = ['内部部门', '外部供应商', '物业', '施工方']
 const TYPE_TAG = { 内部部门: 'primary', 外部供应商: 'warning', 物业: 'success', 施工方: 'info' }
@@ -284,11 +287,17 @@ function buildForm() {
   fd.append('file', currentFile.value)
   return fd
 }
+// 上传文件是 FormData,请求拦截器不会自动注入 projectId,这里显式带上当前园区,
+// 否则导入的单位落成「全局」,而列表按园区过滤,导完看不到
+const importParams = () => {
+  const pid = projectStore.currentProjectId
+  return pid != null ? { projectId: pid } : undefined
+}
 
 async function doPreview() {
   checking.value = true
   try {
-    const d = await responsibleUnitApi.preview(buildForm())
+    const d = await responsibleUnitApi.preview(buildForm(), importParams())
     previewValid.value = d.valid || 0
     previewErrors.value = d.errors || []
     previewed.value = true
@@ -303,7 +312,7 @@ async function doPreview() {
 async function doImport() {
   importing.value = true
   try {
-    const d = await responsibleUnitApi.import(buildForm())
+    const d = await responsibleUnitApi.import(buildForm(), importParams())
     ElMessage.success(`导入完成：新增 ${d.created} 条，更新 ${d.updated} 条`)
     importVisible.value = false
     load()

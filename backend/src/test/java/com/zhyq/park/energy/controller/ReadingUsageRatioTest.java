@@ -4,6 +4,7 @@ import com.zhyq.park.energy.entity.Meter;
 import com.zhyq.park.energy.entity.Reading;
 import com.zhyq.park.energy.mapper.MeterMapper;
 import com.zhyq.park.energy.mapper.ReadingMapper;
+import com.zhyq.park.energy.service.ReadingImportService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -34,8 +35,11 @@ class ReadingUsageRatioTest {
     @Mock
     private MeterMapper meterMapper;
 
+    @Mock
+    private ReadingImportService readingImportService;
+
     private ReadingController controller() {
-        return new ReadingController(readingMapper, meterMapper);
+        return new ReadingController(readingMapper, meterMapper, readingImportService);
     }
 
     private void givenRatio(String ratio) {

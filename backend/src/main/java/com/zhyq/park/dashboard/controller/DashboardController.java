@@ -80,15 +80,21 @@ public class DashboardController {
         fin.put("received", sum("SELECT COALESCE(SUM(paid_amount),0) FROM fin_bill WHERE direction=1 AND deleted=0"));
         m.put("finance", fin);
 
-        // 经营收入来源：租费账单沿用财务权威口径，售货机只统计已受控导入的本地销售副本。
+        // 经营收入来源：只统计有效的经营性租费账单。费用名称历史上同时存在“物业费”与
+        // “物业管理费”等写法，不能只按两个精确值筛选；保证金虽可能带“租金/物业”字样，
+        // 但不属于经营收入，必须排除。应收口径与财务概览一致，包含已产生的滞纳金。
         Map<String, Object> incomeSources = new LinkedHashMap<>();
         incomeSources.put("rentPropertyBilled", sum("""
-                SELECT COALESCE(SUM(amount),0) FROM fin_bill
-                WHERE direction=1 AND fee_type IN ('租金','物业费') AND deleted=0
+                SELECT COALESCE(SUM(amount + late_fee),0) FROM fin_bill
+                WHERE direction=1 AND status IN (3,4,5,6) AND deleted=0
+                  AND (fee_type LIKE '%租金%' OR fee_type LIKE '%物业%')
+                  AND fee_type NOT LIKE '%保证金%'
                 """));
         incomeSources.put("rentPropertyReceived", sum("""
                 SELECT COALESCE(SUM(paid_amount),0) FROM fin_bill
-                WHERE direction=1 AND fee_type IN ('租金','物业费') AND deleted=0
+                WHERE direction=1 AND status IN (3,4,5,6) AND deleted=0
+                  AND (fee_type LIKE '%租金%' OR fee_type LIKE '%物业%')
+                  AND fee_type NOT LIKE '%保证金%'
                 """));
         incomeSources.put("vendingSales", sum("""
                 SELECT COALESCE(SUM(paid_amount),0) FROM ops_vending_sale

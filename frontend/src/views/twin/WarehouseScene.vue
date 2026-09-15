@@ -6,6 +6,8 @@ import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
 import { loadWarehouse } from './warehouseAsset'
 import { disposeSceneExtras } from './sceneResources'
 import { createSceneWeather } from './sceneWeather'
+import { createParkLandscape } from './parkLandscape'
+import { createSceneRendering } from './sceneRendering'
 import { MODULES, POINTS, visiblePoints } from './twinData'
 import TwinIcon from './TwinIcon.vue'
 
@@ -17,7 +19,9 @@ const pins = computed(() => props.mode === 'interior'
   : visiblePoints(props.layer, props.floor, props.mode))
 const moduleFor = id => MODULES.find(item => item.id === id)
 const markerElements = new Map()
-let renderer, scene, camera, controls, model, observer, environmentTarget, weatherEffects, frame = 0, lastTime = 0, disposed = false, tween = null, width = 1, height = 1, needsRender = true
+// Keep the first frame and reset at the same close overview, with room for the entrance.
+const overviewCamera = { position: [86, 58, 174], target: [0, 24, 0] }
+let renderer, scene, camera, controls, model, observer, environmentTarget, weatherEffects, landscape, rendering, frame = 0, lastTime = 0, disposed = false, tween = null, width = 1, height = 1, needsRender = true
 const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
 const raycaster = new THREE.Raycaster(), pointer = new THREE.Vector2()
 let pointerDown = null
@@ -27,6 +31,7 @@ function resize() {
   if (!width || !height) return
   needsRender = true
   renderer.setSize(width, height)
+  rendering?.resize(width, height)
   // Preserve horizontal context in narrow windows without changing the user's orbit.
   camera.aspect = width / height
   const baseFov = props.focused ? 37 : 42
@@ -37,8 +42,8 @@ function reset() {
   if (!camera) return
   const inside = props.mode === 'interior', exploded = props.mode === 'exploded'
   const entrance = props.viewpoint === 'entrance' && !inside && !exploded
-  const destination = entrance ? [44, 7, 96] : inside ? [113, 126, 133] : exploded ? [181, 137, 193] : [176, 116, 184]
-  const target = entrance ? [22, 5, 56] : inside ? [0, 1, 0] : exploded ? [0, 38, 0] : [0, 23, 0]
+  const destination = entrance ? [44, 7, 96] : inside ? [113, 126, 133] : exploded ? [181, 137, 193] : overviewCamera.position
+  const target = entrance ? [22, 5, 56] : inside ? [0, 1, 0] : exploded ? [0, 38, 0] : overviewCamera.target
   tween = {
     from: camera.position.clone(), to: new THREE.Vector3(...destination),
     targetFrom: controls.target.clone(), targetTo: new THREE.Vector3(...target), start: performance.now(),
@@ -80,7 +85,6 @@ function animate(time) {
   const delta = Math.min((time - (lastTime || time)) / 1000, .05); lastTime = time
   const modelChanged = model.update(delta)
   const cameraTweening = Boolean(tween)
-  weatherEffects?.update(delta, time / 1000)
   controls.autoRotate = props.rotating && !reducedMotion
   if (tween) {
     const progress = reducedMotion ? 1 : Math.min((time - tween.start) / 850, 1)
@@ -91,11 +95,10 @@ function animate(time) {
     if (progress === 1) tween = null
   }
   const cameraChanged = controls.update(delta)
-  const raining = props.weather === 'rain' && !reducedMotion
-  if (!needsRender && !modelChanged && !cameraTweening && !cameraChanged && !raining) return
+  if (!needsRender && !modelChanged && !cameraTweening && !cameraChanged && !rendering?.needsRender(time)) return
   // Camera movement does not change shadows. Rebuild only when geometry or lighting changes.
   if (modelChanged) renderer.shadowMap.needsUpdate = true
-  renderer.render(scene, camera)
+  rendering.render(time, modelChanged || cameraTweening || cameraChanged)
   needsRender = false
   for (const point of pins.value) {
     const element = markerElements.get(point.id)
@@ -124,30 +127,32 @@ onMounted(async () => {
     renderer.domElement.setAttribute('role', 'img')
     canvasHost.value.appendChild(renderer.domElement)
     camera = new THREE.PerspectiveCamera(42, 1, .2, 1800)
-    camera.position.set(176, 116, 184)
+    camera.position.set(...overviewCamera.position)
     controls = new OrbitControls(camera, renderer.domElement)
-    controls.target.set(0, 23, 0); controls.enableDamping = true; controls.dampingFactor = .065
+    controls.target.set(...overviewCamera.target); controls.enableDamping = true; controls.dampingFactor = .065
     controls.minZoom = .55; controls.maxZoom = 3; controls.minPolarAngle = .15; controls.maxPolarAngle = Math.PI / 2 - .025
     controls.minDistance = 45; controls.maxDistance = 500
     controls.autoRotateSpeed = .45
     controls.addEventListener('start', () => { tween = null })
-    const hemisphere = new THREE.HemisphereLight('#f2f8ff', '#8e9c8b', 1.6)
+    const hemisphere = new THREE.HemisphereLight('#e8edff', '#858fb0', 1.6)
     scene.add(hemisphere)
-    const sunlight = new THREE.DirectionalLight('#fff7ed', 2.8)
+    const sunlight = new THREE.DirectionalLight('#f5f5ff', 2.8)
     sunlight.position.set(-55, 110, 70); sunlight.castShadow = true
-    sunlight.shadow.mapSize.set(2048, 2048)
-    Object.assign(sunlight.shadow.camera, { left: -145, right: 145, top: 130, bottom: -130, near: 1, far: 350 })
-    sunlight.shadow.bias = -.0004; sunlight.shadow.normalBias = .06
-    sunlight.shadow.radius = 4
+    const shadowSize = window.innerWidth >= 1100 ? 4096 : 2048
+    sunlight.shadow.mapSize.set(shadowSize, shadowSize)
+    Object.assign(sunlight.shadow.camera, { left: -225, right: 225, top: 205, bottom: -205, near: 1, far: 480 })
+    sunlight.shadow.bias = -.00015; sunlight.shadow.normalBias = .035
+    sunlight.shadow.radius = 1
     scene.add(sunlight)
-    const fill = new THREE.DirectionalLight('#d5ebf3', .65); fill.position.set(60, 70, -90); scene.add(fill)
-    const ground = new THREE.Mesh(new THREE.PlaneGeometry(1800, 1800), new THREE.MeshStandardMaterial({ color: '#9eafa0', roughness: .95 }))
-    ground.rotation.x = -Math.PI / 2; ground.position.y = -1.4; ground.receiveShadow = true; scene.add(ground)
+    const fill = new THREE.DirectionalLight('#dce2ff', .65); fill.position.set(60, 70, -90); scene.add(fill)
     model = await loadWarehouse()
     if (disposed) { model.dispose(); return }
     model.setState({ mode: props.mode, floor: props.floor, layer: props.layer }); scene.add(model.root)
-    weatherEffects = createSceneWeather({ scene, renderer, model, sunlight, fill, hemisphere, reducedMotion })
+    landscape = createParkLandscape(scene, model)
+    landscape.setMode(props.mode); landscape.setWeather(props.weather)
+    weatherEffects = createSceneWeather({ scene, renderer, sunlight, fill, hemisphere })
     weatherEffects.setWeather(props.weather)
+    rendering = createSceneRendering(renderer, scene, camera)
     renderer.domElement.addEventListener('pointerdown', onPointerDown)
     renderer.domElement.addEventListener('pointerup', onPointerUp)
     renderer.domElement.addEventListener('webglcontextlost', onContextLost)
@@ -163,12 +168,14 @@ onMounted(async () => {
 })
 watch(() => [props.mode, props.floor, props.layer], () => {
   model?.setState({ mode: props.mode, floor: props.floor, layer: props.layer })
+  landscape?.setMode(props.mode)
 })
 watch(() => props.mode, reset)
 watch(() => props.focused, reset)
 watch(() => props.viewpoint, reset)
 watch(() => props.weather, value => {
   weatherEffects?.setWeather(value)
+  landscape?.setWeather(value)
   needsRender = true
   if (renderer) renderer.shadowMap.needsUpdate = true
 })
@@ -181,6 +188,8 @@ onBeforeUnmount(() => {
     renderer.domElement.removeEventListener('webglcontextlost', onContextLost)
   }
   weatherEffects?.dispose()
+  landscape?.dispose()
+  rendering?.dispose()
   model?.dispose()
   disposeSceneExtras(scene, model?.root)
   environmentTarget?.dispose()

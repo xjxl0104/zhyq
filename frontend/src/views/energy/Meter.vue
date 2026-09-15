@@ -43,6 +43,9 @@
     <div class="table-card">
       <div class="toolbar">
         <el-button type="primary" @click="openDialog()"><el-icon><Plus /></el-icon>新增表计</el-button>
+        <el-button @click="importDialog.visible = true"><el-icon><Upload /></el-icon>导入抄表</el-button>
+        <el-button type="success" plain @click="openPhotoReading"><el-icon><Camera /></el-icon>拍照抄表</el-button>
+        <input ref="photoInput" type="file" accept="image/*" capture="environment" hidden @change="onPhotoFile" />
       </div>
       <el-table :data="list" v-loading="loading" border stripe>
         <el-table-column type="index" label="序号" width="70" />
@@ -186,8 +189,9 @@
         <el-table-column prop="readSource" label="抄表方式" min-width="110" />
         <el-table-column prop="readTime" label="抄表时间" width="170" />
         <el-table-column prop="fee" label="费用" width="100" />
-        <el-table-column label="操作" width="90" fixed="right">
+        <el-table-column label="操作" width="150" fixed="right">
           <template #default="{ row }">
+            <el-button link type="primary" @click="openReadingFiles(row)">附件</el-button>
             <el-popconfirm title="确认删除?" @confirm="removeReading(row.id)">
               <template #reference><el-button link type="danger">删除</el-button></template>
             </el-popconfirm>
@@ -223,6 +227,55 @@
       </template>
     </el-dialog>
 
+    <el-dialog v-model="importDialog.visible" title="导入抄表数据" width="520px" destroy-on-close @closed="importFile = null">
+      <el-alert type="info" :closable="false" show-icon>
+        支持 Excel（.xlsx/.xls）或 CSV。表头需包含“表计编号、本次读数、抄表时间”；可选“上次读数、账期、抄表方式、费用”。
+        同一表计、同一抄表时间的记录会自动跳过，避免重复导入。
+      </el-alert>
+      <el-upload class="import-upload" drag :auto-upload="false" :limit="1" accept=".xlsx,.xls,.csv"
+                 :on-change="onImportFile" :on-remove="() => importFile = null">
+        <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
+        <div class="el-upload__text">拖拽抄表文件到这里，或 <em>点击选择</em></div>
+        <template #tip><div class="el-upload__tip">未填写“上次读数”时，系统使用该表计现有的上次读数计算用量。</div></template>
+      </el-upload>
+      <template #footer>
+        <el-button @click="importDialog.visible = false">取消</el-button>
+        <el-button type="primary" :loading="importDialog.loading" :disabled="!importFile" @click="doImportReadings">开始导入</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="photoReadingDialog.visible" title="拍照抄表" width="480px" destroy-on-close @closed="resetPhotoReading">
+      <el-alert type="info" :closable="false" show-icon>请核对仪表读数后保存，照片将作为该次抄表的凭证附件。</el-alert>
+      <el-form :model="photoReadingForm" label-width="90px" class="photo-reading-form">
+        <el-form-item label="表计" required>
+          <el-select v-model="photoReadingForm.meterId" filterable placeholder="请选择表计" style="width: 100%" @change="syncPhotoPreviousReading">
+            <el-option v-for="meter in photoMeters" :key="meter.id" :label="`${meter.code} ${meter.name || ''}`" :value="meter.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="上次读数"><el-input-number v-model="photoReadingForm.prevReading" :min="0" :precision="2" /></el-form-item>
+        <el-form-item label="本次读数" required><el-input-number v-model="photoReadingForm.currReading" :min="0" :precision="2" /></el-form-item>
+        <el-form-item label="抄表时间"><el-date-picker v-model="photoReadingForm.readTime" type="datetime" value-format="YYYY-MM-DD HH:mm:ss" style="width: 100%" /></el-form-item>
+        <el-form-item label="仪表照片" required>
+          <el-button @click="triggerPhotoInput"><el-icon><Camera /></el-icon>拍摄/选择照片</el-button>
+          <span class="selected-file">{{ photoFile?.name || '未选择' }}</span>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="photoReadingDialog.visible = false">取消</el-button>
+        <el-button type="primary" :loading="photoReadingDialog.loading" :disabled="!photoFile" @click="submitPhotoReading">保存抄表</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="readingFilesDialog.visible" :title="`抄表照片 - ${readingFilesDialog.reading?.readTime || ''}`" width="560px">
+      <el-table :data="readingFilesDialog.files" v-loading="readingFilesDialog.loading" border size="small">
+        <el-table-column prop="originalName" label="文件名" min-width="270" show-overflow-tooltip />
+        <el-table-column label="操作" width="90">
+          <template #default="{ row }"><el-button link type="primary" @click="downloadReadingFile(row)">下载</el-button></template>
+        </el-table-column>
+      </el-table>
+      <el-empty v-if="!readingFilesDialog.loading && !readingFilesDialog.files.length" description="该次抄表暂无照片附件" />
+    </el-dialog>
+
     <!-- 操作日志:sys_oper_log 没有业务对象 id 列,后端按 模块 + 表计编号/路径 匹配 -->
     <el-dialog v-model="logDialog.visible" width="820px"
                :title="`操作日志 - ${logDialog.meter?.code || ''} ${logDialog.meter?.name || ''}`">
@@ -256,7 +309,9 @@
 <script setup>
 import { computed, reactive, ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { Upload, UploadFilled, Camera } from '@element-plus/icons-vue'
 import { meterApi, readingApi } from '@/api/energy'
+import { fileApi } from '@/api/file'
 import { tenantApi } from '@/api/tenant'
 import { roomApi } from '@/api/building'
 
@@ -285,6 +340,14 @@ const tenants = ref([])
 const rooms = ref([])
 const billing = ref(null)
 const logDialog = reactive({ visible: false, meter: null, loading: false, rows: [] })
+const importDialog = reactive({ visible: false, loading: false })
+const importFile = ref(null)
+const photoInput = ref()
+const photoFile = ref(null)
+const photoMeters = ref([])
+const photoReadingDialog = reactive({ visible: false, loading: false })
+const photoReadingForm = reactive({ meterId: null, prevReading: 0, currReading: null, readTime: null })
+const readingFilesDialog = reactive({ visible: false, reading: null, loading: false, files: [] })
 
 function energyTagType(type) {
   const map = { '电': 'warning', '水': 'primary', '燃气': 'danger', '热力': 'success' }
@@ -328,6 +391,87 @@ function reset() {
 function search() {
   query.pageNo = 1
   return load()
+}
+
+function onImportFile(uploadFile) { importFile.value = uploadFile.raw }
+async function doImportReadings() {
+  if (!importFile.value) return
+  importDialog.loading = true
+  try {
+    const body = new FormData()
+    body.append('file', importFile.value)
+    const result = await readingApi.importFile(body)
+    const errors = result.errors?.length ? `，${result.errors.length} 行需检查` : ''
+    ElMessage.success(`成功导入 ${result.imported} 条，跳过 ${result.skipped} 条${errors}`)
+    importDialog.visible = false
+    importFile.value = null
+    load()
+  } finally {
+    importDialog.loading = false
+  }
+}
+
+async function openPhotoReading() {
+  Object.assign(photoReadingForm, { meterId: null, prevReading: 0, currReading: null, readTime: null })
+  photoFile.value = null
+  photoReadingDialog.visible = true
+  try {
+    photoMeters.value = await meterApi.list() || []
+  } catch (e) {
+    photoMeters.value = []
+  }
+}
+function resetPhotoReading() {
+  photoFile.value = null
+  Object.assign(photoReadingForm, { meterId: null, prevReading: 0, currReading: null, readTime: null })
+}
+function syncPhotoPreviousReading() {
+  const meter = photoMeters.value.find(item => item.id === photoReadingForm.meterId)
+  photoReadingForm.prevReading = meter?.lastReading ?? 0
+}
+function triggerPhotoInput() { photoInput.value?.click() }
+function onPhotoFile(event) {
+  const file = event.target.files?.[0]
+  event.target.value = ''
+  if (file) photoFile.value = file
+}
+async function submitPhotoReading() {
+  if (!photoReadingForm.meterId || photoReadingForm.currReading == null) {
+    return ElMessage.warning('请填写表计和本次读数')
+  }
+  if (!photoFile.value) return ElMessage.warning('请拍摄或选择仪表照片')
+  photoReadingDialog.loading = true
+  try {
+    const readingId = await readingApi.add({ ...photoReadingForm, readSource: '拍照' })
+    const body = new FormData()
+    body.append('file', photoFile.value)
+    body.append('bizType', 'energy_reading')
+    body.append('bizId', readingId)
+    await fileApi.upload(body)
+    ElMessage.success('抄表数据与照片已保存')
+    photoReadingDialog.visible = false
+    await Promise.all([load(), readingDrawer.visible ? loadReadings() : Promise.resolve()])
+  } finally {
+    photoReadingDialog.loading = false
+  }
+}
+
+async function openReadingFiles(reading) {
+  Object.assign(readingFilesDialog, { visible: true, reading, loading: true, files: [] })
+  try {
+    readingFilesDialog.files = await fileApi.list('energy_reading', reading.id) || []
+  } finally {
+    readingFilesDialog.loading = false
+  }
+}
+async function downloadReadingFile(file) {
+  const response = await fileApi.download(file.id)
+  const url = URL.createObjectURL(response.data)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = file.originalName || '抄表照片'
+  anchor.click()
+  URL.revokeObjectURL(url)
 }
 
 // 计费:把最近一次抄表变成一张能源费账单。后端按「表计+抄表记录」做幂等,
@@ -482,4 +626,7 @@ onMounted(async () => {
 .form-tip { margin-top: 4px; font-size: 12px; line-height: 1.5; color: var(--el-text-color-secondary); }
 .pager { margin-top: 16px; justify-content: flex-end; }
 .toolbar { margin-bottom: 12px; }
+.import-upload { margin-top: 16px; }
+.photo-reading-form { margin-top: 16px; }
+.selected-file { margin-left: 10px; color: var(--el-text-color-secondary); font-size: 13px; }
 </style>
