@@ -17,6 +17,9 @@ export const meterApi = {
 export const readingApi = {
   page: (params) => request.get('/energy/reading/page', { params }),
   add: (data) => request.post('/energy/reading', data),
+  importFile: (data) => request.post('/energy/reading/import', data, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  }),
   update: (data) => request.put('/energy/reading', data),
   remove: (id) => request.delete(`/energy/reading/${id}`)
 }

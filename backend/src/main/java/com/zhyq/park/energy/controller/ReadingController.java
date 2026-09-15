@@ -10,14 +10,17 @@ import com.zhyq.park.energy.entity.Meter;
 import com.zhyq.park.energy.entity.Reading;
 import com.zhyq.park.energy.mapper.MeterMapper;
 import com.zhyq.park.energy.mapper.ReadingMapper;
+import com.zhyq.park.energy.service.ReadingImportService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.time.YearMonth;
 
 @Tag(name = "能耗管理-抄表读数")
 @RestController
@@ -27,6 +30,7 @@ public class ReadingController {
 
     private final ReadingMapper readingMapper;
     private final MeterMapper meterMapper;
+    private final ReadingImportService readingImportService;
 
     @Operation(summary = "分页查询抄表读数")
     @GetMapping("/page")
@@ -56,6 +60,9 @@ public class ReadingController {
         if (reading.getReadTime() == null) {
             reading.setReadTime(LocalDateTime.now());
         }
+        if (!StringUtils.hasText(reading.getPeriod())) {
+            reading.setPeriod(YearMonth.from(reading.getReadTime()).toString());
+        }
         reading.setUsageAmount(calcUsage(reading));
         if (reading.getFee() == null) {
             reading.setFee(BigDecimal.ZERO);
@@ -63,6 +70,12 @@ public class ReadingController {
         readingMapper.insert(reading);
         syncMeterLastReading(reading.getMeterId());
         return Result.ok(reading.getId());
+    }
+
+    @Operation(summary = "批量导入抄表读数")
+    @PostMapping(value = "/import", consumes = "multipart/form-data")
+    public Result<ReadingImportService.ImportResult> importFile(@RequestParam("file") MultipartFile file) {
+        return Result.ok(readingImportService.importFile(file));
     }
 
     @Operation(summary = "修改抄表读数")
