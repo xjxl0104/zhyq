@@ -53,7 +53,7 @@
         <span class="sr-only" aria-live="polite">{{ currentTitle }}</span>
         <router-view v-if="ready" v-slot="{ Component }">
           <transition name="fade-slide" mode="out-in">
-            <keep-alive v-if="alive"><component :is="Component" :key="route.fullPath" /></keep-alive>
+            <keep-alive v-if="alive" :exclude="['TwinDashboard']"><component :is="Component" :key="route.fullPath" /></keep-alive>
           </transition>
         </router-view>
         <div v-else class="layout-loading" v-loading="true" style="height: 60vh"></div>

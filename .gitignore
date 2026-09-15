@@ -18,6 +18,10 @@ dist-ssr/
 *.local
 .pnpm-store/
 
+# ---- Blender local build outputs ----
+/artifacts/
+*.blend1
+
 # ---- Env ----
 .env
 .env.local
