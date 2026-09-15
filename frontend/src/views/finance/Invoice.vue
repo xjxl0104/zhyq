@@ -88,7 +88,25 @@
             <el-radio value="专票">专票</el-radio>
           </el-radio-group>
         </el-form-item>
-        <el-form-item label="关联账单ID"><el-input v-model="form.billId" placeholder="账单ID(可选)" /></el-form-item>
+        <el-form-item label="关联账单" prop="billId">
+          <el-select v-model="form.billId" filterable clearable :loading="billLoading"
+                     placeholder="请选择账单（可按账单号或租户搜索）" style="width: 100%" @change="syncBill">
+            <el-option v-for="bill in billOptions" :key="bill.id" :value="bill.id"
+                       :label="billLabel(bill)">
+              <div class="bill-option">
+                <span>{{ bill.code }}</span>
+                <span>{{ bill.tenantName || '未关联租户' }} · {{ bill.feeType || '未填写费用类型' }}</span>
+              </div>
+            </el-option>
+          </el-select>
+          <div class="form-tip">选择账单后，租户和费用类型由系统自动带出，保证发票能对账。</div>
+        </el-form-item>
+        <el-form-item label="对方租户">
+          <el-input :model-value="selectedBill?.tenantName || form.tenantName || '选择关联账单后自动显示'" disabled />
+        </el-form-item>
+        <el-form-item label="费用类型">
+          <el-input :model-value="selectedBill?.feeType || form.feeType || '选择关联账单后自动显示'" disabled />
+        </el-form-item>
         <el-form-item label="备注"><el-input v-model="form.remark" type="textarea" :rows="2" /></el-form-item>
         <el-form-item label="附件">
           <FileUpload v-model="attachFiles" biz-type="invoice" :biz-id="form.id" />
@@ -103,10 +121,10 @@
 </template>
 
 <script setup>
-import { reactive, ref, onMounted } from 'vue'
+import { computed, reactive, ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { invoiceApi } from '@/api/finance'
+import { billApi, invoiceApi } from '@/api/finance'
 import { fileApi } from '@/api/file'
 import FileUpload from '@/components/FileUpload.vue'
 
@@ -149,20 +167,61 @@ function reset() {
 
 const formRef = ref()
 const dialog = reactive({ visible: false, title: '' })
-const blank = { id: null, title: '', taxNo: '', amount: 0, invoiceType: '普票', billId: null, remark: '', status: 1 }
+const blank = {
+  id: null, title: '', taxNo: '', amount: 0, invoiceType: '普票', billId: null,
+  tenantRefId: null, tenantName: '', feeType: '', remark: '', status: 1
+}
 const form = reactive({ ...blank })
 const attachFiles = ref([])
 const rules = {
   title: [{ required: true, message: '请输入发票抬头', trigger: 'blur' }],
-  amount: [{ required: true, message: '请输入金额', trigger: 'blur' }]
+  amount: [{ required: true, message: '请输入金额', trigger: 'blur' }],
+  billId: [{ required: true, message: '请选择关联账单', trigger: 'change' }]
+}
+
+const billLoading = ref(false)
+const billOptions = ref([])
+const selectedBill = computed(() => billOptions.value.find(bill => bill.id === form.billId))
+
+function billLabel(bill) {
+  return `${bill.code}｜${bill.tenantName || '未关联租户'}｜${bill.feeType || '未填写费用类型'}｜¥${bill.amount ?? 0}`
+}
+
+async function loadBillOptions() {
+  billLoading.value = true
+  try {
+    // 发票只对应应收账单；账单页已由后端统一补齐租户名和费用类型。
+    const res = await billApi.page({ pageNo: 1, pageSize: 200, direction: 1 })
+    // 已开且仍有效的账单不能重复开票；编辑当前记录时仍保留它，便于查看关联关系。
+    billOptions.value = (res.records || []).filter(bill => bill.invoiceStatus !== 1 || bill.id === form.billId)
+  } finally {
+    billLoading.value = false
+  }
+}
+
+function syncBill(billId) {
+  const bill = billOptions.value.find(item => item.id === billId)
+  if (!bill) {
+    form.tenantRefId = null
+    form.tenantName = ''
+    form.feeType = ''
+    return
+  }
+  form.tenantRefId = bill.tenantRefId
+  form.tenantName = bill.tenantName || ''
+  form.feeType = bill.feeType || ''
+  // 新增时用账单金额作为开票金额，编辑已有发票时保留用户曾经调整过的金额。
+  if (!form.id) form.amount = Number(bill.amount || 0)
 }
 
 async function openDialog(row) {
   dialog.visible = true
   dialog.title = row ? '编辑发票' : '新增发票'
   attachFiles.value = []
+  await loadBillOptions()
   if (row) {
     Object.assign(form, row)
+    syncBill(form.billId)
     try { attachFiles.value = await fileApi.list('invoice', row.id) } catch (e) { /* 忽略 */ }
   } else {
     Object.assign(form, blank)
@@ -193,4 +252,7 @@ onMounted(load)
 
 <style scoped>
 .pager { margin-top: 16px; justify-content: flex-end; }
+.form-tip { margin-top: 6px; font-size: 12px; color: var(--el-text-color-secondary); line-height: 1.5; }
+.bill-option { display: flex; justify-content: space-between; gap: 12px; }
+.bill-option span:last-child { color: var(--el-text-color-secondary); font-size: 12px; }
 </style>
