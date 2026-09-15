@@ -117,12 +117,13 @@ public class InvoiceController {
     }
 
     /**
-     * 发票的租户、费用类型都以关联账单为准。前端不再让用户录入容易写错的裸 ID，
-     * 后端仍要做这一层兜底，防止接口调用绕过页面后留下无法对账的发票。
+     * 关联账单为可选项。关联时，后端补齐租户；未关联的独立发票保持可录入，
+     * 但不参与账单的开票状态更新。
      */
     private void bindBill(Invoice invoice) {
         if (invoice.getBillId() == null) {
-            throw new BizException("请选择关联账单，发票必须能对应租户和费用类型");
+            invoice.setTenantRefId(null);
+            return;
         }
         Bill bill = billMapper.selectById(invoice.getBillId());
         if (bill == null) {

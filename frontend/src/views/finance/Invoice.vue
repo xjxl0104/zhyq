@@ -88,7 +88,7 @@
             <el-radio value="专票">专票</el-radio>
           </el-radio-group>
         </el-form-item>
-        <el-form-item label="关联账单" prop="billId">
+        <el-form-item label="关联账单">
           <el-select v-model="form.billId" filterable clearable :loading="billLoading"
                      placeholder="请选择账单（可按账单号或租户搜索）" style="width: 100%" @change="syncBill">
             <el-option v-for="bill in billOptions" :key="bill.id" :value="bill.id"
@@ -99,7 +99,7 @@
               </div>
             </el-option>
           </el-select>
-          <div class="form-tip">选择账单后，租户和费用类型由系统自动带出，保证发票能对账。</div>
+          <div class="form-tip">关联账单为可选项；选择后，租户和费用类型由系统自动带出，保证发票能对账。</div>
         </el-form-item>
         <el-form-item label="对方租户">
           <el-input :model-value="selectedBill?.tenantName || form.tenantName || '选择关联账单后自动显示'" disabled />
@@ -175,8 +175,7 @@ const form = reactive({ ...blank })
 const attachFiles = ref([])
 const rules = {
   title: [{ required: true, message: '请输入发票抬头', trigger: 'blur' }],
-  amount: [{ required: true, message: '请输入金额', trigger: 'blur' }],
-  billId: [{ required: true, message: '请选择关联账单', trigger: 'change' }]
+  amount: [{ required: true, message: '请输入金额', trigger: 'blur' }]
 }
 
 const billLoading = ref(false)
