@@ -74,9 +74,9 @@ describe('warehouse workspace interactions', () => {
   })
   it('uses the existing protected business module on the real homepage', async () => {
     route.meta = {}
-    const wrapper = mount(TwinHome, { props: { projectName: '测试项目' } })
+    const wrapper = mount(TwinHome)
     expect(wrapper.find('.twin-sidebar').exists()).toBe(false)
-    expect(wrapper.get('.twin-breadcrumb').text()).toContain('测试项目')
+    expect(wrapper.find('.twin-topbar').exists()).toBe(false)
     wrapper.findComponent({ name: 'WarehouseScene' }).vm.$emit('open-module', { module: 'contract', floor: 3 })
     expect(push).toHaveBeenCalledWith('/contract/list')
     wrapper.unmount()
