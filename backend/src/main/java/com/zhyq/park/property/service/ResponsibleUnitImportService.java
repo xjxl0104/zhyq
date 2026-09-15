@@ -162,20 +162,15 @@ public class ResponsibleUnitImportService {
         int created = 0;
         int updated = 0;
         for (ResponsibleUnit u : parsed.rows()) {
-            LambdaQueryWrapper<ResponsibleUnit> q = new LambdaQueryWrapper<ResponsibleUnit>()
-                    .eq(ResponsibleUnit::getName, u.getName());
-            if (projectId == null) {
-                q.isNull(ResponsibleUnit::getProjectId);
-            } else {
-                q.eq(ResponsibleUnit::getProjectId, projectId);
-            }
-            ResponsibleUnit exist = unitMapper.selectOne(q);
+            ResponsibleUnit exist = findExisting(u.getName(), projectId);
             if (exist == null) {
                 unitMapper.insert(u);
                 created++;
             } else {
                 u.setId(exist.getId());
                 u.setVersion(exist.getVersion());
+                // 命中的是全局通用单位时保持全局,不因在某园区下导入而改归属
+                u.setProjectId(exist.getProjectId());
                 unitMapper.updateById(u);
                 updated++;
             }
@@ -185,6 +180,24 @@ public class ResponsibleUnitImportService {
         m.put("created", created);
         m.put("updated", updated);
         return m;
+    }
+
+    /**
+     * 同名单位查找:园区下导入时优先匹配本园区,其次匹配全局通用(project_id 为空)的同名单位,
+     * 避免列表里同时出现园区版与全局版两条同名记录。
+     */
+    private ResponsibleUnit findExisting(String name, Long projectId) {
+        LambdaQueryWrapper<ResponsibleUnit> q = new LambdaQueryWrapper<ResponsibleUnit>()
+                .eq(ResponsibleUnit::getName, name);
+        if (projectId == null) {
+            q.isNull(ResponsibleUnit::getProjectId);
+        } else {
+            q.and(w -> w.eq(ResponsibleUnit::getProjectId, projectId)
+                    .or().isNull(ResponsibleUnit::getProjectId));
+        }
+        List<ResponsibleUnit> found = unitMapper.selectList(q);
+        return found.stream().filter(x -> projectId != null && projectId.equals(x.getProjectId())).findFirst()
+                .orElse(found.isEmpty() ? null : found.get(0));
     }
 
     /** 生成导入模板,含表头、示例行与类型说明 */

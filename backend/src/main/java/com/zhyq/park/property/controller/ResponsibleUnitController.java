@@ -54,7 +54,9 @@ public class ResponsibleUnitController {
             q.eq(ResponsibleUnit::getUnitType, unitType);
         }
         if (projectId != null) {
-            q.eq(ResponsibleUnit::getProjectId, projectId);
+            // 与下拉 options 口径一致:园区专属 + 全局通用(project_id 为空)一并展示
+            q.and(w -> w.eq(ResponsibleUnit::getProjectId, projectId)
+                    .or().isNull(ResponsibleUnit::getProjectId));
         }
         q.orderByDesc(ResponsibleUnit::getId);
         IPage<ResponsibleUnit> p = unitMapper.selectPage(new Page<>(current, size), q);
