@@ -7,8 +7,7 @@ export const menuTree = [
         title: '数据中心', icon: 'DataLine', children: [
           { title: '数据看板', path: '/data/center' },
           { title: '剖面图', path: '/data/section' },
-          { title: '报表统计', path: '/data/report' },
-          { title: '监控大屏', path: '/screen' }
+          { title: '报表统计', path: '/data/report' }
         ]
       }
     ]

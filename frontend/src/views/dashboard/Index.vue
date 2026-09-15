@@ -8,8 +8,8 @@
       </div>
       <div class="commerce-page__actions">
         <span class="commerce-chip"><el-icon><Calendar /></el-icon>近 30 天</span>
-        <el-button class="commerce-action" type="primary" @click="$router.push('/screen')">
-          <el-icon><Monitor /></el-icon><span>打开监控大屏</span>
+        <el-button class="commerce-action" type="primary" @click="$router.push('/data/center')">
+          <el-icon><Monitor /></el-icon><span>打开数据看板</span>
         </el-button>
       </div>
     </header>
@@ -156,7 +156,7 @@ const quicks = [
   { name: '账单管理', path: '/finance/bill', icon: 'Money' },
   { name: '物业报修', path: '/property/workorder', icon: 'Tools' },
   { name: '线索管理', path: '/crm/lead', icon: 'Promotion' },
-  { name: '监控大屏', path: '/screen', icon: 'Monitor' }
+  { name: '数据看板', path: '/data/center', icon: 'Monitor' }
 ]
 
 function fmt(v) { return v ? String(v).substring(5, 16) : '' }
