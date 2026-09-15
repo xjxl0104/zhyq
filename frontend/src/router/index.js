@@ -2,6 +2,11 @@ import { createRouter, createWebHistory } from 'vue-router'
 import Layout from '@/layout/Layout.vue'
 
 const routes = [
+  // Local photo/model demo has no backend access and is excluded from production.
+  ...(import.meta.env.DEV ? [
+    { path: '/twin-preview', name: 'TwinPreview', meta: { title: '云仓三维预览', public: true, twinPreview: true }, component: () => import('@/views/twin/TwinHome.vue') },
+    { path: '/twin-preview/module/:module(park|property|contract|camera|fire|energy)', name: 'TwinModulePreview', meta: { title: '空间业务预览', public: true, twinPreview: true }, component: () => import('@/views/twin/TwinHome.vue') },
+  ] : []),
   // 登录(不套 Layout)
   { path: '/login', name: 'Login', meta: { title: '登录', public: true }, component: () => import('@/views/Login.vue') },
   {
@@ -9,7 +14,8 @@ const routes = [
     component: Layout,
     redirect: '/dashboard',
     children: [
-      { path: 'dashboard', name: 'Dashboard', meta: { title: '首页' }, component: () => import('@/views/dashboard/Index.vue') },
+      { path: 'dashboard', name: 'Dashboard', meta: { title: '首页' }, component: () => import('@/views/twin/TwinDashboard.vue') },
+      { path: 'overview', name: 'Overview', meta: { title: '经营看板' }, component: () => import('@/views/dashboard/Index.vue') },
 
       // 建筑
       { path: 'building/project', meta: { title: '项目管理' }, component: () => import('@/views/building/Project.vue') },
