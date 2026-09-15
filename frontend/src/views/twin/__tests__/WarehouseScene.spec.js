@@ -24,6 +24,7 @@ vi.mock('../warehouseAsset', async () => {
   return { loadWarehouse: async () => ({ root: new Group(), floors: [], update: () => false, setState() {}, dispose() {}, pointPosition: () => ({ project: () => ({ x: 0, y: 0, z: 0 }) }) }) }
 })
 vi.mock('../sceneWeather', () => ({ createSceneWeather: () => ({ setWeather() {}, update() {}, dispose() {} }) }))
+vi.mock('../sceneRendering', () => ({ createSceneRendering: () => ({ render: state.render, resize() {}, needsRender: () => false, dispose() {} }) }))
 
 function framesUntil(time) {
   for (let now = 0; now <= time; now += 16) {
@@ -35,7 +36,7 @@ function framesUntil(time) {
 afterEach(() => { vi.unstubAllGlobals(); state.frames.clear(); state.render.mockClear() })
 
 describe('warehouse render demand', () => {
-  it('stops drawing a settled sunny scene, redraws changes and animates rain', async () => {
+  it('stops drawing a settled sunny scene, redraws weather changes without continuous frames', async () => {
     vi.stubGlobal('requestAnimationFrame', callback => { const id = ++state.nextFrame; state.frames.set(id, callback); return id })
     vi.stubGlobal('cancelAnimationFrame', id => state.frames.delete(id))
     const wrapper = mount(WarehouseScene)
@@ -48,9 +49,9 @@ describe('warehouse render demand', () => {
     framesUntil(32)
     expect(state.render).toHaveBeenCalledTimes(1)
     state.render.mockClear()
-    await wrapper.setProps({ weather: 'rain' })
+    await wrapper.setProps({ weather: 'sunny' })
     framesUntil(48)
-    expect(state.render.mock.calls.length).toBeGreaterThan(1)
+    expect(state.render).toHaveBeenCalledTimes(1)
     wrapper.unmount()
     expect(state.frames.size).toBe(0)
   })

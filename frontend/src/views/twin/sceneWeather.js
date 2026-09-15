@@ -1,11 +1,9 @@
 import * as THREE from 'three'
-import { MODEL, modelHeight } from './twinData.js'
 
 // Local visual presets. These deliberately do not represent live weather observations.
 const PRESETS = {
-  sunny: { top: '#6578ac', horizon: '#e0e4f2', fog: '#d7dded', density: .0009, cloud: .12, disc: .85, exposure: 1.03, environment: .4, sun: ['#f5f5ff', 2.9], fill: ['#dce2ff', .6], sky: ['#e0e7ff', '#858fb0', 1.55] },
-  rain: { top: '#495775', horizon: '#b1bacf', fog: '#9aa8c0', density: .0031, cloud: .7, disc: 0, exposure: .88, environment: .22, sun: ['#b9cddd', .65], fill: ['#9db5cf', .4], sky: ['#b5cadb', '#58617d', 1.05] },
-  night: { top: '#0c1029', horizon: '#303b5a', fog: '#202b47', density: .0019, cloud: .13, disc: .18, exposure: 1, environment: .085, sun: ['#a8c4ed', .32], fill: ['#779fcb', .12], sky: ['#799bc4', '#232a48', .32] },
+  sunny: { top: '#347fbc', horizon: '#bfd2dd', near: 260, far: 1200, disc: 1, exposure: .98, environment: .3, sun: ['#fff0d2', 4.2], fill: ['#b1cae3', .23], sky: ['#c6dff2', '#6d7060', .52] },
+  night: { top: '#0c1029', horizon: '#29384a', near: 180, far: 1000, disc: .025, exposure: 1, environment: .085, sun: ['#a8c4ed', .32], fill: ['#779fcb', .12], sky: ['#799bc4', '#232a48', .32] },
 }
 
 function captureMaterial(material) {
@@ -24,8 +22,8 @@ function restoreMaterial(snapshot) {
   }
 }
 
-/** Borrow scene, renderer, model and lights; dispose restores them without disposing them. */
-export function createSceneWeather({ scene, renderer, model, sunlight, fill, hemisphere, reducedMotion = false }) {
+/** Borrow scene, renderer and lights; dispose restores them without disposing them. */
+export function createSceneWeather({ scene, renderer, sunlight, fill, hemisphere }) {
   const original = {
     background: scene.background, fog: scene.fog, environmentIntensity: scene.environmentIntensity,
     exposure: renderer.toneMappingExposure,
@@ -35,15 +33,15 @@ export function createSceneWeather({ scene, renderer, model, sunlight, fill, hem
     groundColor: light.groundColor?.clone(), castShadow: light.castShadow,
   }))
   const materialSnapshots = new Map()
-  const wetMaterials = new Set(), windowMaterials = new Set(), lampMaterials = new Set()
-  ;(model?.root || model)?.traverse(object => {
+  const windowMaterials = new Set(), lampMaterials = new Set()
+  // Include locally generated windows and street lamps as well as the GLB materials.
+  scene.traverse(object => {
     const materials = Array.isArray(object.material) ? object.material : object.material ? [object.material] : []
     for (const material of materials) {
       const name = material.name || ''
-      if (/^(road|paving|asphalt|siteRoad|sitePavement)/i.test(name)) wetMaterials.add(material)
       if (/^(glass|window)/i.test(name)) windowMaterials.add(material)
       if (/^siteLamp/i.test(name)) lampMaterials.add(material)
-      if (wetMaterials.has(material) || windowMaterials.has(material) || lampMaterials.has(material)) {
+      if (windowMaterials.has(material) || lampMaterials.has(material)) {
         if (!materialSnapshots.has(material)) materialSnapshots.set(material, captureMaterial(material))
       }
     }
@@ -55,7 +53,7 @@ export function createSceneWeather({ scene, renderer, model, sunlight, fill, hem
     side: THREE.BackSide, depthWrite: false, depthTest: false, toneMapped: false,
     uniforms: {
       topColor: { value: new THREE.Color() }, horizonColor: { value: new THREE.Color() },
-      cloudAmount: { value: 0 }, discStrength: { value: 0 },
+      sunDirection: { value: new THREE.Vector3() }, discStrength: { value: 0 },
     },
     vertexShader: `
       varying vec3 vSkyDirection;
@@ -69,19 +67,21 @@ export function createSceneWeather({ scene, renderer, model, sunlight, fill, hem
     fragmentShader: `
       uniform vec3 topColor;
       uniform vec3 horizonColor;
-      uniform float cloudAmount;
+      uniform vec3 sunDirection;
       uniform float discStrength;
       varying vec3 vSkyDirection;
       void main() {
         vec3 direction = normalize(vSkyDirection);
-        float elevation = smoothstep(-0.08, 0.85, direction.y);
+        // The complete lower hemisphere matches fog exactly. A pale horizon band
+        // gradually becomes blue above it instead of meeting green at a hard edge.
+        float elevation = pow(smoothstep(0.0, 0.28, max(direction.y, 0.0)), 0.45);
         vec3 color = mix(horizonColor, topColor, elevation);
-        float cloud = sin(direction.x * 8.0 + direction.z * 4.0)
-          * sin(direction.z * 13.0 - direction.y * 7.0);
-        cloud = smoothstep(-0.15, 0.8, cloud) * smoothstep(0.0, 0.3, direction.y);
-        color = mix(color, horizonColor * 1.08, cloud * cloudAmount);
-        float disc = smoothstep(0.997, 0.9997, dot(direction, normalize(vec3(-0.55, 0.78, 0.3))));
-        color += vec3(1.0, 0.91, 0.72) * disc * discStrength;
+        float alignment = clamp(dot(direction, sunDirection), -1.0, 1.0);
+        float angleSquared = 2.0 * (1.0 - alignment);
+        float halo = exp(-angleSquared / 0.014) * 0.22;
+        float glow = exp(-angleSquared / 0.0009) * 0.55;
+        float disc = smoothstep(cos(0.007), cos(0.0046), alignment);
+        color += vec3(1.0, 0.83, 0.57) * (halo + glow + disc * 12.0) * discStrength;
         gl_FragColor = vec4(color, 1.0);
         #include <colorspace_fragment>
       }
@@ -93,30 +93,6 @@ export function createSceneWeather({ scene, renderer, model, sunlight, fill, hem
   sky.renderOrder = -1000
   group.add(sky)
 
-  // Two vertices per drop. Both the vertex and velocity buffers are retained for all frames.
-  const dropCount = 1500, positions = new Float32Array(dropCount * 6), speeds = new Float32Array(dropCount)
-  const roofLevel = modelHeight() + 3
-  const rainFloor = (x, z) => Math.abs(x) < MODEL.width / 2 + 2 && Math.abs(z) < MODEL.depth / 2 + 2 ? roofLevel : -.3
-  function writeDrop(index, x, y, z) {
-    const offset = index * 6
-    positions[offset] = x; positions[offset + 1] = y; positions[offset + 2] = z
-    positions[offset + 3] = x + .22; positions[offset + 4] = y + 1.8; positions[offset + 5] = z - .06
-  }
-  for (let index = 0; index < dropCount; index++) {
-    const x = (Math.random() - .5) * 280, z = (Math.random() - .5) * 230
-    const bottom = rainFloor(x, z)
-    writeDrop(index, x, bottom + Math.random() * (110 - bottom), z)
-    speeds[index] = 31 + Math.random() * 17
-  }
-  const rainGeometry = new THREE.BufferGeometry()
-  const rainAttribute = new THREE.BufferAttribute(positions, 3).setUsage(THREE.DynamicDrawUsage)
-  rainGeometry.setAttribute('position', rainAttribute)
-  const rainMaterial = new THREE.LineBasicMaterial({ color: '#c3d9e9', transparent: true, opacity: .38, depthWrite: false })
-  const rain = new THREE.LineSegments(rainGeometry, rainMaterial)
-  rain.name = 'weather-rain'
-  rain.frustumCulled = false
-  group.add(rain)
-
   const nightLights = []
   for (const [x, z] of [[-72, 38], [72, 38], [-72, -38], [72, -38]]) {
     const light = new THREE.PointLight('#ffcc87', 0, 32, 2)
@@ -126,7 +102,7 @@ export function createSceneWeather({ scene, renderer, model, sunlight, fill, hem
     nightLights.push(light)
     group.add(light)
   }
-  const fog = new THREE.FogExp2()
+  const fog = new THREE.Fog()
   scene.add(group)
   let disposed = false, current = 'sunny'
 
@@ -136,30 +112,25 @@ export function createSceneWeather({ scene, renderer, model, sunlight, fill, hem
     const config = PRESETS[current]
     scene.background = null
     scene.fog = fog
-    fog.color.set(config.fog); fog.density = config.density
+    fog.color.set(config.horizon); fog.near = config.near; fog.far = config.far
     scene.environmentIntensity = config.environment
     renderer.toneMappingExposure = config.exposure
     skyMaterial.uniforms.topColor.value.set(config.top)
     skyMaterial.uniforms.horizonColor.value.set(config.horizon)
-    skyMaterial.uniforms.cloudAmount.value = config.cloud
     skyMaterial.uniforms.discStrength.value = config.disc
     if (sunlight) {
       sunlight.color.set(config.sun[0]); sunlight.intensity = config.sun[1]
-      sunlight.position.set(-75, 130, 70)
-      sunlight.castShadow = current !== 'rain'
+      sunlight.position.set(-140, 35, 60)
+      sunlight.castShadow = true
     }
+    const sunDirection = skyMaterial.uniforms.sunDirection.value
+    if (sunlight) sunDirection.copy(sunlight.position).sub(sunlight.target.position).normalize()
+    else sunDirection.set(-140, 35, 60).normalize()
     if (fill) { fill.color.set(config.fill[0]); fill.intensity = config.fill[1] }
     if (hemisphere) {
       hemisphere.color.set(config.sky[0]); hemisphere.groundColor?.set(config.sky[1]); hemisphere.intensity = config.sky[2]
     }
     materialSnapshots.forEach(restoreMaterial)
-    if (current === 'rain') {
-      wetMaterials.forEach(material => {
-        material.color?.multiplyScalar(.72)
-        if (material.roughness !== undefined) material.roughness = .2
-        if (material.metalness !== undefined) material.metalness = .12
-      })
-    }
     if (current === 'night') {
       windowMaterials.forEach(material => {
         if (material.emissive) { material.emissive.set('#edc48c'); material.emissiveIntensity = .16 }
@@ -168,24 +139,7 @@ export function createSceneWeather({ scene, renderer, model, sunlight, fill, hem
         if (material.emissive) { material.emissive.set('#ffe2a6'); material.emissiveIntensity = 2.4 }
       })
     }
-    rain.visible = current === 'rain' && !reducedMotion
     nightLights.forEach(light => { light.visible = current === 'night'; light.intensity = current === 'night' ? 85 : 0 })
-  }
-
-  function update(delta) {
-    if (disposed || !rain.visible || !Number.isFinite(delta) || delta <= 0) return
-    const step = Math.min(delta, .05)
-    for (let index = 0; index < dropCount; index++) {
-      const offset = index * 6
-      let x = positions[offset] - step * 5
-      let y = positions[offset + 1] - step * speeds[index]
-      let z = positions[offset + 2] + step * 1.2
-      if (x < -140) x += 280
-      if (z > 115) z -= 230
-      if (y < rainFloor(x, z)) y = 110
-      writeDrop(index, x, y, z)
-    }
-    rainAttribute.needsUpdate = true
   }
 
   function dispose() {
@@ -203,12 +157,11 @@ export function createSceneWeather({ scene, renderer, model, sunlight, fill, hem
     materialSnapshots.forEach(restoreMaterial)
     group.removeFromParent()
     sky.geometry.dispose(); skyMaterial.dispose()
-    rainGeometry.dispose(); rainMaterial.dispose()
     nightLights.forEach(light => light.dispose())
     group.clear()
-    materialSnapshots.clear(); wetMaterials.clear(); windowMaterials.clear(); lampMaterials.clear()
+    materialSnapshots.clear(); windowMaterials.clear(); lampMaterials.clear()
   }
 
   setWeather('sunny')
-  return { setWeather, update, dispose }
+  return { setWeather, dispose }
 }

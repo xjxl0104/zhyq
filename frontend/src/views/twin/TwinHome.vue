@@ -18,7 +18,7 @@ const mode = ref('exterior'), floor = ref(null), layer = ref('all'), rotating = 
 const selectedPoint = ref(null), gallery = ref(false), referenceIndex = ref(0), searchOpen = ref(false), search = ref(''), help = ref(false), notifications = ref(false), exporting = ref(false), toast = ref(''), sidebarOpen = ref(false)
 const modelFocus = ref(false)
 const weather = ref('sunny'), viewpoint = ref('overview')
-const weatherOptions = [{ id: 'sunny', name: '晴天', icon: 'sun' }, { id: 'rain', name: '阴雨', icon: 'rain' }, { id: 'night', name: '夜景', icon: 'moon' }]
+const weatherOptions = [{ id: 'sunny', name: '晴天', icon: 'sun' }, { id: 'night', name: '夜景', icon: 'moon' }]
 async function viewEntrance() { viewpoint.value = 'entrance'; mode.value = 'exterior'; modelFocus.value = true; selectedPoint.value = null; await nextTick(); scene.value?.reset() }
 function toggleModelFocus() { modelFocus.value = !modelFocus.value; if (!modelFocus.value) viewpoint.value = 'overview' }
 const currentTime = ref(new Date())
@@ -114,7 +114,7 @@ onBeforeUnmount(() => { clearInterval(clockTimer); clearTimeout(toastTimer); win
 </script>
 
 <template>
-  <div ref="workspace" class="twin-workspace twin-workspace-v2" :class="{ 'twin-embedded': !preview, 'is-night': weather === 'night', 'is-rain': weather === 'rain' }">
+  <div ref="workspace" class="twin-workspace twin-workspace-v2" :class="{ 'twin-embedded': !preview, 'is-night': weather === 'night' }">
     <aside v-if="preview" class="twin-sidebar" :class="{ 'sidebar-open': sidebarOpen }">
       <button class="twin-brand" aria-label="返回首页" @click="goHome"><span class="brand-symbol"><TwinIcon name="cube" :size="28" /></span><span>DIPARK<span class="brand-caption">智慧园区 · 空间连接未来</span></span></button>
       <div class="park-switch"><span class="park-switch-icon"><TwinIcon name="building" :size="18" /></span><span><strong>云仓产业园</strong><small>空间运营工作台</small></span><span class="park-switch-dot" /></div>
