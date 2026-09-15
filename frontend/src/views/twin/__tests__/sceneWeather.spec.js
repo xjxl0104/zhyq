@@ -34,64 +34,33 @@ function setup(reducedMotion = false) {
 }
 
 describe('local scene weather', () => {
-  it('changes daylight, fog, wet paving and restrained window illumination, with sunny fallback', () => {
-    const state = setup()
-    const { scene, sunlight, road, glass, lamp, wall, weather } = state
+  it('switches daylight and window illumination with sunny fallback for removed weather', () => {
+    const { scene, sunlight, road, glass, lamp, wall, baseline, weather } = setup()
     const sunnyIntensity = sunlight.intensity
-    const sunnyFog = scene.fog.density
-    weather.setWeather('rain')
-    expect(sunlight.intensity).toBeLessThan(sunnyIntensity)
-    expect(scene.fog.density).toBeGreaterThan(sunnyFog)
-    expect(road.roughness).toBeLessThan(.4)
-    expect(road.color.equals(state.baseline.roadColor)).toBe(false)
     weather.setWeather('night')
     expect(sunlight.intensity).toBeLessThan(sunnyIntensity * .3)
-    expect(glass.emissive.equals(state.baseline.glassEmissive)).toBe(false)
-    expect(glass.emissiveIntensity).toBeLessThan(.5)
+    expect(glass.emissive.equals(baseline.glassEmissive)).toBe(false)
     expect(lamp.emissiveIntensity).toBeGreaterThan(1)
     expect(wall.emissive.getHex()).toBe(0)
-    weather.setWeather('unrecognised')
+    weather.setWeather('rain')
     expect(sunlight.intensity).toBe(sunnyIntensity)
-    expect(scene.fog.density).toBe(sunnyFog)
+    expect(road.color.equals(baseline.roadColor)).toBe(true)
     expect(road.roughness).toBe(.82)
-    expect(road.color.equals(state.baseline.roadColor)).toBe(true)
-    expect(glass.emissive.equals(state.baseline.glassEmissive)).toBe(true)
+    expect(glass.emissive.equals(baseline.glassEmissive)).toBe(true)
+    expect(scene.getObjectByName('weather-rain')).toBeUndefined()
     weather.dispose()
   })
 
-  it('animates rain in its existing buffer, and stops updating it outside rainy weather', () => {
-    const { scene, weather } = setup()
-    const rain = scene.getObjectByName('weather-rain')
-    expect(rain.visible).toBe(false)
-    weather.setWeather('rain')
-    expect(rain.visible).toBe(true)
-    const positions = rain.geometry.getAttribute('position')
-    expect(positions.count).toBeGreaterThanOrEqual(2400)
-    expect(positions.count).toBeLessThanOrEqual(3600)
-    const buffer = positions.array
-    const before = buffer.slice()
-    weather.update(.016, 1)
-    expect(rain.geometry.getAttribute('position')).toBe(positions)
-    expect(positions.array).toBe(buffer)
-    expect(buffer).not.toEqual(before)
-    expect([...buffer].every(Number.isFinite)).toBe(true)
-    weather.setWeather('sunny')
-    const stopped = buffer.slice()
-    weather.update(.016, 2)
-    expect(rain.visible).toBe(false)
-    expect(buffer).toEqual(stopped)
-    weather.dispose()
-  })
-
-  it('keeps rainy atmosphere without falling particles when reduced motion is requested', () => {
-    const { scene, road, weather } = setup(true)
-    weather.setWeather('rain')
-    const rain = scene.getObjectByName('weather-rain')
-    const before = rain.geometry.attributes.position.array.slice()
-    weather.update(.016, 3)
-    expect(rain.visible).toBe(false)
-    expect(rain.geometry.attributes.position.array).toEqual(before)
-    expect(road.roughness).toBeLessThan(.4)
+  it('uses the same horizon colour and light direction for the sky and scene', () => {
+    const { scene, sunlight, weather } = setup()
+    for (const mode of ['sunny', 'night']) {
+      weather.setWeather(mode)
+      const sky = scene.getObjectByName('weather-sky').material.uniforms
+      expect(scene.fog.color.equals(sky.horizonColor.value)).toBe(true)
+      expect(sky.sunDirection.value.dot(sunlight.position.clone().sub(sunlight.target.position).normalize())).toBeCloseTo(1)
+      expect(scene.fog.near).toBeGreaterThan(150)
+      expect(scene.fog.far).toBeLessThan(1800)
+    }
     weather.dispose()
   })
 
@@ -107,13 +76,12 @@ describe('local scene weather', () => {
     }))
     const ownedDisposed = vi.fn()
     ownedResources.forEach(resource => resource.addEventListener('dispose', ownedDisposed))
-    expect(ownedResources.size).toBeGreaterThanOrEqual(4)
+    expect(ownedResources.size).toBeGreaterThanOrEqual(2)
     weather.setWeather('night')
     weather.setWeather('rain')
     weather.dispose()
     weather.dispose()
     weather.setWeather('night')
-    weather.update(.016, 4)
     expect(scene.children).toEqual(baseline.children)
     expect(scene.background).toBe(baseline.background)
     expect(scene.fog).toBe(baseline.fog)

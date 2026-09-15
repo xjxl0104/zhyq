@@ -8,6 +8,13 @@ vi.mock('../WarehouseScene.vue', () => ({ default: { name: 'WarehouseScene', pro
 
 describe('warehouse workspace interactions', () => {
   beforeEach(() => { push.mockClear(); sceneReset.mockClear(); route.params = {}; route.meta = { twinPreview: true } })
+  it('offers sunny and night weather without the removed garden and rain controls', () => {
+    const wrapper = mount(TwinHome)
+    expect(wrapper.find('[data-testid="view-garden"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="weather-rain"]').exists()).toBe(false)
+    expect(wrapper.findAll('.weather-switch button').map(button => button.text())).toEqual(['晴天', '夜景'])
+    wrapper.unmount()
+  })
   it('can return to the entrance again after the user has moved the camera', async () => {
     const wrapper = mount(TwinHome)
     await wrapper.get('[data-testid="view-entrance"]').trigger('click')
@@ -19,13 +26,13 @@ describe('warehouse workspace interactions', () => {
   it('changes weather without losing the selected floor and opens the entrance view', async () => {
     const wrapper = mount(TwinHome)
     await wrapper.get('[data-testid="floor-5"]').trigger('click')
-    await wrapper.get('[data-testid="weather-rain"]').trigger('click')
+    await wrapper.get('[data-testid="weather-night"]').trigger('click')
     const scene = wrapper.findComponent({ name: 'WarehouseScene' })
-    expect(scene.props()).toMatchObject({ weather: 'rain', floor: 5 })
+    expect(scene.props()).toMatchObject({ weather: 'night', floor: 5 })
     await wrapper.get('[data-testid="view-entrance"]').trigger('click')
     expect(scene.props()).toMatchObject({ viewpoint: 'entrance', mode: 'exterior', focused: true })
     await wrapper.get('[aria-label="查看全部楼层"]').trigger('click')
-    expect(scene.props()).toMatchObject({ viewpoint: 'overview', weather: 'rain', floor: null })
+    expect(scene.props()).toMatchObject({ viewpoint: 'overview', weather: 'night', floor: null })
     wrapper.unmount()
   })
   it('opens model focus and restores the surrounding operating panels without losing the selected floor', async () => {

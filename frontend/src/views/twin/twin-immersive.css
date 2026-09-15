@@ -24,7 +24,7 @@
 .twin-workspace-v2 .environment-location { display:flex;align-items:center;gap:6px;min-width:0;text-shadow:0 1px 10px #ffffff50; }
 .twin-workspace-v2 .environment-location strong { font-size:12px;font-weight:600;white-space:nowrap; }
 .twin-workspace-v2 .environment-location>span { font-size:10px;opacity:.72;white-space:nowrap; }
-.twin-workspace-v2 .environment-actions { display:flex;align-items:center;gap:8px; }
+.twin-workspace-v2 .environment-actions { display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end; }
 .twin-workspace-v2 .weather-simulation { font-size:9px;opacity:.72; }
 .twin-workspace-v2 .weather-switch { display:flex;padding:2px;border:1px solid var(--scene-line);border-radius:6px;background:var(--scene-ui-bg);backdrop-filter:blur(12px); }
 .twin-workspace-v2 .weather-switch button { display:flex;align-items:center;justify-content:center;gap:4px;border:0;background:transparent;padding:4px 8px;border-radius:4px;color:var(--scene-ui-muted);font-size:10px; }
@@ -79,7 +79,6 @@
 .twin-workspace-v2.is-night .pin-icon { color:#8fd2e0; }
 .twin-workspace-v2.is-night .detail-data-note { background:#254353;color:#b2cbd6; }
 .twin-workspace-v2.is-night .camera-placeholder { background:#1a3444; }
-.twin-workspace-v2.is-rain { --ops-panel-bg:rgba(236,245,250,.86);--scene-ui-bg:rgba(235,246,252,.86); }
 @media (max-height:820px) {
   @container twin-main (min-width:881px) {
     .twin-workspace-v2 .twin-topbar { height:38px; }
@@ -102,7 +101,7 @@
   .twin-workspace-v2 .is-focused .twin-world-scene { height:100%; }
   .twin-workspace-v2 .is-focused .twin-viewport { height:570px; }
 }
-@container twin-main (max-width:560px) {
+@container twin-main (max-width:680px) {
   .twin-workspace-v2 .twin-heading { flex-direction:row;align-items:center;gap:8px; }
   .twin-workspace-v2 .twin-heading h1 { font-size:19px; }
   .twin-workspace-v2 .twin-heading p,.twin-workspace-v2 .heading-kicker .demo-pill { display:none; }
@@ -113,7 +112,9 @@
   .twin-workspace-v2 .environment-bar { top:12px;left:12px;right:12px;height:auto;align-items:flex-start;flex-direction:column;gap:8px; }
   .twin-workspace-v2 .environment-location strong { font-size:11px; }
   .twin-workspace-v2 .environment-location>span { display:inline;font-size:9px; }
-  .twin-workspace-v2 .environment-actions { width:100%;justify-content:space-between;gap:6px; }
+  .twin-workspace-v2 .environment-actions { width:100%;display:flex;justify-content:space-between;gap:6px; }
+  .twin-workspace-v2 .weather-switch button { flex:1; }
+  .twin-workspace-v2 .environment-actions>.entrance-view,.twin-workspace-v2 .environment-actions>.model-focus-toggle { justify-content:center; }
   .twin-workspace-v2 .weather-switch button { font-size:10px;padding:4px 6px; }
   .twin-workspace-v2 .entrance-view { padding:5px; }
   .twin-workspace-v2 .twin-world-scene { height:550px; }
