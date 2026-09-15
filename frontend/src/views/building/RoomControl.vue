@@ -72,8 +72,12 @@
             </el-select>
           </el-form-item></el-col>
         </el-row>
-        <el-alert v-if="form.buildingId && !floorsLoading && !floors.length" type="warning" :closable="false" show-icon
-                  style="margin: -6px 0 12px" title="该楼宇还没有楼层，请先到「建筑管理」为该楼宇添加楼层" />
+        <el-alert v-if="!buildingOptions.length" type="warning" :closable="false" show-icon style="margin: -6px 0 12px">
+          <template #title>
+            还没有楼宇，房间需要挂在楼宇下。
+            <el-button link type="primary" @click="goBuilding">去「建筑管理」新增楼宇</el-button>
+          </template>
+        </el-alert>
         <el-row :gutter="12">
           <el-col :span="12"><el-form-item label="房号" prop="roomNo"><el-input v-model="form.roomNo" /></el-form-item></el-col>
         </el-row>
@@ -199,7 +203,11 @@ async function loadFloors(buildingId) {
   floors.value = []
   if (!buildingId) return
   floorsLoading.value = true
-  try { floors.value = await floorApi.list(buildingId) } finally { floorsLoading.value = false }
+  try { floors.value = await floorApi.ensure(buildingId) } finally { floorsLoading.value = false }
+}
+function goBuilding() {
+  dialog.visible = false
+  router.push('/building/building')
 }
 function onBuildingChange(id) {
   form.floorId = null

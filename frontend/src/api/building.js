@@ -23,6 +23,8 @@ export const buildingApi = {
 // 楼层
 export const floorApi = {
   list: (buildingId) => request.get('/building/floor/list', { params: { buildingId } }),
+  // 楼宇无楼层时按层数自动生成,返回楼层列表
+  ensure: (buildingId) => request.post('/building/floor/ensure', null, { params: { buildingId } }),
   get: (id) => request.get(`/building/floor/${id}`),
   add: (data) => request.post('/building/floor', data),
   update: (data) => request.put('/building/floor', data),
