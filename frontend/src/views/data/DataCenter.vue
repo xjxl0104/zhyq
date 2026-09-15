@@ -68,7 +68,7 @@
         <div class="commerce-card__head">
           <div>
             <h2 class="commerce-card__title">经营收入来源</h2>
-            <p class="commerce-card__meta">租费与增值业务分口径展示</p>
+            <p class="commerce-card__meta">仅统计有效账单；应收含滞纳金</p>
           </div>
           <span class="commerce-badge"><el-icon><DataLine /></el-icon>收入结构</span>
         </div>
