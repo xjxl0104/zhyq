@@ -32,17 +32,14 @@
 .twin-workspace-v2 .entrance-view { display:flex;align-items:center;gap:4px;padding:5px 8px;background:var(--scene-ui-bg);border:1px solid var(--scene-line);border-radius:5px;color:var(--scene-ui);font-size:10px;white-space:nowrap; }
 .twin-workspace-v2 .entrance-view[aria-pressed=true] { color:#fff;background:#267f92; }
 .twin-workspace-v2 .viewport-top { top:4px;left:0;right:0;gap:10px; }
-.twin-workspace-v2 .scene-heading { justify-content:center;gap:5px;min-height:20px;padding:0 76px 0 0; }
-.twin-workspace-v2 .scene-heading strong { font-size:11px;color:var(--scene-ui);font-weight:500; }
-.twin-workspace-v2 .scene-heading-dot { width:4px;height:4px;background:#398f9c; }
-.twin-workspace-v2 .scene-heading>span:last-child { display:none; }
-.twin-workspace-v2 .model-focus-toggle { top:0;right:0;border-color:var(--scene-line);background:var(--scene-ui-bg);color:var(--scene-ui);font-size:9px; }
+.twin-workspace-v2 .model-focus-toggle { position:static;flex-shrink:0;min-height:28px;border-color:var(--scene-line);background:var(--scene-ui-bg);color:var(--scene-ui);font-size:10px;white-space:nowrap; }
+.twin-workspace-v2 .model-focus-toggle[aria-pressed=true] { background:#337f92;border-color:transparent;color:#fff; }
 .twin-workspace-v2 .view-switch { width:100%;margin:0 auto;padding:3px;background:var(--scene-ui-bg);border-color:var(--scene-line);backdrop-filter:blur(12px); }
 .twin-workspace-v2 .view-switch button { color:var(--scene-ui-muted);font-size:10px; }
 .twin-workspace-v2 .view-switch button.active { color:var(--scene-ui);background:rgba(119,183,207,.17);box-shadow:none; }
-.twin-workspace-v2 .floor-picker { right:0;top:83px;background:var(--scene-ui-bg);border:1px solid var(--scene-line);backdrop-filter:blur(12px);padding:3px; }
-.twin-workspace-v2 .floor-picker button { height:24px;width:24px;color:var(--scene-ui-muted); }
-.twin-workspace-v2 .floor-picker button.active { color:white;background:#337f92; }
+.twin-workspace-v2 .floor-picker { right:0;top:52px;background:var(--scene-ui-bg);border:1px solid var(--scene-line);backdrop-filter:blur(12px);padding:3px; }
+.twin-workspace-v2 .floor-picker button { display:grid;place-items:center;height:28px;width:30px;padding:0;line-height:1;white-space:nowrap;color:var(--scene-ui-muted); }
+.twin-workspace-v2 .floor-picker button.active { color:white;background:#337f92;box-shadow:none; }
 .twin-workspace-v2 .floor-picker>span { color:var(--scene-ui-muted); }
 .twin-workspace-v2 .floor-selection-card { left:0;bottom:77px;padding:7px 10px;border-color:var(--scene-line);background:var(--scene-ui-bg);backdrop-filter:blur(12px);color:var(--scene-ui); }
 .twin-workspace-v2 .floor-selection-card strong,.twin-workspace-v2 .floor-selection-card small { color:var(--scene-ui); }
@@ -68,8 +65,6 @@
 .twin-workspace-v2 .pin-building .pin-icon { color:white; }
 .twin-workspace-v2 .is-focused .pin-card { border-radius:6px; }
 .twin-workspace-v2 .is-focused .viewport-top { left:18px;right:18px;gap:8px; }
-.twin-workspace-v2 .is-focused .scene-heading { justify-content:flex-start; }
-.twin-workspace-v2 .is-focused .model-focus-toggle { right:18px; }
 .twin-workspace-v2 .is-focused .floor-picker { right:18px; }
 .twin-workspace-v2 .is-focused .floor-selection-card { left:18px; }
 .twin-workspace-v2 .twin-layer-bar { margin-top:8px;background:#f5fafc;border-color:#d5e3eb;border-radius:9px; }
@@ -118,12 +113,11 @@
   .twin-workspace-v2 .environment-bar { top:12px;left:12px;right:12px;height:auto;align-items:flex-start;flex-direction:column;gap:8px; }
   .twin-workspace-v2 .environment-location strong { font-size:11px; }
   .twin-workspace-v2 .environment-location>span { display:inline;font-size:9px; }
-  .twin-workspace-v2 .environment-actions { width:100%;justify-content:space-between; }
+  .twin-workspace-v2 .environment-actions { width:100%;justify-content:space-between;gap:6px; }
   .twin-workspace-v2 .weather-switch button { font-size:10px;padding:4px 6px; }
   .twin-workspace-v2 .entrance-view { padding:5px; }
   .twin-workspace-v2 .twin-world-scene { height:550px; }
   .twin-workspace-v2 .twin-viewport { flex:0 0 452px;height:452px;min-height:452px; }
-  .twin-workspace-v2 .floor-picker { top:81px; }
   .twin-workspace-v2 .scene-controls>div { gap:0; }
   .twin-workspace-v2 .scene-controls button { width:25px; }
   .twin-workspace-v2 .is-focused .twin-viewport { flex-basis:500px; }
