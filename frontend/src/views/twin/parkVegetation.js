@@ -58,24 +58,32 @@ export function createLandscapeTextures(own) {
   return { wood: surface(false), bark: surface(true), leaf: texture(leaves, true, false) }
 }
 
-export function createTreeGeometries() {
-  const branches = [new THREE.CylinderGeometry(.12, .35, 8.3, 8).translate(0, 4.15, 0)]
+export function createTreeGeometries(level = 0) {
+  // The close tree is unchanged. Distant trees keep the same height and crown
+  // outline, replacing hidden branch detail and overlapping leaf cards.
+  const { cards: cardCount, branches: branchCount, sides, spread, cardScale } = [
+    { cards: 112, branches: 9, sides: 8, spread: 1, cardScale: 1 },
+    { cards: 56, branches: 5, sides: 6, spread: .86, cardScale: 1.43 },
+    { cards: 24, branches: 2, sides: 5, spread: .68, cardScale: 1.9 },
+  ][level]
+  const branches = [new THREE.CylinderGeometry(.12, .35, 8.3, sides).translate(0, 4.15, 0)]
   const up = new THREE.Vector3(0, 1, 0)
-  for (let i = 0; i < 9; i++) {
+  for (let branch = 0; branch < branchCount; branch++) {
+    const i = branch * 9 / branchCount
     const angle = i * 2.39996, start = new THREE.Vector3(0, 3.2 + i * .42, 0)
     const end = new THREE.Vector3(Math.cos(angle) * 2.6, 6.7 + i * .36, Math.sin(angle) * 2.6)
     const delta = end.clone().sub(start)
-    const geometry = new THREE.CylinderGeometry(.035, .14, delta.length(), 5)
+    const geometry = new THREE.CylinderGeometry(.035, .14, delta.length(), level === 0 ? 5 : 4)
     geometry.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(up, delta.clone().normalize()))
     geometry.translate(...start.add(end).multiplyScalar(.5).toArray()); branches.push(geometry)
   }
   const cards = []
-  for (let i = 0; i < 112; i++) {
-    const angle = i * 2.39996, elevation = 1 - 2 * (i + .5) / 112
+  for (let i = 0; i < cardCount; i++) {
+    const angle = i * 2.39996, elevation = 1 - 2 * (i + .5) / cardCount
     const ring = Math.sqrt(1 - elevation * elevation)
     const radius = 2.8 + Math.sin(i * 1.73) * .55
-    const centre = new THREE.Vector3(Math.cos(angle) * ring * radius, 7.8 + elevation * 3.1, Math.sin(angle) * ring * radius)
-    const geometry = new THREE.PlaneGeometry(2.5, 2.6)
+    const centre = new THREE.Vector3(Math.cos(angle) * ring * radius * spread, 7.8 + elevation * 3.1 * spread, Math.sin(angle) * ring * radius * spread)
+    const geometry = new THREE.PlaneGeometry(2.5 * cardScale, 2.6 * cardScale)
     geometry.rotateX(i * .71); geometry.rotateY(angle); geometry.rotateZ(i * .37)
     // Radial normals make leaf sprays read as a continuous canopy instead of flat cards.
     const normal = centre.clone().sub(new THREE.Vector3(0, 6.4, 0)).normalize()

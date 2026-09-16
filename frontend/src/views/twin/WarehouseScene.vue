@@ -95,9 +95,10 @@ function animate(time) {
     if (progress === 1) tween = null
   }
   const cameraChanged = controls.update(delta)
-  if (!needsRender && !modelChanged && !cameraTweening && !cameraChanged && !rendering?.needsRender(time)) return
-  // Camera movement does not change shadows. Rebuild only when geometry or lighting changes.
-  if (modelChanged) renderer.shadowMap.needsUpdate = true
+  const landscapeChanged = landscape?.update?.(camera) || false
+  if (!needsRender && !modelChanged && !landscapeChanged && !cameraTweening && !cameraChanged && !rendering?.needsRender(time)) return
+  // Orbiting alone keeps cached shadows; a tree LOD switch changes geometry.
+  if (modelChanged || landscapeChanged) renderer.shadowMap.needsUpdate = true
   rendering.render(time, modelChanged || cameraTweening || cameraChanged)
   needsRender = false
   for (const point of pins.value) {

@@ -2,13 +2,14 @@ import { mount, flushPromises } from '@vue/test-utils'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import WarehouseScene from '../WarehouseScene.vue'
 
-const state = vi.hoisted(() => ({ render: vi.fn(), frames: new Map(), nextFrame: 0 }))
+const state = vi.hoisted(() => ({ render: vi.fn(), frames: new Map(), nextFrame: 0, renderer: null }))
 vi.mock('three', async importOriginal => {
   const THREE = await importOriginal()
   return { ...THREE,
     WebGLRenderer: class {
       domElement = document.createElement('canvas')
       shadowMap = {}
+      constructor() { state.renderer = this }
       setPixelRatio() {} setSize() {} dispose() {}
       render = state.render
     },
@@ -52,6 +53,19 @@ describe('warehouse render demand', () => {
     await wrapper.setProps({ weather: 'sunny' })
     framesUntil(48)
     expect(state.render).toHaveBeenCalledTimes(1)
+    // A zoom changes tree LOD without changing warehouse geometry. Its shadow
+    // cache must update once, then a settled camera must become idle again.
+    state.render.mockClear()
+    state.renderer.shadowMap.needsUpdate = false
+    wrapper.vm.zoom(3)
+    framesUntil(32)
+    expect(state.render).toHaveBeenCalledTimes(1)
+    expect(state.renderer.shadowMap.needsUpdate).toBe(true)
+    state.render.mockClear()
+    state.renderer.shadowMap.needsUpdate = false
+    framesUntil(500)
+    expect(state.render).not.toHaveBeenCalled()
+    expect(state.renderer.shadowMap.needsUpdate).toBe(false)
     wrapper.unmount()
     expect(state.frames.size).toBe(0)
   })
