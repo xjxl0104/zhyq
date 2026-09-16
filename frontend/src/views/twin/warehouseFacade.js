@@ -8,7 +8,14 @@ import fontData from 'three/examples/fonts/helvetiker_bold.typeface.json' with {
 export function createFacadeMaterials(material) {
   material('facadeIvory', '#edeee8', { roughness: .82 })
   material('facadeRecess', '#62686a', { roughness: .9 })
-  material('facadeGlazing', '#202d31', { roughness: .34, metalness: .22 })
+  // The photographs show clear glazing in shadow, not black opaque cladding.
+  // Alpha glazing reuses the existing environment reflections without adding
+  // a second full-scene refraction render on every orbit frame.
+  const glazing = material('facadeGlazing', '#d9e9e7', {
+    roughness: .12, metalness: .05, transparent: true, opacity: .24,
+    depthWrite: false, envMapIntensity: 1.25,
+  })
+  glazing.userData.surfaceRole = 'architectural-glass'
   material('facadeFrame', '#4c575a', { roughness: .66, metalness: .18 })
   material('facadeTeal', '#419e9c', { roughness: .65, metalness: .06 })
   material('facadeRib', '#d1d6d0', { roughness: .85 })
@@ -44,9 +51,18 @@ function lettering(group, materials, { text = 'DIPARK', x, y, z, size, rotation 
 function slitWall(group, { index, height, box, side, sign, base = 0, wallHeight = height }) {
   const extent = side ? 54 : 96
   const at = side ? 48 : 27
-  const face = (type, along, y, length, tall, offset = 0, thick = .5) => side
-    ? box(group, type, sign * (at + offset), y, along, thick, tall, length)
-    : box(group, type, along, y, sign * (at + offset), length, tall, thick)
+  // Stop the solid elevation where the wraparound glass begins. Leaving the
+  // original wall behind a transparent pane would still look opaque.
+  const startOfWall = -extent / 2
+  const endOfWall = sign > 0 && index > 1 && index < 7 ? (side ? 13.7 : 31.7) : extent / 2
+  const face = (type, along, y, length, tall, offset = 0, thick = .5) => {
+    const start = Math.max(startOfWall, along - length / 2)
+    const end = Math.min(endOfWall, along + length / 2)
+    if (end <= start) return
+    return side
+      ? box(group, type, sign * (at + offset), y, (start + end) / 2, thick, tall, end - start)
+      : box(group, type, (start + end) / 2, y, sign * (at + offset), end - start, tall, thick)
+  }
   // Solid white spandrels surround two fine recessed ribbons per functional level.
   const rows = [base + wallHeight * .28, base + wallHeight * .77]
   const slotHeight = Math.min(.82, wallHeight * .115)
@@ -54,15 +70,20 @@ function slitWall(group, { index, height, box, side, sign, base = 0, wallHeight 
   for (const [row, y] of rows.entries()) {
     const lowerEdge = y - slotHeight / 2
     face('facadeIvory', 0, (low + lowerEdge) / 2, extent, lowerEdge - low)
-    face('facadeRecess', 0, y, extent, slotHeight, -.06, .3)
     const patterns = side ? sideSlots : frontSlots
     const segments = patterns[((index - 1) * 2 + row + (sign < 0 ? 1 : 0)) % patterns.length]
+    // Recess panels only fill the gaps between windows; actual window openings
+    // have no opaque backing. The floor slabs and columns provide indoor depth.
+    let recessStart = startOfWall
     for (const [start, end] of segments) {
+      if (start > recessStart) face('facadeRecess', (recessStart + start) / 2, y, start - recessStart, slotHeight, -.06, .3)
       face('facadeGlazing', (start + end) / 2, y, end - start, slotHeight - .04, .115, .035)
       for (let pane = start + .65; pane < end - .1; pane += .82) {
         face('facadeFrame', pane, y, .045, slotHeight, .15, .06)
       }
+      recessStart = end
     }
+    if (recessStart < extent / 2) face('facadeRecess', (recessStart + extent / 2) / 2, y, extent / 2 - recessStart, slotHeight, -.06, .3)
     // White bridges at differing positions break the otherwise continuous grey slot.
     const bridges = side ? [-17 + (index % 3) * 8] : [-35 + (index % 3) * 11, 2 + (index % 2) * 17]
     for (const along of bridges) face('facadeIvory', along, y, side ? 5.3 : 6.4, slotHeight + .08, .17, .22)
@@ -72,8 +93,7 @@ function slitWall(group, { index, height, box, side, sign, base = 0, wallHeight 
 }
 
 function corner(group, { index, height, box }) {
-  // Dark, continuous wraparound glazing and one broad green fascia per floor.
-  // This is deliberately narrower than the previous blue checkerboard curtain wall.
+  // Clear wraparound glazing and one broad green fascia per floor.
   box(group, 'facadeGlazing', 40, height / 2, 27.42, 16.6, height, .2)
   box(group, 'facadeGlazing', 48.42, height / 2, 20.6, .2, height, 13.8)
   for (let x = 31.9; x <= 48; x += .92) box(group, 'facadeFrame', x, height / 2, 27.56, .055, height, .075)
@@ -92,7 +112,7 @@ function balconies(group, { height, box, tube, cylinder }) {
   for (const sign of [-1, 1]) for (const x of [-34, -10, 15]) {
     const y = height * .35, front = sign * 28.1
     box(group, 'facadeIvory', x, y, sign * 27.55, 2.5, .22, 1.35)
-    box(group, 'facadeGlazing', x, y + .9, sign * 27.3, .88, 1.65, .07)
+    box(group, 'facadeFrame', x, y + .9, sign * 27.3, .88, 1.65, .07)
     tube(group, 'facadeFrame', [x - 1.2, y + .9, front], [x + 1.2, y + .9, front], .025)
     for (let dx = -1.2; dx <= 1.21; dx += .3) cylinder(group, 'facadeFrame', x + dx, y + .5, front, .02, .82)
     for (const dx of [-1.2, 1.2]) {
@@ -105,15 +125,18 @@ function balconies(group, { height, box, tube, cylinder }) {
 function docks(group, { box }) {
   for (const sign of [-1, 1]) {
     // Recessed loading bays; turquoise utility walls bookend the grey shutters.
-    box(group, 'facadeRecess', 0, 3.25, sign * 26.6, 96, 6.5, .55)
     for (const x of [-43, -31, -19, -7, 5, 17, 29, 41]) {
       const teal = x === -43 || x === 29
-      box(group, teal ? 'facadeTeal' : 'facadeRecess', x, 3.2, sign * 26.95, 11.6, 6.4, .38)
-      box(group, 'facadeGlazing', x - .6, 2.6, sign * 27.17, 7, 4.6, .08)
+      const wall = teal ? 'facadeTeal' : 'facadeRecess'
+      box(group, wall, x, 2.63, sign * 26.95, 11.6, 5.26, .38)
+      box(group, wall, x, 6.07, sign * 26.95, 11.6, .66, .38)
+      box(group, wall, x - 4.875, 5.5, sign * 26.95, 1.85, .48, .38)
+      box(group, wall, x + 4.275, 5.5, sign * 26.95, 3.05, .48, .38)
+      box(group, 'facadeRecess', x - .6, 2.6, sign * 27.17, 7, 4.6, .08)
       box(group, 'facadeFrame', x - .6, 2.5, sign * 27.23, 6.7, 4.35, .06)
       for (let y = .5; y < 4.65; y += .28) box(group, 'facadeRecess', x - .6, y, sign * 27.28, 6.6, .035, .035)
       box(group, 'facadeRib', x + 4.0, 1.65, sign * 27.22, .95, 2.8, .1)
-      box(group, 'facadeGlazing', x + 4.0, 2.15, sign * 27.29, .67, .65, .025)
+      box(group, 'facadeFrame', x + 4.0, 2.15, sign * 27.29, .67, .65, .025)
       box(group, 'facadeIvory', x + 5.65, 3.2, sign * 27.15, .55, 6.4, 1.0)
       box(group, 'facadeGlazing', x - .6, 5.5, sign * 27.19, 6.7, .48, .04)
     }
@@ -121,13 +144,19 @@ function docks(group, { box }) {
     box(group, 'facadeRib', 0, 6.29, sign * 28.4, 97.4, .1, .18)
   }
   for (const sign of [-1, 1]) {
-    box(group, 'facadeTeal', sign * 48, 3.2, 0, .65, 6.4, 54)
+    box(group, 'facadeTeal', sign * 48, 1.3, 0, .65, 2.6, 54)
+    box(group, 'facadeTeal', sign * 48, 5.7, 0, .65, 1.4, 54)
+    let solidStart = -27
     for (let z = -21; z <= 21; z += 10.5) {
+      const windowStart = z - 3.35, windowEnd = z + 3.35
+      box(group, 'facadeTeal', sign * 48, 3.8, (solidStart + windowStart) / 2, .65, 2.4, windowStart - solidStart)
       box(group, 'facadeGlazing', sign * 48.35, 3.8, z, .08, 2.4, 6.7)
       for (let dz = -3; dz < 3.2; dz += .8) box(group, 'facadeFrame', sign * 48.41, 3.8, z + dz, .07, 2.4, .055)
       box(group, 'facadeRecess', sign * 48.42, 3.8, z, .08, .075, 6.7)
       box(group, 'facadeIvory', sign * 48.45, 1.4, z + 4, .1, 2.65, .95)
+      solidStart = windowEnd
     }
+    box(group, 'facadeTeal', sign * 48, 3.8, (solidStart + 27) / 2, .65, 2.4, 27 - solidStart)
     box(group, 'facadeIvory', sign * 48.3, 6.55, 0, 1.65, .38, 55.4)
   }
 }

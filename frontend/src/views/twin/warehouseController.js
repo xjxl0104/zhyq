@@ -7,7 +7,17 @@ export function bindWarehouse(root, extraGeometries = [], extraMaterials = []) {
   root.traverse(object => {
     const role = object.userData.twinRole
     if (role && ['building', 'site', 'roof'].includes(role)) roles.set(role, object)
-    if (object.isMesh) { object.castShadow = true; object.receiveShadow = true }
+    if (object.isMesh) {
+      const materials = Array.isArray(object.material) ? object.material : [object.material]
+      const glass = materials.every(material => material.userData.surfaceRole === 'architectural-glass')
+      // GLTF preserves material extras and alpha blending, but not Three.js
+      // depthWrite/shadow flags. Restore these on every load and model export.
+      materials.forEach(material => {
+        if (material.userData.surfaceRole === 'architectural-glass') material.depthWrite = false
+      })
+      object.castShadow = !glass
+      object.receiveShadow = !glass
+    }
   })
   const building = roles.get('building'), site = roles.get('site'), roof = roles.get('roof')
   if (!building || !site || !roof) throw new Error('Warehouse asset is missing building, site or roof metadata')
