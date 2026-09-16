@@ -22,7 +22,9 @@ class DashboardControllerIncomeSourcesTest {
         JdbcTemplate jdbc = mock(JdbcTemplate.class);
         when(jdbc.queryForObject(anyString(), eq(Long.class))).thenReturn(0L);
         when(jdbc.queryForObject(anyString(), eq(BigDecimal.class))).thenReturn(BigDecimal.ZERO);
-        when(jdbc.queryForObject(contains("fee_type IN ('租金','物业费')"), eq(BigDecimal.class)))
+        // 经营收入已兼容“物业管理费”等历史名称,并排除保证金;测试要跟随 LIKE 口径,
+        // 否则 mock 匹配不到真实 SQL,会把收入误断言成 0。
+        when(jdbc.queryForObject(contains("fee_type LIKE '%租金%'"), eq(BigDecimal.class)))
                 .thenReturn(new BigDecimal("120000.00"), new BigDecimal("100000.00"));
         when(jdbc.queryForObject(contains("ops_vending_sale"), eq(BigDecimal.class)))
                 .thenReturn(new BigDecimal("3500.50"));

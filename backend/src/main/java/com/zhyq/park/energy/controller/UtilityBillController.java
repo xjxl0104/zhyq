@@ -12,6 +12,7 @@ import com.zhyq.park.energy.entity.UtilityBill;
 import com.zhyq.park.energy.mapper.EnergyAllocationMapper;
 import com.zhyq.park.energy.mapper.UtilityBillMapper;
 import com.zhyq.park.energy.service.AllocationService;
+import com.zhyq.park.energy.service.UtilitySettlementService;
 import com.zhyq.park.finance.entity.Bill;
 import com.zhyq.park.finance.mapper.BillMapper;
 import io.swagger.v3.oas.annotations.Operation;
@@ -47,6 +48,7 @@ public class UtilityBillController {
     private final UtilityBillMapper utilityBillMapper;
     private final EnergyAllocationMapper allocationMapper;
     private final AllocationService allocationService;
+    private final UtilitySettlementService utilitySettlementService;
     private final BillMapper billMapper;
 
     @Operation(summary = "分页查询月度公用事业账单")
@@ -63,6 +65,39 @@ public class UtilityBillController {
                 .orderByDesc(UtilityBill::getPeriod).orderByDesc(UtilityBill::getId);
         IPage<UtilityBill> p = utilityBillMapper.selectPage(new Page<>(pageNo, pageSize), qw);
         return Result.ok(PageResult.of(p.getTotal(), p.getRecords()));
+    }
+
+    /**
+     * 水电结算台账。结算状态及金额均从已出账的 fin_bill 实时汇总，不能在此手工篡改。
+     * 月度账单规模很小，先完整汇总再按结算状态分页，避免 SQL 聚合遗漏“未出账/账单异常”账期。
+     */
+    @Operation(summary = "分页查询水电财务结算台账")
+    @GetMapping("/settlement/page")
+    public Result<PageResult<UtilityBill>> settlementPage(@RequestParam(defaultValue = "1") int pageNo,
+                                                          @RequestParam(defaultValue = "10") int pageSize,
+                                                          @RequestParam(required = false) String period,
+                                                          @RequestParam(required = false) String energyType,
+                                                          @RequestParam(required = false) String settlementStatus) {
+        List<UtilityBill> bills = utilityBillMapper.selectList(queryWrapper(period, energyType, null));
+        utilitySettlementService.enrich(bills);
+        List<UtilityBill> filtered = bills.stream()
+                .filter(b -> !StringUtils.hasText(settlementStatus)
+                        || settlementStatus.equals(b.getSettlementStatus()))
+                .toList();
+        int safePageNo = Math.max(pageNo, 1);
+        int safePageSize = Math.max(pageSize, 1);
+        int from = Math.min((safePageNo - 1) * safePageSize, filtered.size());
+        int to = Math.min(from + safePageSize, filtered.size());
+        return Result.ok(PageResult.of(filtered.size(), filtered.subList(from, to)));
+    }
+
+    @Operation(summary = "查询水电财务结算汇总")
+    @GetMapping("/settlement/summary")
+    public Result<UtilitySettlementService.SettlementSummary> settlementSummary(
+            @RequestParam(required = false) String period,
+            @RequestParam(required = false) String energyType) {
+        List<UtilityBill> bills = utilityBillMapper.selectList(queryWrapper(period, energyType, null));
+        return Result.ok(utilitySettlementService.summarize(bills));
     }
 
     @Operation(summary = "新增月度公用事业账单(录发票)")
@@ -241,6 +276,14 @@ public class UtilityBillController {
             throw new BizException("该账期已确认出账,请先撤销确认再改动");
         }
         return existed;
+    }
+
+    private LambdaQueryWrapper<UtilityBill> queryWrapper(String period, String energyType, String status) {
+        return new LambdaQueryWrapper<UtilityBill>()
+                .eq(StringUtils.hasText(period), UtilityBill::getPeriod, period)
+                .eq(StringUtils.hasText(energyType), UtilityBill::getEnergyType, energyType)
+                .eq(StringUtils.hasText(status), UtilityBill::getStatus, status)
+                .orderByDesc(UtilityBill::getPeriod).orderByDesc(UtilityBill::getId);
     }
 
     private void validate(UtilityBill bill) {

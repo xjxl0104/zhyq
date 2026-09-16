@@ -39,4 +39,27 @@ public class UtilityBill extends BaseEntity {
     /** 生成列,只读 */
     @TableField(exist = false)
     private String activeKey;
+
+    // ---- 财务结算展示字段(由 UtilitySettlementService 从分摊账单与 fin_bill 实时汇总，不落库)
+    /** 对外发票含税金额 = 不含税总额 × (1 + 税率) */
+    @TableField(exist = false)
+    private BigDecimal settlementInvoiceAmount;
+    /** 已生成的租户能源应收（含滞纳金） */
+    @TableField(exist = false)
+    private BigDecimal settlementReceivableAmount;
+    /** 财务账单的实收金额 */
+    @TableField(exist = false)
+    private BigDecimal settlementReceivedAmount;
+    /** 租户能源账单的待收金额 */
+    @TableField(exist = false)
+    private BigDecimal settlementOutstandingAmount;
+    /** NOT_BILLED / NO_RECEIVABLE / BILL_EXCEPTION / PENDING_RECEIPT / PARTIAL_RECEIPT / SETTLED */
+    @TableField(exist = false)
+    private String settlementStatus;
+    /** 已关联的租户能源账单数量 */
+    @TableField(exist = false)
+    private Integer settlementBillCount;
+    /** 已全额结清的租户能源账单数量 */
+    @TableField(exist = false)
+    private Integer settlementSettledBillCount;
 }
