@@ -194,7 +194,7 @@ export function createWarehouse() {
   roof.name = 'warehouse-roof'; roof.userData.twinRole = 'roof'
   roof.position.y = floorBase(MODEL.floors) + floorHeight(MODEL.floors)
   building.add(roof)
-  addReferenceRoof(roof, { box })
+  addReferenceRoof(roof, { box, materials })
   batch(roof)
 
   return bindWarehouse(root, sharedGeometries, Object.values(materials))

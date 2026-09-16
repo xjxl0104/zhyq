@@ -1,7 +1,4 @@
-import * as THREE from 'three'
-import { Font } from 'three/addons/loaders/FontLoader.js'
-import { TextGeometry } from 'three/addons/geometries/TextGeometry.js'
-import fontData from 'three/examples/fonts/helvetiker_bold.typeface.json' with { type: 'json' }
+import { addReferenceWordmark } from './referenceWordmark.js'
 
 // The four physical-model photographs define the facade, not an office curtain wall.
 // Keep dedicated material names: the runtime landscape finish pass must not recolor it.
@@ -16,12 +13,24 @@ export function createFacadeMaterials(material) {
     depthWrite: false, envMapIntensity: 1.25,
   })
   glazing.userData.surfaceRole = 'architectural-glass'
+  glazing.userData.facadeDetail = { kind: 'glass-grid', pitch: [.95, 0], width: [.055, 0], color: '#59666a' }
+  const cornerGlazing = material('facadeCornerGlazing', '#d9e9e7', {
+    roughness: .12, metalness: .05, transparent: true, opacity: .24, depthWrite: false,
+  })
+  cornerGlazing.userData.surfaceRole = 'architectural-glass'
+  cornerGlazing.userData.facadeDetail = { kind: 'glass-grid', pitch: [1.15, 1.6], width: [.055, .065], color: '#59666a' }
   material('facadeFrame', '#4c575a', { roughness: .66, metalness: .18 })
   material('facadeTeal', '#419e9c', { roughness: .65, metalness: .06 })
   material('facadeRib', '#d1d6d0', { roughness: .85 })
+  material('facadeLogoTeal', '#409995', { roughness: .65 })
+  material('facadeLogoBlue', '#277da7', { roughness: .65 })
+  material('facadeLogoWhite', '#f5f5ee', { roughness: .65 })
+  const sign = material('facadeSignIvory', '#dce1dd', { roughness: .85 })
+  sign.userData.facadeDetail = { kind: 'corrugation', pitch: .29, contrast: .11 }
+  const shutter = material('facadeShutter', '#606c70', { roughness: .7 })
+  shutter.userData.facadeDetail = { kind: 'corrugation', pitch: .28, contrast: .08, axis: 'y' }
 }
 
-const font = new Font(fontData)
 // Unequal strips and white interruptions follow the long and short elevations.
 const frontSlots = [
   [[-48, -27], [-17, 11], [18, 48]], [[-40, -8], [4, 31], [39, 48]],
@@ -36,17 +45,6 @@ const sideSlots = [
   [[-27, -5], [5, 27]], [[-18, 9], [17, 27]],
   [[-27, -13], [-4, 20]], [[-20, 3], [12, 27]],
 ]
-
-function lettering(group, materials, { text = 'DIPARK', x, y, z, size, rotation = 0, type = 'facadeTeal' }) {
-  const geometry = new TextGeometry(text, { font, size, depth: .055, curveSegments: 3, bevelEnabled: false })
-  // The facade batcher combines indexed meshes. Extruded text is non-indexed.
-  geometry.setIndex(Array.from({ length: geometry.attributes.position.count }, (_, index) => index))
-  const mesh = new THREE.Mesh(geometry, materials[type])
-  mesh.position.set(x, y, z)
-  mesh.rotation.y = rotation
-  mesh.name = 'reference-dipark-lettering'
-  group.add(mesh)
-}
 
 function slitWall(group, { index, height, box, side, sign, base = 0, wallHeight = height }) {
   const extent = side ? 54 : 96
@@ -78,9 +76,6 @@ function slitWall(group, { index, height, box, side, sign, base = 0, wallHeight 
     for (const [start, end] of segments) {
       if (start > recessStart) face('facadeRecess', (recessStart + start) / 2, y, start - recessStart, slotHeight, -.06, .3)
       face('facadeGlazing', (start + end) / 2, y, end - start, slotHeight - .04, .115, .035)
-      for (let pane = start + .65; pane < end - .1; pane += .82) {
-        face('facadeFrame', pane, y, .045, slotHeight, .15, .06)
-      }
       recessStart = end
     }
     if (recessStart < extent / 2) face('facadeRecess', (recessStart + extent / 2) / 2, y, extent / 2 - recessStart, slotHeight, -.06, .3)
@@ -94,14 +89,11 @@ function slitWall(group, { index, height, box, side, sign, base = 0, wallHeight 
 
 function corner(group, { index, height, box }) {
   // Clear wraparound glazing and one broad green fascia per floor.
-  box(group, 'facadeGlazing', 40, height / 2, 27.42, 16.6, height, .2)
-  box(group, 'facadeGlazing', 48.42, height / 2, 20.6, .2, height, 13.8)
-  for (let x = 31.9; x <= 48; x += .92) box(group, 'facadeFrame', x, height / 2, 27.56, .055, height, .075)
-  for (let z = 13.8; z <= 27; z += .92) box(group, 'facadeFrame', 48.56, height / 2, z, .075, height, .055)
-  for (let y = 1.6; y < height; y += 1.6) {
-    box(group, 'facadeFrame', 40, y, 27.56, 16.6, .065, .075)
-    box(group, 'facadeFrame', 48.56, y, 20.6, .075, .065, 13.8)
-  }
+  box(group, 'facadeCornerGlazing', 40, height / 2, 27.42, 16.6, height, .2)
+  box(group, 'facadeCornerGlazing', 48.42, height / 2, 20.6, .2, height, 13.8)
+  // Keep the physical perimeter, but filter the fine mullions in the material.
+  for (const x of [31.7, 48.5]) box(group, 'facadeFrame', x, height / 2, 27.56, .12, height, .1)
+  box(group, 'facadeFrame', 48.56, height / 2, 13.7, .1, height, .12)
   box(group, 'facadeTeal', 39.4, .76, 27.88, 19.0, 1.15, .85)
   box(group, 'facadeTeal', 48.88, .76, 20.35, .85, 1.15, 15.9)
   box(group, 'facadeTeal', 39.4, 1.34, 27.88, 19.15, .09, 1.0)
@@ -133,8 +125,7 @@ function docks(group, { box }) {
       box(group, wall, x - 4.875, 5.5, sign * 26.95, 1.85, .48, .38)
       box(group, wall, x + 4.275, 5.5, sign * 26.95, 3.05, .48, .38)
       box(group, 'facadeRecess', x - .6, 2.6, sign * 27.17, 7, 4.6, .08)
-      box(group, 'facadeFrame', x - .6, 2.5, sign * 27.23, 6.7, 4.35, .06)
-      for (let y = .5; y < 4.65; y += .28) box(group, 'facadeRecess', x - .6, y, sign * 27.28, 6.6, .035, .035)
+      box(group, 'facadeShutter', x - .6, 2.5, sign * 27.23, 6.7, 4.35, .06)
       box(group, 'facadeRib', x + 4.0, 1.65, sign * 27.22, .95, 2.8, .1)
       box(group, 'facadeFrame', x + 4.0, 2.15, sign * 27.29, .67, .65, .025)
       box(group, 'facadeIvory', x + 5.65, 3.2, sign * 27.15, .55, 6.4, 1.0)
@@ -151,7 +142,6 @@ function docks(group, { box }) {
       const windowStart = z - 3.35, windowEnd = z + 3.35
       box(group, 'facadeTeal', sign * 48, 3.8, (solidStart + windowStart) / 2, .65, 2.4, windowStart - solidStart)
       box(group, 'facadeGlazing', sign * 48.35, 3.8, z, .08, 2.4, 6.7)
-      for (let dz = -3; dz < 3.2; dz += .8) box(group, 'facadeFrame', sign * 48.41, 3.8, z + dz, .07, 2.4, .055)
       box(group, 'facadeRecess', sign * 48.42, 3.8, z, .08, .075, 6.7)
       box(group, 'facadeIvory', sign * 48.45, 1.4, z + 4, .1, 2.65, .95)
       solidStart = windowEnd
@@ -174,22 +164,21 @@ export function addReferenceFacade(group, options) {
   if (index === 7) {
     // Projecting corrugated white sign box wraps around both faces of the corner.
     const bottom = -.9, tall = height + .8, center = bottom + tall / 2
-    box(group, 'facadeIvory', 39, center, 27.7, 20, tall, 1.0)
-    box(group, 'facadeIvory', 48.7, center, 9.5, 1.0, tall, 36.5)
-    for (let x = 29.15; x <= 48.9; x += .29) box(group, 'facadeRib', x, center, 28.23, .055, tall - .18, .09)
-    for (let z = -8.55; z <= 27.65; z += .29) box(group, 'facadeRib', 49.23, center, z, .09, tall - .18, .055)
-    lettering(group, materials, { x: 32.0, y: 2.2, z: 28.33, size: 1.9 })
-    lettering(group, materials, { x: 49.33, y: 2.2, z: 14.6, size: 1.9, rotation: Math.PI / 2 })
-    lettering(group, materials, { x: -45, y: height - 2.0, z: 27.3, size: 1.6 })
+    box(group, 'facadeSignIvory', 39, center, 27.7, 20, tall, 1.0)
+    box(group, 'facadeSignIvory', 48.7, center, 9.5, 1.0, tall, 36.5)
+    addReferenceWordmark(group, materials, { x: 33.3, y: 2.2, z: 28.21, height: 1.9, variant: 'box' })
+    addReferenceWordmark(group, materials, { x: 49.21, y: 2.2, z: 14.6, height: 1.9, rotation: Math.PI / 2, variant: 'box' })
   }
 }
 
-export function addReferenceRoof(group, { box }) {
+export function addReferenceRoof(group, { box, materials }) {
   group.userData.referenceStyle = 'photo-flat-roof-service-blocks'
   box(group, 'facadeIvory', 0, 0, 0, 97, .5, 55)
   box(group, 'facadeRib', 0, .29, 0, 95.4, .08, 53.4)
   for (const z of [-27, 27]) box(group, 'facadeIvory', 0, .85, z, 97, 1.7, .6)
   for (const x of [-48, 48]) box(group, 'facadeIvory', x, .85, 0, .6, 1.7, 55)
+  // The blue PARK sign sits on the solid top parapet in the front photograph.
+  addReferenceWordmark(group, materials, { x: -45, y: .21, z: 27.31, height: 1.3, variant: 'roof' })
   // Simple roof volumes seen in all four references, with unobtrusive service doors.
   for (const [x, z, w, d, h] of [[-34, -9, 14, 10, 4.2], [-7, -10, 24, 11, 4.5], [22, -9, 16, 10, 4.0], [40, -8, 6, 7, 3.6]]) {
     box(group, 'facadeIvory', x, h / 2 + .35, z, w, h, d)

@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { MODEL, floorBase, floorHeight } from './twinData.js'
+import { installFacadeDetails } from './facadeDetails.js'
 
 // Stable extras survive Blender -> GLB. Mesh names are editable; roles identify systems.
 export function bindWarehouse(root, extraGeometries = [], extraMaterials = []) {
@@ -14,6 +15,7 @@ export function bindWarehouse(root, extraGeometries = [], extraMaterials = []) {
       // depthWrite/shadow flags. Restore these on every load and model export.
       materials.forEach(material => {
         if (material.userData.surfaceRole === 'architectural-glass') material.depthWrite = false
+        installFacadeDetails(material)
       })
       object.castShadow = !glass
       object.receiveShadow = !glass
