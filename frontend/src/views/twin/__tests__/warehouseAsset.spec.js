@@ -65,6 +65,13 @@ describe('delivered warehouse asset', () => {
         { name: 'front corner', origin: [40, floorBase(5) + 3.6, 29], direction: [0, 0, -1] },
         { name: 'side corner', origin: [50, floorBase(5) + 3.6, 20], direction: [-1, 0, 0] },
         { name: 'long ribbon', origin: [-43, floorBase(5) + 1.848, 29], direction: [0, 0, -1] },
+        { name: 'front lower ribbon infill', origin: [-19.5, floorBase(5) + 1.848, 29], direction: [0, 0, -1] },
+        { name: 'front upper ribbon infill', origin: [-7.5, floorBase(5) + 5.082, 29], direction: [0, 0, -1] },
+        { name: 'right ribbon infill', origin: [50, floorBase(5) + 1.848, 3], direction: [-1, 0, 0] },
+        { name: 'back ribbon infill', origin: [-8, floorBase(5) + 1.848, -29], direction: [0, 0, 1] },
+        { name: 'left ribbon infill', origin: [-50, floorBase(5) + 1.848, -24], direction: [1, 0, 0] },
+        { name: 'front balcony door', origin: [-10, floorBase(5) + 3.6, 29], direction: [0, 0, -1] },
+        { name: 'back balcony door', origin: [-10, floorBase(5) + 3.6, -29], direction: [0, 0, 1] },
       ]
       for (const window of windows) {
         const ray = new Raycaster(new Vector3(...window.origin), new Vector3(...window.direction), 0, 4)
@@ -174,7 +181,9 @@ describe('delivered warehouse asset', () => {
         expect(entrance?.userData).toEqual(sourceEntrance.userData)
         expect(entrance.children.map(child => child.name).sort()).toEqual(sourceEntrance.children.map(child => child.name).sort())
         expect(entrance.getObjectByName('Entrance_Chinese_park_name')?.isMesh).toBe(true)
-        expect(entrance.getObjectByName('Entrance_DIPARK_DI')?.isMesh).toBe(true)
+        expect(entrance.getObjectByName('Entrance_DIPARK_DI')).toBeUndefined()
+        expect(entrance.getObjectByName('entrance-reference-wordmark')?.children).toHaveLength(7)
+        expect(entrance.getObjectByName('Entrance_Chinese_park_name')?.userData.source_text).toBe('数智云仓产业园')
         const bounds = new Box3().setFromObject(entrance)
         expect(bounds.min.distanceTo(sourceBounds.min)).toBeLessThan(.0001)
         expect(bounds.max.distanceTo(sourceBounds.max)).toBeLessThan(.0001)
