@@ -4,10 +4,23 @@ import TwinHome from '../TwinHome.vue'
 
 const { route, push, sceneReset } = vi.hoisted(() => ({ route: { path: '/twin-preview', params: {}, query: {}, meta: { twinPreview: true } }, push: vi.fn(), sceneReset: vi.fn() }))
 vi.mock('vue-router', () => ({ useRoute: () => route, useRouter: () => ({ push }) }))
-vi.mock('../WarehouseScene.vue', () => ({ default: { name: 'WarehouseScene', props: ['floor', 'mode', 'layer', 'focused', 'weather', 'viewpoint'], methods: { reset: sceneReset }, template: '<div class="mock-scene" />' } }))
+vi.mock('../WarehouseScene.vue', () => ({ default: { name: 'WarehouseScene', props: ['floor', 'mode', 'layer', 'focused', 'weather', 'viewpoint', 'rotating'], methods: { reset: sceneReset }, template: '<div class="mock-scene" />' } }))
 
 describe('warehouse workspace interactions', () => {
   beforeEach(() => { push.mockClear(); sceneReset.mockClear(); route.params = {}; route.meta = { twinPreview: true } })
+  it('starts orbiting and lets the user pause and resume with the orbit control', async () => {
+    const wrapper = mount(TwinHome)
+    const orbit = wrapper.get('[aria-label="自动环绕"]')
+    const scene = wrapper.findComponent({ name: 'WarehouseScene' })
+    expect(scene.props('rotating')).toBe(true)
+    expect(orbit.attributes('aria-pressed')).toBe('true')
+    await orbit.trigger('click')
+    expect(scene.props('rotating')).toBe(false)
+    expect(orbit.attributes('aria-pressed')).toBe('false')
+    await orbit.trigger('click')
+    expect(scene.props('rotating')).toBe(true)
+    wrapper.unmount()
+  })
   it('offers sunny and night weather without the removed garden and rain controls', () => {
     const wrapper = mount(TwinHome)
     expect(wrapper.find('[data-testid="view-garden"]').exists()).toBe(false)
@@ -74,9 +87,9 @@ describe('warehouse workspace interactions', () => {
   })
   it('uses the existing protected business module on the real homepage', async () => {
     route.meta = {}
-    const wrapper = mount(TwinHome, { props: { projectName: '测试项目' } })
+    const wrapper = mount(TwinHome)
     expect(wrapper.find('.twin-sidebar').exists()).toBe(false)
-    expect(wrapper.get('.twin-breadcrumb').text()).toContain('测试项目')
+    expect(wrapper.find('.twin-topbar').exists()).toBe(false)
     wrapper.findComponent({ name: 'WarehouseScene' }).vm.$emit('open-module', { module: 'contract', floor: 3 })
     expect(push).toHaveBeenCalledWith('/contract/list')
     wrapper.unmount()

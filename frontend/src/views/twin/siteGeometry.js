@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js'
+import { createReferenceVehicles } from './referenceVehicles.js'
 
 // Surrounding roads and the south entrance are photo-informed schematic placements.
 // Building footprint and floor dimensions are defined independently in twinData.
@@ -71,37 +72,13 @@ export function createWarehouseSite(rootSite, helpers) {
     if (x < 4 || x > 41) box(site, 'line', x, .09, 50, 3.5, .08, .22)
     box(site, 'line', x, .09, -50, 3.5, .08, .22)
   }
-  for (let x = -42; x <= 24; x += 6) {
-    if (x > 3) continue
-    box(site, 'line', x, .21, 37, .12, .05, 4)
-    if (x % 12 === 0) {
-      box(site, 'white', x + 2.5, .68, 37, 1.85, .7, 4.15)
-      box(site, 'glass', x + 2.5, 1.12, 36.7, 1.68, .65, 2.15)
-      box(site, 'white', x + 2.5, 1.46, 36.7, 1.7, .1, 1.7)
-      for (const dx of [-.94, .94]) {
-        box(site, 'dark', x + 2.5 + dx, 1.12, 36.7, .025, .66, .13)
-        for (const dz of [-1.3, 1.3]) cylinder(site, 'dark', x + 2.5 + dx, .43, 37 + dz, .34, .23).rotation.z = Math.PI / 2
-        box(site, 'line', x + 2.5 + dx * .67, .85, 39.08, .4, .14, .045)
-        box(site, 'red', x + 2.5 + dx * .67, .85, 34.92, .34, .12, .045)
-      }
-    }
+  // Photo reference: perpendicular car spaces along the east short elevation.
+  for (let z = -24.75; z <= 24.25; z += 3.5) {
+    paint(site, 'line', 50.7, z, 58.2, z, .12, .21)
   }
-  // Truck and container by the loading dock.
-  box(site, 'white', -38, 1.8, 30.8, 7, 3.3, 2.8)
-  box(site, 'teal', -33.3, 1.35, 30.8, 2.3, 2.4, 2.7)
-  box(site, 'glass', -32.1, 1.85, 30.8, .04, .85, 2.2)
-  for (const z of [29.38, 32.22]) {
-    for (let x = -41.2; x < -34.5; x += .55) box(site, 'edge', x, 1.8, z, .055, 3.1, .035)
-    box(site, 'glass', -33.2, 1.95, z, 1.45, .85, .025)
-    tube(site, 'steel', [-32.3, 1.9, z], [-32.3, 1.9, z + Math.sign(z - 30.8) * .25], .04)
-    box(site, 'dark', -32.3, 1.95, z + Math.sign(z - 30.8) * .25, .2, .35, .12)
-  }
-  for (const x of [-40, -36, -32.8]) for (const z of [29.4, 32.2]) {
-    cylinder(site, 'dark', x, .6, z, .55, .3).rotation.x = Math.PI / 2
-    cylinder(site, 'steel', x, .6, z + Math.sign(z - 30.8) * .16, .26, .04).rotation.x = Math.PI / 2
-  }
-  box(site, 'dark', -32.1, .9, 30.8, .04, .3, 1.5)
-  for (const z of [29.85, 31.75]) box(site, 'line', -32.08, 1.2, z, .04, .22, .4)
+  paint(site, 'line', 50.7, -24.75, 50.7, 24.25, .12, .21)
+  // One visitor space west of the entry throat leaves its full width open.
+  for (const z of [36.7, 39.7]) paint(site, 'line', -5.7, z, -.3, z, .11, .21)
   for (const x of [-63, 63]) {
     for (const z of [-24, 25]) {
       cylinder(site, 'steel', x, 3.5, z, .10, 6.9)
@@ -122,6 +99,7 @@ export function createWarehouseSite(rootSite, helpers) {
     for (const dx of [-.75, .75]) cylinder(site, 'yellow', x + dx, .52, 40.5, .07, .95)
   }
   batch(site)
+  createReferenceVehicles(rootSite, materials)
   createRoadEnvironment(rootSite, helpers)
   createEntrance(rootSite, helpers)
 }

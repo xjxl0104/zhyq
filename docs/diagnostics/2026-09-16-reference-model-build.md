@@ -1,0 +1,62 @@
+# 2026-09-16 首页参考照片模型重建
+
+本次把首页建筑外壳和地面车辆改为用户提供的四张实物沙盘照片所示外观。首页继续加载 `frontend/public/models/dipark-warehouse.glb`；界面、渲染风格、七层高度、拆层和业务点位交互保持既有实现。
+
+## 当前资产来源
+
+本次网站 GLB 由 JavaScript 几何生成器重建：
+
+- `frontend/src/views/twin/warehouseModel.js`：建筑、七层外壳和结构、室内、消防、屋顶。
+- `frontend/src/views/twin/siteGeometry.js`：园区环境与参考照片中的车辆。
+- `frontend/scripts/rebuild-warehouse-model.mjs`：最终网站 GLB 的可复现导出入口。
+
+仓库原有 `.blend` 文件保留的是上一版本 Blender 场景，**不包含本次建筑和车辆改动**。请勿直接导出旧 `.blend` 覆盖本次网站模型。`export-warehouse-seed.mjs` 仍是 Blender 工作用的几何种子导出工具，不是本次最终资产构建入口。
+
+## 为什么还需要现有 GLB
+
+用户此次只要求修改建筑与底下车辆。已有入口包含 Blender 制作的中文园名、DIPARK 字体网格等，JavaScript 种子不能完整还原这些内容。重建脚本因此读取现有 GLB 中 `sitePart: "entrance"` 的整组对象，替换新生成场景里的入口组；子网格、材质、extras 和原父级带来的世界坐标变换一并保留。
+
+入口之外的建筑、道路、景观和车辆来自当前 JavaScript 源。入口缺失或不唯一时脚本中止，避免静默丢掉已交付的入口。由此，重建依赖当前 JavaScript 源和一份包含完整入口的现有 GLB，两者都需保留。
+
+## 重建命令
+
+在仓库根目录执行：
+
+```sh
+node frontend/scripts/rebuild-warehouse-model.mjs
+```
+
+默认输出始终解析到该脚本所属项目的 `frontend/public/models/dipark-warehouse.glb`，与命令执行目录无关。可指定输出路径及入口来源：
+
+```sh
+node frontend/scripts/rebuild-warehouse-model.mjs /tmp/dipark-preview.glb frontend/public/models/dipark-warehouse.glb
+```
+
+第二参数省略时，入口来源就是输出路径。适合原地重建，也支持重复执行：
+
+```sh
+node frontend/scripts/rebuild-warehouse-model.mjs /tmp/dipark-preview.glb
+```
+
+脚本先完整读取、解析源 GLB，再构建模型；导出结束后先写同目录临时文件，随后重命名替换输出。源和输出相同时不会提前截断源文件。命令输出包含输出路径、入口来源、网格数量、三角形数量和文件字节数；数量统计包含隐藏室内/消防系统，实例网格按实例数计算三角面。
+
+## GLB 中保留的交互契约
+
+- `twinRole` 标识 `building`、`site`、`roof`。
+- 七个 `floor` 组保留 `floor`、`spaceKey`；每层保留 `shell`、`structure`、`interior`、`fire` 四个子系统。
+- `onlyVisible: false` 导出隐藏的室内和消防对象；`runtimeOnly` 选择框等运行时辅助对象不进入文件。
+- `warehouse-photo-vehicles` 组具有 `sitePart: "vehicles"`；每辆车保留 `vehicleKind`、`vehicleId`、`referenceBodyColour` 和顶点颜色。
+
+## 验证
+
+在 `frontend` 目录执行：
+
+```sh
+node node_modules/vitest/vitest.mjs run src/views/twin/__tests__/warehouseAsset.spec.js src/views/twin/__tests__/warehouseModel.spec.js src/views/twin/__tests__/referenceVehicles.spec.js
+node node_modules/vite/bin/vite.js build
+node scripts/compress-models.mjs
+```
+
+资产测试直接读取网站交付的 GLB，验证七层系统、室内选择、拆层位移、业务点位跟随和参考车辆顶点色。另外在系统临时目录执行两次重建，验证输入输出为同一个文件时仍完整保留入口文字、extras 和继承的坐标变换；不会在测试中覆盖网站正式 GLB。
+
+几何与交互测试不能替代视觉检查。交付前仍需在首页查看建筑正面、青绿转角、侧面、装卸区及车辆，并切换楼层展开和室内视图。

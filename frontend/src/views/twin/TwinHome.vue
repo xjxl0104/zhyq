@@ -9,13 +9,12 @@ import './twin.css'
 import './twin-dashboard.css'
 import './twin-immersive.css'
 
-defineProps({ projectName: { type: String, default: '未选择项目' } })
 const route = useRoute(), router = useRouter()
 const preview = computed(() => Boolean(route.meta.twinPreview))
 const moduleView = computed(() => MODULES.find(item => item.id === route.params.module))
 const scene = ref(null), workspace = ref(null), sceneReady = ref(false), sceneFailed = ref(false)
-const mode = ref('exterior'), floor = ref(null), layer = ref('all'), rotating = ref(false), markers = ref(true)
-const selectedPoint = ref(null), gallery = ref(false), referenceIndex = ref(0), searchOpen = ref(false), search = ref(''), help = ref(false), notifications = ref(false), exporting = ref(false), toast = ref(''), sidebarOpen = ref(false)
+const mode = ref('exterior'), floor = ref(null), layer = ref('all'), rotating = ref(!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches), markers = ref(true)
+const selectedPoint = ref(null), gallery = ref(false), referenceIndex = ref(0), help = ref(false), exporting = ref(false), toast = ref(''), sidebarOpen = ref(false)
 const modelFocus = ref(false)
 const weather = ref('sunny'), viewpoint = ref('overview')
 const weatherOptions = [{ id: 'sunny', name: '晴天', icon: 'sun' }, { id: 'night', name: '夜景', icon: 'moon' }]
@@ -25,15 +24,8 @@ const currentTime = ref(new Date())
 const averageOccupancy = computed(() => (FLOORS.reduce((sum, item) => sum + item.occupancy, 0) / FLOORS.length).toFixed(1))
 const currentFloor = computed(() => FLOORS.find(item => item.id === floor.value))
 const activeReference = computed(() => REFERENCES[referenceIndex.value])
-const searchResults = computed(() => POINTS.filter(point => (point.name + point.code + point.location).toLowerCase().includes(search.value.toLowerCase())))
 const selectedModule = computed(() => MODULES.find(item => item.id === selectedPoint.value?.module))
-const clockLabel = computed(() => currentTime.value.toLocaleTimeString('zh-CN', { hour12: false, hour: '2-digit', minute: '2-digit' }))
 const dateLabel = computed(() => currentTime.value.toLocaleDateString('zh-CN', { month: 'long', day: 'numeric', weekday: 'long' }))
-const pending = [
-  { point: 'fire-01', title: '3F 消防设施例行巡检', sub: '消防巡检 · 计划任务', time: '10:30', color: '#d88958' },
-  { point: 'property-01', title: '06 号装卸平台维保', sub: '物业工单 · 待处理', time: '11:00', color: '#4d92aa' },
-  { point: 'contract-01', title: 'A-301 租赁合同跟进', sub: '合同管理 · 待跟进', time: '14:00', color: '#9f86c0' },
-]
 const moduleRows = computed(() => {
   if (!moduleView.value) return []
   const base = POINTS.find(point => point.module === moduleView.value.id)
@@ -62,10 +54,9 @@ function setMode(value) {
   if (value !== 'exterior' && floor.value == null) floor.value = 3
   selectedPoint.value = null
 }
-function selectPoint(point) { selectedPoint.value = point; floor.value = point.floor; searchOpen.value = false; notifications.value = false }
+function selectPoint(point) { selectedPoint.value = point; floor.value = point.floor }
 function locatePanelPoint(point) { layer.value = point.module; selectPoint(point) }
 function openPointModule(point) { floor.value = point.floor; openModule(point.module) }
-function locatePending(id) { const point = POINTS.find(item => item.id === id); layer.value = 'all'; selectPoint(point) }
 function setLayer(id) { layer.value = id; selectedPoint.value = null }
 function resetScene() { viewpoint.value = 'overview'; floor.value = null; layer.value = 'all'; mode.value = 'exterior'; selectedPoint.value = null; rotating.value = false; scene.value?.reset() }
 async function fullScreen() {
@@ -86,13 +77,13 @@ function locateModuleRow(row) {
   selectedPoint.value = { ...row.point, floor: row.floor, name: row.name, code: row.id, location: row.location }
   router.push({ path: homePath.value, query: { floor: String(row.floor) } })
 }
-function closeDialogs() { gallery.value = false; searchOpen.value = false; help.value = false; notifications.value = false; selectedPoint.value = null }
+function closeDialogs() { gallery.value = false; help.value = false; selectedPoint.value = null }
 function onKey(event) {
   if (event.key === 'Escape') { closeDialogs(); sidebarOpen.value = false }
   if (gallery.value && event.key === 'ArrowRight') referenceIndex.value = (referenceIndex.value + 1) % REFERENCES.length
   if (gallery.value && event.key === 'ArrowLeft') referenceIndex.value = (referenceIndex.value + REFERENCES.length - 1) % REFERENCES.length
   // Keep keyboard focus inside the currently open modal.
-  if (event.key === 'Tab' && (gallery.value || searchOpen.value || help.value)) {
+  if (event.key === 'Tab' && (gallery.value || help.value)) {
     const modal = workspace.value?.querySelector('[aria-modal="true"]')
     const focusable = modal?.querySelectorAll('button, input, [tabindex="0"]')
     if (!focusable?.length) return
@@ -101,7 +92,7 @@ function onKey(event) {
     else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus() }
   }
 }
-watch(() => [gallery.value, searchOpen.value, help.value].some(Boolean), async open => {
+watch(() => [gallery.value, help.value].some(Boolean), async open => {
   if (open) { dialogFocusBefore = document.activeElement; await nextTick(); workspace.value?.querySelector('[aria-modal="true"] input, [aria-modal="true"] button')?.focus() }
   else { dialogFocusBefore?.focus?.() }
 })
@@ -109,7 +100,7 @@ watch(() => route.query.floor, value => {
   const numeric = Number(value)
   if (Number.isInteger(numeric) && numeric >= 1 && numeric <= FLOORS.length) floor.value = numeric
 }, { immediate: true })
-onMounted(() => { clockTimer = setInterval(() => { currentTime.value = new Date() }, 1000); window.addEventListener('keydown', onKey) })
+onMounted(() => { clockTimer = setInterval(() => { currentTime.value = new Date() }, 60000); window.addEventListener('keydown', onKey) })
 onBeforeUnmount(() => { clearInterval(clockTimer); clearTimeout(toastTimer); window.removeEventListener('keydown', onKey) })
 </script>
 
@@ -133,14 +124,9 @@ onBeforeUnmount(() => { clearInterval(clockTimer); clearTimeout(toastTimer); win
     <div v-if="sidebarOpen" class="sidebar-scrim" @click="sidebarOpen = false" />
 
     <main class="twin-main">
-      <header class="twin-topbar">
-        <div class="twin-breadcrumb"><button v-if="preview" class="mobile-menu icon-button" aria-label="打开菜单" @click="sidebarOpen = !sidebarOpen"><TwinIcon name="menu" /></button><TwinIcon name="building" :size="17" /><span>{{ preview ? PARK_REFERENCE.name : projectName }}</span><span class="breadcrumb-separator">/</span><strong>{{ moduleView?.name || '首页' }}</strong></div>
-        <div class="topbar-right"><span class="local-badge"><i />{{ preview ? '本地预览' : '空间工作台' }}</span><span class="topbar-divider" /><button class="icon-button" aria-label="搜索空间与设备" @click="searchOpen = true"><TwinIcon name="search" :size="19" /></button><button class="icon-button notification-button" aria-label="查看演示待办" @click="notifications = !notifications"><TwinIcon name="bell" :size="19" /><i /></button><span class="topbar-time">{{ clockLabel }}</span></div>
-      </header>
-
       <template v-if="!moduleView">
         <section class="twin-heading">
-          <div><div class="heading-kicker"><h1>云仓运营总览</h1><span class="demo-pill">演示数据</span></div><p>{{ preview ? 'DIPARK 数智云仓产业园 · 空间、经营与设施，一屏协同。' : '数智云仓参考模型 · 尚未绑定当前项目实际业务' }}</p></div>
+          <div><div class="heading-kicker"><button v-if="preview" class="mobile-menu icon-button" aria-label="打开菜单" :aria-expanded="sidebarOpen" @click="sidebarOpen = !sidebarOpen"><TwinIcon name="menu" /></button><h1>云仓运营总览</h1><span class="demo-pill">演示数据</span></div><p>{{ preview ? 'DIPARK 数智云仓产业园 · 空间、经营与设施，一屏协同。' : '数智云仓参考模型 · 尚未绑定当前项目实际业务' }}</p></div>
           <div class="heading-actions"><span class="twin-date">{{ dateLabel }}</span><button class="twin-button" @click="gallery = true"><TwinIcon name="photo" :size="15" />实景对照</button><button class="twin-button primary" :disabled="!sceneReady || exporting || sceneFailed" @click="exportModel"><TwinIcon name="export" :size="15" />{{ exporting ? '导出中…' : '导出模型' }}</button></div>
         </section>
         <section class="twin-kpi-strip" aria-label="园区资料与运营演示指标">
@@ -175,7 +161,7 @@ onBeforeUnmount(() => { clearInterval(clockTimer); clearTimeout(toastTimer); win
 
       <section v-else class="twin-module-view">
         <button class="module-back" @click="goHome"><TwinIcon name="arrow" :size="16" />返回三维园区</button>
-        <div class="module-page-heading"><span class="module-page-icon" :style="{ color: moduleView.color }"><TwinIcon :name="moduleView.icon" :size="30" /></span><div><div class="twin-eyebrow">CONNECTED TO YOUR SPACE</div><h1>{{ moduleView.name }}</h1><p>{{ moduleView.description }}</p></div><span class="demo-pill">本地模块演示</span></div>
+        <div class="module-page-heading"><button v-if="preview" class="mobile-menu icon-button" aria-label="打开菜单" :aria-expanded="sidebarOpen" @click="sidebarOpen = !sidebarOpen"><TwinIcon name="menu" /></button><span class="module-page-icon" :style="{ color: moduleView.color }"><TwinIcon :name="moduleView.icon" :size="30" /></span><div><div class="twin-eyebrow">CONNECTED TO YOUR SPACE</div><h1>{{ moduleView.name }}</h1><p>{{ moduleView.description }}</p></div><span class="demo-pill">本地模块演示</span></div>
         <div class="module-context"><TwinIcon name="pin" :size="18" /><strong>云仓 01{{ floor ? ' / ' + floor + 'F' : ' / 全部楼层' }}</strong><span>从三维模型进入的业务空间</span><button class="twin-button" @click="router.push(moduleView.route)">打开系统正式模块<TwinIcon name="arrow" :size="15" /></button></div>
         <div class="module-demo-note"><TwinIcon name="help" :size="17" /><span>以下为本地演示记录，用于体验空间与业务的关联。正式模块使用现有登录和后端数据。</span></div>
         <div class="module-table-card"><div class="insight-heading"><h2>{{ moduleView.name }} · 空间关联记录</h2><span>6 条示例记录</span></div><table><thead><tr><th>编号</th><th>名称</th><th>关联空间</th><th>状态</th><th>空间操作</th></tr></thead><tbody><tr v-for="row in moduleRows" :key="row.id"><td class="record-code">{{ row.id }}</td><td>{{ row.name }}</td><td>{{ row.location }}</td><td><span class="table-status" :class="{ amber: row.status === '待跟进' }">{{ row.status }}</span></td><td><button class="table-locate" @click="locateModuleRow(row)"><TwinIcon name="pin" :size="14" />定位模型</button></td></tr></tbody></table></div>
@@ -183,9 +169,7 @@ onBeforeUnmount(() => { clearInterval(clockTimer); clearTimeout(toastTimer); win
       </section>
     </main>
 
-    <aside v-if="notifications" class="notification-popover"><div class="insight-heading"><h2>今日关注</h2><button class="icon-button" aria-label="关闭待办" @click="notifications = false"><TwinIcon name="close" :size="16" /></button></div><span class="demo-pill">演示事项</span><button v-for="item in pending" :key="item.point" class="pending-item" @click="moduleView ? (goHome(), locatePending(item.point)) : locatePending(item.point)"><span><strong>{{ item.title }}</strong><small>{{ item.sub }}</small></span><TwinIcon name="arrow" :size="15" /></button></aside>
     <div v-if="gallery" class="twin-modal-backdrop" @click.self="gallery = false"><section class="reference-modal" role="dialog" aria-modal="true" aria-label="云仓实景对照"><header><div><div class="twin-eyebrow">REALITY / DIGITAL TWIN</div><h2>从照片，重建一座云仓</h2><p>白色水平线条、青蓝幕墙转角与高标仓内部结构。</p></div><button class="icon-button" aria-label="关闭实景对照" @click="gallery = false"><TwinIcon name="close" /></button></header><div class="reference-image-wrap"><img :src="'/twin-reference/reference-' + activeReference.id + '.' + (activeReference.extension || 'png')" :alt="activeReference.title" /><span>{{ activeReference.title }}</span><small>{{ referenceIndex + 1 }} / {{ REFERENCES.length }}</small></div><div class="reference-thumbnails"><button v-for="(photo, index) in REFERENCES" :key="photo.id" :class="{ active: index === referenceIndex }" :aria-label="photo.title" :aria-pressed="index === referenceIndex" @click="referenceIndex = index"><img :src="'/twin-reference/reference-' + photo.id + '.' + (photo.extension || 'png')" :alt="photo.title" /></button></div><footer><TwinIcon name="help" :size="16" /><span>当前为照片参照的参数化模型。七层与层高参照招商资料；平面尺寸和设施点位仍需图纸或现场数据校准。</span></footer></section></div>
-    <div v-if="searchOpen" class="twin-modal-backdrop" @click.self="searchOpen = false"><section class="search-modal" role="dialog" aria-modal="true" aria-label="搜索空间与设备"><div class="search-input"><TwinIcon name="search" /><input v-model="search" placeholder="搜索楼层、设备或点位编号…" aria-label="空间搜索关键词" /><button class="icon-button" aria-label="关闭搜索" @click="searchOpen = false"><TwinIcon name="close" :size="17" /></button></div><span class="search-caption">空间索引 · {{ searchResults.length }} 个示例点位</span><button v-for="point in searchResults" :key="point.id" class="search-result" @click="moduleView ? (goHome(), selectPoint(point)) : selectPoint(point)"><span class="search-result-icon"><TwinIcon :name="MODULES.find(item => item.id === point.module).icon" /></span><span><strong>{{ point.name }}</strong><small>{{ point.code }} · {{ point.location }}</small></span><TwinIcon name="arrow" :size="16" /></button><p v-if="!searchResults.length" class="search-empty">没有找到匹配点位，试试「消防」「3F」或「CAM」。</p></section></div>
     <div v-if="help" class="twin-modal-backdrop" @click.self="help = false"><section class="help-modal" role="dialog" aria-modal="true" aria-label="三维工作台操作指南"><header><span class="brand-symbol"><TwinIcon name="cube" :size="26" /></span><button class="icon-button" aria-label="关闭操作指南" @click="help = false"><TwinIcon name="close" /></button></header><div class="twin-eyebrow">EXPLORE YOUR SPACE</div><h2>以空间为起点。</h2><p>拖动建筑旋转视角，滚轮缩放，右键拖动平移。也可以用底部工具栏调整视图。</p><ol><li><strong>查看建筑与楼层</strong><span>右侧选择楼层，切换「楼层展开」或「室内空间」。</span></li><li><strong>按业务寻找设备</strong><span>选择底部业务图层，点击模型中的彩色点位查看详情。</span></li><li><strong>从位置进入业务</strong><span>详情内点击「进入」打开关联模块，演示模块支持返回模型定位。</span></li></ol><div class="help-note">模型与设备位置按照片示意构建；运营数字、事项、租约和设备状态均为演示，未连接现场系统。</div><button class="twin-button primary" @click="help = false">开始探索<TwinIcon name="arrow" :size="16" /></button></section></div>
     <Transition name="twin-detail"><div v-if="toast" class="twin-toast" role="status"><TwinIcon name="check" :size="18" />{{ toast }}</div></Transition>
   </div>
