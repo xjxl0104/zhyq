@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, inject, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
@@ -7,12 +7,16 @@ import { loadWarehouse } from './warehouseAsset'
 import { disposeSceneExtras } from './sceneResources'
 import { createSceneWeather } from './sceneWeather'
 import { createParkLandscape } from './parkLandscape'
-import { createSceneRendering } from './sceneRendering'
+import { createSceneRendering, createAnimeSceneRendering } from './sceneRendering'
 import { MODULES, POINTS, visiblePoints } from './twinData'
 import TwinIcon from './TwinIcon.vue'
 
 const props = defineProps({ mode: { type: String, default: 'exterior' }, floor: { type: Number, default: null }, layer: { type: String, default: 'all' }, weather: { type: String, default: 'sunny' }, viewpoint: { type: String, default: 'overview' }, focused: Boolean, rotating: Boolean, markers: { type: Boolean, default: true } })
 const emit = defineEmits(['select-floor', 'select-point', 'open-module', 'ready', 'error'])
+// The approved anime finish is the homepage default. Only the local comparison
+// page can opt into the previous renderer or collect diagnostic measurements.
+const demoProfile = import.meta.env.DEV ? inject('warehouse-scene-demo', null) : null
+const anime = import.meta.env.DEV ? demoProfile?.style !== 'original' : true
 const host = ref(null), canvasHost = ref(null), ready = ref(false), error = ref('')
 const pins = computed(() => props.mode === 'interior'
   ? POINTS.filter(point => props.layer === 'all' || props.layer === point.module).filter(point => point.module !== 'park' && point.module !== 'energy').map(point => ({ ...point, floor: props.floor || 3, name: point.module === 'fire' ? '消防管网与消火栓' : point.module === 'contract' ? 'A 区 · 租赁空间' : point.module === 'property' ? '仓内设备 · 物业巡检' : '室内安防点位', location: '云仓 01 / ' + (props.floor || 3) + 'F / 示意点位' }))
@@ -21,7 +25,7 @@ const moduleFor = id => MODULES.find(item => item.id === id)
 const markerElements = new Map()
 // Keep the first frame and reset at the same close overview, with room for the entrance.
 const overviewCamera = { position: [86, 58, 174], target: [0, 24, 0] }
-let renderer, scene, camera, controls, model, observer, environmentTarget, weatherEffects, landscape, rendering, frame = 0, lastTime = 0, disposed = false, tween = null, width = 1, height = 1, needsRender = true
+let renderer, scene, camera, controls, model, observer, environmentTarget, weatherEffects, landscape, rendering, stylization, metrics, frame = 0, lastTime = 0, disposed = false, tween = null, width = 1, height = 1, needsRender = true
 const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
 const raycaster = new THREE.Raycaster(), pointer = new THREE.Vector2()
 let pointerDown = null
@@ -30,6 +34,9 @@ function resize() {
   width = host.value.clientWidth; height = host.value.clientHeight
   if (!width || !height) return
   needsRender = true
+  // Match the original composer's scene resolution, rather than silently doubling
+  // the pixel workload when drawing directly to a high-DPI canvas.
+  if (anime) renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.35, 1800 / Math.max(width, height)))
   renderer.setSize(width, height)
   rendering?.resize(width, height)
   // Preserve horizontal context in narrow windows without changing the user's orbit.
@@ -96,10 +103,18 @@ function animate(time) {
   }
   const cameraChanged = controls.update(delta)
   const landscapeChanged = landscape?.update?.(camera) || false
+  metrics?.tick(time, {
+    mode: props.mode, floor: props.floor, weather: props.weather, rotating: props.rotating,
+    camera: camera.position.toArray().map(value => Number(value.toFixed(2))),
+    target: controls.target.toArray().map(value => Number(value.toFixed(2))),
+    buffer: rendering?.getInfo?.(), style: anime ? 'anime' : 'original',
+  })
   if (!needsRender && !modelChanged && !landscapeChanged && !cameraTweening && !cameraChanged && !rendering?.needsRender(time)) return
   // Orbiting alone keeps cached shadows; a tree LOD switch changes geometry.
   if (modelChanged || landscapeChanged) renderer.shadowMap.needsUpdate = true
+  metrics?.beforeRender()
   rendering.render(time, modelChanged || cameraTweening || cameraChanged)
+  metrics?.afterRender()
   needsRender = false
   for (const point of pins.value) {
     const element = markerElements.get(point.id)
@@ -117,13 +132,15 @@ onMounted(async () => {
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.75))
     renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap
     renderer.shadowMap.autoUpdate = false; renderer.shadowMap.needsUpdate = true
-    renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.02
-    const environment = new RoomEnvironment()
-    const pmrem = new THREE.PMREMGenerator(renderer)
-    environmentTarget = pmrem.fromScene(environment, .04)
-    scene.environment = environmentTarget.texture
-    scene.environmentIntensity = .35
-    environment.dispose(); pmrem.dispose()
+    renderer.toneMapping = anime ? THREE.NeutralToneMapping : THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.02
+    if (!anime) {
+      const environment = new RoomEnvironment()
+      const pmrem = new THREE.PMREMGenerator(renderer)
+      environmentTarget = pmrem.fromScene(environment, .04)
+      scene.environment = environmentTarget.texture
+      scene.environmentIntensity = .35
+      environment.dispose(); pmrem.dispose()
+    }
     renderer.domElement.setAttribute('aria-label', '云仓三维模型，可拖动旋转、滚轮缩放，点击建筑选择楼层')
     renderer.domElement.setAttribute('role', 'img')
     canvasHost.value.appendChild(renderer.domElement)
@@ -139,10 +156,10 @@ onMounted(async () => {
     scene.add(hemisphere)
     const sunlight = new THREE.DirectionalLight('#f5f5ff', 2.8)
     sunlight.position.set(-55, 110, 70); sunlight.castShadow = true
-    const shadowSize = window.innerWidth >= 1100 ? 4096 : 2048
+    const shadowSize = anime ? 2048 : window.innerWidth >= 1100 ? 4096 : 2048
     sunlight.shadow.mapSize.set(shadowSize, shadowSize)
     Object.assign(sunlight.shadow.camera, { left: -225, right: 225, top: 205, bottom: -205, near: 1, far: 480 })
-    sunlight.shadow.bias = -.00015; sunlight.shadow.normalBias = .035
+    sunlight.shadow.bias = anime ? -.00025 : -.00015; sunlight.shadow.normalBias = anime ? .25 : .035
     sunlight.shadow.radius = 1
     scene.add(sunlight)
     const fill = new THREE.DirectionalLight('#dce2ff', .65); fill.position.set(60, 70, -90); scene.add(fill)
@@ -151,9 +168,19 @@ onMounted(async () => {
     model.setState({ mode: props.mode, floor: props.floor, layer: props.layer }); scene.add(model.root)
     landscape = createParkLandscape(scene, model)
     landscape.setMode(props.mode); landscape.setWeather(props.weather)
-    weatherEffects = createSceneWeather({ scene, renderer, sunlight, fill, hemisphere })
+    if (anime) {
+      const { createAnimeSceneStyle } = await import('./animeSceneStyle.js')
+      if (disposed) return
+      stylization = createAnimeSceneStyle(scene)
+    }
+    weatherEffects = createSceneWeather({ scene, renderer, sunlight, fill, hemisphere, style: anime ? 'anime' : 'realistic' })
     weatherEffects.setWeather(props.weather)
-    rendering = createSceneRendering(renderer, scene, camera)
+    rendering = anime ? createAnimeSceneRendering(renderer, scene, camera) : createSceneRendering(renderer, scene, camera)
+    if (import.meta.env.DEV && demoProfile?.onMetrics) {
+      const { createSceneDemoMetrics } = await import('./sceneDemoMetrics.js')
+      if (disposed) return
+      metrics = createSceneDemoMetrics(renderer, demoProfile.onMetrics)
+    }
     renderer.domElement.addEventListener('pointerdown', onPointerDown)
     renderer.domElement.addEventListener('pointerup', onPointerUp)
     renderer.domElement.addEventListener('webglcontextlost', onContextLost)
@@ -189,8 +216,10 @@ onBeforeUnmount(() => {
     renderer.domElement.removeEventListener('webglcontextlost', onContextLost)
   }
   weatherEffects?.dispose()
+  stylization?.dispose()
   landscape?.dispose()
   rendering?.dispose()
+  metrics?.dispose()
   model?.dispose()
   disposeSceneExtras(scene, model?.root)
   environmentTarget?.dispose()
@@ -201,6 +230,7 @@ async function exportModel() {
   const { GLTFExporter } = await import('three/addons/exporters/GLTFExporter.js')
   // Clone freezes transforms during the asynchronous export, even while orbiting/animating.
   const snapshot = model.root.clone(true)
+  stylization?.prepareExport(snapshot)
   const glb = await new GLTFExporter().parseAsync(snapshot, { binary: true, onlyVisible: true })
   const url = URL.createObjectURL(new Blob([glb], { type: 'model/gltf-binary' }))
   const anchor = document.createElement('a'); anchor.href = url; anchor.download = 'dipark-warehouse-' + props.mode + '.glb'; anchor.click()

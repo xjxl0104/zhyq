@@ -31,6 +31,7 @@ export function createSceneRendering(renderer, scene, camera) {
     try { renderAO(...args) } finally { hidden.forEach(object => { object.visible = true }) }
   }
   return {
+    getInfo() { return { pipeline: 'composer + settled GTAO', width: composer.readBuffer.width, height: composer.readBuffer.height } },
     resize(width, height) {
       // Bound the temporary buffers independently of a high-DPI monitor.
       composer.setPixelRatio(Math.min(renderer.getPixelRatio(), 1.35, 1800 / Math.max(width, height)))
@@ -53,5 +54,20 @@ export function createSceneRendering(renderer, scene, camera) {
       // r180 GTAOPass.dispose omits these two owned shader materials.
       ao.gtaoMaterial.dispose(); ao.blendMaterial.dispose()
     },
+  }
+}
+
+// The anime homepage uses the same camera and geometry. Native MSAA and the
+// renderer's output transform replace the floating-point postprocessing chain.
+export function createAnimeSceneRendering(renderer, scene, camera) {
+  return {
+    resize() {},
+    needsRender() { return false },
+    render() { renderer.render(scene, camera) },
+    getInfo() {
+      const size = renderer.getDrawingBufferSize(new THREE.Vector2())
+      return { pipeline: 'direct toon', width: size.x, height: size.y }
+    },
+    dispose() {},
   }
 }

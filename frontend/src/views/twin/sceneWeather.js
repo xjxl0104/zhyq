@@ -5,6 +5,10 @@ const PRESETS = {
   sunny: { top: '#347fbc', horizon: '#bfd2dd', near: 260, far: 1200, disc: 1, exposure: .98, environment: .3, sun: ['#fff0d2', 4.2], fill: ['#b1cae3', .23], sky: ['#c6dff2', '#6d7060', .52] },
   night: { top: '#0c1029', horizon: '#29384a', near: 180, far: 1000, disc: .025, exposure: 1, environment: .085, sun: ['#a8c4ed', .32], fill: ['#779fcb', .12], sky: ['#799bc4', '#232a48', .32] },
 }
+const ANIME_PRESETS = {
+  sunny: { top: '#acd4e8', horizon: '#e2edeb', near: 260, far: 1200, disc: .3, exposure: 1, environment: 0, sun: ['#fffaf0', 2.7], fill: ['#bedfeb', .4], sky: ['#f4f9ff', '#a2bcbb', 1.3] },
+  night: { top: '#243956', horizon: '#596d87', near: 180, far: 1000, disc: .015, exposure: 1, environment: 0, sun: ['#b5d3f9', .55], fill: ['#99b6d8', .25], sky: ['#bfd4e9', '#6a7891', .7] },
+}
 
 function captureMaterial(material) {
   return {
@@ -23,7 +27,7 @@ function restoreMaterial(snapshot) {
 }
 
 /** Borrow scene, renderer and lights; dispose restores them without disposing them. */
-export function createSceneWeather({ scene, renderer, sunlight, fill, hemisphere }) {
+export function createSceneWeather({ scene, renderer, sunlight, fill, hemisphere, style = 'realistic' }) {
   const original = {
     background: scene.background, fog: scene.fog, environmentIntensity: scene.environmentIntensity,
     exposure: renderer.toneMappingExposure,
@@ -39,7 +43,7 @@ export function createSceneWeather({ scene, renderer, sunlight, fill, hemisphere
     const materials = Array.isArray(object.material) ? object.material : object.material ? [object.material] : []
     for (const material of materials) {
       const name = material.name || ''
-      if (/^(glass|window)/i.test(name)) windowMaterials.add(material)
+      if (/^(glass|window)/i.test(name) || (style === 'anime' && material.userData?.surfaceRole === 'architectural-glass')) windowMaterials.add(material)
       if (/^siteLamp/i.test(name)) lampMaterials.add(material)
       if (windowMaterials.has(material) || lampMaterials.has(material)) {
         if (!materialSnapshots.has(material)) materialSnapshots.set(material, captureMaterial(material))
@@ -109,7 +113,7 @@ export function createSceneWeather({ scene, renderer, sunlight, fill, hemisphere
   function setWeather(preset) {
     if (disposed) return
     current = Object.hasOwn(PRESETS, preset) ? preset : 'sunny'
-    const config = PRESETS[current]
+    const config = (style === 'anime' ? ANIME_PRESETS : PRESETS)[current]
     scene.background = null
     scene.fog = fog
     fog.color.set(config.horizon); fog.near = config.near; fog.far = config.far
@@ -120,7 +124,8 @@ export function createSceneWeather({ scene, renderer, sunlight, fill, hemisphere
     skyMaterial.uniforms.discStrength.value = config.disc
     if (sunlight) {
       sunlight.color.set(config.sun[0]); sunlight.intensity = config.sun[1]
-      sunlight.position.set(-140, 35, 60)
+      if (style === 'anime') sunlight.position.set(-90, 140, 90)
+      else sunlight.position.set(-140, 35, 60)
       sunlight.castShadow = true
     }
     const sunDirection = skyMaterial.uniforms.sunDirection.value

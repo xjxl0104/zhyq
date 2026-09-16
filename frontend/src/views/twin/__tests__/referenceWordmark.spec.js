@@ -13,28 +13,26 @@ function hasInk(mesh, x, y) {
 }
 
 describe('photographed facade wordmark', () => {
-  it('keeps all three solid monogram elements and the open opposing slots', () => {
+  it('spells DIPARK with only the open D and solid I before PARK', () => {
     const group = new THREE.Group()
     addReferenceWordmark(group, materials, { x: 0, y: 0, z: 0, height: 1, variant: 'roof' })
-    const [d, i, c] = group.children
-    expect(group.children).toHaveLength(7)
+    const [d, i] = group.children
+    expect(group.children.map(mesh => mesh.userData.wordmarkPart)).toEqual(['open-d', 'stem', 'P', 'A', 'R', 'K'])
     expect(hasInk(d, .1, .5)).toBe(false)
     expect(hasInk(d, .85, .5)).toBe(true)
     expect(hasInk(i, 1.28, .5)).toBe(true)
-    expect(hasInk(c, 2.5, .5)).toBe(false)
-    expect(hasInk(c, 1.85, .5)).toBe(true)
   })
 
   it('uses teal plus blue or white, with real letter counters and mergeable indexed meshes', () => {
     for (const variant of ['roof', 'box']) {
       const group = new THREE.Group()
       addReferenceWordmark(group, materials, { x: 0, y: 0, z: 0, height: 1, variant })
-      expect(new Set(group.children.slice(0, 3).map(mesh => mesh.material.name))).toEqual(new Set(['facadeLogoTeal']))
-      expect(new Set(group.children.slice(3).map(mesh => mesh.material.name)))
+      expect(new Set(group.children.slice(0, 2).map(mesh => mesh.material.name))).toEqual(new Set(['facadeLogoTeal']))
+      expect(new Set(group.children.slice(2).map(mesh => mesh.material.name)))
         .toEqual(new Set([variant === 'roof' ? 'facadeLogoBlue' : 'facadeLogoWhite']))
-      const p = group.children[3]
-      expect(hasInk(p, 2.82 + .28, .76)).toBe(false)
-      expect(hasInk(p, 2.82 + .045, .3)).toBe(true)
+      const p = group.children[2]
+      expect(hasInk(p, 1.67 + .28, .76)).toBe(false)
+      expect(hasInk(p, 1.67 + .045, .3)).toBe(true)
       const geometries = group.children.map(mesh => {
         expect(mesh.geometry.index).not.toBeNull()
         const geometry = mesh.geometry.clone().deleteAttribute('uv')
@@ -44,7 +42,7 @@ describe('photographed facade wordmark', () => {
       const merged = mergeGeometries(geometries)
       expect(merged).not.toBeNull()
       merged.computeBoundingBox()
-      expect(merged.boundingBox.max.x).toBeCloseTo(5.98, 1)
+      expect(merged.boundingBox.max.x).toBeCloseTo(4.83, 1)
       expect(merged.boundingBox.max.y - merged.boundingBox.min.y).toBeCloseTo(1)
       merged.dispose()
       geometries.forEach(geometry => geometry.dispose())

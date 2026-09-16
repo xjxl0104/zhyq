@@ -182,7 +182,7 @@ describe('delivered warehouse asset', () => {
         expect(entrance.children.map(child => child.name).sort()).toEqual(sourceEntrance.children.map(child => child.name).sort())
         expect(entrance.getObjectByName('Entrance_Chinese_park_name')?.isMesh).toBe(true)
         expect(entrance.getObjectByName('Entrance_DIPARK_DI')).toBeUndefined()
-        expect(entrance.getObjectByName('entrance-reference-wordmark')?.children).toHaveLength(7)
+        expect(entrance.getObjectByName('entrance-reference-wordmark')?.children.map(mesh => mesh.userData.wordmarkPart)).toEqual(['open-d', 'stem', 'P', 'A', 'R', 'K'])
         expect(entrance.getObjectByName('Entrance_Chinese_park_name')?.userData.source_text).toBe('数智云仓产业园')
         const bounds = new Box3().setFromObject(entrance)
         expect(bounds.min.distanceTo(sourceBounds.min)).toBeLessThan(.0001)
