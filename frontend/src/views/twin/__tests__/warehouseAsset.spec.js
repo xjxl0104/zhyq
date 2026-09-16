@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, it, expect } from 'vitest'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
-import { Box3, Vector3 } from 'three'
+import { Box3, Raycaster, Vector3 } from 'three'
 import { MODEL, POINTS, floorBase, modelHeight } from '../twinData'
 import { bindWarehouse } from '../warehouseController'
 
@@ -19,6 +19,71 @@ const findEntrance = root => {
 }
 
 describe('delivered warehouse asset', () => {
+  it('loads clear architectural glazing on every floor without opaque glass shadows', async () => {
+    const gltf = await parseAsset(await readFile(assetUrl))
+    const model = bindWarehouse(gltf.scene)
+    try {
+      for (const floor of model.floors) {
+        const glassMeshes = []
+        floor.shell.traverse(object => {
+          if (!object.isMesh) return
+          const materials = Array.isArray(object.material) ? object.material : [object.material]
+          if (materials.some(material => material.name === 'facadeGlazing')) glassMeshes.push(object)
+        })
+        expect(glassMeshes.length, `floor ${floor.group.userData.floor} glazing`).toBeGreaterThan(0)
+        for (const mesh of glassMeshes) {
+          expect(mesh.castShadow).toBe(false)
+          expect(mesh.receiveShadow).toBe(false)
+          const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
+          for (const material of materials.filter(material => material.name === 'facadeGlazing')) {
+            expect(material.userData.surfaceRole).toBe('architectural-glass')
+            expect(material.transparent).toBe(true)
+            expect(material.opacity).toBeGreaterThan(.1)
+            expect(material.opacity).toBeLessThan(.5)
+            expect(material.depthWrite).toBe(false)
+            // Test loaded linear colour, so a dark opaque-looking tint cannot
+            // pass just by enabling alpha blending on the old black material.
+            const luminance = .2126 * material.color.r + .7152 * material.color.g + .0722 * material.color.b
+            expect(luminance).toBeGreaterThan(.4)
+          }
+        }
+      }
+    } finally {
+      model.dispose()
+    }
+  })
+
+  it('keeps the long windows and both corner glass faces open to the interior', async () => {
+    const gltf = await parseAsset(await readFile(assetUrl))
+    const model = bindWarehouse(gltf.scene)
+    try {
+      gltf.scene.updateMatrixWorld(true)
+      const floor = model.floors[4]
+      // Avoid the visible mullions, bands and slabs. Four metres reaches
+      // through the facade and its former backing, but not across the room.
+      const windows = [
+        { name: 'front corner', origin: [40, floorBase(5) + 3.6, 29], direction: [0, 0, -1] },
+        { name: 'side corner', origin: [50, floorBase(5) + 3.6, 20], direction: [-1, 0, 0] },
+        { name: 'long ribbon', origin: [-43, floorBase(5) + 1.848, 29], direction: [0, 0, -1] },
+      ]
+      for (const window of windows) {
+        const ray = new Raycaster(new Vector3(...window.origin), new Vector3(...window.direction), 0, 4)
+        const hits = ray.intersectObjects([floor.shell, floor.structure], true)
+        const materialAt = hit => Array.isArray(hit.object.material)
+          ? hit.object.material[hit.face.materialIndex]
+          : hit.object.material
+        expect(hits.some(hit => materialAt(hit).name === 'facadeGlazing'), `${window.name} intersects glass`).toBe(true)
+        const opaqueHits = hits.filter(hit => {
+          const material = materialAt(hit)
+          return !material.transparent || material.opacity >= 1
+        })
+        expect(opaqueHits.map(hit => ({ name: hit.object.name, material: materialAt(hit).name, distance: hit.distance })), window.name).toEqual([])
+      }
+    } finally {
+      model.dispose()
+    }
+  })
+
   it('preserves coordinate scale and all floor systems after GLB loading', async () => {
     const gltf = await parseAsset(await readFile(assetUrl))
     const model = bindWarehouse(gltf.scene)

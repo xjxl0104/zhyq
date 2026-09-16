@@ -43,13 +43,28 @@ export function createWarehouse() {
   material('zoneC', '#ded7e7')
   createFacadeMaterials(material)
   const boxGeometry = new THREE.BoxGeometry(1, 1, 1)
+  const glazingGeometry = new THREE.PlaneGeometry(1, 1)
   const cylinderGeometry = new THREE.CylinderGeometry(1, 1, 1, 10)
   const crownGeometry = new THREE.IcosahedronGeometry(1, 1)
   const ringGeometry = new THREE.TorusGeometry(1, .055, 4, 20).rotateX(Math.PI / 2)
-  const sharedGeometries = [boxGeometry, cylinderGeometry, crownGeometry, ringGeometry]
+  const sharedGeometries = [boxGeometry, glazingGeometry, cylinderGeometry, crownGeometry, ringGeometry]
   const box = (group, type, x, y, z, w, h, d) => {
-    const mesh = new THREE.Mesh(boxGeometry, materials[type])
-    mesh.position.set(x, y, z); mesh.scale.set(w, h, d)
+    const glass = materials[type].userData.surfaceRole === 'architectural-glass'
+    const mesh = new THREE.Mesh(glass ? glazingGeometry : boxGeometry, materials[type])
+    mesh.position.set(x, y, z)
+    if (glass) {
+      // A single outward-facing pane avoids two transparent box faces tinting
+      // each other, and keeps the merged glazing stable while orbiting.
+      if (w > d) {
+        mesh.position.z += Math.sign(z) * d / 2
+        mesh.rotation.y = z < 0 ? Math.PI : 0
+        mesh.scale.set(w, h, 1)
+      } else {
+        mesh.position.x += Math.sign(x) * w / 2
+        mesh.rotation.y = Math.sign(x) * Math.PI / 2
+        mesh.scale.set(d, h, 1)
+      }
+    } else mesh.scale.set(w, h, d)
     mesh.castShadow = true; mesh.receiveShadow = true
     group.add(mesh)
     return mesh
@@ -132,10 +147,10 @@ export function createWarehouse() {
     // Photo's repeating column grid and concrete beams.
     for (let x = -44; x <= 44; x += 11) {
       for (let z = -22; z <= 22; z += 11) {
-        box(interior, 'white', x, height / 2, z, .75, height, .75)
-        box(interior, 'concrete', x, height - .65, z, .82, .6, 10.9)
+        box(structure, 'white', x, height / 2, z, .75, height, .75)
+        box(structure, 'concrete', x, height - .65, z, .82, .6, 10.9)
       }
-      box(interior, 'concrete', x, height - .35, 0, .6, .5, D - 1)
+      box(structure, 'concrete', x, height - .35, 0, .6, .5, D - 1)
     }
     addReferenceFacade(shell, { index, height, box, cylinder, tube, materials })
     // Interior systems are deliberately schematic and separate from façade geometry.
