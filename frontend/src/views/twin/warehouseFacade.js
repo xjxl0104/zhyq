@@ -57,9 +57,29 @@ function slitWall(group, { index, height, box, side, sign, base = 0, wallHeight 
     const start = Math.max(startOfWall, along - length / 2)
     const end = Math.min(endOfWall, along + length / 2)
     if (end <= start) return
-    return side
-      ? box(group, type, sign * (at + offset), y, (start + end) / 2, thick, tall, end - start)
-      : box(group, type, (start + end) / 2, y, sign * (at + offset), end - start, tall, thick)
+    let rectangles = [[start, end, y - tall / 2, y + tall / 2]]
+    if (!side && index > 1 && type === 'facadeIvory') {
+      // The little balcony doors are glass too. Cut their openings through the
+      // white spandrels/bridges instead of putting a transparent pane on a wall.
+      const bottom = height * .35 + .075, top = height * .35 + 1.725
+      for (const x of [-34, -10, 15]) {
+        const next = []
+        for (const [left, right, low, high] of rectangles) {
+          const cutLeft = Math.max(left, x - .44), cutRight = Math.min(right, x + .44)
+          const cutLow = Math.max(low, bottom), cutHigh = Math.min(high, top)
+          if (cutLeft >= cutRight || cutLow >= cutHigh) { next.push([left, right, low, high]); continue }
+          if (left < cutLeft) next.push([left, cutLeft, low, high])
+          if (cutRight < right) next.push([cutRight, right, low, high])
+          if (low < cutLow) next.push([cutLeft, cutRight, low, cutLow])
+          if (cutHigh < high) next.push([cutLeft, cutRight, cutHigh, high])
+        }
+        rectangles = next
+      }
+    }
+    for (const [left, right, low, high] of rectangles) {
+      if (side) box(group, type, sign * (at + offset), (low + high) / 2, (left + right) / 2, thick, high - low, right - left)
+      else box(group, type, (left + right) / 2, (low + high) / 2, sign * (at + offset), right - left, high - low, thick)
+    }
   }
   // Solid white spandrels surround two fine recessed ribbons per functional level.
   const rows = [base + wallHeight * .28, base + wallHeight * .77]
@@ -70,15 +90,15 @@ function slitWall(group, { index, height, box, side, sign, base = 0, wallHeight 
     face('facadeIvory', 0, (low + lowerEdge) / 2, extent, lowerEdge - low)
     const patterns = side ? sideSlots : frontSlots
     const segments = patterns[((index - 1) * 2 + row + (sign < 0 ? 1 : 0)) % patterns.length]
-    // Recess panels only fill the gaps between windows; actual window openings
-    // have no opaque backing. The floor slabs and columns provide indoor depth.
+    // The dark-looking infill in the photos is also clear glass in shade.
+    // Keep every ribbon segment open; only the white bridges are opaque.
     let recessStart = startOfWall
     for (const [start, end] of segments) {
-      if (start > recessStart) face('facadeRecess', (recessStart + start) / 2, y, start - recessStart, slotHeight, -.06, .3)
+      if (start > recessStart) face('facadeGlazing', (recessStart + start) / 2, y, start - recessStart, slotHeight - .04, .115, .035)
       face('facadeGlazing', (start + end) / 2, y, end - start, slotHeight - .04, .115, .035)
       recessStart = end
     }
-    if (recessStart < extent / 2) face('facadeRecess', (recessStart + extent / 2) / 2, y, extent / 2 - recessStart, slotHeight, -.06, .3)
+    if (recessStart < extent / 2) face('facadeGlazing', (recessStart + extent / 2) / 2, y, extent / 2 - recessStart, slotHeight - .04, .115, .035)
     // White bridges at differing positions break the otherwise continuous grey slot.
     const bridges = side ? [-17 + (index % 3) * 8] : [-35 + (index % 3) * 11, 2 + (index % 2) * 17]
     for (const along of bridges) face('facadeIvory', along, y, side ? 5.3 : 6.4, slotHeight + .08, .17, .22)
@@ -104,7 +124,9 @@ function balconies(group, { height, box, tube, cylinder }) {
   for (const sign of [-1, 1]) for (const x of [-34, -10, 15]) {
     const y = height * .35, front = sign * 28.1
     box(group, 'facadeIvory', x, y, sign * 27.55, 2.5, .22, 1.35)
-    box(group, 'facadeFrame', x, y + .9, sign * 27.3, .88, 1.65, .07)
+    box(group, 'facadeGlazing', x, y + .9, sign * 27.3, .88, 1.65, .07)
+    for (const dx of [-.48, .48]) box(group, 'facadeFrame', x + dx, y + .9, sign * 27.36, .08, 1.81, .075)
+    for (const dy of [-.865, .865]) box(group, 'facadeFrame', x, y + .9 + dy, sign * 27.36, .88, .08, .075)
     tube(group, 'facadeFrame', [x - 1.2, y + .9, front], [x + 1.2, y + .9, front], .025)
     for (let dx = -1.2; dx <= 1.21; dx += .3) cylinder(group, 'facadeFrame', x + dx, y + .5, front, .02, .82)
     for (const dx of [-1.2, 1.2]) {

@@ -1,5 +1,5 @@
 // Rebuild the website's GLB from the photo-informed JavaScript model while
-// retaining the existing entrance, including its Blender-authored lettering.
+// retaining the existing gate and Chinese lettering, with the photo wordmark.
 // Usage: node frontend/scripts/rebuild-warehouse-model.mjs [output.glb] [source.glb]
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
@@ -8,6 +8,7 @@ import { Matrix4 } from 'three'
 import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import { createWarehouse } from '../src/views/twin/warehouseModel.js'
+import { upgradeReferenceEntrance } from '../src/views/twin/referenceEntrance.js'
 
 globalThis.FileReader ??= class {
   async readAsArrayBuffer(blob) {
@@ -50,6 +51,13 @@ try {
   existing.scene.updateMatrixWorld(true)
   model.root.updateMatrixWorld(true)
   const entrance = entrances[0]
+  const facadeMaterials = {}
+  model.root.traverse(object => {
+    for (const material of Array.isArray(object.material) ? object.material : object.material ? [object.material] : []) {
+      if (['facadeLogoTeal', 'facadeLogoBlue'].includes(material.name)) facadeMaterials[material.name] = material
+    }
+  })
+  upgradeReferenceEntrance(entrance, facadeMaterials)
   const localMatrix = new Matrix4().copy(model.site.matrixWorld).invert().multiply(entrance.matrixWorld)
   entrance.removeFromParent()
   // Bake its old parent transform into the new local matrix. Keeping the matrix

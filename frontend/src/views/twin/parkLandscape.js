@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
-import { createLandscapeTextures, createTreeGeometries } from './parkVegetation.js'
+import { createLandscapeTextures } from './parkVegetation.js'
+import { createParkTreeLod } from './parkTreeLod.js'
 
 // Context outside the 240 × 190 m model is an illustrative landscape, not survey data.
 // Everything is generated locally: no extra asset request or continuous animation.
@@ -224,23 +225,12 @@ export function createParkLandscape(scene, model) {
     mesh.castShadow = mat === mats.building || mat === mats.roof || mat === mats.timber
     group.add(mesh)
   }
-  const dummy = new THREE.Object3D(), color = new THREE.Color()
+  const dummy = new THREE.Object3D()
   const instances = (geometry, mat, count) => {
     const mesh = own(new THREE.InstancedMesh(own(geometry), mat, count))
     mesh.receiveShadow = true; group.add(mesh); return mesh
   }
-  const treeGeometry = createTreeGeometries()
-  const trunks = instances(treeGeometry.trunk, mats.trunk, treePositions.length)
-  const leaves = instances(treeGeometry.crown, mats.leaf, treePositions.length)
-  trunks.castShadow = true; leaves.castShadow = true
-  leaves.name = 'park-canopy'; trunks.name = 'park-tree-trunks'
-  treePositions.forEach(([x, z, scale], index) => {
-    dummy.position.set(x, 0, z); dummy.scale.setScalar(scale); dummy.rotation.set(0, index * .73, 0); dummy.updateMatrix()
-    trunks.setMatrixAt(index, dummy.matrix); leaves.setMatrixAt(index, dummy.matrix)
-    leaves.setColorAt(index, color.setHSL(.25 + (index % 4) * .018, .22, .63 + (index % 5) * .05))
-  })
-  for (const mesh of [trunks, leaves]) { mesh.instanceMatrix.needsUpdate = true; mesh.computeBoundingSphere() }
-  leaves.instanceColor.needsUpdate = true
+  const trees = createParkTreeLod(group, treePositions, mats, own)
 
   // Analytic contact shading follows the official contact-shadow principle, cached as
   // two tiny alpha textures. No secondary scene render or screen-space AO per frame.
@@ -274,6 +264,7 @@ export function createParkLandscape(scene, model) {
   let disposed = false
   return {
     group,
+    update(camera) { return !disposed && trees.update(camera) },
     setMode(mode) { contact.visible = mode === 'exterior' },
     setWeather(weather) {
       glows.visible = weather === 'night'
