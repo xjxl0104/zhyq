@@ -1,9 +1,9 @@
 import * as THREE from 'three'
 
-// Drawn from the facade photographs, in units of the PARK cap height. The
-// photographed teal mark has THREE pieces: two opposing open bowls around a
-// solid stem. It is not the letters "DI" set in a font. In particular, the
-// existing app-header SVG omits the right-hand bowl and is not this facade sign.
+// DIPARK: the teal DI consists of an open D and a solid I, followed by PARK.
+// Units are the PARK cap height. Do not add the previously misread C-shaped
+// stroke between the I and P.
+export const REFERENCE_WORDMARK_WIDTH = 4.833
 function openBowl() {
   const shape = new THREE.Shape()
   shape.moveTo(0, .96)
@@ -90,7 +90,7 @@ function letterK() {
 }
 
 /**
- * Add the photographed seven-piece sign directly to a facade shell. Shared
+ * Add the six-letter DIPARK sign directly to a facade shell. Shared
  * materials belong to the caller; each unique geometry is owned by the shell
  * batcher / warehouse disposer. x/y/z are the baseline-left origin, rotation is
  * around Y, and height is the PARK cap height in warehouse model units.
@@ -102,21 +102,16 @@ export function addReferenceWordmark(group, materials, {
   const glyphs = [
     { part: 'open-d', shape: openBowl(), offset: 0, monogram: true },
     { part: 'stem', shape: polygon([[0, .04], [.36, .04], [.36, .96], [0, .96]]), offset: 1.15, monogram: true },
-    { part: 'open-c', shape: openBowl(), offset: 1.67, mirror: true, monogram: true },
-    { part: 'P', shape: letterP(), offset: 2.82 },
-    { part: 'A', shape: letterA(), offset: 3.62 },
-    { part: 'R', shape: letterR(), offset: 4.5 },
-    { part: 'K', shape: letterK(), offset: 5.3 },
+    { part: 'P', shape: letterP(), offset: 1.67 },
+    { part: 'A', shape: letterA(), offset: 2.47 },
+    { part: 'R', shape: letterR(), offset: 3.35 },
+    { part: 'K', shape: letterK(), offset: 4.15 },
   ]
   const rotationMatrix = new THREE.Matrix4().makeRotationY(rotation)
   for (const glyph of glyphs) {
     const geometry = new THREE.ExtrudeGeometry(glyph.shape, {
       depth: .035, bevelEnabled: false, curveSegments: 10, steps: 1,
     })
-    if (glyph.mirror) {
-      // Rotate instead of a negative scale, preserving front-face winding.
-      geometry.rotateY(Math.PI).translate(.99, 0, .035)
-    }
     geometry.translate(glyph.offset, 0, 0).scale(height, height, height)
     // The warehouse's material batcher merges indexed architecture. Retaining
     // separate extruded front/side vertices also retains the sharp sign edges.
@@ -131,5 +126,5 @@ export function addReferenceWordmark(group, materials, {
     mesh.receiveShadow = true
     group.add(mesh)
   }
-  return { width: 5.983 * height, height }
+  return { width: REFERENCE_WORDMARK_WIDTH * height, height }
 }

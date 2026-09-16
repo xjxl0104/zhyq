@@ -1,4 +1,5 @@
 import { flushPromises, mount } from '@vue/test-utils'
+import { createPinia } from 'pinia'
 import { describe, expect, it, vi } from 'vitest'
 import FileUpload from '../FileUpload.vue'
 import VendingImportDialog from '@/views/app/components/VendingImportDialog.vue'
@@ -72,7 +73,7 @@ const stubs = {
 }
 
 function mountWithStubs(component, props = {}) {
-  return mount(component, { props, global: { stubs } })
+  return mount(component, { props, global: { stubs, plugins: [createPinia()] } })
 }
 
 describe('glass upload integrations', () => {

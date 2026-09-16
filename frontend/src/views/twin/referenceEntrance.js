@@ -1,7 +1,14 @@
 import * as THREE from 'three'
 import { addReferenceWordmark } from './referenceWordmark.js'
 
-const WORDMARK_VERSION = 'reference-photo-v1'
+const WORDMARK_VERSION = 'dipark-six-letter-v2'
+
+function labelEntranceLetters(wordmark) {
+  wordmark.children.forEach(mesh => {
+    mesh.name = `entrance-reference-wordmark-${mesh.userData.wordmarkPart}`
+    mesh.userData.referenceWordmark = 'entrance'
+  })
+}
 
 function trianglesOnChineseSide(geometry) {
   const position = geometry.getAttribute('position')
@@ -72,10 +79,27 @@ export function upgradeReferenceEntrance(entrance, materials) {
   })
   if (installed.length > 1) throw new Error('Entrance contains multiple reference wordmarks')
   if (installed.length === 1) {
+    const wordmark = installed[0]
+    // Rebuild the persisted, incorrect DIC+PARK sign at its saved height and
+    // transform. Changing only the generator would leave the old GLB gate intact.
+    if (wordmark.userData.entranceWordmarkVersion === 'reference-photo-v1') {
+      const stem = wordmark.children.find(mesh => mesh.userData.wordmarkPart === 'stem')
+      if (!stem?.geometry) throw new Error('Saved entrance DI stem is missing')
+      stem.geometry.computeBoundingBox()
+      const height = (stem.geometry.boundingBox.max.y - stem.geometry.boundingBox.min.y) / .92
+      if (!Number.isFinite(height) || height <= 0) throw new Error('Saved entrance wordmark height is invalid')
+      const replacement = new THREE.Group()
+      addReferenceWordmark(replacement, materials, { x: 0, y: 0, z: 0, height, variant: 'roof' })
+      wordmark.clear()
+      wordmark.add(...replacement.children.slice())
+      wordmark.userData.entranceWordmarkVersion = WORDMARK_VERSION
+      wordmark.userData.referenceStyle = 'dipark-two-piece-di-and-light-park'
+      labelEntranceLetters(wordmark)
+    }
     // Each rebuild imports yesterday's sign into a freshly generated building.
     // Reuse today's facade materials instead of exporting duplicate same-name
     // finishes from the old GLB. Geometry and saved placement stay untouched.
-    const monogramParts = new Set(['open-d', 'stem', 'open-c'])
+    const monogramParts = new Set(['open-d', 'stem'])
     installed[0].traverse(object => {
       if (object.isMesh) object.material = monogramParts.has(object.userData.wordmarkPart)
         ? materials.facadeLogoTeal : materials.facadeLogoBlue
@@ -109,6 +133,8 @@ export function upgradeReferenceEntrance(entrance, materials) {
     includeGeometry(bounds, entranceInverse, mesh, split.latin)
     return { mesh, geometry: retainGeometry(mesh.geometry, split.chinese) }
   })
+  // Preserve the height chosen for the original photo sign, while closing the
+  // space formerly occupied by the erroneous C. The Chinese lettering stays put.
   const height = Math.min(bounds.max.y - bounds.min.y, (bounds.max.x - bounds.min.x) / 5.983)
   if (!Number.isFinite(height) || height <= 0) throw new Error('Legacy entrance lettering has invalid dimensions')
   const wordmark = new THREE.Group()
@@ -117,14 +143,11 @@ export function upgradeReferenceEntrance(entrance, materials) {
   wordmark.userData = {
     entranceWordmarkVersion: WORDMARK_VERSION,
     source_text: 'DIPARK',
-    referenceStyle: 'photo-three-piece-monogram-and-light-park',
+    referenceStyle: 'dipark-two-piece-di-and-light-park',
     placement: 'Original entrance Latin-sign footprint; Chinese park name retained',
   }
   addReferenceWordmark(wordmark, materials, { x: 0, y: 0, z: 0, height, variant: 'roof' })
-  wordmark.children.forEach(mesh => {
-    mesh.name = `entrance-reference-wordmark-${mesh.userData.wordmarkPart}`
-    mesh.userData.referenceWordmark = 'entrance'
-  })
+  labelEntranceLetters(wordmark)
 
   // Mutation happens only after source recognition, safe splitting and new
   // geometry creation all succeed. Gate/guardhouse transforms are untouched.
