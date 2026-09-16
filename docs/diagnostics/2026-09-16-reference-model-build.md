@@ -49,12 +49,20 @@ node frontend/scripts/rebuild-warehouse-model.mjs /tmp/dipark-preview.glb
 - 窗带和转角使用单层透明玻璃，而不是照片阴影中的黑色实板。玻璃材质 extras 保留 `surfaceRole: "architectural-glass"`；加载时关闭其深度写入及投射/接收不透明阴影，沿用现有环境反射。
 - 窗后没有紧贴玻璃的实心背墙。柱梁与楼板属于 `structure`，在建筑外观模式下仍可透过玻璃看到；室内业务布置和消防系统仍按原视图切换。
 
+## 窗格抗摩尔纹与照片字标
+
+细窗框、转角幕墙网格、招牌竖纹和装卸卷帘纹理使用 `facadeDetails.js` 的解析材质细节。屏幕导数估算单像素覆盖面积，对窗框进行覆盖率滤波，并在密度过高时平滑淡出；墙板纹理缩远时保留平均亮度。窗框颜色按预乘透明度混合后转换回普通 alpha，保持玻璃通透和框线对比。外围主窗框仍使用真实几何。
+
+纯 JSON 配置保存在材质 extras 的 `facadeDetail` 中。GLB 不序列化 `onBeforeCompile`，因此 `bindWarehouse` 在读取正式文件时重新安装对应 shader；直接创建和 GLB 加载路径均使用相同流程。无需增加贴图、逐帧 CPU 更新或额外渲染通道。
+
+`referenceWordmark.js` 按照片绘制七片挤出几何：青绿部分由两个相向开槽的圆弧块和中间粗竖块组成，PARK 使用细线轮廓与真实镂空。楼顶正面为青绿图形配蓝色 PARK，转角正面及侧面为青绿图形配白色 PARK；楼顶字标位于白色女儿墙上。建筑字标不再依赖通用字体，原入口资产保持原样。
+
 ## 验证
 
 在 `frontend` 目录执行：
 
 ```sh
-node node_modules/vitest/vitest.mjs run src/views/twin/__tests__/warehouseAsset.spec.js src/views/twin/__tests__/warehouseModel.spec.js src/views/twin/__tests__/referenceVehicles.spec.js
+node node_modules/vitest/vitest.mjs run src/views/twin/__tests__
 node node_modules/vite/bin/vite.js build
 node scripts/compress-models.mjs
 ```

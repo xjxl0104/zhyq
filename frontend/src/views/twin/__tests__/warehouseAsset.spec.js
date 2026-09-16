@@ -28,14 +28,14 @@ describe('delivered warehouse asset', () => {
         floor.shell.traverse(object => {
           if (!object.isMesh) return
           const materials = Array.isArray(object.material) ? object.material : [object.material]
-          if (materials.some(material => material.name === 'facadeGlazing')) glassMeshes.push(object)
+          if (materials.some(material => material.userData.surfaceRole === 'architectural-glass')) glassMeshes.push(object)
         })
         expect(glassMeshes.length, `floor ${floor.group.userData.floor} glazing`).toBeGreaterThan(0)
         for (const mesh of glassMeshes) {
           expect(mesh.castShadow).toBe(false)
           expect(mesh.receiveShadow).toBe(false)
           const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
-          for (const material of materials.filter(material => material.name === 'facadeGlazing')) {
+          for (const material of materials.filter(material => material.userData.surfaceRole === 'architectural-glass')) {
             expect(material.userData.surfaceRole).toBe('architectural-glass')
             expect(material.transparent).toBe(true)
             expect(material.opacity).toBeGreaterThan(.1)
@@ -72,7 +72,7 @@ describe('delivered warehouse asset', () => {
         const materialAt = hit => Array.isArray(hit.object.material)
           ? hit.object.material[hit.face.materialIndex]
           : hit.object.material
-        expect(hits.some(hit => materialAt(hit).name === 'facadeGlazing'), `${window.name} intersects glass`).toBe(true)
+        expect(hits.some(hit => materialAt(hit).userData.surfaceRole === 'architectural-glass'), `${window.name} intersects glass`).toBe(true)
         const opaqueHits = hits.filter(hit => {
           const material = materialAt(hit)
           return !material.transparent || material.opacity >= 1
