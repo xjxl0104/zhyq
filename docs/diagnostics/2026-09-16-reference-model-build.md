@@ -55,7 +55,7 @@ node frontend/scripts/rebuild-warehouse-model.mjs /tmp/dipark-preview.glb
 
 纯 JSON 配置保存在材质 extras 的 `facadeDetail` 中。GLB 不序列化 `onBeforeCompile`，因此 `bindWarehouse` 在读取正式文件时重新安装对应 shader；直接创建和 GLB 加载路径均使用相同流程。无需增加贴图、逐帧 CPU 更新或额外渲染通道。
 
-`referenceWordmark.js` 按照片绘制七片挤出几何：青绿部分由两个相向开槽的圆弧块和中间粗竖块组成，PARK 使用细线轮廓与真实镂空。楼顶正面为青绿图形配蓝色 PARK，转角正面及侧面为青绿图形配白色 PARK；楼顶字标位于白色女儿墙上。建筑与入口的拉丁字标均不再依赖通用字体，入口中文园名与门楼保持原样。
+`referenceWordmark.js` 绘制 DIPARK 六个字形：青绿部分只有开槽 D 和粗竖 I，PARK 使用细线轮廓与真实镂空。根据用户纠正，删除先前误读照片而添加的 C 形轮廓，并收紧 PARK 间距、重新居中转角招牌。楼顶正面为青绿 DI 配蓝色 PARK，转角正面及侧面为青绿 DI 配白色 PARK；楼顶字标位于白色女儿墙上。入口已有的 `reference-photo-v1` 字标升级为 `dipark-six-letter-v2`，保留原位置、字高、中文园名与门楼。正式模型资源已重新生成，重复重建不会恢复错误字形。
 
 ## 树木分区与距离细节
 

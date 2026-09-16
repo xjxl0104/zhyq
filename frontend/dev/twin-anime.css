@@ -1,0 +1,17 @@
+.anime-lab-shell { height: 100dvh; display: flex; flex-direction: column; }
+.anime-lab-bar { background: #f4f8f3; color: #284e48; display: flex; align-items: center; gap: 12px; padding: 10px 18px; min-height: 54px; flex-wrap: wrap; border-bottom: 1px solid #c8d8cd; font-size: 12px; flex: 0 0 auto; }
+.anime-lab-bar strong { font-size: 15px; }
+.anime-lab-note { color: #536d64; }
+.anime-lab-bar nav { display: flex; gap: 3px; margin-left: auto; background: #e1ebe2; border-radius: 7px; padding: 3px; }
+.anime-lab-bar a { color: #426b5e; padding: 6px 10px; text-decoration: none; border-radius: 5px; }
+.anime-lab-bar a[aria-current] { background: #326f62; color: white; }
+.anime-lab-bar button, .anime-lab-details button { border: 1px solid #b8cec0; background: #fff; border-radius: 5px; padding: 7px 10px; color: #285d4d; font: inherit; cursor: pointer; }
+.anime-lab-bar button:disabled { opacity: .55; cursor: default; }
+.anime-lab-bar :focus-visible, .anime-lab-details button:focus-visible { outline: 2px solid #3f8674; outline-offset: 2px; }
+.anime-lab-live { font-variant-numeric: tabular-nums; min-width: 148px; }
+.anime-lab-app { min-height: 0; flex: 1; overflow: auto; }
+.anime-lab-app .app-wrapper { height: 100%; min-height: 600px; }
+.anime-lab-details { position: absolute; z-index: 100; top: 58px; right: 18px; width: min(570px, calc(100vw - 36px)); padding: 18px 20px; border: 1px solid #bed3c6; border-radius: 10px; background: #f7faf5; color: #38564b; box-shadow: 0 12px 35px #183c2526; font-size: 13px; line-height: 1.7; }
+.anime-lab-details p { margin: 0 0 12px; }
+.anime-lab-results { font-variant-numeric: tabular-nums; }
+@media (max-width: 900px) { .anime-lab-note { display: none; } .anime-lab-bar { padding: 8px 12px; gap: 8px; } .anime-lab-live { font-size: 11px; } .anime-lab-bar strong { font-size: 13px; } }

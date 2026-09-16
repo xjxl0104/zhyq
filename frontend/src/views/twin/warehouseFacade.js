@@ -1,4 +1,4 @@
-import { addReferenceWordmark } from './referenceWordmark.js'
+import { addReferenceWordmark, REFERENCE_WORDMARK_WIDTH } from './referenceWordmark.js'
 
 // The four physical-model photographs define the facade, not an office curtain wall.
 // Keep dedicated material names: the runtime landscape finish pass must not recolor it.
@@ -188,8 +188,9 @@ export function addReferenceFacade(group, options) {
     const bottom = -.9, tall = height + .8, center = bottom + tall / 2
     box(group, 'facadeSignIvory', 39, center, 27.7, 20, tall, 1.0)
     box(group, 'facadeSignIvory', 48.7, center, 9.5, 1.0, tall, 36.5)
-    addReferenceWordmark(group, materials, { x: 33.3, y: 2.2, z: 28.21, height: 1.9, variant: 'box' })
-    addReferenceWordmark(group, materials, { x: 49.21, y: 2.2, z: 14.6, height: 1.9, rotation: Math.PI / 2, variant: 'box' })
+    const signWidth = REFERENCE_WORDMARK_WIDTH * 1.9
+    addReferenceWordmark(group, materials, { x: 39 - signWidth / 2, y: 2.2, z: 28.21, height: 1.9, variant: 'box' })
+    addReferenceWordmark(group, materials, { x: 49.21, y: 2.2, z: 9.5 + signWidth / 2, height: 1.9, rotation: Math.PI / 2, variant: 'box' })
   }
 }
 
