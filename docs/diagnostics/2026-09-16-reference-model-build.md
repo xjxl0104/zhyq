@@ -46,6 +46,8 @@ node frontend/scripts/rebuild-warehouse-model.mjs /tmp/dipark-preview.glb
 - 七个 `floor` 组保留 `floor`、`spaceKey`；每层保留 `shell`、`structure`、`interior`、`fire` 四个子系统。
 - `onlyVisible: false` 导出隐藏的室内和消防对象；`runtimeOnly` 选择框等运行时辅助对象不进入文件。
 - `warehouse-photo-vehicles` 组具有 `sitePart: "vehicles"`；每辆车保留 `vehicleKind`、`vehicleId`、`referenceBodyColour` 和顶点颜色。
+- 窗带和转角使用单层透明玻璃，而不是照片阴影中的黑色实板。玻璃材质 extras 保留 `surfaceRole: "architectural-glass"`；加载时关闭其深度写入及投射/接收不透明阴影，沿用现有环境反射。
+- 窗后没有紧贴玻璃的实心背墙。柱梁与楼板属于 `structure`，在建筑外观模式下仍可透过玻璃看到；室内业务布置和消防系统仍按原视图切换。
 
 ## 验证
 
