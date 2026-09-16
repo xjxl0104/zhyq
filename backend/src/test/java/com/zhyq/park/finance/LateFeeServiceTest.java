@@ -166,18 +166,12 @@ class LateFeeServiceTest {
     }
 
     @Test
-    @DisplayName("登记表滞纳金起算日在未来:滞纳金 0,但仍标逾期、逾期天数照真实应收日")
+    @DisplayName("登记表滞纳金起算日在未来:起算日前不标逾期、不出天数也不计费")
     void policyStartDateInFutureSuppressesLateFee() {
         overdueBillWithPolicy(9L, LocalDate.now().plusDays(28), 96);
-        when(billMapper.update(any(), any())).thenReturn(1);
 
-        assertThat(service().recalc()).isEqualTo(1);
-
-        ArgumentCaptor<Bill> patch = ArgumentCaptor.forClass(Bill.class);
-        verify(billMapper).update(patch.capture(), any());
-        assertThat(patch.getValue().getLateFee()).isEqualByComparingTo("0");
-        assertThat(patch.getValue().getStatus()).isEqualTo(6);
-        assertThat(patch.getValue().getOverdueDays()).isEqualTo(96);
+        assertThat(service().recalc()).isZero();
+        verify(billMapper, never()).update(any(), any());
     }
 
     @Test

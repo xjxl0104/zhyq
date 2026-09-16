@@ -123,6 +123,7 @@ const routes = [
       // 能耗
       { path: 'energy/meter', meta: { title: '智能表计' }, component: () => import('@/views/energy/Meter.vue') },
       { path: 'energy/allocation', meta: { title: '水电公摊' }, component: () => import('@/views/energy/UtilityAllocation.vue') },
+      { path: 'energy/settlement', meta: { title: '水电结算' }, component: () => import('@/views/energy/UtilitySettlement.vue') },
       { path: 'energy/stats', meta: { title: '能耗统计' }, component: () => import('@/views/energy/Stats.vue') },
 
       // 智慧物联

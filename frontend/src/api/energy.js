@@ -34,7 +34,9 @@ export const utilityBillApi = {
   calculate: (id) => request.post(`/energy/utility-bill/${id}/calculate`),
   allocations: (id) => request.get(`/energy/utility-bill/${id}/allocations`),
   confirm: (id) => request.post(`/energy/utility-bill/${id}/confirm`),
-  revoke: (id) => request.post(`/energy/utility-bill/${id}/revoke`)
+  revoke: (id) => request.post(`/energy/utility-bill/${id}/revoke`),
+  settlementPage: (params) => request.get('/energy/utility-bill/settlement/page', { params }),
+  settlementSummary: (params) => request.get('/energy/utility-bill/settlement/summary', { params })
 }
 
 // 能耗统计(§14 概览/趋势/表计排行)
