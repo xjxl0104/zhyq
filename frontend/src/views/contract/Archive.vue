@@ -85,7 +85,7 @@
       <div v-if="attachmentFiles.length" class="attachment-downloads">
         <div v-for="file in attachmentFiles" :key="file.id" class="attachment-download">
           <span class="attachment-name">{{ file.originalName || file.name || '合同附件' }}</span>
-          <el-button link type="primary" @click="downloadAttachment(file)">下载查看</el-button>
+          <el-button link type="primary" :loading="downloadingFileId === file.id" @click="downloadAttachment(file)">下载查看</el-button>
         </div>
       </div>
     </el-dialog>
@@ -159,6 +159,7 @@ function viewExpiryContract(item) {
 }
 
 const attachmentFiles = ref([])
+const downloadingFileId = ref(null)
 const attachmentDialog = reactive({ visible: false, title: '合同附件', contract: null })
 async function openAttachments(row) {
   attachmentDialog.contract = row
@@ -181,16 +182,26 @@ async function downloadAttachment(file) {
     ElMessage.warning('附件尚未上传完成，请稍后重试')
     return
   }
+  downloadingFileId.value = file.id
   try {
     const response = await fileApi.download(file.id)
     const url = URL.createObjectURL(response.data)
     const link = document.createElement('a')
     link.href = url
     link.download = file.originalName || file.name || '合同附件'
+    link.style.display = 'none'
+    document.body.appendChild(link)
     link.click()
-    URL.revokeObjectURL(url)
+    // 不能在 click 后马上释放 Blob URL，否则部分浏览器不会真正开始下载。
+    window.setTimeout(() => {
+      URL.revokeObjectURL(url)
+      link.remove()
+    }, 1000)
+    ElMessage.success('已开始下载附件，请在浏览器下载列表查看')
   } catch (e) {
     ElMessage.error('附件下载失败，请稍后重试')
+  } finally {
+    downloadingFileId.value = null
   }
 }
 

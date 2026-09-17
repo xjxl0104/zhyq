@@ -72,8 +72,15 @@ async function onPreview(uploadFile) {
     const a = document.createElement('a')
     a.href = blobUrl
     a.download = uploadFile.name || 'file'
+    a.style.display = 'none'
+    document.body.appendChild(a)
     a.click()
-    URL.revokeObjectURL(blobUrl)
+    // 某些浏览器在异步接口返回后需要下一轮事件循环才能开始读取 Blob；立即 revoke 会导致点击无反应。
+    window.setTimeout(() => {
+      URL.revokeObjectURL(blobUrl)
+      a.remove()
+    }, 1000)
+    ElMessage.success('已开始下载附件')
   } catch (e) {
     ElMessage.error('下载失败')
   }
