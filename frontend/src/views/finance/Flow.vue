@@ -48,6 +48,9 @@
 
     <!-- 表格区 -->
     <div class="table-card">
+      <div class="toolbar">
+        <el-button type="primary" @click="openBankReceipt()">导入银行回单</el-button>
+      </div>
       <el-table :data="list" v-loading="loading" border stripe>
         <el-table-column type="index" label="序号" width="70" />
         <el-table-column prop="flowNo" label="流水号" min-width="160" />
@@ -88,11 +91,35 @@
         </el-table-column>
         <el-table-column prop="flowTime" label="流水时间" width="170" />
         <el-table-column prop="remark" label="备注" min-width="140" show-overflow-tooltip />
+        <el-table-column label="回单凭证" width="120" fixed="right">
+          <template #default="{ row }">
+            <el-button link type="primary" @click="openBankReceipt(row)">查看/上传</el-button>
+          </template>
+        </el-table-column>
       </el-table>
       <el-pagination class="pager" background layout="total, prev, pager, next, sizes"
                      :total="total" v-model:current-page="query.pageNo"
                      v-model:page-size="query.pageSize" :page-sizes="[10,20,50]" @change="load" />
     </div>
+
+    <el-dialog v-model="receiptDialog.visible" title="导入银行回单 / 凭证" width="600px" @closed="clearBankReceipt">
+      <el-alert type="info" :closable="false" show-icon>
+        回单会关联到选中的收支流水，作为对账与凭证留档；上传完成后点击文件名即可下载。
+      </el-alert>
+      <el-form label-width="92px" class="receipt-form">
+        <el-form-item label="关联流水" required>
+          <el-select v-model="receiptDialog.flowId" filterable :loading="receiptDialog.loading"
+                     placeholder="请选择需要留档的收支流水" style="width: 100%" @change="onReceiptFlowChange">
+            <el-option v-for="flow in receiptFlows" :key="flow.id" :value="flow.id" :label="receiptFlowLabel(flow)" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="回单文件">
+          <el-empty v-if="!receiptDialog.flowId" description="请先选择关联流水" :image-size="72" />
+          <FileUpload v-else v-model="receiptFiles" biz-type="finance_flow_receipt" :biz-id="receiptDialog.flowId"
+                      accept=".pdf,.jpg,.jpeg,.png,.zip,.rar,.doc,.docx,.xls,.xlsx" />
+        </el-form-item>
+      </el-form>
+    </el-dialog>
   </div>
 </template>
 
@@ -101,6 +128,8 @@ import { computed, reactive, ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { billApi, flowApi } from '@/api/finance'
+import { fileApi } from '@/api/file'
+import FileUpload from '@/components/FileUpload.vue'
 
 
 const router = useRouter()
@@ -165,6 +194,50 @@ function reset() {
   return load()
 }
 
+const receiptDialog = reactive({ visible: false, flowId: null, loading: false })
+const receiptFlows = ref([])
+const receiptFiles = ref([])
+
+function receiptFlowLabel(flow) {
+  const direction = flow.direction === 1 ? '收入' : '支出'
+  return `${flow.flowNo || `流水 #${flow.id}`}｜${direction}｜¥${flow.amount ?? 0}｜${flow.flowTime || '-'}`
+}
+
+async function openBankReceipt(row = null) {
+  receiptDialog.visible = true
+  receiptDialog.flowId = row?.id || null
+  receiptFiles.value = []
+  receiptDialog.loading = true
+  try {
+    // 用近期流水作为选择池；当前页的记录也兜底加入，避免刚创建的流水无法选中。
+    const res = await flowApi.page({ pageNo: 1, pageSize: 200 })
+    receiptFlows.value = res.records || []
+    if (row && !receiptFlows.value.some(flow => flow.id === row.id)) receiptFlows.value.unshift(row)
+    if (receiptDialog.flowId) await loadReceiptFiles(receiptDialog.flowId)
+  } finally {
+    receiptDialog.loading = false
+  }
+}
+
+async function onReceiptFlowChange(flowId) {
+  receiptFiles.value = []
+  if (flowId) await loadReceiptFiles(flowId)
+}
+
+async function loadReceiptFiles(flowId) {
+  try {
+    receiptFiles.value = await fileApi.list('finance_flow_receipt', flowId)
+  } catch (e) {
+    ElMessage.error('银行回单加载失败，请稍后重试')
+  }
+}
+
+function clearBankReceipt() {
+  receiptDialog.flowId = null
+  receiptFiles.value = []
+  receiptFlows.value = []
+}
+
 onMounted(async () => {
   // 租客下拉复用收银台那份「全部租客」,口径与账单页一致;取不到不该拖垮流水列表
   const [tenantResult] = await Promise.allSettled([billApi.payableTenants(), load()])
@@ -174,6 +247,7 @@ onMounted(async () => {
 
 <style scoped>
 .pager { margin-top: 16px; justify-content: flex-end; }
+.toolbar { margin-bottom: 16px; }
 .filter-summary { margin-top: 4px; font-size: 12px; color: var(--el-text-color-secondary); }
 .filter-tag { margin-right: 6px; }
 .filter-none { color: var(--el-text-color-placeholder); }
