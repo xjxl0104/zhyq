@@ -21,6 +21,8 @@ export function createParkTreeLod(group, positions, materials, own) {
     sectors.get(key).trees.push({ x, z, scale, index })
   })
   const dummy = new THREE.Object3D(), colour = new THREE.Color()
+  // Match the two greens used by the site's tree/treeLight toon materials.
+  const darkLeaf = new THREE.Color('#94b486'), lightLeaf = new THREE.Color('#b2c99a')
   for (const sector of sectors.values()) {
     for (const [part, material, name] of [
       ['trunk', materials.trunk, 'park-tree-trunks'],
@@ -32,12 +34,12 @@ export function createParkTreeLod(group, positions, materials, own) {
       sector.trees.forEach(({ x, z, scale, index }, instance) => {
         dummy.position.set(x, 0, z); dummy.scale.setScalar(scale); dummy.rotation.set(0, index * .73, 0); dummy.updateMatrix()
         mesh.setMatrixAt(instance, dummy.matrix)
-        if (part === 'crown') mesh.setColorAt(instance, colour.setHSL(.25 + (index % 4) * .018, .22, .63 + (index % 5) * .05))
+        if (part === 'crown') mesh.setColorAt(instance, colour.copy(darkLeaf).lerp(lightLeaf, (index % 5) / 4))
       })
       mesh.instanceMatrix.needsUpdate = true
       if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true
       // A fixed union contains every detail level, preventing edge popping
-      // when a larger distant leaf card replaces several smaller close cards.
+      // while the crown facets and trunk branches simplify with distance.
       const bounds = new THREE.Sphere().makeEmpty()
       for (const pair of geometries) {
         mesh.geometry = pair[part]
