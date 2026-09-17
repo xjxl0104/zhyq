@@ -284,12 +284,14 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.cashier-grid { display: grid; grid-template-columns: 1fr 360px; gap: 18px; align-items: start; }
+.cashier-grid { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 18px; align-items: start; }
 .left-panel {
+  min-width: 0;
   background: var(--bg-card); border: 1px solid var(--border);
   border-radius: var(--radius); padding: 18px;
 }
-.panel-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+.panel-head { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; margin-bottom: 14px; }
+.panel-head :deep(.el-select) { max-width: 100%; }
 .panel-title { font-size: 15px; font-weight: 650; color: var(--text-title); }
 .bill-table { --el-table-row-hover-bg-color: var(--bg-hover, #f5f7fa); }
 .owe { color: var(--el-color-danger); font-weight: 650; font-variant-numeric: tabular-nums; }
@@ -327,5 +329,20 @@ onMounted(async () => {
 .confirm-btn {
   width: 100%; height: 52px; font-size: 17px; font-weight: 650;
   margin-top: 8px; letter-spacing: 1px;
+}
+
+@media (max-width: 1100px) {
+.cashier-grid { grid-template-columns: minmax(0, 1fr); }
+.settle-card { position: static; }
+}
+
+@media (max-width: 767px), (max-width: 1023px) and (max-height: 500px) {
+.cashier-grid { grid-template-columns: minmax(0, 1fr); gap: 14px; }
+.left-panel { min-width: 0; padding: 16px; }
+.settle-card { min-width: 0; position: static; }
+.settle-body { padding: 16px; }
+.panel-head { flex-wrap: wrap; gap: 10px; }
+.panel-head :deep(.el-select) { width: 100% !important; }
+.settle-row { gap: 8px; flex-wrap: wrap; }
 }
 </style>

@@ -29,7 +29,8 @@
     </el-alert>
 
     <!-- 查询区 -->
-    <div class="search-bar">
+    <details class="search-bar" :open="!isMobile">
+      <summary class="search-bar__summary">查询与筛选</summary>
       <el-form :inline="true" :model="query">
         <el-form-item label="账单号">
           <el-input v-model="query.code" placeholder="请输入账单号" clearable style="width: 180px" />
@@ -68,7 +69,7 @@
           <el-button @click="clearFilters">清空筛选</el-button>
         </el-form-item>
       </el-form>
-    </div>
+    </details>
 
     <!-- 表格区 -->
     <div class="table-card">
@@ -91,7 +92,48 @@
              实际做的却是作废账单。改名 + 挪到动作区,避免点错 -->
         <el-button type="danger" plain @click="resetPushedBills">重置推送账单</el-button>
       </div>
-      <el-table :data="list" v-loading="loading" border stripe>
+      <MobileRecordList v-if="isMobile" :items="list" :loading="loading" empty-text="暂无账单">
+        <template #title="{ row }">
+          <span>{{ row.code }}</span>
+          <el-tag :type="statusMap[row.status]?.type || 'info'">
+            {{ statusMap[row.status]?.label || row.status }}
+          </el-tag>
+        </template>
+        <template #default="{ row, index }">
+          <div class="mobile-record-summary">
+            <strong>¥{{ money(row.amount) }}</strong>
+            <span>{{ row.tenantName || `租客 #${row.tenantRefId || '-'}` }}</span>
+          </div>
+          <div class="mobile-record-meta">{{ row.feeType || '-' }} · 应收日 {{ row.dueDate || '-' }}</div>
+          <details class="mobile-record-details">
+            <summary :aria-label="`查看账单 ${row.code} 全部信息`">查看全部信息</summary>
+            <dl class="mobile-record-fields">
+              <div class="mobile-record-field"><dt>序号</dt><dd>{{ index + 1 }}</dd></div>
+              <div class="mobile-record-field mobile-record-field--wide"><dt>账单号</dt><dd>{{ row.code || '-' }}</dd></div>
+              <div class="mobile-record-field"><dt>对方租客</dt><dd>{{ row.tenantName || `租客 #${row.tenantRefId || '-'}` }}</dd></div>
+              <div class="mobile-record-field"><dt>协议编号</dt><dd>{{ row.agreementNo || '-' }}</dd></div>
+              <div class="mobile-record-field"><dt>费用类型</dt><dd>{{ row.feeType || '-' }}</dd></div>
+              <div class="mobile-record-field"><dt>来源</dt><dd>{{ row.source || '-' }}</dd></div>
+              <div class="mobile-record-field"><dt>应收</dt><dd>¥{{ money(row.amount) }}</dd></div>
+              <div class="mobile-record-field"><dt>实收</dt><dd>¥{{ money(row.paidAmount) }}</dd></div>
+              <div class="mobile-record-field mobile-record-field--wide"><dt>账期</dt><dd>{{ row.periodStart || '-' }} ~ {{ row.periodEnd || '-' }}</dd></div>
+              <div class="mobile-record-field"><dt>应收日</dt><dd>{{ row.dueDate || '-' }}</dd></div>
+              <div class="mobile-record-field"><dt>逾期天数</dt><dd>{{ row.overdueDays || 0 }}</dd></div>
+              <div class="mobile-record-field"><dt>状态</dt><dd>{{ statusMap[row.status]?.label || row.status || '-' }}</dd></div>
+            </dl>
+          </details>
+        </template>
+        <template #actions="{ row }">
+          <el-button v-if="canWriteOff(row)" :aria-label="`核销账单 ${row.code}`" link type="warning" @click="confirmWriteOff(row)">核销</el-button>
+          <el-button v-else :aria-label="`登记账单 ${row.code} 收款`" link type="primary" @click="openPay(row)">收款</el-button>
+          <el-button :aria-label="`查看账单 ${row.code} 详情`" link type="primary" @click="openDetail(row)">详情</el-button>
+          <el-button :aria-label="`为账单 ${row.code} 开票`" link type="success" @click="openInvoice(row)">开票</el-button>
+          <el-popconfirm title="确认删除?" @confirm="remove(row.id)">
+            <template #reference><el-button :aria-label="`删除账单 ${row.code}`" link type="danger">删除</el-button></template>
+          </el-popconfirm>
+        </template>
+      </MobileRecordList>
+      <el-table v-else :data="list" v-loading="loading" border stripe>
         <el-table-column type="index" label="序号" width="70" />
         <el-table-column prop="code" label="账单号" min-width="150" />
         <!-- 租客与协议编号合并成双行:两列平铺要 300px,表格就得横向滚动、
@@ -189,7 +231,7 @@
 
     <!-- 详情弹窗(收款记录) -->
     <el-dialog v-model="detailDialog.visible" title="账单详情 - 收款记录" width="640px">
-      <el-descriptions :column="2" border size="small" style="margin-bottom: 12px">
+      <el-descriptions :column="isMobile ? 1 : 2" border size="small" style="margin-bottom: 12px">
         <el-descriptions-item label="账单号">{{ detailDialog.bill?.code }}</el-descriptions-item>
         <el-descriptions-item label="对方租客">{{ detailDialog.bill?.tenantName || '-' }}</el-descriptions-item>
         <el-descriptions-item label="协议编号">{{ detailDialog.bill?.agreementNo || '-' }}</el-descriptions-item>
@@ -260,6 +302,10 @@ import { billApi, paymentApi, invoiceApi } from '@/api/finance'
 import { money } from '@/utils/format'
 import { tenantApi } from '@/api/tenant'
 import { billOwe } from './cashierModel'
+import MobileRecordList from '@/components/MobileRecordList.vue'
+import { useResponsive } from '@/composables/useResponsive'
+
+const { isMobile } = useResponsive()
 
 // 保证金按实际费用类型拆分:登记表生成的就是「租金保证金/物业保证金」两类
 const feeTypes = ['租金', '物业费', '租金保证金', '物业保证金', '能源费', '服务费', '一次性']

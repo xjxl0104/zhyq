@@ -198,4 +198,10 @@ onMounted(async () => {
 .rank-bar-wrap { flex: 1; height: 12px; background: #f0f2f5; border-radius: 6px; overflow: hidden; }
 .rank-bar { height: 100%; border-radius: 6px; transition: width 0.4s; }
 .rank-val { flex-shrink: 0; width: 90px; text-align: right; font-size: 14px; font-weight: 600; color: #303133; }
+
+@media (max-width: 767px), (max-width: 1023px) and (max-height: 500px) {
+.ov-groups { grid-template-columns: minmax(0, 1fr); }
+.rank-row { gap: 8px; }
+.rank-name { min-width: 0; overflow-wrap: anywhere; }
+}
 </style>

@@ -329,4 +329,11 @@ onMounted(() => {
 
 .reply-box { margin-top: 16px; border-top: 1px dashed var(--border); padding-top: 14px; }
 .reply-box-foot { display: flex; justify-content: space-between; align-items: center; margin-top: 10px; }
+
+@media (max-width: 767px), (max-width: 1023px) and (max-height: 500px) {
+.toolbar-bar, .toolbar-bar .filters, .post-foot, .post-foot .meta { flex-wrap: wrap; gap: 10px; }
+.toolbar-bar .filters { width: 100%; }
+.toolbar-bar .filters :deep(.el-input), .toolbar-bar .filters :deep(.el-select) { width: 100% !important; }
+.detail-head, .reply-box-foot, .comment-head { flex-wrap: wrap; gap: 8px; }
+}
 </style>

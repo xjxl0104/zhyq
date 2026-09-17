@@ -200,4 +200,13 @@ onMounted(async () => {
 .sm-item { display: flex; flex-direction: column; align-items: center; }
 .sm-num { font-size: 26px; font-weight: 700; color: var(--text-title); }
 .sm-lab { font-size: 13px; color: var(--text-secondary); margin-top: 4px; }
+
+@media (max-width: 767px), (max-width: 1023px) and (max-height: 500px) {
+.filters { flex-wrap: wrap; width: 100%; }
+.filters > :deep(.el-select) { width: 100% !important; }
+.floor-row { gap: 8px; }
+.floor-badge { width: 44px; }
+.room-grid { min-width: 0; grid-template-columns: repeat(auto-fill, minmax(90px, 1fr)); gap: 8px; }
+.summary-bar { grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 14px; }
+}
 </style>

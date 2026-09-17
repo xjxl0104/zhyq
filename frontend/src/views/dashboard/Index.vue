@@ -340,4 +340,26 @@ onMounted(load)
   .quick-copy { width: auto; flex-basis: auto; }
   .quick-grid { grid-template-columns: 1fr 1fr; }
 }
+
+@media (max-width: 767px), (max-width: 1023px) and (max-height: 500px) {
+.stat-grid, .overview-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.side-stack { grid-template-columns: minmax(0, 1fr); }
+.dashboard-grid { grid-template-columns: minmax(0, 1fr); }
+.metric { padding: 14px 12px; }
+.metric-label { font-size: 13px; white-space: normal; }
+.metric-status { font-size: 11px; }
+.overview-grid { padding: 12px; }
+.ov-card { padding: 12px 8px; }
+.ov-card :deep(.glass-surface__content) { flex-wrap: wrap; gap: 8px; }
+.ov-label, .al-loc, .todo-copy small { font-size: 12px; }
+.al-txt, .todo-copy strong { font-size: 14px; white-space: normal; }
+.todo-priority { font-size: 11px; }
+.alarm-card { min-height: 60px; }
+.quick-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.quick { padding: 10px; min-height: 52px; }
+.quick > span:nth-child(2) { font-size: 13px; white-space: normal; }
+.quick-arrow { display: none; }
+.trend-chart { height: 300px; }
+.revenue-card { min-height: auto; }
+}
 </style>

@@ -12,7 +12,8 @@
     </el-tabs>
 
     <!-- 查询区 -->
-    <div class="search-bar">
+    <details class="search-bar" :open="!isMobile">
+      <summary class="search-bar__summary">查询与筛选</summary>
       <el-form :inline="true" :model="query">
         <el-form-item label="合同编号">
           <el-input v-model="query.code" placeholder="请输入合同编号" clearable style="width: 180px" />
@@ -34,7 +35,7 @@
           <el-button type="danger" plain @click="reset">重置</el-button>
         </el-form-item>
       </el-form>
-    </div>
+    </details>
 
     <!-- 表格区 -->
     <div class="table-card">
@@ -44,7 +45,50 @@
         <el-button type="success" plain @click="triggerPhoto"><el-icon><Camera /></el-icon>拍照录入</el-button>
         <input ref="photoInput" type="file" accept="image/*" capture="environment" hidden @change="onPhoto" />
       </div>
-      <el-table :data="list" v-loading="loading" border stripe
+      <MobileRecordList v-if="isMobile" :items="list" :loading="loading" empty-text="暂无合同">
+        <template #title="{ row }">
+          <span>{{ row.code }}</span>
+          <el-tag :type="statusTagType(row.status)">{{ statusText(row.status) }}</el-tag>
+        </template>
+        <template #default="{ row, index }">
+          <div class="mobile-record-summary">
+            <strong>{{ tenantName(row.tenantRefId) }}</strong>
+            <span>{{ projectName(row.projectId) }}</span>
+          </div>
+          <div class="mobile-record-meta">{{ row.startDate || '-' }} ~ {{ row.endDate || '-' }}</div>
+          <details class="mobile-record-details">
+            <summary :aria-label="`查看合同 ${row.code} 全部信息`">查看全部信息</summary>
+            <dl class="mobile-record-fields">
+              <div class="mobile-record-field"><dt>序号</dt><dd>{{ index + 1 }}</dd></div>
+              <div class="mobile-record-field mobile-record-field--wide"><dt>合同编号</dt><dd>{{ row.code || '-' }}</dd></div>
+              <div class="mobile-record-field"><dt>租客</dt><dd>{{ tenantName(row.tenantRefId) }}</dd></div>
+              <div class="mobile-record-field"><dt>园区</dt><dd>{{ projectName(row.projectId) }}</dd></div>
+              <div class="mobile-record-field mobile-record-field--wide"><dt>起止日期</dt><dd>{{ row.startDate || '-' }} ~ {{ row.endDate || '-' }}</dd></div>
+              <div class="mobile-record-field"><dt>租赁单价</dt><dd>{{ row.rentPrice }} 元/㎡</dd></div>
+              <div class="mobile-record-field"><dt>面积</dt><dd>{{ row.rentArea }} ㎡</dd></div>
+              <div class="mobile-record-field"><dt>保证金</dt><dd>{{ money(row.deposit) }} 元</dd></div>
+              <div class="mobile-record-field"><dt>状态</dt><dd>{{ statusText(row.status) }}</dd></div>
+            </dl>
+          </details>
+        </template>
+        <template #actions="{ row }">
+          <el-button :aria-label="`查看合同 ${row.code} 详情`" link type="primary" @click="showDetail(row)">详情</el-button>
+          <el-button :aria-label="`编辑合同 ${row.code}`" link type="primary" @click="openDialog(row)">编辑</el-button>
+          <el-popconfirm v-if="row.status === 1" title="确认提交审批?" @confirm="submit(row.id)">
+            <template #reference><el-button :aria-label="`提交合同 ${row.code} 审批`" link type="warning">提交审批</el-button></template>
+          </el-popconfirm>
+          <el-popconfirm v-if="row.status === 2" title="确认审批通过?通过后将生成账单计划" @confirm="approve(row.id)">
+            <template #reference><el-button :aria-label="`审批通过合同 ${row.code}`" link type="success">审批通过</el-button></template>
+          </el-popconfirm>
+          <el-popconfirm v-if="row.status === 5" title="确认退租?房源将被释放" @confirm="terminate(row.id)">
+            <template #reference><el-button :aria-label="`办理合同 ${row.code} 退租`" link type="danger">退租</el-button></template>
+          </el-popconfirm>
+          <el-popconfirm title="确认删除?" @confirm="remove(row.id)">
+            <template #reference><el-button :aria-label="`删除合同 ${row.code}`" link type="danger">删除</el-button></template>
+          </el-popconfirm>
+        </template>
+      </MobileRecordList>
+      <el-table v-else :data="list" v-loading="loading" border stripe
                 show-summary :summary-method="pageSummary">
         <el-table-column type="index" label="序号" width="70" />
         <el-table-column prop="code" label="合同编号" min-width="150" />
@@ -93,6 +137,11 @@
           </template>
         </el-table-column>
       </el-table>
+      <div v-if="isMobile" class="mobile-page-summary" aria-live="polite">
+        <strong>{{ mobilePageSummary[0] }}</strong>
+        <span>面积 {{ mobilePageSummary[6] }}</span>
+        <span>保证金 {{ mobilePageSummary[7] }}</span>
+      </div>
       <el-pagination class="pager" background layout="total, prev, pager, next, sizes"
                      :total="total" v-model:current-page="query.pageNo"
                      v-model:page-size="query.pageSize" :page-sizes="[10,20,50]" @change="load" />
@@ -243,7 +292,7 @@
 </template>
 
 <script setup>
-import { reactive, ref, onMounted } from 'vue'
+import { computed, reactive, ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { money } from '@/utils/format'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -253,8 +302,11 @@ import { fileApi } from '@/api/file'
 import FileUpload from '@/components/FileUpload.vue'
 import { tenantApi } from '@/api/tenant'
 import { projectApi } from '@/api/building'
+import MobileRecordList from '@/components/MobileRecordList.vue'
+import { useResponsive } from '@/composables/useResponsive'
 
 const router = useRouter()
+const { isMobile } = useResponsive()
 
 // 租客/园区 名称映射(下拉 + 表格名称解析)
 const tenants = ref([])
@@ -313,6 +365,9 @@ function pageSummary({ columns }) {
     return ''
   })
 }
+
+// 手机汇总复用桌面的本页合计口径；列位置与上方 pageSummary 的约定一致。
+const mobilePageSummary = computed(() => pageSummary({ columns: Array(10).fill(null) }))
 
 function onTypeTab(name) {
   query.pageNo = 1
@@ -513,6 +568,7 @@ onMounted(() => { loadRefs(); load() })
 </script>
 
 <style scoped>
+.mobile-page-summary { display: grid; gap: 6px; margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border); overflow-wrap: anywhere; }
 .pager { margin-top: 16px; justify-content: flex-end; }
 .import-upload { margin-top: 20px; }
 .import-upload :deep(.el-upload), .import-upload :deep(.el-upload-dragger) { width: 100%; }

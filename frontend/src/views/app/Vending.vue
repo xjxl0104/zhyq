@@ -138,4 +138,8 @@ onMounted(async () => {
 .data-title { display:flex; justify-content:space-between; align-items:center; }.data-title span { color:#909399; font-size:12px; }
 .pager { margin-top:16px; justify-content:flex-end; }.batch-bar { display:flex; justify-content:space-between; align-items:center; background:#f0f9eb; border:1px solid #e1f3d8; border-radius:8px; padding:10px 14px; color:#529b2e; }
 @media (max-width:760px) { .hero-card { align-items:flex-start; gap:16px; flex-direction:column; }.boundary-grid { grid-template-columns:1fr; } }
+
+@media (max-width: 767px), (max-width: 1023px) and (max-height: 500px) {
+.hero-actions, .batch-bar, .data-title { flex-wrap: wrap; gap: 10px; }
+}
 </style>

@@ -29,7 +29,8 @@
     </el-tabs>
 
     <!-- 查询区 -->
-    <div class="search-bar">
+    <details class="search-bar" :open="!isMobile">
+      <summary class="search-bar__summary">查询与筛选</summary>
       <el-form :inline="true" :model="query">
         <el-form-item label="标题">
           <el-input v-model="query.title" placeholder="请输入标题" clearable style="width: 200px" />
@@ -47,11 +48,46 @@
           <el-button @click="reset">重置</el-button>
         </el-form-item>
       </el-form>
-    </div>
+    </details>
 
     <!-- 表格区 -->
     <div class="table-card">
-      <el-table :data="list" v-loading="loading" border stripe>
+      <MobileRecordList v-if="isMobile" :items="list" :loading="loading" empty-text="暂无审批记录">
+        <template #title="{ row }">
+          <span>{{ row.title }}</span>
+          <el-tag :type="statusType(row.status)">{{ statusText(row.status) }}</el-tag>
+        </template>
+        <template #default="{ row }">
+          <div class="mobile-record-summary">
+            <el-tag size="small" :type="bizTypeTag(row.bizType)">{{ bizTypeText(row.bizType) }}</el-tag>
+            <span>{{ row.applyBy || '申请人未填写' }}</span>
+          </div>
+          <div class="mobile-record-meta">申请时间 {{ row.createTime || '-' }}</div>
+          <details class="mobile-record-details">
+            <summary :aria-label="`查看审批 ${row.title} 全部信息`">查看全部信息</summary>
+            <dl class="mobile-record-fields">
+              <div class="mobile-record-field mobile-record-field--wide"><dt>标题</dt><dd>{{ row.title || '-' }}</dd></div>
+              <div class="mobile-record-field"><dt>业务类型</dt><dd>{{ bizTypeText(row.bizType) }}</dd></div>
+              <div class="mobile-record-field"><dt>状态</dt><dd>{{ statusText(row.status) }}</dd></div>
+              <div class="mobile-record-field"><dt>申请人</dt><dd>{{ row.applyBy || '-' }}</dd></div>
+              <div class="mobile-record-field"><dt>申请时间</dt><dd>{{ row.createTime || '-' }}</dd></div>
+              <div class="mobile-record-field"><dt>审批人</dt><dd>{{ row.approveBy || '-' }}</dd></div>
+              <div class="mobile-record-field"><dt>审批时间</dt><dd>{{ row.approveTime || '-' }}</dd></div>
+              <div class="mobile-record-field mobile-record-field--wide"><dt>审批意见</dt><dd>{{ row.opinion || '-' }}</dd></div>
+            </dl>
+          </details>
+        </template>
+        <template #actions="{ row }">
+          <template v-if="row.status === 2">
+            <el-button :aria-label="`通过审批 ${row.title}`" link type="success" @click="openAudit(row, 'approve')">通过</el-button>
+            <el-button :aria-label="`驳回审批 ${row.title}`" link type="warning" @click="openAudit(row, 'reject')">驳回</el-button>
+          </template>
+          <el-popconfirm title="确认删除?" @confirm="remove(row.id)">
+            <template #reference><el-button :aria-label="`删除审批 ${row.title}`" link type="danger">删除</el-button></template>
+          </el-popconfirm>
+        </template>
+      </MobileRecordList>
+      <el-table v-else :data="list" v-loading="loading" border stripe>
         <el-table-column type="index" label="序号" width="70" />
         <el-table-column prop="title" label="标题" min-width="200" />
         <el-table-column label="业务类型" width="100">
@@ -109,6 +145,10 @@
 import { reactive, ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { approvalApi } from '@/api/oa'
+import MobileRecordList from '@/components/MobileRecordList.vue'
+import { useResponsive } from '@/composables/useResponsive'
+
+const { isMobile } = useResponsive()
 
 // 业务类型
 const bizTypeMap = {

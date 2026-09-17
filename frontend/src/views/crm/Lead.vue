@@ -25,7 +25,8 @@
     </div>
 
     <!-- 查询区 -->
-    <div class="search-bar">
+    <details class="search-bar" :open="!isMobile">
+      <summary class="search-bar__summary">查询与筛选</summary>
       <el-form :inline="true" :model="query">
         <el-form-item label="客户编号">
           <el-input v-model="query.leadNo" placeholder="如 KH-0001" clearable style="width: 130px" />
@@ -62,7 +63,7 @@
           <el-button @click="reset">重置</el-button>
         </el-form-item>
       </el-form>
-    </div>
+    </details>
 
     <!-- 表格区 -->
     <div class="table-card">
@@ -77,7 +78,56 @@
         </div>
       </div>
 
-      <el-table :data="list" v-loading="loading" border stripe>
+      <MobileRecordList v-if="isMobile" :items="list" :loading="loading" empty-text="暂无线索">
+        <template #title="{ row }">
+          <span>{{ row.contact || row.company || `线索 #${row.id}` }}</span>
+          <el-tag :type="statusType(row.status)">{{ statusText(row.status) }}</el-tag>
+        </template>
+        <template #default="{ row }">
+          <div class="mobile-record-summary">
+            <strong>{{ row.leadNo || '未分配编号' }}</strong>
+            <el-tag v-if="row.grade" :type="gradeType(row.grade)" size="small">{{ row.grade }}</el-tag>
+          </div>
+          <div class="mobile-record-meta">{{ row.phone || '未填写电话' }} · {{ row.company || '未填写公司/店铺' }}</div>
+          <div class="mobile-record-meta">负责人 {{ row.ownerName || '未分配' }} · 下次跟进 {{ row.nextFollow || '—' }}</div>
+          <details class="mobile-record-details">
+            <summary :aria-label="`查看线索 ${row.leadNo || row.contact || row.company || row.id} 全部信息`">查看全部信息</summary>
+            <dl class="mobile-record-fields">
+              <div class="mobile-record-field"><dt>客户编号</dt><dd>{{ row.leadNo || '—' }}</dd></div>
+              <div class="mobile-record-field"><dt>登记日期</dt><dd>{{ row.registerDate || '—' }}</dd></div>
+              <div class="mobile-record-field"><dt>客户姓名</dt><dd>{{ row.contact || '—' }}</dd></div>
+              <div class="mobile-record-field"><dt>联系电话</dt><dd>{{ row.phone || '—' }}</dd></div>
+              <div class="mobile-record-field mobile-record-field--wide"><dt>公司/店铺</dt><dd>{{ row.company || '—' }}</dd></div>
+              <div class="mobile-record-field"><dt>客户来源</dt><dd>{{ row.source || '—' }}</dd></div>
+              <div class="mobile-record-field"><dt>客户类型</dt><dd>{{ row.customerType || '—' }}</dd></div>
+              <div class="mobile-record-field"><dt>意向合作方式</dt><dd>{{ row.coopMode || '—' }}</dd></div>
+              <div class="mobile-record-field"><dt>面积/库容(㎡)</dt><dd>{{ row.demandArea ?? '—' }}</dd></div>
+              <div class="mobile-record-field"><dt>主营品类</dt><dd>{{ row.goodsType || '—' }}</dd></div>
+              <div class="mobile-record-field"><dt>日均/月单量</dt><dd>{{ row.orderVolume ?? '—' }}</dd></div>
+              <div class="mobile-record-field"><dt>意向合作周期</dt><dd>{{ row.coopPeriod || '—' }}</dd></div>
+              <div class="mobile-record-field"><dt>心理价位</dt><dd>{{ row.budgetPrice ?? '—' }}</dd></div>
+              <div class="mobile-record-field mobile-record-field--wide"><dt>意向园区/仓库</dt><dd>{{ row.intentPark || '—' }}</dd></div>
+              <div class="mobile-record-field mobile-record-field--wide"><dt>所在地区</dt><dd>{{ row.region || '—' }}</dd></div>
+              <div class="mobile-record-field"><dt>客户等级</dt><dd>{{ row.grade || '—' }}</dd></div>
+              <div class="mobile-record-field"><dt>负责人</dt><dd>{{ row.ownerName || '—' }}</dd></div>
+              <div class="mobile-record-field"><dt>当前状态</dt><dd>{{ statusText(row.status) }}</dd></div>
+              <div class="mobile-record-field"><dt>最近跟进</dt><dd>{{ row.lastFollowDate || '—' }}</dd></div>
+              <div class="mobile-record-field"><dt>跟进次数</dt><dd>{{ row.followCount ?? '—' }}</dd></div>
+              <div class="mobile-record-field mobile-record-field--wide"><dt>下次跟进计划</dt><dd>{{ row.nextFollow || '—' }}</dd></div>
+              <div class="mobile-record-field mobile-record-field--wide"><dt>跟进记录速记</dt><dd>{{ row.remark || '—' }}</dd></div>
+            </dl>
+          </details>
+        </template>
+        <template #actions="{ row }">
+          <el-button :aria-label="`查看线索 ${row.leadNo || row.contact || row.company || row.id} 跟进记录`" link type="primary" @click="openFollow(row)">跟进记录</el-button>
+          <el-button :aria-label="`编辑线索 ${row.leadNo || row.contact || row.company || row.id}`" link type="primary" @click="openDialog(row)">编辑</el-button>
+          <el-button v-if="row.status !== 5" :aria-label="`将线索 ${row.leadNo || row.contact || row.company || row.id} 转为客户`" link type="success" @click="convert(row)">转客户</el-button>
+          <el-popconfirm title="确认删除该线索?" @confirm="remove(row.id)">
+            <template #reference><el-button :aria-label="`删除线索 ${row.leadNo || row.contact || row.company || row.id}`" link type="danger">删除</el-button></template>
+          </el-popconfirm>
+        </template>
+      </MobileRecordList>
+      <el-table v-else :data="list" v-loading="loading" border stripe>
         <el-table-column type="index" label="序号" width="70" />
         <el-table-column prop="leadNo" label="客户编号" width="110" fixed />
         <el-table-column prop="registerDate" label="登记日期" width="110" />
@@ -299,10 +349,14 @@ import { leadApi } from '@/api/crm'
 import { fileApi } from '@/api/file'
 import FileUpload from '@/components/FileUpload.vue'
 import LeadFollowDrawer from './LeadFollowDrawer.vue'
+import MobileRecordList from '@/components/MobileRecordList.vue'
+import { useResponsive } from '@/composables/useResponsive'
 import {
   SOURCE_OPTIONS, CUSTOMER_TYPE_OPTIONS, COOP_MODE_OPTIONS, GRADE_OPTIONS, STATUS_OPTIONS,
   statusText, statusType, gradeType
 } from './leadOptions'
+
+const { isMobile } = useResponsive()
 
 const loading = ref(false)
 const list = ref([])

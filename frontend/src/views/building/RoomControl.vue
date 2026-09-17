@@ -1,12 +1,12 @@
 <template>
   <div class="room-control">
     <!-- 左侧 项目-楼宇树 -->
-    <div class="tree-panel">
-      <div class="tree-title">项目 / 楼宇</div>
+    <details ref="treeDisclosure" class="tree-panel" :open="!isMobile">
+      <summary class="tree-title">项目 / 楼宇<span v-if="isMobile"> · {{ currentLabel }}（点击选择）</span></summary>
       <el-tree :data="treeData" :props="{ label: 'label', children: 'children' }"
                node-key="key" highlight-current :expand-on-click-node="false"
                default-expand-all @node-click="onNodeClick" v-loading="treeLoading" />
-    </div>
+    </details>
 
     <!-- 右侧 -->
     <div class="main-panel">
@@ -29,7 +29,26 @@
           </div>
           <el-button type="primary" @click="openDialog()"><el-icon><Plus /></el-icon>新增房间</el-button>
         </div>
-        <el-table :data="rooms" v-loading="loading" border stripe>
+        <MobileRecordList v-if="isMobile" :items="rooms" :loading="loading" empty-text="暂无房源">
+          <template #title="{ row }"><span>{{ row.roomNo || row.code }}</span><el-tag :type="statusType(row.status)">{{ statusText(row.status) }}</el-tag></template>
+          <template #default="{ row }">
+            <div class="mobile-record-summary"><span>{{ row.rentArea }} ㎡</span><strong>¥{{ row.basePrice }}/㎡</strong></div>
+            <div class="mobile-record-meta">{{ row.orientation || '朝向未填写' }}</div>
+            <details class="mobile-record-details"><summary :aria-label="`查看房间 ${row.roomNo || row.code} 全部信息`">查看全部信息</summary>
+              <dl class="mobile-record-fields">
+                <div class="mobile-record-field"><dt>建筑面积</dt><dd>{{ row.buildArea }} ㎡</dd></div>
+                <div class="mobile-record-field"><dt>装修</dt><dd>{{ row.decoration || '-' }}</dd></div>
+                <div class="mobile-record-field"><dt>物业费</dt><dd>{{ row.propertyFee ?? '-' }}</dd></div>
+              </dl>
+            </details>
+          </template>
+          <template #actions="{ row }">
+            <el-button :aria-label="`查看房间 ${row.roomNo || row.code} 详情`" link type="primary" @click="showDetail(row)">详情</el-button>
+            <el-button :aria-label="`编辑房间 ${row.roomNo || row.code}`" link type="primary" @click="openDialog(row)">编辑</el-button>
+            <el-popconfirm title="确认删除?" @confirm="remove(row.id)"><template #reference><el-button :aria-label="`删除房间 ${row.roomNo || row.code}`" link type="danger">删除</el-button></template></el-popconfirm>
+          </template>
+        </MobileRecordList>
+        <el-table v-else :data="rooms" v-loading="loading" border stripe>
           <el-table-column prop="roomNo" label="房号" width="120" />
           <el-table-column label="状态" width="120">
             <template #default="{ row }">
@@ -113,10 +132,14 @@
 <script setup>
 import { reactive, ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
+import { useResponsive } from '@/composables/useResponsive'
+import MobileRecordList from '@/components/MobileRecordList.vue'
 import { ElMessage } from 'element-plus'
 import { projectApi, buildingApi, floorApi, roomApi } from '@/api/building'
 
 const router = useRouter()
+const { isMobile } = useResponsive()
+const treeDisclosure = ref(null)
 function showDetail(row) {
   router.push(`/building/room/detail/${row.id}`)
 }
@@ -158,6 +181,7 @@ async function loadTree() {
 }
 
 function onNodeClick(node) {
+  if (isMobile.value && treeDisclosure.value) treeDisclosure.value.open = false
   currentProject.value = node.projectId ?? null
   currentBuilding.value = node.buildingId ?? null
   currentLabel.value = node.label
@@ -244,4 +268,17 @@ onMounted(() => { loadTree(); loadRooms(); loadStats() })
 .dot-success { background: #10b981; } .dot-primary { background: #2563eb; }
 .dot-warning { background: #f59e0b; } .dot-danger { background: #ef4444; }
 .pager { margin-top: 16px; justify-content: flex-end; }
+.tree-title { cursor: pointer; }
+@media (min-width: 1024px), (min-width: 768px) and (min-height: 501px) { .tree-title { list-style: none; pointer-events: none; } .tree-title::-webkit-details-marker { display: none; } }
+@media (max-width: 767px), (max-width: 1023px) and (max-height: 500px) {
+  .room-control { flex-direction: column; gap: 12px; }
+  .tree-panel { width: 100%; padding: 14px; }
+  .tree-title { min-height: 24px; line-height: 24px; margin: 0; font-size: 14px; }
+  .tree-panel[open] .tree-title { margin-bottom: 12px; }
+  .tree-panel :deep(.el-tree-node__content) { min-height: 44px; height: auto; }
+  .tree-panel :deep(.el-tree-node__label) { white-space: normal; overflow-wrap: anywhere; }
+  .toolbar { flex-wrap: wrap; }
+  .legend { flex-wrap: wrap; gap: 8px; }
+  .toolbar .el-button { margin-left: 0; }
+}
 </style>

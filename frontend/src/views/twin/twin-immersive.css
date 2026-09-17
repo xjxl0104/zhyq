@@ -107,7 +107,7 @@
   .twin-workspace-v2 .twin-heading p,.twin-workspace-v2 .heading-kicker .demo-pill { display:none; }
   .twin-workspace-v2 .heading-actions { align-self:auto; }
   .twin-workspace-v2 .twin-main { padding:0 10px; }
-  .twin-workspace-v2 .twin-content-grid { display:flex;padding:78px 9px 10px;gap:10px; }
+  .twin-workspace-v2 .twin-content-grid { display:flex;flex-direction:column;padding:78px 9px 10px;gap:10px; }
   .twin-workspace-v2 .environment-bar { top:12px;left:12px;right:12px;height:auto;align-items:flex-start;flex-direction:column;gap:8px; }
   .twin-workspace-v2 .environment-location strong { font-size:11px; }
   .twin-workspace-v2 .environment-location>span { display:inline;font-size:9px; }
