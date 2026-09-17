@@ -9,6 +9,7 @@ import { createPinia } from 'pinia'
 import App from './App.vue'
 import router from './router'
 import './styles/index.scss'
+import './styles/responsive.scss'
 import { resetToLightTheme } from './utils/lightTheme'
 
 resetToLightTheme()

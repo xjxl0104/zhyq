@@ -137,4 +137,8 @@ function close() {
 .import-surface { width: 100%; }
 .import-surface :deep(.el-upload),
 .import-surface :deep(.el-upload-dragger) { width: 100%; }
+
+@media (max-width: 767px), (max-width: 1023px) and (max-height: 500px) {
+.summary-row, .exclude-bar { flex-wrap: wrap; }
+}
 </style>

@@ -3,7 +3,7 @@
     <div v-loading="loading" v-if="detail?.register">
       <el-tabs>
         <el-tab-pane label="基础资料">
-          <el-descriptions :column="3" border>
+          <el-descriptions :column="isMobile ? 1 : 3" border>
             <el-descriptions-item v-for="column in receivableColumns" :key="column.prop" :label="column.label">
               {{ formatReceivableCell(detail.register, column) }}
             </el-descriptions-item>
@@ -73,7 +73,7 @@
           </el-table>
         </el-tab-pane>
         <el-tab-pane label="来源与变更">
-          <el-descriptions :column="2" border>
+          <el-descriptions :column="isMobile ? 1 : 2" border>
             <el-descriptions-item label="导入批次">{{ detail.sourceBatch?.id || '-' }}</el-descriptions-item>
             <el-descriptions-item label="源文件">{{ detail.sourceBatch?.fileName || '-' }}</el-descriptions-item>
             <el-descriptions-item label="工作表/行">{{ detail.sourceRow ? `${detail.sourceRow.sheetName} / ${detail.sourceRow.rowNo}` : '-' }}</el-descriptions-item>
@@ -87,6 +87,8 @@
 </template>
 
 <script setup>
+import { useResponsive } from '@/composables/useResponsive'
+const { isMobile } = useResponsive()
 import { ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useRouter } from 'vue-router'

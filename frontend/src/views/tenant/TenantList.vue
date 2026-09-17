@@ -29,7 +29,8 @@
     </el-tabs>
 
     <!-- 查询区 -->
-    <div class="search-bar">
+    <details class="search-bar" :open="!isMobile">
+      <summary class="search-bar__summary">查询与筛选</summary>
       <el-form :inline="true" :model="query">
         <el-form-item label="名称">
           <el-input v-model="query.name" placeholder="请输入名称" clearable style="width: 180px" />
@@ -42,14 +43,54 @@
           <el-button @click="reset">重置</el-button>
         </el-form-item>
       </el-form>
-    </div>
+    </details>
 
     <!-- 表格区 -->
     <div class="table-card">
       <div class="toolbar">
         <el-button type="primary" @click="openDialog()"><el-icon><Plus /></el-icon>新增租客</el-button>
       </div>
-      <el-table :data="list" v-loading="loading" border stripe>
+      <MobileRecordList v-if="isMobile" :items="list" :loading="loading" empty-text="暂无租客">
+        <template #title="{ row }">
+          <span>{{ row.name }}</span>
+          <el-tag :type="row.status === 1 ? 'success' : 'info'">
+            {{ row.status === 1 ? '正常' : '已归档' }}
+          </el-tag>
+        </template>
+        <template #default="{ row }">
+          <div class="mobile-record-summary">
+            <el-tag size="small" :type="row.tenantType === 1 ? 'primary' : 'success'">
+              {{ row.tenantType === 1 ? '企业' : '个人' }}
+            </el-tag>
+            <span>{{ row.contact || '未填写联系人' }} · {{ row.phone || '未填写电话' }}</span>
+          </div>
+          <div class="mobile-record-meta">{{ projectName(row.projectId) }}</div>
+          <details class="mobile-record-details">
+            <summary :aria-label="`查看租客 ${row.name} 全部信息`">查看全部信息</summary>
+            <dl class="mobile-record-fields">
+              <div class="mobile-record-field mobile-record-field--wide"><dt>名称</dt><dd>{{ row.name || '-' }}</dd></div>
+              <div class="mobile-record-field"><dt>类型</dt><dd>{{ row.tenantType === 1 ? '企业' : '个人' }}</dd></div>
+              <div class="mobile-record-field"><dt>状态</dt><dd>{{ row.status === 1 ? '正常' : '已归档' }}</dd></div>
+              <div class="mobile-record-field"><dt>联系人</dt><dd>{{ row.contact || '-' }}</dd></div>
+              <div class="mobile-record-field"><dt>电话</dt><dd>{{ row.phone || '-' }}</dd></div>
+              <div class="mobile-record-field"><dt>所属园区</dt><dd>{{ projectName(row.projectId) }}</dd></div>
+              <div class="mobile-record-field"><dt>行业</dt><dd>{{ row.industry || '-' }}</dd></div>
+              <div class="mobile-record-field mobile-record-field--wide"><dt>标签</dt><dd>{{ row.tags || '-' }}</dd></div>
+            </dl>
+          </details>
+        </template>
+        <template #actions="{ row }">
+          <el-button :aria-label="`查看租客 ${row.name} 详情`" link type="primary" @click="showDetail(row)">详情</el-button>
+          <el-button :aria-label="`编辑租客 ${row.name}`" link type="primary" @click="openDialog(row)">编辑</el-button>
+          <el-popconfirm title="确认归档?" @confirm="archive(row.id)">
+            <template #reference><el-button :aria-label="`归档租客 ${row.name}`" link type="warning">归档</el-button></template>
+          </el-popconfirm>
+          <el-popconfirm title="确认删除?" @confirm="remove(row.id)">
+            <template #reference><el-button :aria-label="`删除租客 ${row.name}`" link type="danger">删除</el-button></template>
+          </el-popconfirm>
+        </template>
+      </MobileRecordList>
+      <el-table v-else :data="list" v-loading="loading" border stripe>
         <el-table-column type="index" label="序号" width="70" />
         <el-table-column prop="name" label="名称" min-width="150" />
         <el-table-column label="类型" width="90">
@@ -143,8 +184,11 @@ import { tenantApi } from '@/api/tenant'
 import { projectApi } from '@/api/building'
 import { fileApi } from '@/api/file'
 import FileUpload from '@/components/FileUpload.vue'
+import MobileRecordList from '@/components/MobileRecordList.vue'
+import { useResponsive } from '@/composables/useResponsive'
 
 const router = useRouter()
+const { isMobile } = useResponsive()
 function showDetail(row) {
   router.push(`/tenant/detail/${row.id}`)
 }

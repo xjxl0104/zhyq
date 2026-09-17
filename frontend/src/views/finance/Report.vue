@@ -252,4 +252,9 @@ onMounted(load)
 .rate-item .value.warning { color: #ea9a13; }
 .rate-progress { flex: 1; }
 .rate-progress .label { color: #909399; font-size: 13px; margin-bottom: 8px; }
+
+@media (max-width: 767px), (max-width: 1023px) and (max-height: 500px) {
+.rate-row { flex-wrap: wrap; gap: 20px; }
+.rate-info { flex-wrap: wrap; gap: 20px; }
+}
 </style>

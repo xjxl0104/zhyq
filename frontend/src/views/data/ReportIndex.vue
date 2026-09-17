@@ -69,4 +69,9 @@ function go(r) {
 .rpt-name { font-size: 15px; font-weight: 600; color: #303133; }
 .rpt-desc { font-size: 12px; color: #909399; margin-top: 4px; }
 .rpt-btn { flex-shrink: 0; }
+
+@media (max-width: 767px), (max-width: 1023px) and (max-height: 500px) {
+.rpt-grid { grid-template-columns: minmax(0, 1fr); }
+.rpt-info { overflow-wrap: anywhere; }
+}
 </style>

@@ -1,6 +1,6 @@
 <template>
   <!-- 全局悬浮按钮 -->
-  <el-button class="feedback-fab" type="primary" circle @click="visible = true">
+  <el-button class="feedback-fab" aria-label="提交建议或问题" type="primary" circle @click="visible = true">
     <el-icon :size="20"><ChatDotRound /></el-icon>
   </el-button>
 
@@ -155,4 +155,9 @@ onUnmounted(() => document.removeEventListener('paste', handlePaste))
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
 .feedback-upload-surface { width: 100%; }
+
+@media (max-width: 767px), (max-width: 1023px) and (max-height: 500px) {
+.feedback-fab { width: 44px; height: 44px; right: max(12px, env(safe-area-inset-right)); bottom: max(12px, env(safe-area-inset-bottom)); z-index: 100; }
+
+}
 </style>

@@ -13,7 +13,7 @@
 
     <el-dialog v-model="detailVisible" title="建议详情" width="600px">
       <template v-if="detail">
-        <el-descriptions :column="2" border>
+        <el-descriptions :column="isMobile ? 1 : 2" border>
           <el-descriptions-item label="标题" :span="2">{{ detail.suggestion.title }}</el-descriptions-item>
           <el-descriptions-item label="类型">{{ typeMap[detail.suggestion.type] }}</el-descriptions-item>
           <el-descriptions-item label="状态">{{ statusMap[detail.suggestion.status] }}</el-descriptions-item>
@@ -93,6 +93,8 @@
 </template>
 
 <script setup>
+import { useResponsive } from '@/composables/useResponsive'
+const { isMobile } = useResponsive()
 import { ref, reactive, onMounted, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
