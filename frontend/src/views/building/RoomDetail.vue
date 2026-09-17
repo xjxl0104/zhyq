@@ -12,7 +12,7 @@
       :tabs="tabs"
     >
       <template #tab-info>
-        <el-descriptions :column="2" border v-if="room">
+        <el-descriptions :column="isMobile ? 1 : 2" border v-if="room">
           <el-descriptions-item label="计租面积">{{ room.rentArea }} ㎡</el-descriptions-item>
           <el-descriptions-item label="建筑面积">{{ room.buildArea }} ㎡</el-descriptions-item>
           <el-descriptions-item label="朝向">{{ room.orientation || '-' }}</el-descriptions-item>
@@ -28,6 +28,8 @@
 </template>
 
 <script setup>
+import { useResponsive } from '@/composables/useResponsive'
+const { isMobile } = useResponsive()
 // 房源详情页。#18 规格要求"房源详情 → 关联合同"一个 Tab，但走查后端合同接口
 // (contractApi.page) 仅支持按 tenantRefId/projectId/status/contractType 过滤，
 // 没有按 roomId 过滤的入口；合同-房源关系表(biz_contract_room)也没有暴露对应

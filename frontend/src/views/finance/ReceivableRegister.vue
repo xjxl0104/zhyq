@@ -372,4 +372,12 @@ onActivated(() => {
 .col-picker-hint { margin-left: auto; font-size: 12px; color: var(--el-text-color-secondary); }
 .col-picker-list { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 8px; max-height: 340px; overflow-y: auto; padding-top: 8px; }
 .late-fee-tip { margin: 4px 12px 0 110px; font-size: 12px; line-height: 1.6; color: var(--el-text-color-secondary); }
+
+@media (max-width: 767px), (max-width: 1023px) and (max-height: 500px) {
+.page-header { flex-direction: column; gap: 12px; }
+.toolbar, .batch-bar, .col-picker-bar { flex-wrap: wrap; }
+.col-picker-list { grid-template-columns: minmax(0, 1fr); }
+:deep(.el-table) { min-height: 280px; }
+:deep(.el-table__body-wrapper) { min-height: 120px; }
+}
 </style>

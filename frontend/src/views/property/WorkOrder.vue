@@ -22,7 +22,8 @@
     </div>
 
     <!-- 查询区 -->
-    <div class="search-bar">
+    <details class="search-bar" :open="!isMobile">
+      <summary class="search-bar__summary">查询与筛选</summary>
       <el-form :inline="true" :model="query">
         <el-form-item label="工单号">
           <el-input v-model="query.code" placeholder="请输入工单号" clearable style="width: 180px" />
@@ -47,7 +48,7 @@
           <el-button @click="reset">重置</el-button>
         </el-form-item>
       </el-form>
-    </div>
+    </details>
 
     <!-- 表格区 -->
     <div class="table-card">
@@ -60,7 +61,53 @@
       <div class="toolbar">
         <el-button type="primary" @click="openDialog()"><el-icon><Plus /></el-icon>新增工单</el-button>
       </div>
-      <el-table :data="list" v-loading="loading" border stripe :row-class-name="rowClass">
+      <MobileRecordList
+        v-if="isMobile"
+        :items="list"
+        :loading="loading"
+        :row-class-name="rowClass"
+        empty-text="暂无工单"
+      >
+        <template #title="{ row }">
+          <span>{{ row.title || row.code }}</span>
+          <el-tag :type="statusMap[row.status]?.type || 'info'">
+            {{ statusMap[row.status]?.label || row.status }}
+          </el-tag>
+        </template>
+        <template #default="{ row }">
+          <div class="mobile-record-summary">
+            <el-tag size="small" :type="urgencyMap[row.urgency]?.type || 'info'">
+              {{ urgencyMap[row.urgency]?.label || row.urgency }}
+            </el-tag>
+            <span>{{ row.location || '未填写位置' }}</span>
+          </div>
+          <div class="mobile-record-meta">{{ row.code }}</div>
+          <details class="mobile-record-details">
+            <summary :aria-label="`查看工单 ${row.code} 全部信息`">查看全部信息</summary>
+            <dl class="mobile-record-fields">
+              <div class="mobile-record-field mobile-record-field--wide"><dt>标题</dt><dd>{{ row.title || '-' }}</dd></div>
+              <div class="mobile-record-field"><dt>工单号</dt><dd>{{ row.code || '-' }}</dd></div>
+              <div class="mobile-record-field"><dt>位置</dt><dd>{{ row.location || '-' }}</dd></div>
+              <div class="mobile-record-field"><dt>分类</dt><dd>{{ row.category || '-' }}</dd></div>
+              <div class="mobile-record-field"><dt>紧急度</dt><dd>{{ urgencyMap[row.urgency]?.label || row.urgency || '-' }}</dd></div>
+              <div class="mobile-record-field"><dt>状态</dt><dd>{{ statusMap[row.status]?.label || row.status || '-' }}</dd></div>
+              <div class="mobile-record-field"><dt>处理人</dt><dd>{{ row.assignee || '-' }}</dd></div>
+              <div class="mobile-record-field mobile-record-field--wide"><dt>创建时间</dt><dd>{{ row.createTime || '-' }}</dd></div>
+            </dl>
+          </details>
+        </template>
+        <template #actions="{ row }">
+          <el-button v-if="[1,2,3].includes(row.status)" :aria-label="`修改工单 ${row.code}`" link type="primary" @click="openEdit(row)">修改</el-button>
+          <el-button v-if="row.status === 1" :aria-label="`派发工单 ${row.code}`" link type="primary" @click="openDispatch(row)">派单</el-button>
+          <el-button v-if="row.status === 2" :aria-label="`接收工单 ${row.code}`" link type="primary" @click="doAccept(row)">接单</el-button>
+          <el-button v-if="row.status === 3" :aria-label="`登记工单 ${row.code} 到场`" link type="warning" @click="doArrive(row)">到场</el-button>
+          <el-button v-if="row.status === 3" :aria-label="`完成工单 ${row.code}`" link type="primary" @click="doFinish(row)">完成</el-button>
+          <el-button v-if="row.status === 4" :aria-label="`验收工单 ${row.code}`" link type="success" @click="openVerify(row)">验收</el-button>
+          <el-button v-if="row.status !== 6" :aria-label="`关闭工单 ${row.code}`" link type="danger" @click="doClose(row)">关闭</el-button>
+          <el-button :aria-label="`查看工单 ${row.code} 详情`" link type="info" @click="openDetail(row)">详情</el-button>
+        </template>
+      </MobileRecordList>
+      <el-table v-else :data="list" v-loading="loading" border stripe :row-class-name="rowClass">
         <el-table-column type="index" label="#" width="55" />
         <el-table-column prop="code" label="工单号" min-width="150" />
         <el-table-column prop="title" label="标题" min-width="140" show-overflow-tooltip />
@@ -181,7 +228,7 @@
 
     <!-- 详情弹窗(流转时间线) -->
     <el-dialog v-model="detailDialog.visible" title="工单详情" width="640px">
-      <el-descriptions :column="2" border size="small" style="margin-bottom: 16px">
+      <el-descriptions :column="isMobile ? 1 : 2" border size="small" style="margin-bottom: 16px">
         <el-descriptions-item label="工单号">{{ detail.order?.code }}</el-descriptions-item>
         <el-descriptions-item label="标题">{{ detail.order?.title }}</el-descriptions-item>
         <el-descriptions-item label="位置">{{ detail.order?.location || '-' }}</el-descriptions-item>
@@ -230,10 +277,13 @@ import { fileApi } from '@/api/file'
 import { userApi } from '@/api/system'
 import FileUpload from '@/components/FileUpload.vue'
 import HighlightNotice from '@/components/HighlightNotice.vue'
+import MobileRecordList from '@/components/MobileRecordList.vue'
 import { SOURCE_ROUTES, useHighlightFilter } from '@/composables/useSourceLink'
+import { useResponsive } from '@/composables/useResponsive'
 
 const router = useRouter()
 const route = useRoute()
+const { isMobile } = useResponsive()
 
 const orderTypes = ['报修', '巡检', '告警', '其他']
 const urgencyMap = {
@@ -270,7 +320,7 @@ async function load() {
 
 // 反向定位:从源记录的「关联工单」抽屉点进来时筛出那一条。
 // immediate:false — 本页 onMounted 已有 refresh(),避免请求两次
-const { highlightId, isHighlighting, clearHighlight, rowClass, applyHighlight } =
+const { highlightId, isHighlighting, clearHighlight, rowClass, applyHighlight, search } =
   useHighlightFilter(query, load, { immediate: false })
 async function loadStats() {
   Object.assign(stats, await workOrderApi.stats())
@@ -453,4 +503,8 @@ onMounted(() => {
 .pager { margin-top: 16px; justify-content: flex-end; }
 /* 定位到的行加底色。scoped 样式进不到 el-table 内部,要 :deep */
 :deep(.source-highlight-row) > td { background: var(--el-color-warning-light-9) !important; }
+:deep(.mobile-record-card.source-highlight-row) {
+  border-color: var(--el-color-warning-light-5);
+  background: var(--el-color-warning-light-9);
+}
 </style>

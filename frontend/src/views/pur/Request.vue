@@ -141,7 +141,7 @@
 
     <!-- 详情 -->
     <el-dialog v-model="detailVisible" title="采购申请详情" width="760px">
-      <el-descriptions :column="2" border>
+      <el-descriptions :column="isMobile ? 1 : 2" border>
         <el-descriptions-item label="申请单号">{{ detail.requestNo }}</el-descriptions-item>
         <el-descriptions-item label="状态">
           <el-tag :type="statusMap[detail.status]?.type || 'info'">{{ statusMap[detail.status]?.label }}</el-tag>
@@ -197,6 +197,8 @@
 </template>
 
 <script setup>
+import { useResponsive } from '@/composables/useResponsive'
+const { isMobile } = useResponsive()
 import { reactive, ref, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { purPlanApi, purRequestApi } from '@/api/pur'

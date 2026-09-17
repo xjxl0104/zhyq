@@ -328,4 +328,9 @@ onMounted(load)
   margin-top: 4px;
   white-space: nowrap;
 }
+@media (max-width: 767px), (max-width: 1023px) and (max-height: 500px) {
+  .trend { overflow-x: auto; gap: 8px; padding-bottom: 8px; }
+  .trend-col { flex: 0 0 28px; }
+  .sla-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+}
 </style>

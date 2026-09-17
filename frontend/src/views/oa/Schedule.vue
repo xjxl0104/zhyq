@@ -197,4 +197,9 @@ onMounted(refresh)
 .section-title { font-size: 15px; font-weight: 600; color: var(--text-title); }
 .week-item { line-height: 1.6; }
 .week-meta { color: var(--text-secondary); font-size: 13px; margin-top: 4px; display: flex; gap: 16px; }
+
+@media (max-width: 767px), (max-width: 1023px) and (max-height: 500px) {
+.week-meta { flex-direction: column; gap: 4px; overflow-wrap: anywhere; }
+.week-item { overflow-wrap: anywhere; }
+}
 </style>

@@ -203,4 +203,8 @@ onMounted(load)
 .toolbar { margin-bottom: 12px; }
 .preview-meta { color: var(--text-secondary); font-size: 13px; display: flex; gap: 16px; }
 .preview-content { white-space: pre-wrap; line-height: 1.8; color: #303133; }
+
+@media (max-width: 767px), (max-width: 1023px) and (max-height: 500px) {
+.preview-meta { flex-wrap: wrap; gap: 8px; }
+}
 </style>

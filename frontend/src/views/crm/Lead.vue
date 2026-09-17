@@ -33,7 +33,8 @@
     </el-tabs>
 
     <!-- 查询区 -->
-    <div class="search-bar">
+    <details class="search-bar" :open="!isMobile">
+      <summary class="search-bar__summary">查询与筛选</summary>
       <el-form :inline="true" :model="query">
         <el-form-item label="联系人">
           <el-input v-model="query.contact" placeholder="请输入联系人" clearable style="width: 160px" />
@@ -49,14 +50,48 @@
           <el-button @click="reset">重置</el-button>
         </el-form-item>
       </el-form>
-    </div>
+    </details>
 
     <!-- 表格区 -->
     <div class="table-card">
       <div class="toolbar">
         <el-button type="primary" @click="openDialog()"><el-icon><Plus /></el-icon>新增线索</el-button>
       </div>
-      <el-table :data="list" v-loading="loading" border stripe>
+      <MobileRecordList v-if="isMobile" :items="list" :loading="loading" empty-text="暂无线索">
+        <template #title="{ row }">
+          <span>{{ row.contact || row.company || `线索 #${row.id}` }}</span>
+          <el-tag :type="statusType(row.status)">{{ statusText(row.status) }}</el-tag>
+        </template>
+        <template #default="{ row }">
+          <div class="mobile-record-summary">
+            <strong>{{ row.phone || '未填写电话' }}</strong>
+            <span>{{ row.company || '未填写公司' }}</span>
+          </div>
+          <div class="mobile-record-meta">下次跟进 {{ row.nextFollow || '-' }}</div>
+          <details class="mobile-record-details">
+            <summary :aria-label="`查看线索 ${row.contact || row.company || row.id} 全部信息`">查看全部信息</summary>
+            <dl class="mobile-record-fields">
+              <div class="mobile-record-field"><dt>联系人</dt><dd>{{ row.contact || '-' }}</dd></div>
+              <div class="mobile-record-field"><dt>电话</dt><dd>{{ row.phone || '-' }}</dd></div>
+              <div class="mobile-record-field mobile-record-field--wide"><dt>公司</dt><dd>{{ row.company || '-' }}</dd></div>
+              <div class="mobile-record-field"><dt>来源</dt><dd>{{ row.source || '-' }}</dd></div>
+              <div class="mobile-record-field"><dt>需求面积</dt><dd>{{ row.demandArea || '-' }}</dd></div>
+              <div class="mobile-record-field"><dt>状态</dt><dd>{{ statusText(row.status) }}</dd></div>
+              <div class="mobile-record-field"><dt>下次跟进</dt><dd>{{ row.nextFollow || '-' }}</dd></div>
+              <div class="mobile-record-field mobile-record-field--wide"><dt>创建时间</dt><dd>{{ row.createTime || '-' }}</dd></div>
+            </dl>
+          </details>
+        </template>
+        <template #actions="{ row }">
+          <el-button :aria-label="`编辑线索 ${row.contact || row.company || row.id}`" link type="primary" @click="openDialog(row)">编辑</el-button>
+          <el-button :aria-label="`跟进线索 ${row.contact || row.company || row.id}`" link type="primary" @click="openFollow(row)">跟进</el-button>
+          <el-button :aria-label="`将线索 ${row.contact || row.company || row.id} 转为客户`" link type="success" @click="convert(row)">转客户</el-button>
+          <el-popconfirm title="确认删除?" @confirm="remove(row.id)">
+            <template #reference><el-button :aria-label="`删除线索 ${row.contact || row.company || row.id}`" link type="danger">删除</el-button></template>
+          </el-popconfirm>
+        </template>
+      </MobileRecordList>
+      <el-table v-else :data="list" v-loading="loading" border stripe>
         <el-table-column type="index" label="#" width="55" />
         <el-table-column prop="contact" label="联系人" min-width="100" />
         <el-table-column prop="phone" label="电话" min-width="130" />
@@ -173,6 +208,10 @@ import { ElMessage } from 'element-plus'
 import { leadApi, followApi, customerApi } from '@/api/crm'
 import { fileApi } from '@/api/file'
 import FileUpload from '@/components/FileUpload.vue'
+import MobileRecordList from '@/components/MobileRecordList.vue'
+import { useResponsive } from '@/composables/useResponsive'
+
+const { isMobile } = useResponsive()
 
 const statusOptions = [
   { value: 1, label: '新建', type: 'warning' },

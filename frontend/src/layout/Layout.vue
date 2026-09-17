@@ -1,5 +1,27 @@
 <template>
-  <div class="app-wrapper">
+  <div class="app-wrapper" :class="{ 'is-mobile': isMobile }">
+    <header v-if="isMobile" class="mobile-header">
+      <button class="mobile-menu-toggle" type="button" aria-label="打开菜单"
+              aria-controls="mobile-navigation" :aria-expanded="mobileMenuOpen" @click="mobileMenuOpen = true">
+        <el-icon><Menu /></el-icon>
+      </button>
+      <div class="mobile-heading">
+        <span class="mobile-heading__brand">智慧园区</span>
+        <strong :title="currentTitle">{{ currentTitle }}</strong>
+      </div>
+      <ProjectSwitcher class="mobile-project" @switched="onProjectSwitched" />
+    </header>
+    <el-drawer v-model="mobileMenuOpen" title="全部功能" direction="ltr" size="min(320px, 90vw)"
+               class="mobile-navigation" append-to-body :destroy-on-close="true">
+      <nav id="mobile-navigation" aria-label="主导航">
+        <el-menu :default-active="activePath" router unique-opened class="mobile-menu">
+          <MenuItem v-for="(item, i) in menuTree" :key="item.title" :item="item" :top-index="i" @leaf="onClick" />
+        </el-menu>
+      </nav>
+      <template #footer>
+        <div class="mobile-account"><span>{{ uname }}</span><el-button @click="onUserCmd('logout')">退出登录</el-button></div>
+      </template>
+    </el-drawer>
     <!-- 液态玻璃的 SVG 位移滤镜(仅 Chromium 支持 backdrop-filter: url());这个 svg 不能 display:none -->
     <svg v-if="lensOk" class="lens-defs" aria-hidden="true" focusable="false">
       <defs>
@@ -18,7 +40,7 @@
       </defs>
     </svg>
     <el-container class="body-row" :class="{ 'lens-on': lensOk }" :style="{ '--aside-w': asideWidth }">
-      <GrainientBg class="chrome-aurora" />
+      <GrainientBg v-if="!isMobile" class="chrome-aurora" />
       <!-- 侧边栏可收起:财务几张宽表(所有账单、应收明细登记表 28 列)在 232px 侧边栏下
            右侧列会被挤出可视区,收起后表格独占整宽。
            用 v-show 整块摘出布局流,而不是把宽度动画到 0 —— el-aside 是 flex 项,
@@ -26,7 +48,7 @@
       <!-- 收起 = 64px 图标栏,不是整块消失:宽表要横向空间时收窄,但品牌条与图标导航还在,
            视觉上不塌。折叠态 el-menu 走官方 collapse,子菜单变悬浮弹层 -->
       <!-- 宽度从 .body-row 的 --aside-w 取:内容纸的玻璃层(.body-row::after)也靠它定位,收起时一起走 -->
-      <el-aside width="var(--aside-w)" class="sidebar" :class="{ collapsed }">
+      <el-aside v-if="!isMobile" width="var(--aside-w)" class="sidebar" :class="{ collapsed }">
         <div class="brand-zone">
           <img class="brand-logo" src="@/assets/brand/dipark.svg" alt="DIPARK" />
           <StrokeBrand v-show="!collapsed" />
@@ -66,7 +88,7 @@
           </el-dropdown>
         </div>
       </el-aside>
-      <el-main ref="mainRef">
+      <el-main ref="mainRef" id="main-content" tabindex="-1">
         <span class="sr-only" aria-live="polite">{{ currentTitle }}</span>
         <router-view v-if="ready" v-slot="{ Component }">
           <transition name="fade-slide" mode="out-in">
@@ -81,7 +103,7 @@
 </template>
 
 <script setup>
-import { computed, ref, onMounted, onBeforeUnmount, nextTick } from 'vue'
+import { computed, ref, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { menuTree } from './menu'
 import request from '@/utils/request'
@@ -92,17 +114,26 @@ import StrokeBrand from './StrokeBrand.vue'
 import MenuItem from './MenuItem.vue'
 import ProjectSwitcher from './ProjectSwitcher.vue'
 import FeedbackFab from '@/views/suggestion/FeedbackFab.vue'
+import { useResponsive } from '@/composables/useResponsive'
+import { Menu } from '@element-plus/icons-vue'
 
 const route = useRoute()
 const router = useRouter()
 const projectStore = useProjectStore()
+const { isMobile } = useResponsive()
+const mobileMenuOpen = ref(false)
+watch(() => route.fullPath, () => {
+  mobileMenuOpen.value = false
+  nextTick(() => { if (mainRef.value?.$el) mainRef.value.$el.scrollTop = 0 })
+})
+watch(isMobile, () => { mobileMenuOpen.value = false })
 
 // 收起状态存 localStorage:切页面/刷新后保持,不然每次进宽表页都要重按一次
 const COLLAPSE_KEY = 'zhyq_sidebar_collapsed'
 const collapsed = ref(localStorage.getItem(COLLAPSE_KEY) === '1')
 // 侧栏两档宽度只在这里定义,经 .body-row 的 --aside-w 同时喂给 el-aside 和内容纸的玻璃层
 const SIDEBAR_WIDTH = { open: '232px', rail: '64px' }
-const asideWidth = computed(() => (collapsed.value ? SIDEBAR_WIDTH.rail : SIDEBAR_WIDTH.open))
+const asideWidth = computed(() => isMobile.value ? '0px' : (collapsed.value ? SIDEBAR_WIDTH.rail : SIDEBAR_WIDTH.open))
 
 // ---- 液态玻璃:纸与舌头各一张按尺寸生成的位移贴图,挂成 SVG 滤镜给 backdrop-filter 用 ----
 // Chromium 才支持 backdrop-filter: url(#svg);Safari(非 Chrome 内核)/Firefox 退回普通磨砂
@@ -125,19 +156,25 @@ const lensFilters = computed(() => [
   { id: 'lens-tongue', map: tongueMap, scale: -110 },
 ])
 let paperObserver
-onMounted(() => {
-  lensOk.value = detectLens()
+function refreshPaperMap() {
   const el = mainRef.value?.$el
   if (!lensOk.value || !el) return
-  const refresh = () => {
-    const r = el.getBoundingClientRect()
-    paperMap.value = lensMapDataUri({ width: r.width, height: r.height, radii: Array(4).fill(PAPER_LENS.radius), edge: PAPER_LENS.edge })
-  }
-  refresh()
-  paperObserver = new ResizeObserver(() => refresh())
+  const r = el.getBoundingClientRect()
+  paperMap.value = lensMapDataUri({ width: r.width, height: r.height, radii: Array(4).fill(PAPER_LENS.radius), edge: PAPER_LENS.edge })
+}
+onMounted(() => {
+  lensOk.value = !isMobile.value && detectLens()
+  const el = mainRef.value?.$el
+  if (!el) return
+  paperObserver = new ResizeObserver(refreshPaperMap)
   paperObserver.observe(el)
+  refreshPaperMap()
 })
 onBeforeUnmount(() => paperObserver?.disconnect())
+watch(isMobile, (mobile) => {
+  lensOk.value = !mobile && detectLens()
+  nextTick(refreshPaperMap)
+})
 function toggleSidebar() {
   collapsed.value = !collapsed.value
   localStorage.setItem(COLLAPSE_KEY, collapsed.value ? '1' : '0')
@@ -181,6 +218,7 @@ async function onUserCmd(cmd) {
 }
 
 function onClick(c) {
+  mobileMenuOpen.value = false
   if (c.target === '_blank') {
     window.open(router.resolve(c.path).href, '_blank')
   }
@@ -521,4 +559,30 @@ function onClick(c) {
 .fade-slide-enter-active, .fade-slide-leave-active { transition: all .2s ease; }
 .fade-slide-enter-from { opacity: 0; transform: translateY(8px); }
 .fade-slide-leave-to { opacity: 0; transform: translateY(-6px); }
+</style>
+
+<style scoped>
+.app-wrapper.is-mobile { display: flex; flex-direction: column; height: 100dvh; }
+.mobile-header {
+  display: flex; align-items: center; gap: 10px; flex-shrink: 0;
+  padding: calc(8px + env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) 8px max(12px, env(safe-area-inset-left));
+  color: #fff; background: #292461; border-bottom: 1px solid rgba(255, 255, 255, .12);
+}
+.mobile-menu-toggle { display: grid; place-items: center; flex: 0 0 44px; width: 44px; height: 44px; padding: 0; color: inherit; border: 1px solid rgba(255, 255, 255, .24); border-radius: 10px; background: transparent; cursor: pointer; }
+.mobile-menu-toggle .el-icon { font-size: 22px; }
+.mobile-menu-toggle:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+.mobile-heading { display: grid; gap: 2px; flex: 1; min-width: 0; }
+.mobile-heading__brand { font-size: 11px; color: #d4d1ef; }
+.mobile-heading strong { font-size: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mobile-project { width: 128px; flex: 0 0 128px; }
+.mobile-project :deep(.el-select__wrapper) { min-height: 44px; background: #fff; }
+.is-mobile .body-row { flex: 1; min-height: 0; height: auto; --paper-gap: 0px; --paper-radius: 0px; background: var(--bg-body); }
+.is-mobile .body-row::after { display: none; }
+.is-mobile .el-main { height: 100%; margin: 0; min-width: 0; padding-bottom: env(safe-area-inset-bottom); border-radius: 0; clip-path: none; isolation: auto; scrollbar-gutter: auto; overflow-x: auto; }
+.mobile-account { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.mobile-account > span { overflow-wrap: anywhere; }
+.mobile-menu { border: 0; --el-menu-item-height: 48px; --el-menu-sub-item-height: 48px; }
+.mobile-menu :deep(.el-menu-item), .mobile-menu :deep(.el-sub-menu__title) { min-height: 48px; }
+.mobile-menu :deep(.el-menu-item.is-active) { background: var(--el-color-primary-light-9); }
+.mobile-menu :deep(.tongue-glass), .mobile-menu :deep(.menu-index) { display: none; }
 </style>

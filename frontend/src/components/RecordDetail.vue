@@ -92,4 +92,13 @@ watch(
 .rd-stat-label { color: var(--text-secondary, #6b7280); font-size: 13px; }
 .rd-stat-value { font-size: 18px; font-weight: 600; margin-top: 4px; }
 .rd-stage :deep(.el-steps) { padding: 4px 0; }
+
+@media (max-width: 767px), (max-width: 1023px) and (max-height: 500px) {
+.rd-card { padding: 16px; min-width: 0; }
+.rd-title-row { gap: 10px; flex-wrap: wrap; }
+.rd-title-block { min-width: 0; overflow-wrap: anywhere; }
+.rd-stats-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.rd-stat { min-width: 0; overflow-wrap: anywhere; }
+.rd-stat-value { font-size: 16px; }
+}
 </style>

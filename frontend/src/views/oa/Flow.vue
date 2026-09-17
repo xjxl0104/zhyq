@@ -211,4 +211,9 @@ onMounted(load)
 .step-arrow { margin: 0 6px; color: var(--text-secondary); }
 .steps-editor { width: 100%; }
 .step-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+
+@media (max-width: 767px), (max-width: 1023px) and (max-height: 500px) {
+.step-row { flex-wrap: wrap; }
+.step-row :deep(.el-select) { flex: 1; min-width: 120px; }
+}
 </style>
