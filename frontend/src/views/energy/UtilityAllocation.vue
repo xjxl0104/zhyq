@@ -137,6 +137,12 @@
         </el-table-column>
         <el-table-column prop="ownUsage" label="自身用量" width="110" align="right" />
         <el-table-column prop="allocUsage" label="分摊用量" width="110" align="right" />
+        <el-table-column label="单价（不含税）" width="130" align="right">
+          <template #default="{ row }">{{ price(row.unitPriceExTax) }}</template>
+        </el-table-column>
+        <el-table-column label="单价（含税）" width="130" align="right">
+          <template #default="{ row }">{{ price(taxIncludedUnitPrice(row)) }}</template>
+        </el-table-column>
         <el-table-column label="自用费用" width="120" align="right">
           <template #default="{ row }">¥{{ money(row.ownFee) }}</template>
         </el-table-column>
@@ -179,6 +185,13 @@ const query = reactive({ pageNo: 1, pageSize: 10, ...EMPTY_QUERY })
 
 const money = (v) => Number(v || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 const num = (v) => (v == null ? '-' : Number(v).toLocaleString('zh-CN', { maximumFractionDigits: 8 }))
+const price = (v) => (v == null ? '-' : `¥${Number(v).toLocaleString('zh-CN', { minimumFractionDigits: 6, maximumFractionDigits: 6 })}`)
+// 分摊费用按「不含税单价 × (1 + 税率)」计算；在行内展示含税价，方便把数量直接乘回费用核对。
+function taxIncludedUnitPrice(row) {
+  if (row.unitPriceExTax == null) return null
+  const taxRate = Number(row.taxRate || 0)
+  return Number(row.unitPriceExTax) * (1 + taxRate / 100)
+}
 // 列表里直接把单价算出来,省得用户为了看单价还要点进明细
 function unitPrice(row) {
   const usage = Number(row.invoiceUsage || 0)
