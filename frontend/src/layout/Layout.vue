@@ -33,7 +33,7 @@
       <!-- 宽度从 .body-row 的 --aside-w 取:内容纸的玻璃层(.body-row::after)也靠它定位,收起时一起走 -->
       <el-aside v-if="!isMobile" width="var(--aside-w)" class="sidebar" :class="{ collapsed }">
         <div class="brand-zone">
-          <img class="brand-logo" src="@/assets/brand/dipark.svg" alt="DIPARK" />
+          <img class="brand-logo" src="@/assets/brand/dipar.svg" alt="DIPAR" />
           <StrokeBrand v-show="!collapsed" />
           <button class="rail-toggle" type="button"
                   :title="collapsed ? '展开菜单' : '收起菜单（表格可用更宽）'"
