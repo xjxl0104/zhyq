@@ -48,9 +48,7 @@
         <el-table-column prop="lastPrintTime" label="最后打印时间" width="180" />
         <el-table-column label="操作" width="180" fixed="right">
           <template #default="{ row }">
-            <el-popconfirm title="确认打印该收据?" @confirm="print(row.id)">
-              <template #reference><el-button link type="primary">打印</el-button></template>
-            </el-popconfirm>
+            <el-button link type="primary" @click="print(row)">打印</el-button>
             <el-button link type="info" @click="openLogs(row)">打印日志</el-button>
           </template>
         </el-table-column>
@@ -112,10 +110,63 @@ function reset() {
   load()
 }
 
-async function print(id) {
-  await receiptApi.print(id)
-  ElMessage.success('打印成功')
-  load()
+async function print(row) {
+  // 必须在用户点击的同步阶段开窗口，否则浏览器会把异步打开当成弹窗拦截。
+  const printWindow = window.open('', '_blank')
+  if (!printWindow) {
+    ElMessage.error('浏览器拦截了打印窗口，请允许本站弹窗后重试')
+    return
+  }
+  printWindow.opener = null
+  try {
+    const voucher = await receiptApi.voucher(row.id)
+    // 后端确认收据有效后才留下打印审计记录；已作废收据不会增加打印次数。
+    await receiptApi.print(row.id)
+    printWindow.document.write(voucherDocument(voucher))
+    printWindow.document.close()
+    window.setTimeout(() => {
+      printWindow.focus()
+      printWindow.print()
+    }, 150)
+    ElMessage.success('已打开收据凭单，请在系统打印窗口选择打印机或另存为 PDF')
+    load()
+  } catch (e) {
+    printWindow.close()
+  }
+}
+
+function voucherDocument(voucher) {
+  const value = (item) => escapeHtml(item ?? '-')
+  const amount = money(voucher.amount)
+  const receivedAt = voucher.receivedAt ? String(voucher.receivedAt).replace('T', ' ') : '-'
+  return `<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>${value(voucher.title)}-${value(voucher.receiptNo)}</title>
+<style>
+  @page { size: A4; margin: 14mm; }
+  * { box-sizing: border-box; } body { margin: 0; color: #1f2937; font-family: "Microsoft YaHei", sans-serif; }
+  .voucher { min-height: 245mm; border: 2px solid #253fb8; padding: 18mm 16mm; }
+  .title { text-align: center; font-size: 28px; font-weight: 700; letter-spacing: 6px; color: #182b8f; }
+  .issuer { margin-top: 10px; text-align: center; font-size: 15px; } .number { margin-top: 22px; text-align: right; font-size: 13px; }
+  .line { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; padding: 13px 0; border-bottom: 1px solid #cbd5e1; font-size: 15px; }
+  .line.full { display: block; } .label { color: #475569; } .amount { font-size: 26px; font-weight: 700; color: #b42318; }
+  .note { margin-top: 26px; color: #64748b; font-size: 12px; line-height: 1.8; }
+  .signatures { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 24px; margin-top: 54px; font-size: 14px; }
+  .signature { border-bottom: 1px solid #64748b; min-height: 28px; } @media print { .voucher { min-height: 0; } }
+</style></head><body><main class="voucher">
+  <div class="title">${value(voucher.title)}</div><div class="issuer">收款单位：${value(voucher.issuerName)}</div>
+  <div class="number">收据编号：${value(voucher.receiptNo)}</div>
+  <div class="line"><div><span class="label">交款单位/个人：</span>${value(voucher.payerName)}</div><div><span class="label">收款日期：</span>${value(receivedAt)}</div></div>
+  <div class="line"><div><span class="label">关联账单：</span>${value(voucher.billCode)}</div><div><span class="label">费用项目：</span>${value(voucher.feeType)}</div></div>
+  <div class="line full"><span class="label">收款金额（小写）：</span><span class="amount">¥${value(amount)}</span></div>
+  <div class="line full"><span class="label">收款金额（大写）：</span>${value(voucher.amountUppercase)}</div>
+  <div class="line"><div><span class="label">收款方式：</span>${value(voucher.payMethod)}</div><div><span class="label">备注：</span>${value(voucher.remark)}</div></div>
+  <div class="note">说明：本收据为收款凭证，不作为税务发票使用；请妥善保管。已作废收据不可打印。</div>
+  <div class="signatures"><div class="signature">交款人签字：</div><div class="signature">收款经办：${value(voucher.payee)}</div><div class="signature">财务复核：</div></div>
+</main></body></html>`
+}
+
+function escapeHtml(value) {
+  return String(value).replace(/[&<>'"]/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' })[char])
 }
 
 const drawer = reactive({ visible: false, receiptNo: '', loading: false })

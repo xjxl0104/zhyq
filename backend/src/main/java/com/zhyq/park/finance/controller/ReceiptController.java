@@ -12,10 +12,12 @@ import com.zhyq.park.finance.entity.ReceiptLog;
 import com.zhyq.park.finance.mapper.ReceiptLogMapper;
 import com.zhyq.park.finance.mapper.ReceiptMapper;
 import com.zhyq.park.finance.service.FinanceViewEnricher;
+import com.zhyq.park.finance.service.ReceiptVoucherService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
@@ -32,6 +34,7 @@ public class ReceiptController {
     private final ReceiptMapper receiptMapper;
     private final FinanceViewEnricher viewEnricher;
     private final ReceiptLogMapper receiptLogMapper;
+    private final ReceiptVoucherService receiptVoucherService;
 
     @Operation(summary = "分页查询收据")
     @PreAuthorize("hasAuthority('finance:receipt:query')")
@@ -54,6 +57,13 @@ public class ReceiptController {
     @GetMapping("/{id}")
     public Result<Receipt> get(@PathVariable Long id) {
         return Result.ok(receiptMapper.selectById(id));
+    }
+
+    @Operation(summary = "获取可打印收据凭单")
+    @PreAuthorize("hasAuthority('finance:receipt:query')")
+    @GetMapping("/{id}/voucher")
+    public Result<ReceiptVoucherService.ReceiptVoucher> voucher(@PathVariable Long id) {
+        return Result.ok(receiptVoucherService.voucher(id));
     }
 
     @Operation(summary = "新增收据")
@@ -80,15 +90,12 @@ public class ReceiptController {
         return Result.ok();
     }
 
-    @Operation(summary = "打印收据(打印次数原子+1,写打印日志)")
+    @Operation(summary = "确认打印收据(打印次数原子+1,写打印日志)")
     @PreAuthorize("hasAuthority('finance:receipt:print')")
     @Transactional(rollbackFor = Exception.class)
     @PostMapping("/{id}/print")
     public Result<Void> print(@PathVariable Long id) {
-        Receipt receipt = receiptMapper.selectById(id);
-        if (receipt == null) {
-            throw new BizException("收据不存在: " + id);
-        }
+        receiptVoucherService.requirePrintableReceipt(id);
         LocalDateTime now = LocalDateTime.now();
         // 原子 +1,避免并发丢更新
         receiptMapper.update(null, new LambdaUpdateWrapper<Receipt>()
@@ -97,7 +104,7 @@ public class ReceiptController {
                 .set(Receipt::getLastPrintTime, now));
         ReceiptLog log = new ReceiptLog();
         log.setReceiptId(id);
-        log.setOperator("system");
+        log.setOperator(username());
         log.setPrintTime(now);
         receiptLogMapper.insert(log);
         return Result.ok();
@@ -134,5 +141,10 @@ public class ReceiptController {
             row.setTenantName(v.tenantName());
             row.setFeeType(v.feeType());
         }
+    }
+
+    private static String username() {
+        var auth = SecurityContextHolder.getContext().getAuthentication();
+        return auth == null ? "system" : auth.getName();
     }
 }

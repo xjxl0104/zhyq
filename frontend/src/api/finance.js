@@ -56,6 +56,7 @@ export const receiptApi = {
   add: (data) => request.post('/finance/receipt', data),
   update: (data) => request.put('/finance/receipt', data),
   remove: (id) => request.delete(`/finance/receipt/${id}`),
+  voucher: (id) => request.get(`/finance/receipt/${id}/voucher`),
   print: (id) => request.post(`/finance/receipt/${id}/print`),
   logs: (id) => request.get(`/finance/receipt/${id}/logs`)
 }
