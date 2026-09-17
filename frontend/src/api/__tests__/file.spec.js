@@ -23,6 +23,16 @@ beforeAll(async () => {
       return
     }
     received = { url: req.url, authorization: req.headers.authorization }
+    if (req.method === 'POST' && req.url === '/api/file/download-ticket/35') {
+      let body = ''
+      req.on('data', chunk => { body += chunk })
+      req.on('end', () => {
+        received.body = JSON.parse(body)
+        res.writeHead(200, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ code: 0, data: { ticket: 'scoped-download-ticket' } }))
+      })
+      return
+    }
     res.writeHead(200, { 'Content-Type': 'application/pdf' })
     res.write(pdf.slice(0, 9))
     // A real response that takes longer than the ordinary API's 15-second budget.
@@ -56,3 +66,12 @@ it('downloads the complete authenticated attachment when transfer exceeds 15 sec
     authorization: 'Bearer download-test-token'
   })
 }, 22000)
+
+it('requests a download ticket using the existing login and project context', async () => {
+  await expect(fileApi.createDownloadTicket(35)).resolves.toEqual({ ticket: 'scoped-download-ticket' })
+  expect(received).toEqual({
+    url: '/api/file/download-ticket/35',
+    authorization: 'Bearer download-test-token',
+    body: { projectId: 3 }
+  })
+})

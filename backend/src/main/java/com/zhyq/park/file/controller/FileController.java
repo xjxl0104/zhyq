@@ -9,13 +9,16 @@ import com.zhyq.park.file.FileAttachRule;
 import com.zhyq.park.file.entity.SysFile;
 import com.zhyq.park.file.mapper.SysFileMapper;
 import com.zhyq.park.file.service.FileStorageService;
+import com.zhyq.park.file.service.FileDownloadTicketService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.core.io.FileSystemResource;
 import org.springframework.core.io.Resource;
 import org.springframework.http.ContentDisposition;
+import org.springframework.http.CacheControl;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
@@ -35,6 +38,7 @@ public class FileController {
 
     private final FileStorageService storageService;
     private final SysFileMapper fileMapper;
+    private final FileDownloadTicketService downloadTickets;
 
     @Operation(summary = "上传单文件")
     @PostMapping("/upload")
@@ -80,7 +84,35 @@ public class FileController {
         return Result.ok();
     }
 
-    @Operation(summary = "鉴权下载附件(替代匿名静态 /uploads)")
+    @Operation(summary = "登录用户申请浏览器下载凭证")
+    @PostMapping("/download-ticket/{id}")
+    public ResponseEntity<Result<DownloadTicket>> createDownloadTicket(@PathVariable Long id) {
+        SysFile file = fileMapper.selectById(id);
+        if (file == null) throw new BizException("附件不存在");
+        // 在页面交接给浏览器前提示失效附件，避免把错误响应保存成合同文件。
+        storageService.resolveExisting(file.getStorePath());
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore())
+            .body(Result.ok(new DownloadTicket(downloadTickets.issue(id))));
+    }
+
+    public record DownloadTicket(String ticket) {}
+
+    @Operation(summary = "用一次性凭证交由浏览器直接下载附件")
+    @GetMapping("/browser-download/{id}")
+    public ResponseEntity<Resource> browserDownload(@PathVariable Long id,
+            @RequestParam(required = false) String ticket) {
+        if (!downloadTickets.consume(id, ticket)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).cacheControl(CacheControl.noStore()).build();
+        }
+        try {
+            return download(id);
+        } catch (BizException e) {
+            // 签发后文件被删除：返回真实 HTTP 错误，浏览器会把它视为下载失败。
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).cacheControl(CacheControl.noStore()).build();
+        }
+    }
+
+    @Operation(summary = "鉴权读取附件(用于图片预览等二进制请求)")
     @GetMapping("/download/{id}")
     public ResponseEntity<Resource> download(@PathVariable Long id) {
         SysFile f = fileMapper.selectById(id);
@@ -98,6 +130,7 @@ public class FileController {
                 .filename(f.getOriginalName() == null ? "file" : f.getOriginalName(), StandardCharsets.UTF_8)
                 .build();
         return ResponseEntity.ok()
+                .cacheControl(CacheControl.noStore())
                 .header(HttpHeaders.CONTENT_DISPOSITION, disposition.toString())
                 .contentType(mediaType)
                 .body(resource);

@@ -24,6 +24,9 @@ export const fileApi = {
   remove(id) {
     return request.delete(`/file/${id}`)
   },
+  createDownloadTicket(id) {
+    return request.post(`/file/download-ticket/${id}`, {})
+  },
   // 鉴权下载(替代匿名静态 /uploads):返回原始 axios 响应,res.data 为 Blob
   download(id) {
     // 合同扫描件可达 100MB，传输时间会超过普通接口的 15 秒超时。

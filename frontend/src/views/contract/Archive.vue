@@ -97,6 +97,7 @@ import { reactive, ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { contractApi } from '@/api/contract'
 import { fileApi } from '@/api/file'
+import { startFileDownload } from '@/utils/fileDownload'
 import FileUpload from '@/components/FileUpload.vue'
 
 // null = 不按状态过滤(全部)。档案库要能查到所有合同,不只走完生命周期的那些
@@ -184,20 +185,8 @@ async function downloadAttachment(file) {
   }
   downloadingFileId.value = file.id
   try {
-    const response = await fileApi.download(file.id)
-    const url = URL.createObjectURL(response.data)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = file.originalName || file.name || '合同附件'
-    link.style.display = 'none'
-    document.body.appendChild(link)
-    link.click()
-    // 不能在 click 后马上释放 Blob URL，否则部分浏览器不会真正开始下载。
-    window.setTimeout(() => {
-      URL.revokeObjectURL(url)
-      link.remove()
-    }, 1000)
-    ElMessage.success('已开始下载附件，请在浏览器下载列表查看')
+    await startFileDownload(file.id, file.originalName || file.name || '合同附件')
+    ElMessage.success('已交给浏览器下载，请在下载列表查看进度')
   } catch (e) {
     ElMessage.error('附件下载失败，请稍后重试')
   } finally {
