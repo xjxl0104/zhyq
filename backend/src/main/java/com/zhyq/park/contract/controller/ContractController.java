@@ -15,6 +15,7 @@ import com.zhyq.park.contract.mapper.ContractRoomMapper;
 import com.zhyq.park.contract.service.ContractService;
 import com.zhyq.park.contract.service.ContractImportService;
 import com.zhyq.park.contract.service.ContractArchiveExportService;
+import com.zhyq.park.contract.service.ContractExpiryAlertService;
 import com.zhyq.park.finance.entity.Bill;
 import com.zhyq.park.finance.mapper.BillMapper;
 import com.zhyq.park.receivable.entity.ReceivableRegister;
@@ -56,6 +57,7 @@ public class ContractController {
     private final ContractService contractService;
     private final ContractImportService contractImportService;
     private final ContractArchiveExportService contractArchiveExportService;
+    private final ContractExpiryAlertService contractExpiryAlertService;
     private final BillMapper billMapper;
     private final ReceivableRegisterMapper receivableRegisterMapper;
     private final BizTenantMapper bizTenantMapper;
@@ -105,6 +107,23 @@ public class ContractController {
         headers.setContentDisposition(ContentDisposition.attachment()
                 .filename("合同档案.xlsx", StandardCharsets.UTF_8).build());
         return ResponseEntity.ok().headers(headers).body(contractArchiveExportService.export(contracts));
+    }
+
+    @Operation(summary = "合同到期预警")
+    @PreAuthorize("hasAuthority('contract:query')")
+    @GetMapping("/expiry-alerts")
+    public Result<List<ContractExpiryAlertService.ExpiryAlert>> expiryAlerts(
+            @RequestParam(required = false) Long projectId) {
+        LocalDate today = LocalDate.now();
+        List<Contract> contracts = contractMapper.selectList(new LambdaQueryWrapper<Contract>()
+                .eq(Contract::getStatus, 5)
+                .eq(projectId != null, Contract::getProjectId, projectId)
+                .isNotNull(Contract::getEndDate)
+                .ge(Contract::getEndDate, today)
+                .le(Contract::getEndDate, today.plusMonths(2))
+                .orderByAsc(Contract::getEndDate));
+        fillTenantNames(contracts);
+        return Result.ok(contractExpiryAlertService.findAlerts(contracts, today));
     }
 
     @Operation(summary = "合同详情(含房源列表)")

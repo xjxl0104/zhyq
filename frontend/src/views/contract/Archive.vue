@@ -10,6 +10,21 @@
       <el-tab-pane label="已归档" name="archived" />
     </el-tabs>
 
+    <section v-if="expiryAlerts.length" class="expiry-warning" aria-label="合同到期预警">
+      <div class="expiry-warning__heading">
+        <span>合同到期预警</span>
+        <span>未来两个月内有 {{ expiryAlerts.length }} 份在租合同到期，请提前续签或办理退租。</span>
+      </div>
+      <div class="expiry-warning__items">
+        <div v-for="item in expiryAlerts" :key="item.id" class="expiry-warning__item">
+          <strong>{{ item.code }}</strong>
+          <span>{{ item.tenantName || '未关联租客' }}</span>
+          <span>{{ item.endDate }} 到期 · 剩余 {{ item.daysRemaining }} 天</span>
+          <el-button link type="warning" @click="viewExpiryContract(item)">查看</el-button>
+        </div>
+      </div>
+    </section>
+
     <!-- 查询区 -->
     <div class="search-bar">
       <el-form :inline="true" :model="query">
@@ -100,6 +115,7 @@ function statusType(v) { return statusMap[v]?.type ?? 'info' }
 const loading = ref(false)
 const list = ref([])
 const total = ref(0)
+const expiryAlerts = ref([])
 const query = reactive({ pageNo: 1, pageSize: 10, code: '', status: tabStatus[activeTab.value] })
 
 async function load() {
@@ -119,6 +135,20 @@ function onTabChange(name) {
 }
 function reset() {
   Object.assign(query, { pageNo: 1, code: '', status: tabStatus[activeTab.value] })
+  load()
+}
+
+async function loadExpiryAlerts() {
+  try {
+    expiryAlerts.value = await contractApi.expiryAlerts()
+  } catch (e) {
+    // 预警加载失败不影响合同档案正常使用，避免空白页。
+    expiryAlerts.value = []
+  }
+}
+function viewExpiryContract(item) {
+  activeTab.value = 'running'
+  Object.assign(query, { pageNo: 1, code: item.code, status: tabStatus.running })
   load()
 }
 
@@ -156,11 +186,26 @@ async function archive(id) {
   load()
 }
 
-onMounted(load)
+onMounted(() => {
+  load()
+  loadExpiryAlerts()
+})
 </script>
 
 <style scoped>
 .archive-tabs { margin-bottom: 8px; }
 .pager { margin-top: 16px; justify-content: flex-end; }
 .attachment-uploader { margin-top: 16px; }
+.expiry-warning {
+  margin-bottom: 16px;
+  padding: 14px 18px;
+  border: 1px solid var(--el-color-warning-light-7);
+  border-radius: 8px;
+  background: var(--el-color-warning-light-9);
+}
+.expiry-warning__heading { display: flex; gap: 12px; align-items: center; color: var(--el-color-warning-dark-2); }
+.expiry-warning__heading span:first-child { font-weight: 700; }
+.expiry-warning__items { display: flex; flex-wrap: wrap; gap: 8px 16px; margin-top: 10px; }
+.expiry-warning__item { display: flex; align-items: center; gap: 8px; color: var(--el-text-color-regular); }
+.expiry-warning__item strong { color: var(--el-text-color-primary); }
 </style>
