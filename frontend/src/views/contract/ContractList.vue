@@ -277,7 +277,7 @@
                      accept="application/pdf,.pdf" :on-change="onPdfFile" :on-remove="() => pdfFile = null">
             <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
             <div class="el-upload__text">拖拽 PDF 到这里，或 <em>点击选择</em></div>
-            <template #tip><div class="el-upload__tip">单个文件不超过 20MB</div></template>
+            <template #tip><div class="el-upload__tip">单个文件不超过 100MB</div></template>
           </el-upload>
         </el-tab-pane>
       </el-tabs>

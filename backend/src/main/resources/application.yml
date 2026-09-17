@@ -6,8 +6,9 @@ server:
 spring:
   servlet:
     multipart:
-      max-file-size: 20MB
-      max-request-size: 50MB
+      # 合同扫描件、图纸等单个附件允许至 100MB；批量上传预留少量表单开销。
+      max-file-size: 100MB
+      max-request-size: 120MB
   application:
     name: zhyq-park
   datasource:

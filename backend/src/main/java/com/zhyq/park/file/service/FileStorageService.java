@@ -72,8 +72,8 @@ public class FileStorageService {
     @org.springframework.beans.factory.annotation.Value("${zhyq.upload.url-prefix:/uploads}")
     private String urlPrefix;
 
-    // 20MB,与 application.yml 二次校验一致
-    private static final long MAX_SIZE = 20L * 1024 * 1024;
+    // 100MB,与 application.yml 二次校验一致。合同扫描件、图纸等归档原件通常较大。
+    private static final long MAX_SIZE = 100L * 1024 * 1024;
 
     public record StoredResult(String storePath, String url, String ext,
                                String contentType, long size, String originalName) {}
@@ -83,7 +83,7 @@ public class FileStorageService {
             throw new com.zhyq.park.common.exception.BizException("文件为空");
         }
         if (file.getSize() > MAX_SIZE) {
-            throw new com.zhyq.park.common.exception.BizException("文件超过20MB上限");
+            throw new com.zhyq.park.common.exception.BizException("文件超过100MB上限");
         }
         String original = org.springframework.util.StringUtils.cleanPath(
             file.getOriginalFilename() == null ? "" : file.getOriginalFilename());

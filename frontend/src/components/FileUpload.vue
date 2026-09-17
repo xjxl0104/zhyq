@@ -47,9 +47,9 @@ function onError() {
 }
 
 function beforeUpload(file) {
-  const is20M = file.size / 1024 / 1024 <= 20
-  if (!is20M) ElMessage.error('文件不能超过 20MB')
-  return is20M
+  const is100M = file.size / 1024 / 1024 <= 100
+  if (!is100M) ElMessage.error('文件不能超过 100MB')
+  return is100M
 }
 
 async function onRemove(uploadFile) {
@@ -99,7 +99,7 @@ async function onPreview(uploadFile) {
       <template #tip>
         <div class="el-upload__tip">
           支持各种格式(文档/表格/图片/图纸/压缩包/音视频等),可执行与脚本类文件除外;
-          单个不超过 20MB;点击文件名下载
+          单个不超过 100MB;点击文件名下载
         </div>
       </template>
     </el-upload>
