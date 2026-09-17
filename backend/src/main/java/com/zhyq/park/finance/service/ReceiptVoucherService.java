@@ -38,6 +38,7 @@ public class ReceiptVoucherService {
                 : viewEnricher.resolveBillViews(List.of(receipt.getBillId())).get(receipt.getBillId());
         Bill bill = billOf(receipt.getBillId());
         Payment payment = receipt.getPaymentId() == null ? null : paymentMapper.selectById(receipt.getPaymentId());
+        Project project = projectOf(bill);
 
         String feeType = view == null || !StringUtils.hasText(view.feeType()) ? "收款" : view.feeType();
         String payerName = view == null || !StringUtils.hasText(view.tenantName())
@@ -45,12 +46,16 @@ public class ReceiptVoucherService {
                 : view.tenantName();
         String billCode = view == null || !StringUtils.hasText(view.billCode())
                 ? "-" : view.billCode();
+        String contractNo = view == null || !StringUtils.hasText(view.agreementNo())
+                ? billCode : view.agreementNo();
         BigDecimal amount = receipt.getAmount() == null ? BigDecimal.ZERO : receipt.getAmount();
         return new ReceiptVoucher(
                 feeType.contains("保证金") ? "保证金收据" : "收款收据",
                 receipt.getReceiptNo(),
-                issuerName(bill),
+                issuerName(project),
                 payerName,
+                contractNo,
+                leaseAddress(project),
                 billCode,
                 feeType,
                 amount,
@@ -80,12 +85,20 @@ public class ReceiptVoucherService {
         return billMapper.selectByIdsIncludingDeleted(List.of(billId)).stream().findFirst().orElse(null);
     }
 
-    private String issuerName(Bill bill) {
-        if (bill == null || bill.getProjectId() == null) {
-            return DEFAULT_ISSUER;
-        }
-        Project project = projectMapper.selectById(bill.getProjectId());
+    private Project projectOf(Bill bill) {
+        return bill == null || bill.getProjectId() == null ? null : projectMapper.selectById(bill.getProjectId());
+    }
+
+    private String issuerName(Project project) {
         return project != null && StringUtils.hasText(project.getName()) ? project.getName() : DEFAULT_ISSUER;
+    }
+
+    /** 收据上的租赁地址优先使用园区已维护的实际地址，未维护时退回园区名称。 */
+    private String leaseAddress(Project project) {
+        if (project == null) {
+            return "-";
+        }
+        return StringUtils.hasText(project.getAddress()) ? project.getAddress() : issuerName(project);
     }
 
     /** 人民币大写，例如 108000.00 → 壹拾万捌仟元整。 */
@@ -174,7 +187,8 @@ public class ReceiptVoucherService {
     }
 
     public record ReceiptVoucher(String title, String receiptNo, String issuerName, String payerName,
-                                 String billCode, String feeType, BigDecimal amount, String amountUppercase,
+                                 String contractNo, String leaseAddress, String billCode, String feeType,
+                                 BigDecimal amount, String amountUppercase,
                                  LocalDateTime receivedAt, String payMethod, String payee, String remark) {
     }
 }

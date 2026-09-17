@@ -57,6 +57,7 @@ class ReceiptVoucherServiceTest {
         when(billMapper.selectByIdsIncludingDeleted(List.of(2L))).thenReturn(List.of(bill));
         Project project = new Project();
         project.setName("DIPARK数智云仓产业园");
+        project.setAddress("广州市白云区测试路 1 号");
         when(projectMapper.selectById(5L)).thenReturn(project);
         Payment payment = new Payment();
         payment.setPayTime(LocalDateTime.of(2026, 9, 17, 10, 30));
@@ -69,6 +70,8 @@ class ReceiptVoucherServiceTest {
         assertThat(voucher.payerName()).isEqualTo("广州测试租户");
         assertThat(voucher.amountUppercase()).isEqualTo("壹拾万捌仟元整");
         assertThat(voucher.issuerName()).isEqualTo("DIPARK数智云仓产业园");
+        assertThat(voucher.contractNo()).isEqualTo("RR2V1RD");
+        assertThat(voucher.leaseAddress()).isEqualTo("广州市白云区测试路 1 号");
         assertThat(voucher.payee()).isEmpty();
     }
 

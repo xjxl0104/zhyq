@@ -138,31 +138,52 @@ async function print(row) {
 function voucherDocument(voucher) {
   const value = (item) => escapeHtml(item ?? '-')
   const amount = money(voucher.amount)
-  const receivedAt = voucher.receivedAt ? String(voucher.receivedAt).replace('T', ' ') : '-'
+  const receivedDate = receiptDate(voucher.receivedAt)
+  const paymentMethod = paymentMethods(voucher.payMethod)
   return `<!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8"><title>${value(voucher.title)}-${value(voucher.receiptNo)}</title>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>收据-${value(voucher.receiptNo)}</title>
 <style>
-  @page { size: A4; margin: 14mm; }
-  * { box-sizing: border-box; } body { margin: 0; color: #1f2937; font-family: "Microsoft YaHei", sans-serif; }
-  .voucher { min-height: 245mm; border: 2px solid #253fb8; padding: 18mm 16mm; }
-  .title { text-align: center; font-size: 28px; font-weight: 700; letter-spacing: 6px; color: #182b8f; }
-  .issuer { margin-top: 10px; text-align: center; font-size: 15px; } .number { margin-top: 22px; text-align: right; font-size: 13px; }
-  .line { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; padding: 13px 0; border-bottom: 1px solid #cbd5e1; font-size: 15px; }
-  .line.full { display: block; } .label { color: #475569; } .amount { font-size: 26px; font-weight: 700; color: #b42318; }
-  .note { margin-top: 26px; color: #64748b; font-size: 12px; line-height: 1.8; }
-  .signatures { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 24px; margin-top: 54px; font-size: 14px; }
-  .signature { border-bottom: 1px solid #64748b; min-height: 28px; } @media print { .voucher { min-height: 0; } }
+  @page { size: A4; margin: 12mm 15mm; }
+  * { box-sizing: border-box; } body { margin: 0; color: #111; font-family: "Microsoft YaHei", "SimSun", sans-serif; font-size: 15px; }
+  .voucher { min-height: 268mm; padding: 3mm 5mm; }
+  .date { min-height: 24px; text-align: right; font-size: 13px; }
+  .title { margin: 4mm 0 12mm; text-align: center; font-size: 27px; font-weight: 700; letter-spacing: 14px; }
+  .receipt-no { margin-top: -8mm; margin-bottom: 7mm; text-align: right; color: #444; font-size: 12px; }
+  .row { display: flex; align-items: baseline; min-height: 42px; line-height: 30px; }
+  .label { flex: 0 0 68px; white-space: nowrap; }
+  .fill { flex: 1; min-height: 30px; padding: 0 6px; border-bottom: 1px solid #111; word-break: break-all; }
+  .pair { display: grid; grid-template-columns: 1fr 1.18fr; gap: 28px; }
+  .pair .row { min-width: 0; } .pair .label { flex-basis: 82px; }
+  .currency { font-weight: 600; } .currency-prefix { flex: 0 0 auto; margin-right: 12px; }
+  .methods { display: flex; flex-wrap: wrap; gap: 18px; padding-left: 6px; }
+  .method { white-space: nowrap; }
+  .signatures { display: grid; grid-template-columns: repeat(5, 1fr); gap: 18px; margin-top: 52px; font-size: 14px; }
+  .signature { min-height: 42px; white-space: nowrap; } @media print { .voucher { min-height: 0; } }
 </style></head><body><main class="voucher">
-  <div class="title">${value(voucher.title)}</div><div class="issuer">收款单位：${value(voucher.issuerName)}</div>
-  <div class="number">收据编号：${value(voucher.receiptNo)}</div>
-  <div class="line"><div><span class="label">交款单位/个人：</span>${value(voucher.payerName)}</div><div><span class="label">收款日期：</span>${value(receivedAt)}</div></div>
-  <div class="line"><div><span class="label">关联账单：</span>${value(voucher.billCode)}</div><div><span class="label">费用项目：</span>${value(voucher.feeType)}</div></div>
-  <div class="line full"><span class="label">收款金额（小写）：</span><span class="amount">¥${value(amount)}</span></div>
-  <div class="line full"><span class="label">收款金额（大写）：</span>${value(voucher.amountUppercase)}</div>
-  <div class="line"><div><span class="label">收款方式：</span>${value(voucher.payMethod)}</div><div><span class="label">备注：</span>${value(voucher.remark)}</div></div>
-  <div class="note">说明：本收据为收款凭证，不作为税务发票使用；请妥善保管。已作废收据不可打印。</div>
-  <div class="signatures"><div class="signature">交款人签字：</div><div class="signature">收款经办：${value(voucher.payee)}</div><div class="signature">财务复核：</div></div>
+  <div class="date">${value(receivedDate)}</div><div class="title">收 据</div>
+  <div class="receipt-no">收据号：${value(voucher.receiptNo)}</div>
+  <div class="row"><span class="label">单位</span><span class="fill">${value(voucher.issuerName)}</span></div>
+  <div class="row"><span class="label">兹收到</span><span class="fill">${value(voucher.payerName)}</span></div>
+  <div class="row"><span class="label">交 来</span><span class="fill">${value(voucher.feeType)}</span></div>
+  <div class="pair"><div class="row"><span class="label">合同/协议编号</span><span class="fill">${value(voucher.contractNo)}</span></div><div class="row"><span class="label">租赁地址</span><span class="fill">${value(voucher.leaseAddress)}</span></div></div>
+  <div class="row"><span class="label">金额（大写）</span><span class="currency-prefix">人民币：</span><span class="fill currency">${value(voucher.amountUppercase)}</span></div>
+  <div class="row"><span class="label">金额（小写）</span><span class="fill currency">¥ ${value(amount)} 元</span></div>
+  <div class="row"><span class="label">收款方式</span><div class="methods">${paymentMethod}</div></div>
+  <div class="signatures"><div class="signature">核准：</div><div class="signature">会计：</div><div class="signature">单位盖章：</div><div class="signature">出纳：</div><div class="signature">收款人：${value(voucher.payee)}</div></div>
 </main></body></html>`
+}
+
+function receiptDate(raw) {
+  const match = String(raw || '').match(/^(\d{4})-(\d{2})-(\d{2})/)
+  return match ? `${match[1]}年${Number(match[2])}月${Number(match[3])}日` : '-'
+}
+
+function paymentMethods(rawMethod) {
+  const method = String(rawMethod || '')
+  const checked = (keywords) => keywords.some(keyword => method.includes(keyword)) ? '☑' : '☐'
+  const known = ['转账', '银行', '现金', '支票', '微信'].some(keyword => method.includes(keyword))
+  const other = method && method !== '-' && !known ? `<span class="method">${checked(['其他'])}其他：${escapeHtml(method)}</span>` : ''
+  return `<span class="method">${checked(['转账', '银行'])}转账</span><span class="method">${checked(['现金'])}现金</span><span class="method">${checked(['支票'])}支票</span><span class="method">${checked(['微信'])}微信</span>${other}`
 }
 
 function escapeHtml(value) {
