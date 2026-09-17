@@ -87,8 +87,12 @@ public class InvoiceController {
             throw new BizException("发票不存在或已删除");
         }
         Long originalBillId = existing.getBillId();
-        // 状态流转按钮只提交 id + status，此时保留原账单；编辑表单则允许改关联账单。
-        if (invoice.getBillId() == null) {
+        boolean businessEdit = hasBusinessEdit(invoice);
+        if (businessEdit && !isRevisable(existing)) {
+            throw new BizException("已开票、已红冲或已作废的发票不能直接修改；已开票请先红冲后重新开票");
+        }
+        // 状态流转按钮只提交 id + status，此时保留原账单；编辑表单可明确取消关联账单。
+        if (!businessEdit && invoice.getBillId() == null) {
             invoice.setBillId(originalBillId);
         }
         bindBill(invoice);
@@ -96,7 +100,22 @@ public class InvoiceController {
                 && hasActiveInvoice(invoice.getBillId(), invoice.getId())) {
             throw new BizException("目标账单已有未作废或未红冲的发票");
         }
-        invoiceMapper.updateById(invoice);
+        if (businessEdit) {
+            // 已审核的发票一旦改了金额、抬头或关联账单，必须重新走审核，避免审核内容与实际开票内容不一致。
+            invoice.setStatus(1);
+        } else {
+            validateStatusTransition(existing.getStatus(), invoice.getStatus());
+        }
+        LambdaUpdateWrapper<Invoice> updateWrapper = new LambdaUpdateWrapper<Invoice>()
+                .eq(Invoice::getId, invoice.getId());
+        if (businessEdit) {
+            updateWrapper.in(Invoice::getStatus, 1, 2);
+        } else {
+            updateWrapper.eq(Invoice::getStatus, existing.getStatus());
+        }
+        if (invoiceMapper.update(invoice, updateWrapper) == 0) {
+            throw new BizException("发票状态已变化，请刷新列表后重试");
+        }
         refreshBillInvoiceStatus(originalBillId);
         refreshBillInvoiceStatus(invoice.getBillId());
         return Result.ok();
@@ -111,7 +130,14 @@ public class InvoiceController {
         if (existing == null) {
             throw new BizException("发票不存在或已删除");
         }
-        invoiceMapper.deleteById(id);
+        if (!isRevisable(existing)) {
+            throw new BizException("已开票、已红冲或已作废的发票不能删除；已开票请先红冲后保留审计记录");
+        }
+        if (invoiceMapper.delete(new LambdaQueryWrapper<Invoice>()
+                .eq(Invoice::getId, id)
+                .in(Invoice::getStatus, 1, 2)) == 0) {
+            throw new BizException("发票状态已变化，请刷新列表后重试");
+        }
         refreshBillInvoiceStatus(existing.getBillId());
         return Result.ok();
     }
@@ -133,6 +159,33 @@ public class InvoiceController {
             throw new BizException("只能关联应收方向的账单开具发票");
         }
         invoice.setTenantRefId(bill.getTenantRefId());
+    }
+
+    /** 编辑表单会带回这些字段；状态流转按钮只带 id 与 status。 */
+    private boolean hasBusinessEdit(Invoice invoice) {
+        return invoice.getTitle() != null
+                || invoice.getTaxNo() != null
+                || invoice.getAmount() != null
+                || invoice.getInvoiceType() != null
+                || invoice.getRemark() != null
+                || invoice.getBillId() != null
+                || invoice.getTenantRefId() != null;
+    }
+
+    private boolean isRevisable(Invoice invoice) {
+        return invoice.getStatus() != null && (invoice.getStatus() == 1 || invoice.getStatus() == 2);
+    }
+
+    private void validateStatusTransition(Integer from, Integer to) {
+        if (to == null || java.util.Objects.equals(from, to)) {
+            return;
+        }
+        boolean allowed = (from != null && from == 1 && to == 2)
+                || (from != null && from == 2 && to == 3)
+                || (from != null && from == 3 && to == 4);
+        if (!allowed) {
+            throw new BizException("发票状态不能这样变更，请按申请、审核、开票、红冲的顺序处理");
+        }
     }
 
     private boolean hasActiveInvoice(Long billId, Long excludedInvoiceId) {

@@ -56,7 +56,10 @@
         <el-table-column prop="createTime" label="创建时间" width="170" />
         <el-table-column label="操作" width="220" fixed="right">
           <template #default="{ row }">
-            <el-button link type="primary" @click="openDialog(row)">编辑</el-button>
+            <el-button v-if="canRevise(row)" link type="primary" @click="openDialog(row)">编辑</el-button>
+            <el-popconfirm v-if="canRevise(row)" title="确认删除这张未开具的发票申请？删除后可重新开票。" @confirm="remove(row)">
+              <template #reference><el-button link type="danger">删除</el-button></template>
+            </el-popconfirm>
             <el-popconfirm v-if="row.status === 1" title="确认审核通过?" @confirm="changeStatus(row, 2)">
               <template #reference><el-button link type="primary">审核通过</el-button></template>
             </el-popconfirm>
@@ -162,7 +165,12 @@ async function load() {
 }
 function reset() {
   Object.assign(query, { pageNo: 1, title: '', status: null })
-  load()
+  return load()
+}
+
+// 已开票/已红冲的记录需要保留审计轨迹，只能走红冲；申请中或已审核的错误申请可以修订或删除。
+function canRevise(row) {
+  return row.status === 1 || row.status === 2
 }
 
 const formRef = ref()
@@ -243,6 +251,13 @@ async function submit() {
 async function changeStatus(row, status) {
   await invoiceApi.update({ id: row.id, status })
   ElMessage.success('操作成功')
+  load()
+}
+async function remove(row) {
+  await invoiceApi.remove(row.id)
+  ElMessage.success('删除成功，可重新开票')
+  // 删除最后一页的最后一条时回到存在数据的页，避免用户误以为删除操作没有生效。
+  if (list.value.length === 1 && query.pageNo > 1) query.pageNo -= 1
   load()
 }
 
