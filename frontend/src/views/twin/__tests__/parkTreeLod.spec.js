@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest'
 import * as THREE from 'three'
 import { createParkLandscape } from '../parkLandscape.js'
 import { createParkTreeLod } from '../parkTreeLod.js'
+import { createTreeGeometries } from '../parkVegetation.js'
 
 const canopies = landscape => {
   const meshes = []
@@ -16,36 +17,63 @@ const treeTriangles = landscape => {
   let triangles = 0
   landscape.group.traverse(object => {
     if (object.isInstancedMesh && ['contextLeaf', 'contextBark'].includes(object.material.name)) {
-      triangles += object.geometry.index.count / 3 * object.count
+      triangles += (object.geometry.index?.count ?? object.geometry.attributes.position.count) / 3 * object.count
     }
   })
   return triangles
 }
 
 describe('park tree distance detail', () => {
-  it('preserves all existing tree transforms and colours while giving sectors tight culling bounds', () => {
+  it('preserves all existing tree transforms while giving sectors tight culling bounds', () => {
     const landscape = createParkLandscape(new THREE.Scene(), { root: new THREE.Group() })
     try {
       const trees = canopies(landscape)
-      const matrix = new THREE.Matrix4(), colour = new THREE.Color(), placements = []
+      const matrix = new THREE.Matrix4(), placements = []
       for (const mesh of trees) {
         for (let index = 0; index < mesh.count; index++) {
-          mesh.getMatrixAt(index, matrix); mesh.getColorAt(index, colour)
-          placements.push([...matrix.elements, ...colour.toArray()].map(value => Number(value.toFixed(6))))
+          mesh.getMatrixAt(index, matrix)
+          placements.push(matrix.elements.map(value => Number(value.toFixed(6))))
         }
       }
       placements.sort((a, b) => a[12] - b[12] || a[14] - b[14])
       expect(placements).toHaveLength(292)
       // Captured from the delivered scene before sectoring. Reordering instances
-      // must not accidentally reseed each sector's rotations or leaf colours.
+      // must not accidentally reseed each sector's positions, rotations or scales.
       expect(createHash('sha256').update(JSON.stringify(placements)).digest('hex'))
-        .toBe('e132dbbcf29e03c6793c55e9ddecb230690de8df7aba131b6ef7703d2208c31e')
+        .toBe('8054e3afaa5492f7b3ed0edefc623684ae1b04bf6cefa77e9b58edfe22f9655c')
       expect(trees.length).toBeGreaterThan(1)
       for (const mesh of trees) {
         expect(mesh.frustumCulled).toBe(true)
         expect(mesh.boundingSphere.radius).toBeLessThan(90)
       }
     } finally { landscape.dispose() }
+  })
+
+  it('uses opaque, texture-free cartoon foliage and retains crown bounds across detail levels', () => {
+    const landscape = createParkLandscape(new THREE.Scene(), { root: new THREE.Group() })
+    const pairs = [0, 1, 2].map(createTreeGeometries)
+    try {
+      for (const mesh of canopies(landscape)) {
+        expect(mesh.material.map).toBeNull()
+        expect(mesh.material.alphaTest).toBe(0)
+        expect(mesh.material.transparent).toBe(false)
+        expect(mesh.material.side).toBe(THREE.FrontSide)
+      }
+      const bounds = pairs.map(({ crown }) => {
+        crown.computeBoundingBox()
+        return crown.boundingBox
+      })
+      for (const bound of bounds.slice(1)) {
+        expect(bound.min.distanceTo(bounds[0].min)).toBeLessThan(.001)
+        expect(bound.max.distanceTo(bounds[0].max)).toBeLessThan(.001)
+      }
+      // Previous closest foliage + branches used 436 triangles per tree.
+      const triangles = Object.values(pairs[0]).reduce((sum, geometry) => sum + (geometry.index?.count ?? geometry.attributes.position.count) / 3, 0)
+      expect(triangles).toBeLessThan(436)
+    } finally {
+      pairs.forEach(pair => Object.values(pair).forEach(geometry => geometry.dispose()))
+      landscape.dispose()
+    }
   })
 
   it('reduces distant geometry, restores it on zoom, and does not dirty a stationary scene', () => {

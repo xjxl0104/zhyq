@@ -14,7 +14,7 @@ const PALETTE = {
   contextDistantTerrain: '#bfd3ba', contextBuilding: '#eee8d6', contextRoof: '#afbcb4',
   siteRoadContext: '#a6afa8', sitePavementContext: '#dedccb', sitePavementWalk: '#e8e1cb',
   contextCurb: '#dce4d8', contextLaneLine: '#f6f3df', contextLaneCentre: '#e3ce9f',
-  windowContext: '#c9e1e0', contextBark: '#dfdac7', contextLeaf: '#d5dfb9',
+  windowContext: '#c9e1e0', contextBark: '#9b917a', contextLeaf: '#ffffff',
 }
 
 const TOON_PROPERTIES = [
