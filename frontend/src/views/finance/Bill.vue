@@ -20,6 +20,14 @@
       </div>
     </div>
 
+    <el-alert v-if="stats.overdueCount" class="collection-reminder" type="error" :closable="false" show-icon>
+      <template #title>
+        应收催收提醒：当前有 {{ stats.overdueCount }} 笔逾期未结清账单，待催收 ¥{{ money(stats.overdueAmount) }}；
+        最长已逾期 {{ stats.maxOverdueDays }} 天，请财务及时联系租户跟进。
+        <el-button link type="danger" @click="showCollectionBills">查看催收账单</el-button>
+      </template>
+    </el-alert>
+
     <!-- 查询区 -->
     <div class="search-bar">
       <el-form :inline="true" :model="query">
@@ -272,7 +280,7 @@ const statusMap = {
 const loading = ref(false)
 const list = ref([])
 const total = ref(0)
-const stats = reactive({ receivable: 0, received: 0, needReceive: 0, lateFee: 0, overdueCount: 0 })
+const stats = reactive({ receivable: 0, received: 0, needReceive: 0, lateFee: 0, overdueCount: 0, overdueAmount: 0, maxOverdueDays: 0 })
 const EMPTY_FILTERS = { code: '', feeType: null, status: null, direction: null, tenantRefId: null, billId: null, onlyDue: false }
 const query = reactive({ pageNo: 1, pageSize: 10, ...EMPTY_FILTERS })
 // 租客下拉用档案全量,结清的租客也要能查到他的历史账单
@@ -343,6 +351,12 @@ function clearFilters() {
   Object.assign(query, { pageNo: 1, ...EMPTY_FILTERS })
   locatedBillId.value = null
   ElMessage.success('已清空筛选条件，显示全部账单')
+  return load()
+}
+function showCollectionBills() {
+  // 只显示未结清的逾期应收，避免财务在全量台账里逐条找催收对象。
+  Object.assign(query, { pageNo: 1, ...EMPTY_FILTERS, status: 6, direction: 1, onlyDue: true })
+  locatedBillId.value = null
   return load()
 }
 async function refresh() {
@@ -502,6 +516,7 @@ onMounted(async () => {
 .stat-value.success { color: #16a34a; }
 .stat-value.warning { color: #ea9a13; }
 .stat-value.danger { color: #e5484d; }
+.collection-reminder { margin-bottom: 16px; }
 .pager { margin-top: 16px; justify-content: flex-end; }
 /* 红冲单金额为负,标红提醒这是一笔退回而不是收入 */
 .reversal { color: #e5484d; font-weight: 600; }

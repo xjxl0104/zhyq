@@ -81,6 +81,27 @@ class BillControllerTest {
         verify(lateFeeService).recalc();
     }
 
+    @Test
+    @DisplayName("催收提醒只统计仍未结清的逾期应收，并给出待催收金额和最长逾期")
+    void statsReportsActionableCollectionReminder() {
+        Bill overdue = bill(1L, "100", "40", "10");
+        overdue.setStatus(6);
+        overdue.setDueDate(LocalDate.now().minusDays(12));
+        Bill settledButStale = bill(2L, "50", "50", "0");
+        settledButStale.setStatus(6);
+        settledButStale.setDueDate(LocalDate.now().minusDays(30));
+        Bill payable = bill(3L, "80", "0", "0");
+        payable.setStatus(3);
+        payable.setDueDate(LocalDate.now().minusDays(3));
+        when(billMapper.selectList(any())).thenReturn(List.of(overdue, settledButStale, payable));
+
+        Map<String, Object> stats = controller().stats().getData();
+
+        assertThat(stats.get("overdueCount")).isEqualTo(1L);
+        assertThat((BigDecimal) stats.get("overdueAmount")).isEqualByComparingTo("70");
+        assertThat(stats.get("maxOverdueDays")).isEqualTo(12L);
+    }
+
     // ---------- PUT 字段白名单 ----------
 
     @Test
@@ -242,5 +263,15 @@ class BillControllerTest {
         assertThat(sql).contains("NOT IN");
         assertThat(sql).contains("source");
         assertThat(sql).contains("paid_amount");
+    }
+
+    private static Bill bill(Long id, String amount, String paidAmount, String lateFee) {
+        Bill bill = new Bill();
+        bill.setId(id);
+        bill.setDirection(1);
+        bill.setAmount(new BigDecimal(amount));
+        bill.setPaidAmount(new BigDecimal(paidAmount));
+        bill.setLateFee(new BigDecimal(lateFee));
+        return bill;
     }
 }

@@ -27,6 +27,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.temporal.ChronoUnit;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -97,14 +98,23 @@ public class BillController {
         BigDecimal received = BigDecimal.ZERO;     // 实收:paid_amount 合计
         BigDecimal lateFee = BigDecimal.ZERO;      // 滞纳金合计
         long overdueCount = 0;                     // 逾期账单数(status=6)
+        BigDecimal overdueAmount = BigDecimal.ZERO;
+        long maxOverdueDays = 0;
         for (Bill b : all) {
             // 口径统一走 BillMetrics:实收此前漏了收款方向的过滤,
             // 把应付账单已付出去的钱也算进了"实收",与财务报表同款问题
             receivable = receivable.add(BillMetrics.receivableOf(b));
             received = received.add(BillMetrics.receivedOf(b));
             lateFee = lateFee.add(nz(b.getLateFee()));
-            if (b.getStatus() != null && b.getStatus() == BillMetrics.STATUS_OVERDUE) {
+            // 催收只提示仍有欠款的应收账单；已收满但历史状态未及时刷新的记录不应干扰财务。
+            if (b.getStatus() != null && b.getStatus() == BillMetrics.STATUS_OVERDUE
+                    && BillMetrics.outstandingOf(b).signum() > 0) {
                 overdueCount++;
+                overdueAmount = overdueAmount.add(BillMetrics.outstandingOf(b));
+                if (b.getDueDate() != null && b.getDueDate().isBefore(LocalDate.now())) {
+                    maxOverdueDays = Math.max(maxOverdueDays,
+                            ChronoUnit.DAYS.between(b.getDueDate(), LocalDate.now()));
+                }
             }
         }
         Map<String, Object> m = new HashMap<>();
@@ -113,6 +123,8 @@ public class BillController {
         m.put("needReceive", receivable.subtract(received));
         m.put("lateFee", lateFee);
         m.put("overdueCount", overdueCount);
+        m.put("overdueAmount", overdueAmount);
+        m.put("maxOverdueDays", maxOverdueDays);
         return Result.ok(m);
     }
 
