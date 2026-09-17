@@ -28,8 +28,8 @@ export function createParkLandscape(scene, model) {
     roof: material('contextRoof', '#586366'),
     glazing: material('windowContext', '#24576b', { metalness: .28, roughness: .25 }),
     timber: material('contextTimber', '#ffffff', { ...textures.wood, bumpScale: .035, roughness: .76 }),
-    trunk: material('contextBark', '#ffffff', { ...textures.bark, bumpScale: .12 }),
-    leaf: material('contextLeaf', '#789052', { map: textures.leaf, alphaTest: .2, side: THREE.DoubleSide, roughness: .92, envMapIntensity: .6 }),
+    trunk: material('contextBark', '#9b917a'),
+    leaf: material('contextLeaf', '#ffffff'),
     lamp: material('siteLampContext', '#dbe3db', { emissive: '#ffcf91', emissiveIntensity: .15 }),
   }
 
