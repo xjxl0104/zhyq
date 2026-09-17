@@ -139,7 +139,6 @@ function voucherDocument(voucher) {
   const value = (item) => escapeHtml(item ?? '-')
   const amount = money(voucher.amount)
   const receivedDate = receiptDate(voucher.receivedAt)
-  const paymentMethod = paymentMethods(voucher.payMethod)
   return `<!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8"><title>收据-${value(voucher.receiptNo)}</title>
 <style>
@@ -155,10 +154,10 @@ function voucherDocument(voucher) {
   .pair { display: grid; grid-template-columns: 1fr 1.18fr; gap: 28px; }
   .pair .row { min-width: 0; } .pair .label { flex-basis: 82px; }
   .currency { font-weight: 600; } .currency-prefix { flex: 0 0 auto; margin-right: 12px; }
-  .methods { display: flex; flex-wrap: wrap; gap: 18px; padding-left: 6px; }
+  .methods { display: flex; flex-wrap: wrap; gap: 22px; padding-left: 6px; }
   .method { white-space: nowrap; }
-  .signatures { display: grid; grid-template-columns: repeat(5, 1fr); gap: 18px; margin-top: 52px; font-size: 14px; }
-  .signature { min-height: 42px; white-space: nowrap; } @media print { .voucher { min-height: 0; } }
+  .signatures { display: grid; grid-template-columns: .8fr .8fr 1.45fr .8fr 1fr; gap: 18px; margin-top: 48px; font-size: 14px; }
+  .signature { min-height: 44px; white-space: nowrap; } .seal { min-height: 76px; } @media print { .voucher { min-height: 0; } }
 </style></head><body><main class="voucher">
   <div class="date">${value(receivedDate)}</div><div class="title">收 据</div>
   <div class="receipt-no">收据号：${value(voucher.receiptNo)}</div>
@@ -169,22 +168,14 @@ function voucherDocument(voucher) {
   <div class="row"><span class="label">关联账单</span><span class="fill">${value(voucher.billCode)}</span></div>
   <div class="row"><span class="label">金额（大写）</span><span class="currency-prefix">人民币：</span><span class="fill currency">${value(voucher.amountUppercase)}</span></div>
   <div class="row"><span class="label">金额（小写）</span><span class="fill currency">¥ ${value(amount)} 元</span></div>
-  <div class="row"><span class="label">收款方式</span><div class="methods">${paymentMethod}</div></div>
-  <div class="signatures"><div class="signature">核准：</div><div class="signature">会计：</div><div class="signature">单位盖章：</div><div class="signature">出纳：</div><div class="signature">收款人：${value(voucher.payee)}</div></div>
+  <div class="row"><span class="label">收款方式</span><div class="methods"><span class="method">□ 转账</span><span class="method">□ 现金</span><span class="method">□ 支票</span><span class="method">□ 微信</span></div></div>
+  <div class="signatures"><div class="signature">核准：</div><div class="signature">会计：</div><div class="signature seal">单位盖章：</div><div class="signature">出纳：</div><div class="signature">收款人：${value(voucher.payee)}</div></div>
 </main></body></html>`
 }
 
 function receiptDate(raw) {
   const match = String(raw || '').match(/^(\d{4})-(\d{2})-(\d{2})/)
   return match ? `${match[1]}年${Number(match[2])}月${Number(match[3])}日` : '-'
-}
-
-function paymentMethods(rawMethod) {
-  const method = String(rawMethod || '')
-  const checked = (keywords) => keywords.some(keyword => method.includes(keyword)) ? '☑' : '☐'
-  const known = ['转账', '银行', '现金', '支票', '微信'].some(keyword => method.includes(keyword))
-  const other = method && method !== '-' && !known ? `<span class="method">${checked(['其他'])}其他：${escapeHtml(method)}</span>` : ''
-  return `<span class="method">${checked(['转账', '银行'])}转账</span><span class="method">${checked(['现金'])}现金</span><span class="method">${checked(['支票'])}支票</span><span class="method">${checked(['微信'])}微信</span>${other}`
 }
 
 function escapeHtml(value) {
