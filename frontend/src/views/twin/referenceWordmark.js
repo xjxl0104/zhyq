@@ -98,7 +98,8 @@ function letterK() {
 export function addReferenceWordmark(group, materials, {
   x, y, z, height, rotation = 0, variant = 'box',
 }) {
-  const letteringMaterial = materials[variant === 'roof' ? 'facadeLogoBlue' : 'facadeLogoWhite']
+  // Share the entrance's blue PARK finish on every sign for legibility on ivory.
+  const letteringMaterial = materials.facadeLogoBlue
   const glyphs = [
     { part: 'open-d', shape: openBowl(), offset: 0, monogram: true },
     { part: 'stem', shape: polygon([[0, .04], [.36, .04], [.36, .96], [0, .96]]), offset: 1.15, monogram: true },

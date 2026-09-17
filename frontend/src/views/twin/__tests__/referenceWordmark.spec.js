@@ -23,13 +23,13 @@ describe('photographed facade wordmark', () => {
     expect(hasInk(i, 1.28, .5)).toBe(true)
   })
 
-  it('uses teal plus blue or white, with real letter counters and mergeable indexed meshes', () => {
+  it('uses the entrance teal and blue on every sign, with open counters and mergeable meshes', () => {
     for (const variant of ['roof', 'box']) {
       const group = new THREE.Group()
       addReferenceWordmark(group, materials, { x: 0, y: 0, z: 0, height: 1, variant })
       expect(new Set(group.children.slice(0, 2).map(mesh => mesh.material.name))).toEqual(new Set(['facadeLogoTeal']))
       expect(new Set(group.children.slice(2).map(mesh => mesh.material.name)))
-        .toEqual(new Set([variant === 'roof' ? 'facadeLogoBlue' : 'facadeLogoWhite']))
+        .toEqual(new Set(['facadeLogoBlue']))
       const p = group.children[2]
       expect(hasInk(p, 1.67 + .28, .76)).toBe(false)
       expect(hasInk(p, 1.67 + .045, .3)).toBe(true)
