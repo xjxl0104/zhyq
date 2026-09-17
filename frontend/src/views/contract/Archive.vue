@@ -25,6 +25,9 @@
 
     <!-- 表格区 -->
     <div class="table-card">
+      <div class="toolbar">
+        <el-button @click="exportContracts"><el-icon><Download /></el-icon>导出合同台账</el-button>
+      </div>
       <el-table :data="list" v-loading="loading" border stripe>
         <el-table-column type="index" label="序号" width="70" />
         <el-table-column prop="code" label="合同编号" min-width="160" />
@@ -41,13 +44,13 @@
             <el-tag :type="statusType(row.status)">{{ statusText(row.status) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="120" fixed="right">
+        <el-table-column label="操作" width="190" fixed="right">
           <template #default="{ row }">
+            <el-button link type="primary" @click="openAttachments(row)">合同附件</el-button>
             <!-- 与后端守卫同口径:仅已到期(8)/已终止(9)可归档,执行中的不给按钮 -->
             <el-popconfirm v-if="[8, 9].includes(row.status)" title="确认归档该合同?" @confirm="archive(row.id)">
               <template #reference><el-button link type="primary">归档</el-button></template>
             </el-popconfirm>
-            <span v-else>-</span>
           </template>
         </el-table-column>
       </el-table>
@@ -55,6 +58,16 @@
                      :total="total" v-model:current-page="query.pageNo"
                      v-model:page-size="query.pageSize" :page-sizes="[10,20,50]" @change="load" />
     </div>
+
+    <el-dialog v-model="attachmentDialog.visible" :title="attachmentDialog.title" width="560px" @closed="clearAttachments">
+      <el-alert type="info" :closable="false" show-icon>
+        可上传合同扫描件、补充协议等附件；上传后点击文件名即可下载，便于查阅合同原件。
+      </el-alert>
+      <div class="attachment-uploader">
+        <FileUpload v-model="attachmentFiles" biz-type="contract" :biz-id="attachmentDialog.contract?.id"
+                    accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png,.zip,.rar" />
+      </div>
+    </el-dialog>
   </div>
 </template>
 
@@ -62,6 +75,8 @@
 import { reactive, ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { contractApi } from '@/api/contract'
+import { fileApi } from '@/api/file'
+import FileUpload from '@/components/FileUpload.vue'
 
 // null = 不按状态过滤(全部)。档案库要能查到所有合同,不只走完生命周期的那些
 const tabStatus = { all: null, running: 5, expired: 8, terminated: 9, archived: 10 }
@@ -107,6 +122,34 @@ function reset() {
   load()
 }
 
+const attachmentFiles = ref([])
+const attachmentDialog = reactive({ visible: false, title: '合同附件', contract: null })
+async function openAttachments(row) {
+  attachmentDialog.contract = row
+  attachmentDialog.title = `合同附件 · ${row.code || '-'}`
+  attachmentDialog.visible = true
+  attachmentFiles.value = []
+  try {
+    attachmentFiles.value = await fileApi.list('contract', row.id)
+  } catch (e) {
+    ElMessage.error('附件加载失败，请稍后重试')
+  }
+}
+function clearAttachments() {
+  attachmentFiles.value = []
+  attachmentDialog.contract = null
+}
+
+async function exportContracts() {
+  const response = await contractApi.export({ code: query.code, status: query.status })
+  const url = URL.createObjectURL(response.data)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = '合同档案.xlsx'
+  link.click()
+  URL.revokeObjectURL(url)
+}
+
 async function archive(id) {
   await contractApi.archive(id)
   ElMessage.success('归档成功')
@@ -119,4 +162,5 @@ onMounted(load)
 <style scoped>
 .archive-tabs { margin-bottom: 8px; }
 .pager { margin-top: 16px; justify-content: flex-end; }
+.attachment-uploader { margin-top: 16px; }
 </style>

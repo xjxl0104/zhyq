@@ -14,6 +14,7 @@ import com.zhyq.park.contract.mapper.ContractMapper;
 import com.zhyq.park.contract.mapper.ContractRoomMapper;
 import com.zhyq.park.contract.service.ContractService;
 import com.zhyq.park.contract.service.ContractImportService;
+import com.zhyq.park.contract.service.ContractArchiveExportService;
 import com.zhyq.park.finance.entity.Bill;
 import com.zhyq.park.finance.mapper.BillMapper;
 import com.zhyq.park.receivable.entity.ReceivableRegister;
@@ -24,6 +25,10 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
@@ -31,6 +36,7 @@ import org.springframework.web.multipart.MultipartFile;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -49,6 +55,7 @@ public class ContractController {
     private final ContractRoomMapper contractRoomMapper;
     private final ContractService contractService;
     private final ContractImportService contractImportService;
+    private final ContractArchiveExportService contractArchiveExportService;
     private final BillMapper billMapper;
     private final ReceivableRegisterMapper receivableRegisterMapper;
     private final BizTenantMapper bizTenantMapper;
@@ -74,6 +81,30 @@ public class ContractController {
         IPage<Contract> p = contractMapper.selectPage(new Page<>(pageNo, pageSize), qw);
         fillTenantNames(p.getRecords());
         return Result.ok(PageResult.of(p.getTotal(), p.getRecords()));
+    }
+
+    @Operation(summary = "导出合同档案")
+    @PreAuthorize("hasAuthority('contract:query')")
+    @GetMapping("/export")
+    public ResponseEntity<byte[]> export(@RequestParam(required = false) String code,
+                                         @RequestParam(required = false) Long tenantRefId,
+                                         @RequestParam(required = false) Long projectId,
+                                         @RequestParam(required = false) Integer status,
+                                         @RequestParam(required = false) Integer contractType) {
+        List<Contract> contracts = contractMapper.selectList(new LambdaQueryWrapper<Contract>()
+                .like(StringUtils.hasText(code), Contract::getCode, code)
+                .eq(tenantRefId != null, Contract::getTenantRefId, tenantRefId)
+                .eq(projectId != null, Contract::getProjectId, projectId)
+                .eq(status != null, Contract::getStatus, status)
+                .eq(contractType != null, Contract::getContractType, contractType)
+                .orderByDesc(Contract::getId));
+        fillTenantNames(contracts);
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.parseMediaType(
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"));
+        headers.setContentDisposition(ContentDisposition.attachment()
+                .filename("合同档案.xlsx", StandardCharsets.UTF_8).build());
+        return ResponseEntity.ok().headers(headers).body(contractArchiveExportService.export(contracts));
     }
 
     @Operation(summary = "合同详情(含房源列表)")
