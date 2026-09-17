@@ -166,6 +166,7 @@ function voucherDocument(voucher) {
   <div class="row"><span class="label">兹收到</span><span class="fill">${value(voucher.payerName)}</span></div>
   <div class="row"><span class="label">交 来</span><span class="fill">${value(voucher.feeType)}</span></div>
   <div class="pair"><div class="row"><span class="label">合同/协议编号</span><span class="fill">${value(voucher.contractNo)}</span></div><div class="row"><span class="label">租赁地址</span><span class="fill">${value(voucher.leaseAddress)}</span></div></div>
+  <div class="row"><span class="label">关联账单</span><span class="fill">${value(voucher.billCode)}</span></div>
   <div class="row"><span class="label">金额（大写）</span><span class="currency-prefix">人民币：</span><span class="fill currency">${value(voucher.amountUppercase)}</span></div>
   <div class="row"><span class="label">金额（小写）</span><span class="fill currency">¥ ${value(amount)} 元</span></div>
   <div class="row"><span class="label">收款方式</span><div class="methods">${paymentMethod}</div></div>
