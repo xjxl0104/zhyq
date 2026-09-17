@@ -82,6 +82,12 @@
         <FileUpload v-model="attachmentFiles" biz-type="contract" :biz-id="attachmentDialog.contract?.id"
                     accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png,.zip,.rar" />
       </div>
+      <div v-if="attachmentFiles.length" class="attachment-downloads">
+        <div v-for="file in attachmentFiles" :key="file.id" class="attachment-download">
+          <span class="attachment-name">{{ file.originalName || file.name || '合同附件' }}</span>
+          <el-button link type="primary" @click="downloadAttachment(file)">下载查看</el-button>
+        </div>
+      </div>
     </el-dialog>
   </div>
 </template>
@@ -170,6 +176,24 @@ function clearAttachments() {
   attachmentDialog.contract = null
 }
 
+async function downloadAttachment(file) {
+  if (!file?.id) {
+    ElMessage.warning('附件尚未上传完成，请稍后重试')
+    return
+  }
+  try {
+    const response = await fileApi.download(file.id)
+    const url = URL.createObjectURL(response.data)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = file.originalName || file.name || '合同附件'
+    link.click()
+    URL.revokeObjectURL(url)
+  } catch (e) {
+    ElMessage.error('附件下载失败，请稍后重试')
+  }
+}
+
 async function exportContracts() {
   const response = await contractApi.export({ code: query.code, status: query.status })
   const url = URL.createObjectURL(response.data)
@@ -196,6 +220,9 @@ onMounted(() => {
 .archive-tabs { margin-bottom: 8px; }
 .pager { margin-top: 16px; justify-content: flex-end; }
 .attachment-uploader { margin-top: 16px; }
+.attachment-downloads { margin-top: 12px; border-top: 1px solid var(--el-border-color-lighter); }
+.attachment-download { display: flex; align-items: center; gap: 10px; padding: 8px 0; }
+.attachment-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .expiry-warning {
   margin-bottom: 16px;
   padding: 14px 18px;
