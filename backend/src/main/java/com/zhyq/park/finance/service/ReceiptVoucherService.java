@@ -9,6 +9,8 @@ import com.zhyq.park.finance.entity.Receipt;
 import com.zhyq.park.finance.mapper.BillMapper;
 import com.zhyq.park.finance.mapper.PaymentMapper;
 import com.zhyq.park.finance.mapper.ReceiptMapper;
+import com.zhyq.park.receivable.entity.ReceivableRegister;
+import com.zhyq.park.receivable.mapper.ReceivableRegisterMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -30,6 +32,7 @@ public class ReceiptVoucherService {
     private final PaymentMapper paymentMapper;
     private final BillMapper billMapper;
     private final ProjectMapper projectMapper;
+    private final ReceivableRegisterMapper receivableRegisterMapper;
     private final FinanceViewEnricher viewEnricher;
 
     public ReceiptVoucher voucher(Long receiptId) {
@@ -39,6 +42,7 @@ public class ReceiptVoucherService {
         Bill bill = billOf(receipt.getBillId());
         Payment payment = receipt.getPaymentId() == null ? null : paymentMapper.selectById(receipt.getPaymentId());
         Project project = projectOf(bill);
+        ReceivableRegister register = registerOf(bill);
 
         String feeType = view == null || !StringUtils.hasText(view.feeType()) ? "收款" : view.feeType();
         String payerName = view == null || !StringUtils.hasText(view.tenantName())
@@ -55,7 +59,7 @@ public class ReceiptVoucherService {
                 issuerName(project),
                 payerName,
                 contractNo,
-                leaseAddress(project),
+                leaseAddress(register, project),
                 billCode,
                 feeType,
                 amount,
@@ -89,12 +93,20 @@ public class ReceiptVoucherService {
         return bill == null || bill.getProjectId() == null ? null : projectMapper.selectById(bill.getProjectId());
     }
 
+    private ReceivableRegister registerOf(Bill bill) {
+        return bill == null || bill.getReceivableRegisterId() == null
+                ? null : receivableRegisterMapper.selectById(bill.getReceivableRegisterId());
+    }
+
     private String issuerName(Project project) {
         return project != null && StringUtils.hasText(project.getName()) ? project.getName() : DEFAULT_ISSUER;
     }
 
-    /** 收据上的租赁地址优先使用园区已维护的实际地址，未维护时退回园区名称。 */
-    private String leaseAddress(Project project) {
+    /** 收据地址以应收明细登记表的楼层/铺位为准，历史账单再退回园区实际地址。 */
+    private String leaseAddress(ReceivableRegister register, Project project) {
+        if (register != null && StringUtils.hasText(register.getSpaceNameRaw())) {
+            return register.getSpaceNameRaw();
+        }
         if (project == null) {
             return "-";
         }
