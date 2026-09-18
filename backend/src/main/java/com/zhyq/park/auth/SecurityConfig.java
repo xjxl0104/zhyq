@@ -3,6 +3,7 @@ package com.zhyq.park.auth;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
@@ -23,7 +24,7 @@ import java.util.List;
 
 /**
  * Spring Security 配置:无状态 JWT 鉴权。
- * - 放行 /auth/login、文档、静态上传资源;其余一律需认证
+ * - 放行登录、文档与控制器校验下载凭证的入口；其余一律需登录认证
  * - 401/403 统一 Result;方法级 @PreAuthorize 支持 RBAC
  */
 @Configuration
@@ -60,7 +61,9 @@ public class SecurityConfig {
                         "/doc.html", "/webjars/**", "/v3/api-docs/**", "/swagger-ui/**",
                         "/favicon.ico", "/error"
                 ).permitAll()
-                // 附件不再静态放行,统一走鉴权下载接口 /file/download/{id}
+                // 仅浏览器下载交接入口免 Bearer；控制器仍须验证绑定文件的一次性凭证。
+                .requestMatchers(HttpMethod.GET, "/file/browser-download/*").permitAll()
+                // 凭证签发、原始文件读取与上传等接口仍须登录，/uploads 不静态放行。
                 .anyRequest().authenticated()
             )
             .exceptionHandling(e -> e

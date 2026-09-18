@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { uploadUrl, fileApi } from '@/api/file'
+import { startFileDownload } from '@/utils/fileDownload'
 import GlassSurface from '@/components/GlassSurface.vue'
 
 const props = defineProps({
@@ -61,26 +62,14 @@ async function onRemove(uploadFile) {
   }
 }
 
-// 点击文件名 → 鉴权下载(/uploads 静态匿名访问已关闭)
+// 点击文件名 → 鉴权后交给浏览器下载管理器。
 async function onPreview(uploadFile) {
   const id = uploadFile.id || (uploadFile.raw && uploadFile.raw.id)
     || (uploadFile.response && uploadFile.response.data && uploadFile.response.data.id)
   if (!id) return
   try {
-    const res = await fileApi.download(id)
-    const blobUrl = URL.createObjectURL(res.data)
-    const a = document.createElement('a')
-    a.href = blobUrl
-    a.download = uploadFile.name || 'file'
-    a.style.display = 'none'
-    document.body.appendChild(a)
-    a.click()
-    // 某些浏览器在异步接口返回后需要下一轮事件循环才能开始读取 Blob；立即 revoke 会导致点击无反应。
-    window.setTimeout(() => {
-      URL.revokeObjectURL(blobUrl)
-      a.remove()
-    }, 1000)
-    ElMessage.success('已开始下载附件')
+    await startFileDownload(id, uploadFile.name)
+    ElMessage.success('已交给浏览器下载，请在下载列表查看进度')
   } catch (e) {
     ElMessage.error('下载失败')
   }
