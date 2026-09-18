@@ -11,6 +11,8 @@ import com.zhyq.park.finance.mapper.PaymentMapper;
 import com.zhyq.park.finance.mapper.ReceiptMapper;
 import com.zhyq.park.finance.service.FinanceViewEnricher;
 import com.zhyq.park.finance.service.ReceiptVoucherService;
+import com.zhyq.park.receivable.entity.ReceivableRegister;
+import com.zhyq.park.receivable.mapper.ReceivableRegisterMapper;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -32,10 +34,12 @@ class ReceiptVoucherServiceTest {
     @Mock private PaymentMapper paymentMapper;
     @Mock private BillMapper billMapper;
     @Mock private ProjectMapper projectMapper;
+    @Mock private ReceivableRegisterMapper receivableRegisterMapper;
     @Mock private FinanceViewEnricher viewEnricher;
 
     private ReceiptVoucherService service() {
-        return new ReceiptVoucherService(receiptMapper, paymentMapper, billMapper, projectMapper, viewEnricher);
+        return new ReceiptVoucherService(receiptMapper, paymentMapper, billMapper, projectMapper,
+                receivableRegisterMapper, viewEnricher);
     }
 
     @Test
@@ -54,7 +58,11 @@ class ReceiptVoucherServiceTest {
                         new BigDecimal("108000"), null, 5)));
         Bill bill = new Bill();
         bill.setProjectId(5L);
+        bill.setReceivableRegisterId(6L);
         when(billMapper.selectByIdsIncludingDeleted(List.of(2L))).thenReturn(List.of(bill));
+        ReceivableRegister register = new ReceivableRegister();
+        register.setSpaceNameRaw("DIPARK第五层");
+        when(receivableRegisterMapper.selectById(6L)).thenReturn(register);
         Project project = new Project();
         project.setName("DIPARK数智云仓产业园");
         project.setAddress("广州市白云区测试路 1 号");
@@ -71,7 +79,7 @@ class ReceiptVoucherServiceTest {
         assertThat(voucher.amountUppercase()).isEqualTo("壹拾万捌仟元整");
         assertThat(voucher.issuerName()).isEqualTo("DIPARK数智云仓产业园");
         assertThat(voucher.contractNo()).isEqualTo("RR2V1RD");
-        assertThat(voucher.leaseAddress()).isEqualTo("广州市白云区测试路 1 号");
+        assertThat(voucher.leaseAddress()).isEqualTo("DIPARK第五层");
         assertThat(voucher.payee()).isEmpty();
     }
 
