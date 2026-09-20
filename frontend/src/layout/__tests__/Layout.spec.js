@@ -65,7 +65,7 @@ describe('Layout navigation chrome', () => {
     expect(brand.findAll('[data-stroke-char]')).toHaveLength(4)
     expect(brand.find('[data-fill-text]').text()).toBe('智慧系统')
     expect(wrapper.find('.depth-brand').exists()).toBe(false)
-    expect(wrapper.get('.brand-zone .brand-logo').attributes('alt')).toBe('DIPAR')
+    expect(wrapper.get('.brand-zone .brand-logo').attributes('alt')).toBe('DIPARK')
     wrapper.unmount()
   })
 
