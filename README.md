@@ -1,17 +1,25 @@
-# 智慧园区管理系统 (zhyq-park)
+# DIPAR 智慧系统 · 智慧园区管理平台
 
-全新自研的智慧园区管理系统,Java 17 + Spring Boot 3 + Vue 3。覆盖园区运营主链路:
+面向园区与云仓运营的自研管理平台（`zhyq-park`），基于 Java 17、Spring Boot 3 和 Vue 3，结合三维园区展示与业务管理，覆盖园区运营主链路：
 **项目/楼宇/房源 → 招商 → 租客 → 合同 → 账单 → 物业 → 设备 → 数据大屏**。
 
-当前版本为 **ver4.3**，已包含 JWT 登录鉴权、RBAC 用户/角色授权、权威应收明细导入，以及自动售货机安全入口与受控数据导入。
+支持 JWT 登录鉴权、RBAC 用户/角色授权、权威应收明细导入，以及自动售货机安全入口与受控数据导入。
+
+## 主页预览
+
+![DIPAR 智慧系统云仓运营总览：三维园区、空间出租、租金收缴、物业工单、安防设备与能耗展示](docs/assets/park-dashboard.png)
+
+云仓运营总览将三维园区模型与空间出租、租金收缴、物业工单、安防设备和能耗信息集中展示，提供建筑外观、楼层展开、室内空间和场景视角切换。
+
+> 图为产品主页示例，标有“演示”的经营指标与设备状态为演示数据，不代表实际项目运营情况。
 
 ## 技术栈
 
 | 层 | 选型 |
 |---|---|
 | 后端 | Spring Boot 3.2、MyBatis-Plus 3.5、MySQL 8、Flyway、Apache POI、Knife4j、Hutool |
-| 前端 | Vue 3、Vite 5、Element Plus、Pinia、Vue Router、ECharts 5、Vitest |
-| 基础设施 | Docker Compose(MySQL) |
+| 前端 | Vue 3、Vite 5、Element Plus、Pinia、Vue Router、ECharts 5、Three.js、Vitest |
+| 基础设施 | Docker Compose、MySQL 8、Nginx |
 
 所有核心表统一带 `tenant_id / create_by / create_time / update_by / update_time / version(乐观锁) / deleted(逻辑删除)`,由 `BaseEntity` + `MyMetaObjectHandler` 自动填充。
 
@@ -40,14 +48,16 @@ zhyq/
 │       │   ├── oa/             # 办公:任务/公告
 │       │   ├── hui/            # 惠企:访客/商城
 │       │   └── dashboard/      # 驾驶舱/大屏 聚合接口
-│       └── resources/db/migration/  # Flyway V1~V33(建表 + 种子数据 + 升级)
+│       └── resources/db/migration/  # Flyway 版本化迁移（建表 + 种子数据 + 升级）
 ├── frontend/                   # Vue 3 前端
 │   └── src/
-│       ├── layout/             # 14 个一级导航布局
-│       ├── views/              # 各模块页面 + dashboard + screen(大屏)
+│       ├── layout/             # 导航与响应式布局
+│       ├── views/              # 业务页面 + twin（三维主页）+ dashboard + screen（大屏）
 │       ├── api/                # 按模块拆分的接口封装
 │       └── router/             # 路由
-└── docs/PATTERN.md             # 代码模式规范
+└── docs/                      # 开发规范、部署说明与版本记录
+    ├── assets/                # README 截图资源
+    └── PATTERN.md             # 代码模式规范
 ```
 
 ## 快速启动
@@ -78,6 +88,7 @@ pnpm dev                      # 起在 http://localhost:5273
 
 ## 已实现的核心业务能力
 
+- **三维园区主页**：云仓建筑模型、楼层与室内空间展示、视角切换，以及运营指标和业务图层展示。
 - **建筑/租控**:项目-楼宇树、房源状态机(可租/在租/维修…)、出租率/均价/面积统计、租控图着色。
 - **合同 → 账单闭环**(核心):合同审批通过后**自动锁定房源 + 按付款周期生成周期账单计划**(支持免租期、保证金);退租时释放房源并留痕合同版本。
 - **财务**:账单/逾期/收款(**支付幂等**靠流水号唯一约束)、滞纳金按日计算(万分之五/天)、收缴率/账龄/收入结构报表。
@@ -88,7 +99,7 @@ pnpm dev                      # 起在 http://localhost:5273
 - **统一待办**:跨合同/账单/工单/线索/审批聚合。
 - **数据中心 + 大屏**:经营/财务/设备/房源/工单多维聚合可视化，并分开展示租金物业与售货机经营收入。
 
-ver4.3 的字段口径、升级步骤与验收记录见 [`docs/VER4.3.md`](docs/VER4.3.md)，生产部署注意事项见 [`docs/DEPLOY.md`](docs/DEPLOY.md)。
+开发规范见 [代码模式规范](docs/PATTERN.md)，生产部署注意事项见 [部署说明](docs/DEPLOY.md)。历史版本的字段口径、升级步骤与验收记录见 [ver4.3](docs/VER4.3.md)、[ver6.7](docs/VER6.7.md) 和 [ver6.8](docs/VER6.8.md)。
 
 ## 种子数据
 
