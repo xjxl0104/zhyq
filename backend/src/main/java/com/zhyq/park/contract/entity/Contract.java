@@ -47,6 +47,8 @@ public class Contract extends BaseEntity {
     /** 年递增率% */
     private BigDecimal increaseRate;
     private String source;
+    /** 签约时客户评级快照,租赁一次性佣金用(V57) */
+    private String grade;
     /** 退租时间 */
     private LocalDate terminateDate;
     private String remark;

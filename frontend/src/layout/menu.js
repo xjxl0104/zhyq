@@ -37,6 +37,24 @@ export const menuTree = [
         ]
       },
       {
+        title: '全民营销', icon: 'Share', children: [
+          { title: '看板', path: '/crm/marketing/dashboard' },
+          { title: '伙伴管理', path: '/crm/marketing/promoter' },
+          { title: '岗位与份额', path: '/crm/marketing/position' },
+          { title: '客户评级', path: '/crm/marketing/grade' },
+          { title: '客户管理', path: '/crm/marketing/customer' },
+          { title: '服务合同', path: '/crm/marketing/contract' },
+          { title: '合同模板', path: '/crm/marketing/template' },
+          { title: '云仓管理', path: '/crm/marketing/warehouse' },
+          { title: '加盟申请', path: '/crm/marketing/onboarding' },
+          { title: '计佣订单', path: '/crm/marketing/order' },
+          { title: '佣金结算', path: '/crm/marketing/commission' },
+          { title: '提现审核', path: '/crm/marketing/withdrawal' },
+          { title: '规则参数', path: '/crm/marketing/setting' },
+          { title: '审计日志', path: '/crm/marketing/audit' }
+        ]
+      },
+      {
         title: '合同', icon: 'Document', children: [
           { title: '合同列表', path: '/contract/list' },
           { title: '合同归档', path: '/contract/archive' },
