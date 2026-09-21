@@ -82,7 +82,24 @@ public class MktWarehouseController {
     }
 
     @Operation(summary = "新增云仓 = 提交加盟申请") @PreAuthorize("hasAuthority('crm:marketing:warehouse:edit')") @PostMapping
-    public Result<MktWarehouse> apply(@RequestBody MktWarehouse w) {
+    public Result<MktWarehouse> apply(@RequestBody MktWarehouse req) {
+        // 白名单:只接收资料字段。contactOpenid 是阶段 C 云仓登录身份,由 WhAuthService 绑定,禁止后台申请时指定
+        // (否则可填任意 openid 登成该云仓);joinStatus/erpStatus/contractFile 等状态字段由服务端推进。
+        MktWarehouse w = new MktWarehouse();
+        w.setCode(req.getCode());
+        w.setName(req.getName());
+        w.setRegion(req.getRegion());
+        w.setAddress(req.getAddress());
+        w.setContact(req.getContact());
+        w.setPhone(req.getPhone());
+        w.setAreaSqm(req.getAreaSqm());
+        w.setDailyCapacity(req.getDailyCapacity());
+        w.setCategories(req.getCategories());
+        w.setSettleCycle(req.getSettleCycle());
+        w.setFeeModel(req.getFeeModel());
+        w.setPlatformFeeModel(req.getPlatformFeeModel());
+        w.setRemark(req.getRemark());
+        w.setProjectId(req.getProjectId());
         return Result.ok(onboardingService.apply(w));
     }
 

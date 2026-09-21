@@ -1,8 +1,10 @@
 package com.zhyq.park.marketing.controller;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.zhyq.park.common.exception.BizException;
 import com.zhyq.park.common.result.PageResult;
 import com.zhyq.park.common.result.Result;
 import com.zhyq.park.marketing.entity.MktContractTemplate;
@@ -40,17 +42,37 @@ public class MktContractTemplateController {
     }
 
     @Operation(summary = "新增") @PreAuthorize("hasAuthority('crm:marketing:template:config')") @PostMapping
-    public Result<Long> add(@RequestBody MktContractTemplate t) {
-        if (t.getTplVersion() == null) t.setTplVersion(1);
+    public Result<Long> add(@RequestBody MktContractTemplate req) {
+        MktContractTemplate t = new MktContractTemplate();
+        t.setName(req.getName());
+        t.setServiceType(req.getServiceType());
+        t.setTplVersion(req.getTplVersion() == null ? 1 : req.getTplVersion());
+        t.setBody(req.getBody());
+        t.setVariables(req.getVariables());
+        t.setStatus(req.getStatus() == null ? 1 : req.getStatus());
+        t.setProjectId(req.getProjectId());
         templateMapper.insert(t);
         auditService.log("template.add", "template", t.getId(), null);
         return Result.ok(t.getId());
     }
 
     @Operation(summary = "修改") @PreAuthorize("hasAuthority('crm:marketing:template:config')") @PutMapping
-    public Result<Void> update(@RequestBody MktContractTemplate t) {
-        templateMapper.updateById(t);
-        auditService.log("template.update", "template", t.getId(), null);
+    public Result<Void> update(@RequestBody MktContractTemplate req) {
+        if (req.getId() == null) throw new BizException("模板 id 必填");
+        MktContractTemplate before = templateMapper.selectById(req.getId());
+        if (before == null) throw new BizException("模板不存在");
+        // 白名单字段更新:不接收 id/tenantId/createBy 等身份字段,防越权覆盖
+        int updated = templateMapper.update(null, new LambdaUpdateWrapper<MktContractTemplate>()
+                .eq(MktContractTemplate::getId, req.getId())
+                .set(MktContractTemplate::getName, req.getName())
+                .set(MktContractTemplate::getServiceType, req.getServiceType())
+                .set(MktContractTemplate::getTplVersion, req.getTplVersion())
+                .set(MktContractTemplate::getBody, req.getBody())
+                .set(MktContractTemplate::getVariables, req.getVariables())
+                .set(MktContractTemplate::getStatus, req.getStatus())
+                .set(MktContractTemplate::getProjectId, req.getProjectId()));
+        if (updated == 0) throw new BizException("模板不存在或已删除");
+        auditService.log("template.update", "template", req.getId(), null, before, req);
         return Result.ok();
     }
 

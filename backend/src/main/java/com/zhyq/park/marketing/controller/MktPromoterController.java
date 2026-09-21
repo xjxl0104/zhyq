@@ -28,6 +28,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 
@@ -49,7 +50,7 @@ public class MktPromoterController {
     @Operation(summary = "分页")
     @PreAuthorize("hasAuthority('crm:marketing:promoter:query')")
     @GetMapping("/page")
-    public Result<PageResult<MktPromoter>> page(@RequestParam(defaultValue = "1") int pageNo,
+    public Result<PageResult<PromoterVO>> page(@RequestParam(defaultValue = "1") int pageNo,
                                                 @RequestParam(defaultValue = "10") int pageSize,
                                                 @RequestParam(required = false) String keyword,
                                                 @RequestParam(required = false) String positionCode,
@@ -63,24 +64,38 @@ public class MktPromoterController {
                 .eq(projectId != null, MktPromoter::getProjectId, projectId)
                 .orderByDesc(MktPromoter::getId);
         IPage<MktPromoter> p = promoterMapper.selectPage(new Page<>(pageNo, pageSize), qw);
-        return Result.ok(PageResult.of(p.getTotal(), p.getRecords()));
+        return Result.ok(PageResult.of(p.getTotal(), p.getRecords().stream().map(PromoterVO::of).collect(java.util.stream.Collectors.toList())));
     }
 
     @Operation(summary = "详情")
     @PreAuthorize("hasAuthority('crm:marketing:promoter:query')")
     @GetMapping("/{id}")
-    public Result<MktPromoter> get(@PathVariable Long id) {
+    public Result<PromoterVO> get(@PathVariable Long id) {
         MktPromoter p = promoterMapper.selectById(id);
         if (p == null) throw new BizException("伙伴不存在");
-        return Result.ok(p);
+        return Result.ok(PromoterVO.of(p));
     }
 
     @Operation(summary = "直属团队(一层)")
     @PreAuthorize("hasAuthority('crm:marketing:promoter:query')")
     @GetMapping("/{id}/team")
-    public Result<List<MktPromoter>> team(@PathVariable Long id) {
+    public Result<List<PromoterVO>> team(@PathVariable Long id) {
         return Result.ok(promoterMapper.selectList(new LambdaQueryWrapper<MktPromoter>()
-                .eq(MktPromoter::getParentId, id).orderByDesc(MktPromoter::getId)));
+                .eq(MktPromoter::getParentId, id).orderByDesc(MktPromoter::getId)).stream().map(PromoterVO::of).collect(java.util.stream.Collectors.toList()));
+    }
+
+    /** 伙伴对外视图:剔除 openid/unionid/registerIp/deviceId 等登录与设备身份(最低角色可批量拉,不能外泄 PII)。 */
+    public static record PromoterVO(Long id, String name, String phone, String avatar, String inviteCode, Long parentId,
+                                    String path, String positionCode, LocalDateTime positionSince, Integer status,
+                                    Integer isInternal, String agreementVersion, LocalDateTime agreedAt, Integer idVerified,
+                                    LocalDateTime bindTime, LocalDateTime inviteDeadline, LocalDateTime lastLogin,
+                                    String source, String remark, Long projectId) {
+        static PromoterVO of(MktPromoter p) {
+            return new PromoterVO(p.getId(), p.getName(), p.getPhone(), p.getAvatar(), p.getInviteCode(), p.getParentId(),
+                    p.getPath(), p.getPositionCode(), p.getPositionSince(), p.getStatus(), p.getIsInternal(),
+                    p.getAgreementVersion(), p.getAgreedAt(), p.getIdVerified(), p.getBindTime(), p.getInviteDeadline(),
+                    p.getLastLogin(), p.getSource(), p.getRemark(), p.getProjectId());
+        }
     }
 
     @Operation(summary = "推荐的客户")

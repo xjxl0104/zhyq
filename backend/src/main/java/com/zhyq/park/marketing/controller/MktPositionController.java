@@ -17,6 +17,8 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -48,9 +50,33 @@ public class MktPositionController {
     @PutMapping
     @Transactional
     public Result<Void> update(@RequestBody List<MktPosition> list) {
-        list.sort((a, b) -> Integer.compare(a.getSort(), b.getSort()));
-        int prev = 0;
+        if (list == null || list.isEmpty()) throw new BizException("提交内容为空");
+        // 以数据库全量为基准合并本次提交:只校验提交子集会被"只提 P2=100 跳过 P1"绕过,
+        // 导致 DB 出现 P1=50/P2=100/P3=85/P4=100 的非法阶梯(引擎跳级)。
+        Map<Long, MktPosition> merged = new LinkedHashMap<>();
+        for (MktPosition p : positionMapper.selectList(new LambdaQueryWrapper<MktPosition>().orderByAsc(MktPosition::getSort))) {
+            merged.put(p.getId(), p);
+        }
+        Map<Long, MktPosition> beforeById = new LinkedHashMap<>(merged);
         for (MktPosition p : list) {
+            if (p.getId() == null) throw new BizException("岗位 id 必填");
+            MktPosition cur = merged.get(p.getId());
+            if (cur == null) throw new BizException("岗位不存在: " + p.getId());
+            // 白名单:只接受可编辑字段,code/sort 是阶梯身份与排序锚点,禁止改
+            if (p.getName() != null) cur.setName(p.getName());
+            if (p.getSharePct() != null) cur.setSharePct(p.getSharePct());
+            if (p.getShareMinPct() != null) cur.setShareMinPct(p.getShareMinPct());
+            if (p.getLockCap() != null) cur.setLockCap(p.getLockCap());
+            if (p.getPromoteAmount() != null) cur.setPromoteAmount(p.getPromoteAmount());
+            if (p.getPromoteOrders() != null) cur.setPromoteOrders(p.getPromoteOrders());
+            if (p.getTeamCounted() != null) cur.setTeamCounted(p.getTeamCounted());
+            if (p.getDemoteEnabled() != null) cur.setDemoteEnabled(p.getDemoteEnabled());
+        }
+        // 按 sort 对全量校验;sort 为 null 视为 0(原实现 Integer.compare(a.getSort(),..) 会 NPE)
+        List<MktPosition> all = new ArrayList<>(merged.values());
+        all.sort((a, b) -> Integer.compare(a.getSort() == null ? 0 : a.getSort(), b.getSort() == null ? 0 : b.getSort()));
+        int prev = 0;
+        for (MktPosition p : all) {
             if (p.getSharePct() == null || p.getSharePct() <= prev) {
                 throw new BizException(p.getCode() + " 的份额必须大于上一级 " + prev);
             }
@@ -63,18 +89,18 @@ public class MktPositionController {
             throw new BizException("最高岗位份额必须为 100");
         }
         for (MktPosition p : list) {
-            MktPosition before = positionMapper.selectById(p.getId());
+            MktPosition cur = merged.get(p.getId());
             positionMapper.update(null, new LambdaUpdateWrapper<MktPosition>()
-                    .eq(MktPosition::getId, p.getId())
-                    .set(MktPosition::getName, p.getName())
-                    .set(MktPosition::getSharePct, p.getSharePct())
-                    .set(MktPosition::getShareMinPct, p.getShareMinPct())
-                    .set(MktPosition::getLockCap, p.getLockCap())
-                    .set(MktPosition::getPromoteAmount, p.getPromoteAmount())
-                    .set(MktPosition::getPromoteOrders, p.getPromoteOrders())
-                    .set(MktPosition::getTeamCounted, p.getTeamCounted())
-                    .set(MktPosition::getDemoteEnabled, p.getDemoteEnabled()));
-            auditService.log("position.config", "position", p.getId(), null, before, p);
+                    .eq(MktPosition::getId, cur.getId())
+                    .set(MktPosition::getName, cur.getName())
+                    .set(MktPosition::getSharePct, cur.getSharePct())
+                    .set(MktPosition::getShareMinPct, cur.getShareMinPct())
+                    .set(MktPosition::getLockCap, cur.getLockCap())
+                    .set(MktPosition::getPromoteAmount, cur.getPromoteAmount())
+                    .set(MktPosition::getPromoteOrders, cur.getPromoteOrders())
+                    .set(MktPosition::getTeamCounted, cur.getTeamCounted())
+                    .set(MktPosition::getDemoteEnabled, cur.getDemoteEnabled()));
+            auditService.log("position.config", "position", cur.getId(), null, beforeById.get(cur.getId()), cur);
         }
         return Result.ok();
     }

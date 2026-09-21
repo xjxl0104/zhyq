@@ -18,6 +18,7 @@ import com.zhyq.park.marketing.mapper.MktPromoterMapper;
 import com.zhyq.park.marketing.mapper.MktServiceContractMapper;
 import com.zhyq.park.marketing.service.MktAuditService;
 import com.zhyq.park.marketing.service.MktLockService;
+import com.zhyq.park.marketing.service.MktPromoterService;
 import com.zhyq.park.marketing.service.MktServiceContractService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -111,11 +112,21 @@ public class MktCustomerController {
         MktPromoter p = promoterMapper.selectOne(new LambdaQueryWrapper<MktPromoter>()
                 .eq(MktPromoter::getInviteCode, String.valueOf(body.get("inviteCode")).trim().toUpperCase()).last("limit 1"));
         if (p == null) throw new BizException("邀请码不存在");
+        // 推荐人必须是正常在册伙伴:冻结/待审核/已退出的人挂上去,后续计佣会落到不可用主体
+        if (!Integer.valueOf(MktPromoterService.ST_NORMAL).equals(p.getStatus())) {
+            throw new BizException("该伙伴当前状态不可作为推荐人(status=" + p.getStatus() + ")");
+        }
         if (StringUtils.hasText(c.getPhone()) && c.getPhone().equals(p.getPhone())) throw new BizException("不能自我推荐");
         if (c.getReferrerId() != null && !StringUtils.hasText(body.get("reason"))) throw new BizException("更换推荐人必须填写原因");
-        customerMapper.update(null, new LambdaUpdateWrapper<Customer>().eq(Customer::getId, id)
+        // 已存在别的伙伴的有效锁/预锁时,变更推荐人会和锁定归属打架,要求先释放或转移
+        MktCustomerLock active = lockService.activeLockOf(id);
+        if (active != null && active.getPromoterId() != null && !active.getPromoterId().equals(p.getId())) {
+            throw new BizException("该客户已有其它伙伴的有效锁,请先释放或转移锁定再改推荐人");
+        }
+        int updated = customerMapper.update(null, new LambdaUpdateWrapper<Customer>().eq(Customer::getId, id)
                 .set(Customer::getReferrerId, p.getId())
                 .set(Customer::getAttributionNote, "后台设置推荐人 " + p.getInviteCode() + (StringUtils.hasText(body.get("reason")) ? ":" + body.get("reason") : "")));
+        if (updated == 0) throw new BizException("客户状态已变化,请刷新后重试");
         auditService.log("customer.referrer", "customer", id, body.get("reason"), c.getReferrerId(), p.getId());
         return Result.ok();
     }
