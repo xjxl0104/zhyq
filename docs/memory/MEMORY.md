@@ -8,3 +8,4 @@
 - [zhyq 附件铺开](zhyq-attachment-rollout.md) — 核心业务新增页接入统一附件上传;方案B先传后回填;底座已就绪
 - [zhyq ver4.3→6.3 交付](zhyq-ver43-to-ver63.md) — 账户补全/项目切换/自动建档/大屏/工单门禁/便利贴/BI图表 脉络 + 5个关键坑 + 部署/自动部署状态
 - [zhyq 线上数据导入 SOP](zhyq-data-import-runbook.md) — 数据包怎么审/备份/预演/上生产 + 2026-09-04 财务数据搬线上实录(云帕/昌泰/8 份合同)与踩坑
+- [全民营销·单园区数据范围](zhyq-marketing-single-park.md) — 营销模块无租户/project 隔离是有意边界(阶段 A 单园区),别误判为越权 bug;做多园区需全后端统一立项
