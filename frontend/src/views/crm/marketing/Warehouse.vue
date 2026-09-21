@@ -9,7 +9,7 @@
           </el-select>
         </el-form-item>
         <el-form-item>
-          <el-button type="primary" @click="load"><el-icon><Search /></el-icon>查询</el-button>
+          <el-button type="primary" @click="search"><el-icon><Search /></el-icon>查询</el-button>
           <el-button @click="reset">重置</el-button>
         </el-form-item>
       </el-form>
@@ -98,7 +98,7 @@ const JOIN = { 1: '申请', 2: '资质审核', 3: 'ERP 对接中', 4: '待签协
 const ERP = { 0: '未对接', 1: '已联通(沙箱)', 2: '已联通(正式)', 3: '断连' }
 const CYCLE = { 1: '周', 2: '半月', 3: '月' }
 const STEP = { 1: '提交申请', 2: '资质审核', 3: 'ERP 打通', 4: '签加盟协议', 5: '上线' }
-const joinType = (v) => ({ 5: 'success', 6: 'warning', 7: 'danger' }[v] || 'info')
+const joinType = (v) => ({ 1: 'warning', 2: 'warning', 3: 'primary', 4: 'warning', 5: 'success', 6: 'warning', 7: 'danger' }[v] || 'info')
 const erpType = (v) => ({ 1: 'success', 2: 'success', 3: 'danger' }[v] || 'info')
 
 const loading = ref(false)
@@ -113,12 +113,14 @@ async function load() {
     list.value = res.records; total.value = res.total
   } finally { loading.value = false }
 }
+function search() { query.pageNo = 1; load() }
 function reset() { Object.assign(query, { pageNo: 1, keyword: '', joinStatus: null }); load() }
 
 const formRef = ref()
 const dialog = reactive({ visible: false, title: '' })
-const emptyForm = () => ({ code: '', name: '', region: '', contact: '', phone: '', address: '', areaSqm: null, dailyCapacity: null, categories: '', settleCycle: 3, feeModel: '' })
+const emptyForm = () => ({ id: null, code: '', name: '', region: '', contact: '', phone: '', address: '', areaSqm: null, dailyCapacity: null, categories: '', settleCycle: 3, feeModel: null })
 const form = reactive(emptyForm())
+const pickForm = (row) => Object.fromEntries(Object.entries(row).filter(([k]) => k in form))
 const rules = {
   code: [{ required: true, message: '请输入编码', trigger: 'blur' }],
   name: [{ required: true, message: '请输入名称', trigger: 'blur' }]
@@ -126,10 +128,13 @@ const rules = {
 function openDialog(row) {
   dialog.visible = true
   dialog.title = row ? '编辑云仓' : '新增云仓(提交加盟申请)'
-  Object.assign(form, row ? { ...row } : emptyForm())
+  Object.assign(form, emptyForm(), row ? pickForm(row) : {})
 }
 async function submit() {
   await formRef.value.validate()
+  // fee_model 是 JSON 列,空串会被 MySQL 拒绝(ERROR 3140),留空一律传 null
+  if (!form.feeModel) form.feeModel = null
+  else { try { JSON.parse(form.feeModel) } catch (e) { return ElMessage.error('费用模型不是合法 JSON') } }
   if (form.id) await mktWarehouseApi.update(form)
   else await mktWarehouseApi.apply(form)
   ElMessage.success('已保存')

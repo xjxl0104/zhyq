@@ -28,6 +28,11 @@ zhyq:
   upload:
     path: ${UPLOAD_PATH:./uploads}
     url-prefix: /uploads
+  mp:
+    # 伙伴小程序:开发期 mock-login=true 把 js_code 当 openid;拿到主体后填 AppID/Secret 并关掉
+    mock-login: ${WX_MP_MOCK_LOGIN:true}
+    appid: ${WX_MP_APPID:}
+    secret: ${WX_MP_SECRET:}
   jwt:
     # 生产必须由环境变量提供,不留默认值(HS256 密钥,建议 >=32 字节随机串)
     secret: ${JWT_SECRET}

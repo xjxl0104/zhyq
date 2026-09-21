@@ -3,6 +3,8 @@ import request from '@/utils/request'
 // 全民营销(园区伙伴 · 云仓生态)。后端前缀 /crm/marketing/**,规范见 docs/marketing/PARK-MKT-001 §5.1
 const BASE = '/crm/marketing'
 const upload = (url, formData) => request.post(url, formData, { headers: { 'Content-Type': 'multipart/form-data' } })
+// 后端按 Map<String, List<Long>> 接收请求体，避免 request 拦截器注入 projectId。
+const postRaw = (url, body) => request.post(url, JSON.stringify(body), { headers: { 'Content-Type': 'application/json' } })
 
 // 看板
 export const mktDashboardApi = {
@@ -114,7 +116,8 @@ export const mktOrderApi = {
   page: (params) => request.get(`${BASE}/order/page`, { params }),
   get: (id) => request.get(`${BASE}/order/${id}`),
   importExcel: (formData) => upload(`${BASE}/order/import`, formData),
-  templateUrl: `/api${BASE}/order/import-template`,
+  // 接口有鉴权，裸 <a href> 不带 token；通过 axios 获取 blob。
+  template: () => request.get(`${BASE}/order/import-template`, { responseType: 'blob' }),
   void: (id, data) => request.post(`${BASE}/order/${id}/void`, data),
   splits: (id) => request.get(`${BASE}/order/${id}/splits`)
 }
@@ -122,7 +125,7 @@ export const mktOrderApi = {
 // 佣金结算
 export const mktCommissionApi = {
   page: (params) => request.get(`${BASE}/commission/page`, { params }),
-  settle: (data) => request.post(`${BASE}/commission/settle`, data),
+  settle: (ids) => postRaw(`${BASE}/commission/settle`, { ids }),
   void: (id, data) => request.post(`${BASE}/commission/${id}/void`, data),
   batches: (params) => request.get(`${BASE}/commission/batches`, { params })
 }
@@ -144,4 +147,16 @@ export const mktSettingApi = {
 }
 export const mktAuditApi = {
   page: (params) => request.get(`${BASE}/audit/page`, { params })
+}
+
+// ERP 对接(阶段 C 只留接口:凭证 / 映射 / 日志)
+export const mktErpApi = {
+  get: (warehouseId) => request.get(`${BASE}/erp/warehouse/${warehouseId}`),
+  issue: (warehouseId) => request.post(`${BASE}/erp/warehouse/${warehouseId}/issue`),
+  resetSecret: (warehouseId) => request.post(`${BASE}/erp/warehouse/${warehouseId}/reset-secret`),
+  update: (warehouseId, data) => request.put(`${BASE}/erp/warehouse/${warehouseId}`, data),
+  mappings: (warehouseId) => request.get(`${BASE}/erp/warehouse/${warehouseId}/mappings`),
+  saveMapping: (warehouseId, data) => request.post(`${BASE}/erp/warehouse/${warehouseId}/mappings`, data),
+  deleteMapping: (id) => request.delete(`${BASE}/erp/mappings/${id}`),
+  logs: (params) => request.get(`${BASE}/erp/logs`, { params })
 }

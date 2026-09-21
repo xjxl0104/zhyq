@@ -16,7 +16,7 @@
           </el-select>
         </el-form-item>
         <el-form-item>
-          <el-button type="primary" @click="load"><el-icon><Search /></el-icon>查询</el-button>
+          <el-button type="primary" @click="search"><el-icon><Search /></el-icon>查询</el-button>
           <el-button @click="reset">重置</el-button>
         </el-form-item>
       </el-form>
@@ -133,10 +133,12 @@
             <el-table-column prop="referralOrderId" label="订单" width="80" />
             <el-table-column prop="positionCode" label="岗位" width="70" />
             <el-table-column label="份额/级差" width="100"><template #default="{ row }">{{ row.sharePct }}% / {{ row.diffPct }}%</template></el-table-column>
-            <el-table-column prop="amount" label="金额" width="110" />
+            <el-table-column label="金额(元)" width="110" align="right"><template #default="{ row }">{{ money(row.amount) }}</template></el-table-column>
             <el-table-column label="状态"><template #default="{ row }">{{ commissionStatus(row.status) }}</template></el-table-column>
             <el-table-column prop="createTime" label="时间" width="160" />
           </el-table>
+          <el-pagination class="pager" small background layout="total, prev, pager, next" :total="detail.commissionTotal"
+                         v-model:current-page="detail.commissionPage" :page-size="20" @current-change="loadCommissions" />
         </el-tab-pane>
         <el-tab-pane label="岗位史" name="history">
           <el-table :data="detail.history" size="small" border>
@@ -157,12 +159,13 @@
 import { reactive, ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { mktPromoterApi, mktPositionApi } from '@/api/marketing'
+import { money } from '@/utils/format'
 
 const statusOptions = [
   { value: 1, label: '正常' }, { value: 2, label: '冻结' }, { value: 3, label: '待审核' }, { value: 4, label: '已退出' }
 ]
 const statusText = (v) => statusOptions.find(s => s.value === v)?.label || '-'
-const statusType = (v) => ({ 1: 'success', 2: 'warning', 3: 'info', 4: 'danger' }[v] || 'info')
+const statusType = (v) => ({ 1: 'success', 2: 'warning', 3: 'warning', 4: 'info' }[v] || 'info')
 const commissionStatus = (v) => ({ 1: '冻结', 2: '可结算', 3: '已结算', 4: '已提现', 5: '作废' }[v] || '-')
 const maskPhone = (p) => (p && p.length === 11 ? p.slice(0, 3) + '****' + p.slice(7) : p || '-')
 
@@ -182,6 +185,7 @@ async function load() {
     total.value = res.total
   } finally { loading.value = false }
 }
+function search() { query.pageNo = 1; load() }
 function reset() {
   Object.assign(query, { pageNo: 1, keyword: '', positionCode: null, status: null })
   load()
@@ -223,18 +227,22 @@ async function unfreeze(row) { await mktPromoterApi.unfreeze(row.id); ElMessage.
 async function audit(row, pass) { await mktPromoterApi.audit(row.id, { pass, reason: pass ? '后台审核通过' : '' }); ElMessage.success('已审核'); load() }
 
 // ---- 详情 ----
-const detail = reactive({ visible: false, tab: 'info', row: null, team: [], commissions: [], history: [] })
+const detail = reactive({ visible: false, tab: 'info', row: null, team: [], commissions: [], commissionTotal: 0, commissionPage: 1, history: [] })
 async function openDetail(row) {
   detail.row = await mktPromoterApi.get(row.id)
   detail.tab = 'info'
-  detail.team = []; detail.commissions = []; detail.history = []
+  detail.team = []; detail.commissions = []; detail.commissionTotal = 0; detail.commissionPage = 1; detail.history = []
   detail.visible = true
 }
 async function loadTab(name) {
   const id = detail.row.id
   if (name === 'team' && !detail.team.length) detail.team = await mktPromoterApi.team(id)
-  if (name === 'commissions' && !detail.commissions.length) detail.commissions = (await mktPromoterApi.commissions(id, { pageNo: 1, pageSize: 50 })).records
+  if (name === 'commissions' && !detail.commissions.length) await loadCommissions()
   if (name === 'history' && !detail.history.length) detail.history = await mktPromoterApi.history(id)
+}
+async function loadCommissions() {
+  const res = await mktPromoterApi.commissions(detail.row.id, { pageNo: detail.commissionPage, pageSize: 20 })
+  detail.commissions = res.records; detail.commissionTotal = res.total
 }
 
 onMounted(async () => {

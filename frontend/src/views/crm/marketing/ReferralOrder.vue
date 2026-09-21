@@ -14,7 +14,7 @@
           </el-select>
         </el-form-item>
         <el-form-item>
-          <el-button type="primary" @click="load"><el-icon><Search /></el-icon>查询</el-button>
+          <el-button type="primary" @click="search"><el-icon><Search /></el-icon>查询</el-button>
           <el-button @click="reset">重置</el-button>
         </el-form-item>
       </el-form>
@@ -25,7 +25,7 @@
         <el-upload :show-file-list="false" accept=".xlsx,.xls" :http-request="doImport">
           <el-button type="primary" :loading="importing"><el-icon><Upload /></el-icon>导入出库单(Excel)</el-button>
         </el-upload>
-        <a :href="mktOrderApi.templateUrl" target="_blank"><el-button link type="primary">下载模板</el-button></a>
+        <el-button link type="primary" @click="downloadTemplate">下载模板</el-button>
         <span class="hint">列:出库单号 · 客户手机号 · 件数 · 包裹数 · 发货时间 · 物流单号 · 云仓编码(可选) · 货值(可选)。服务费按客户合同单价表由园区自算,冻结 7 天后自动解冻。</span>
       </div>
       <el-alert v-if="importResult" :type="importResult.errors.length ? 'warning' : 'success'" :closable="true" class="mb" @close="importResult = null">
@@ -40,11 +40,11 @@
         <el-table-column prop="customerName" label="客户" min-width="130" />
         <el-table-column prop="promoterName" label="成交伙伴" width="110" />
         <el-table-column prop="customerGrade" label="评级" width="60" align="center" />
-        <el-table-column label="基数" width="110" align="right"><template #default="{ row }">{{ row.baseAmount }}</template></el-table-column>
+        <el-table-column label="基数(元)" width="110" align="right"><template #default="{ row }">{{ money(row.baseAmount) }}</template></el-table-column>
         <el-table-column label="系数" width="90" align="right">
           <template #default="{ row }">{{ row.sourceType === 1 ? `${row.poolFactor} 月` : `${row.poolFactor}%` }}</template>
         </el-table-column>
-        <el-table-column prop="poolAmount" label="佣金池" width="110" align="right" />
+        <el-table-column label="佣金池(元)" width="110" align="right"><template #default="{ row }">{{ money(row.poolAmount) }}</template></el-table-column>
         <el-table-column label="状态" width="90"><template #default="{ row }"><el-tag :type="stType(row.status)">{{ ST[row.status] }}</el-tag></template></el-table-column>
         <el-table-column prop="eventTime" label="事件时间" width="160" />
         <el-table-column label="操作" width="150" fixed="right">
@@ -64,7 +64,7 @@
         <el-table-column prop="promoterId" label="伙伴" width="80" />
         <el-table-column prop="positionCode" label="岗位" width="70" />
         <el-table-column label="份额 / 级差" width="110"><template #default="{ row }">{{ row.sharePct }}% / {{ row.diffPct }}%</template></el-table-column>
-        <el-table-column prop="amount" label="金额" width="110" align="right" />
+        <el-table-column label="金额(元)" width="110" align="right"><template #default="{ row }">{{ money(row.amount) }}</template></el-table-column>
         <el-table-column label="状态"><template #default="{ row }">{{ CST[row.status] }}</template></el-table-column>
         <el-table-column prop="unfreezeAt" label="解冻时间" width="160" />
       </el-table>
@@ -77,11 +77,12 @@
 import { reactive, ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { mktOrderApi } from '@/api/marketing'
+import { money } from '@/utils/format'
 
 const SRC = { 1: '租赁签约', 2: '出库单', 3: '平台费收款', 4: '签约奖', 5: '增值服务' }
 const ST = { 1: '待确认', 2: '已确认', 3: '已退款', 4: '已取消', 5: '无归属' }
 const CST = { 1: '冻结', 2: '可结算', 3: '已结算', 4: '已提现', 5: '作废' }
-const stType = (s) => ({ 2: 'success', 3: 'danger', 4: 'info', 5: 'warning' }[s] || '')
+const stType = (s) => ({ 1: 'warning', 2: 'success', 3: 'danger', 4: 'info', 5: 'danger' }[s] || 'info')
 
 const loading = ref(false)
 const importing = ref(false)
@@ -97,8 +98,17 @@ async function load() {
     list.value = res.records; total.value = res.total
   } finally { loading.value = false }
 }
+function search() { query.pageNo = 1; load() }
 function reset() { Object.assign(query, { pageNo: 1, sourceNo: '', sourceType: null, status: null }); load() }
 
+async function downloadTemplate() {
+  const res = await mktOrderApi.template()
+  const a = document.createElement('a')
+  a.href = URL.createObjectURL(res.data)
+  a.download = '出库单导入模板.xlsx'
+  a.click()
+  URL.revokeObjectURL(a.href)
+}
 async function doImport({ file }) {
   const fd = new FormData(); fd.append('file', file)
   importing.value = true

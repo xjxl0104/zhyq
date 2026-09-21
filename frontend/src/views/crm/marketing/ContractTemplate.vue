@@ -52,10 +52,11 @@ async function load() {
 }
 const formRef = ref()
 const dialog = reactive({ visible: false, title: '' })
-const emptyForm = () => ({ name: '', serviceType: 2, status: 1, variables: '[]', body: '' })
+const emptyForm = () => ({ id: null, name: '', serviceType: 2, status: 1, variables: '[]', body: '' })
 const form = reactive(emptyForm())
+const pickForm = (row) => Object.fromEntries(Object.entries(row).filter(([k]) => k in form))
 const rules = { name: [{ required: true, message: '请输入名称', trigger: 'blur' }] }
-function openDialog(row) { dialog.visible = true; dialog.title = row ? '编辑模板' : '新增模板'; Object.assign(form, row ? { ...row } : emptyForm()) }
+function openDialog(row) { dialog.visible = true; dialog.title = row ? '编辑模板' : '新增模板'; Object.assign(form, emptyForm(), row ? pickForm(row) : {}) }
 async function submit() {
   await formRef.value.validate()
   if (form.id) await mktTemplateApi.update(form); else await mktTemplateApi.add(form)

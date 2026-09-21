@@ -46,6 +46,7 @@ const routes = [
       { path: 'crm/marketing/withdrawal', meta: { title: '提现审核' }, component: () => import('@/views/crm/marketing/Withdrawal.vue') },
       { path: 'crm/marketing/setting', meta: { title: '规则参数' }, component: () => import('@/views/crm/marketing/Setting.vue') },
       { path: 'crm/marketing/audit', meta: { title: '审计日志' }, component: () => import('@/views/crm/marketing/AuditLog.vue') },
+      { path: 'crm/marketing/erp', meta: { title: 'ERP 对接' }, component: () => import('@/views/crm/marketing/Erp.vue') },
 
       // 租客
       { path: 'tenant/list', meta: { title: '租客列表' }, component: () => import('@/views/tenant/TenantList.vue') },

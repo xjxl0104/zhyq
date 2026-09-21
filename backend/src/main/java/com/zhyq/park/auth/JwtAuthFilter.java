@@ -15,6 +15,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.ArrayList;
 import java.util.stream.Collectors;
 
 /**
@@ -43,7 +44,23 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                 Object auth = c.get("auth");
                 List<SimpleGrantedAuthority> authorities = (auth instanceof List<?> l)
                         ? l.stream().map(Object::toString).map(SimpleGrantedAuthority::new).collect(Collectors.toList())
-                        : List.of();
+                        : new ArrayList<>();
+                boolean mpToken = c.getSubject() != null && c.getSubject().startsWith("mp:");
+                boolean whToken = c.getSubject() != null && c.getSubject().startsWith("wh:");
+                boolean mpPath = request.getRequestURI().contains("/mp/v1/");
+                boolean whPath = request.getRequestURI().contains("/wh/v1/");
+                // 三类身份严格按路径互斥。后台 token 没有前缀,也不能进入任一小程序 API。
+                if ((mpToken && !mpPath) || (whToken && !whPath) ||
+                        ((!mpToken && !whToken) && (mpPath || whPath)) ||
+                        (mpPath && whPath)) {
+                    SecurityContextHolder.clearContext();
+                    chain.doFilter(request, response);
+                    return;
+                }
+                if (mpToken && authorities.stream().noneMatch(a -> a.getAuthority().equals("ROLE_MP")))
+                    authorities.add(new SimpleGrantedAuthority("ROLE_MP"));
+                if (whToken && authorities.stream().noneMatch(a -> a.getAuthority().equals("ROLE_WH")))
+                    authorities.add(new SimpleGrantedAuthority("ROLE_WH"));
                 UsernamePasswordAuthenticationToken authentication =
                         new UsernamePasswordAuthenticationToken(c.getSubject(), null, authorities);
                 authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));

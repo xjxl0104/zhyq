@@ -1,0 +1,4 @@
+<template><view><view class="card"><view class="title">结算单</view><view v-for="s in rows" :key="s.id" class="row"><view><view>{{s.period || s.batchNo}}</view><view class="muted">{{s.totalAmount || '0.00'}}</view></view><view><text class="tag">{{s.status}}</text><button v-if="s.status === 1" size="mini" @click="confirm(s.id)">确认</button></view></view><view v-if="!rows.length" class="muted">暂无结算单</view></view></view></template>
+<script setup>
+import { ref } from 'vue'; import { onShow } from '@dcloudio/uni-app'; import { warehouseApi } from '@/api/warehouse'; const rows = ref([]); async function load () { const r = await warehouseApi.settlements({ pageNo:1, pageSize:50 }); rows.value = r.records || [] }; onShow(load); async function confirm (id) { await warehouseApi.confirmSettlement(id); await load() }
+</script>

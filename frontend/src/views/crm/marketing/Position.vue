@@ -91,14 +91,17 @@ async function save() {
 }
 
 async function onDepthChange(v) {
+  const prev = v === 2 ? 4 : 2
+  const confirmed = await ElMessageBox.confirm(
+    v === 4 ? '切换为 4 级会启用银牌/金牌两个中间岗位,并常驻合规提示。确认切换?' : '切换为 2 级后中间岗位按合伙人(顶格)计算。确认切换?',
+    '切换岗位数', { type: 'warning' }).then(() => true, () => false)
+  // 取消只把单选按钮拨回去,表格里改了一半还没保存的份额要留着
+  if (!confirmed) { depth.value = prev; return }
   try {
-    await ElMessageBox.confirm(
-      v === 4 ? '切换为 4 级会启用银牌/金牌两个中间岗位,并常驻合规提示。确认切换?' : '切换为 2 级后中间岗位按合伙人(顶格)计算。确认切换?',
-      '切换岗位数', { type: 'warning' })
     await mktPositionApi.setDepth({ depth: v })
     ElMessage.success('已切换')
   } catch (e) {
-    load()
+    depth.value = prev
   }
 }
 

@@ -47,6 +47,7 @@ export const menuTree = [
           { title: '合同模板', path: '/crm/marketing/template' },
           { title: '云仓管理', path: '/crm/marketing/warehouse' },
           { title: '加盟申请', path: '/crm/marketing/onboarding' },
+          { title: 'ERP 对接', path: '/crm/marketing/erp' },
           { title: '计佣订单', path: '/crm/marketing/order' },
           { title: '佣金结算', path: '/crm/marketing/commission' },
           { title: '提现审核', path: '/crm/marketing/withdrawal' },

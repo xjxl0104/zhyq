@@ -9,7 +9,7 @@
           </el-select>
         </el-form-item>
         <el-form-item>
-          <el-button type="primary" @click="load"><el-icon><Search /></el-icon>查询</el-button>
+          <el-button type="primary" @click="search"><el-icon><Search /></el-icon>查询</el-button>
           <el-button @click="reset">重置</el-button>
         </el-form-item>
       </el-form>
@@ -23,9 +23,9 @@
       <el-table :data="list" v-loading="loading" border stripe>
         <el-table-column prop="withdrawalNo" label="提现单号" width="170" />
         <el-table-column label="伙伴" width="110"><template #default="{ row }">{{ row.promoterName || '#' + row.promoterId }}</template></el-table-column>
-        <el-table-column prop="amount" label="税前" width="100" align="right" />
-        <el-table-column prop="taxAmount" label="税额" width="90" align="right" />
-        <el-table-column prop="netAmount" label="税后实付" width="110" align="right" />
+        <el-table-column label="税前(元)" width="110" align="right"><template #default="{ row }">{{ money(row.amount) }}</template></el-table-column>
+        <el-table-column label="税额(元)" width="100" align="right"><template #default="{ row }">{{ money(row.taxAmount) }}</template></el-table-column>
+        <el-table-column label="税后实付(元)" width="120" align="right"><template #default="{ row }">{{ money(row.netAmount) }}</template></el-table-column>
         <el-table-column label="税务" width="90"><template #default="{ row }">{{ TAX[row.taxMode] }}</template></el-table-column>
         <el-table-column label="状态" width="90"><template #default="{ row }"><el-tag :type="stType(row.status)">{{ ST[row.status] }}</el-tag></template></el-table-column>
         <el-table-column prop="payNo" label="打款凭证" width="150" />
@@ -62,10 +62,11 @@
 import { reactive, ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { mktWithdrawalApi } from '@/api/marketing'
+import { money } from '@/utils/format'
 
 const ST = { 1: '待审核', 2: '已审核', 3: '已打款', 4: '已驳回' }
 const TAX = { 1: '个税代扣', 2: '灵工代征' }
-const stType = (s) => ({ 2: 'warning', 3: 'success', 4: 'danger' }[s] || 'info')
+const stType = (s) => ({ 1: 'warning', 2: 'primary', 3: 'success', 4: 'danger' }[s] || 'info')
 
 const loading = ref(false)
 const list = ref([])
@@ -79,6 +80,7 @@ async function load() {
     list.value = res.records; total.value = res.total
   } finally { loading.value = false }
 }
+function search() { query.pageNo = 1; load() }
 function reset() { Object.assign(query, { pageNo: 1, promoterId: null, status: null }); load() }
 
 const manual = reactive({ visible: false, promoterId: null, amount: null, balance: null })

@@ -4,7 +4,7 @@
       <div class="toolbar">
         <span class="title">加盟申请(未上线的云仓)</span>
         <el-radio-group v-model="filter" size="small" @change="load">
-          <el-radio-button :value="null">全部在途</el-radio-button>
+          <el-radio-button :value="0">全部在途</el-radio-button>
           <el-radio-button :value="2">待资质审核</el-radio-button>
           <el-radio-button :value="3">ERP 对接中</el-radio-button>
           <el-radio-button :value="4">待签协议</el-radio-button>
@@ -16,7 +16,7 @@
         <el-table-column prop="contact" label="联系人" width="100" />
         <el-table-column prop="phone" label="电话" width="130" />
         <el-table-column label="当前步骤" width="130">
-          <template #default="{ row }"><el-tag>{{ JOIN[row.joinStatus] }}</el-tag></template>
+          <template #default="{ row }"><el-tag :type="row.joinStatus === 3 ? 'primary' : 'warning'">{{ JOIN[row.joinStatus] }}</el-tag></template>
         </el-table-column>
         <el-table-column prop="createTime" label="申请时间" width="160" />
         <el-table-column label="操作" width="260" fixed="right">
@@ -43,7 +43,8 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { mktWarehouseApi } from '@/api/marketing'
 
 const JOIN = { 1: '申请', 2: '资质审核', 3: 'ERP 对接中', 4: '待签协议' }
-const filter = ref(null)
+// Element Plus 的 radio 不把 null 当合法值,「全部」用 0 占位
+const filter = ref(0)
 const loading = ref(false)
 const list = ref([])
 const total = ref(0)
@@ -52,7 +53,7 @@ const query = reactive({ pageNo: 1, pageSize: 20 })
 async function load() {
   loading.value = true
   try {
-    const res = await mktWarehouseApi.page({ ...query, joinStatus: filter.value, inProgress: filter.value == null ? 1 : undefined })
+    const res = await mktWarehouseApi.page({ ...query, joinStatus: filter.value || undefined, inProgress: filter.value ? undefined : 1 })
     list.value = res.records; total.value = res.total
   } finally { loading.value = false }
 }

@@ -1,0 +1,6 @@
+<template><view><view class="card"><view class="title">ERP 自助接入</view><view class="row"><text>状态</text><text class="tag">{{erp.statusText || '读取中'}}</text></view><view class="muted">{{erp.lastSyncAt || '暂无同步记录'}}</view><button class="btn" @click="issue">签发沙箱凭证</button><button class="btn" @click="ping">测试连通</button><button class="btn" @click="logs">查看同步日志</button></view><view v-if="logsRows.length" class="card"><view v-for="l in logsRows" :key="l.id" class="row"><text>{{l.event || 'event'}}</text><text :class="['tag', l.ok ? 'ok' : 'warn']">{{l.ok ? '成功' : '失败'}}</text></view></view></view></template>
+<script setup>
+import { reactive, ref } from 'vue'; import { onShow } from '@dcloudio/uni-app'; import { warehouseApi } from '@/api/warehouse'
+const erp = reactive({}); const logsRows = ref([]); async function load () { Object.assign(erp, await warehouseApi.erp()) }; onShow(load)
+async function issue () { Object.assign(erp, await warehouseApi.issueSandbox()); uni.showToast({ title:'已签发', icon:'success' }) }; async function ping () { await warehouseApi.ping(); uni.showToast({ title:'连通正常', icon:'success' }) }; async function logs () { const r = await warehouseApi.syncLogs({ pageNo:1, pageSize:20 }); logsRows.value = r.records || [] }
+</script>

@@ -6,7 +6,7 @@
         <el-form-item label="对象类型"><el-input v-model="query.bizType" placeholder="promoter / service_contract …" clearable style="width: 200px" /></el-form-item>
         <el-form-item label="对象 ID"><el-input-number v-model="query.bizId" :min="1" controls-position="right" style="width: 130px" /></el-form-item>
         <el-form-item>
-          <el-button type="primary" @click="load"><el-icon><Search /></el-icon>查询</el-button>
+          <el-button type="primary" @click="search"><el-icon><Search /></el-icon>查询</el-button>
           <el-button @click="reset">重置</el-button>
         </el-form-item>
       </el-form>
@@ -50,6 +50,7 @@ async function load() {
   loading.value = true
   try { const res = await mktAuditApi.page(query); list.value = res.records; total.value = res.total } finally { loading.value = false }
 }
+function search() { query.pageNo = 1; load() }
 function reset() { Object.assign(query, { pageNo: 1, action: '', bizType: '', bizId: null }); load() }
 const diff = reactive({ visible: false, before: '', after: '' })
 const pretty = (s) => { try { return JSON.stringify(JSON.parse(s), null, 2) } catch (e) { return s || '' } }

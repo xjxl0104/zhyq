@@ -14,7 +14,7 @@
           </el-select>
         </el-form-item>
         <el-form-item>
-          <el-button type="primary" @click="load"><el-icon><Search /></el-icon>查询</el-button>
+          <el-button type="primary" @click="search"><el-icon><Search /></el-icon>查询</el-button>
           <el-button @click="reset">重置</el-button>
         </el-form-item>
       </el-form>
@@ -32,7 +32,7 @@
         <el-table-column prop="warehouseName" label="承接云仓" width="130" />
         <el-table-column prop="grade" label="评级" width="60" align="center" />
         <el-table-column label="期限" width="200"><template #default="{ row }">{{ row.startDate || '-' }} ~ {{ row.endDate || '-' }}</template></el-table-column>
-        <el-table-column prop="deposit" label="保证金" width="100" align="right" />
+        <el-table-column label="保证金(元)" width="110" align="right"><template #default="{ row }">{{ money(row.deposit) }}</template></el-table-column>
         <el-table-column label="状态" width="100">
           <template #default="{ row }"><el-tag :type="stType(row.status)">{{ ST[row.status] }}</el-tag></template>
         </el-table-column>
@@ -150,12 +150,13 @@
 import { reactive, ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { mktContractApi, mktWarehouseApi, mktTemplateApi } from '@/api/marketing'
+import { money } from '@/utils/format'
 
 const ST = { 1: '草稿', 2: '待审核', 3: '待客户签', 4: '已生效', 5: '履约中', 6: '变更中', 7: '到期', 8: '终止', 9: '作废' }
 const SIGN = { 1: '园区签', 2: '云仓直签' }
 const SVC = { 1: '仓储', 2: '代发', 3: '仓配' }
 const FEE = { 1: '仓租', 2: '单票', 3: '按件', 4: '包月' }
-const stType = (s) => ({ 4: 'success', 5: 'success', 6: 'warning', 7: 'info', 8: 'danger', 9: 'danger' }[s] || '')
+const stType = (s) => ({ 1: 'info', 2: 'warning', 3: 'warning', 4: 'success', 5: 'primary', 6: 'warning', 7: 'info', 8: 'danger', 9: 'danger' }[s] || 'info')
 
 const loading = ref(false)
 const list = ref([])
@@ -171,12 +172,15 @@ async function load() {
     list.value = res.records; total.value = res.total
   } finally { loading.value = false }
 }
+function search() { query.pageNo = 1; load() }
 function reset() { Object.assign(query, { pageNo: 1, keyword: '', status: null, signMode: null }); load() }
 
 const formRef = ref()
 const dialog = reactive({ visible: false, title: '' })
-const emptyForm = () => ({ customerId: null, signMode: null, warehouseId: null, serviceType: 2, feeModel: 2, templateId: null, startDate: null, endDate: null, deposit: 0, payCycle: 3, priceTable: '{"perOrder":10,"perItem":0.5,"storage":0,"monthly":0}', remark: '' })
+const emptyForm = () => ({ id: null, customerId: null, signMode: null, warehouseId: null, serviceType: 2, feeModel: 2, templateId: null, startDate: null, endDate: null, deposit: 0, payCycle: 3, priceTable: '{"perOrder":10,"perItem":0.5,"storage":0,"monthly":0}', remark: '' })
 const form = reactive(emptyForm())
+// 行数据里还带 customerName/status 等只读字段,只拷表单里有的键,避免它们跟着 PUT 回去
+const pickForm = (row) => Object.fromEntries(Object.entries(row).filter(([k]) => k in form))
 const rules = {
   customerId: [{ required: true, message: '请填客户 ID', trigger: 'change' }],
   warehouseId: [{ required: true, message: '请选择承接云仓', trigger: 'change' }]
@@ -186,7 +190,7 @@ async function openDialog(row) {
   if (!templates.value.length) { try { templates.value = await mktTemplateApi.list() } catch (e) { /* 可为空 */ } }
   dialog.visible = true
   dialog.title = row ? `编辑 ${row.contractNo}` : '起草云仓服务合同'
-  Object.assign(form, row ? { ...row } : emptyForm())
+  Object.assign(form, emptyForm(), row ? pickForm(row) : {})
 }
 async function submit() {
   await formRef.value.validate()

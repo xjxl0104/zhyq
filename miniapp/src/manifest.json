@@ -1,0 +1,19 @@
+{
+  "name": "园区伙伴",
+  "appid": "",
+  "description": "园区全民营销 · 推荐客户 · 园区伙伴",
+  "versionName": "0.1.0",
+  "versionCode": "1",
+  "vueVersion": "3",
+  "mp-weixin": {
+    "appid": "",
+    "setting": { "urlCheck": false, "es6": true, "minified": true },
+    "usingComponents": true,
+    "permission": {},
+    "requiredPrivateInfos": []
+  },
+  "h5": {
+    "router": { "mode": "hash", "base": "/mp/" },
+    "title": "园区伙伴"
+  }
+}

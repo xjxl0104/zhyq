@@ -12,7 +12,7 @@
           <el-switch v-model="query.referredOnly" :active-value="1" :inactive-value="null" />
         </el-form-item>
         <el-form-item>
-          <el-button type="primary" @click="load"><el-icon><Search /></el-icon>查询</el-button>
+          <el-button type="primary" @click="search"><el-icon><Search /></el-icon>查询</el-button>
           <el-button @click="reset">重置</el-button>
         </el-form-item>
       </el-form>
@@ -40,7 +40,7 @@
             <span v-else class="muted">公海</span>
           </template>
         </el-table-column>
-        <el-table-column label="状态" width="90"><template #default="{ row }">{{ STATUS[row.status] || row.status }}</template></el-table-column>
+        <el-table-column label="状态" width="90"><template #default="{ row }"><el-tag :type="statusType(row.status)">{{ STATUS[row.status] || row.status }}</el-tag></template></el-table-column>
         <el-table-column label="操作" width="280" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click="openGrade(row)">评级</el-button>
@@ -127,6 +127,7 @@ const BIZ = { 1: '租赁', 2: '云仓' }
 const SIGN = { 1: '园区签', 2: '云仓直签' }
 const LOCK = { 1: '预锁', 2: '有效锁定', 3: '已成交', 4: '已释放' }
 const STATUS = { 1: '跟进中', 2: '已签约', 3: '已流失' }
+const statusType = (v) => ({ 1: 'primary', 2: 'success', 3: 'info' }[v] || 'info')
 const gradeType = (g) => ({ A: 'danger', B: 'warning', C: '', D: 'info' }[g] || 'info')
 const lockType = (s) => ({ 1: 'info', 2: 'success', 3: '' }[s] || 'info')
 
@@ -142,6 +143,7 @@ async function load() {
     list.value = res.records; total.value = res.total
   } finally { loading.value = false }
 }
+function search() { query.pageNo = 1; load() }
 function reset() { Object.assign(query, { pageNo: 1, keyword: '', grade: null, referredOnly: null }); load() }
 
 // 评级
