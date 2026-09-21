@@ -22,6 +22,7 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.annotation.Propagation;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -82,7 +83,7 @@ public class MktCommissionService {
      * 一个事务:写 crm_referral_order(已确认)+ 若干 crm_promoter_commission(冻结)。
      * 已存在同 (source_type, source_no) 的订单直接返回已有记录,不重复生成。
      */
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public MktReferralOrder createAndSplit(CommissionEvent ev) {
         MktReferralOrder existing = findOrder(ev.sourceType(), ev.sourceNo());
         if (existing != null) {
@@ -110,7 +111,7 @@ public class MktCommissionService {
     }
 
     /** 冻结 → 可结算(路径 A:到账事件触发)。返回解冻行数。 */
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public int unfreezeByOrder(Long referralOrderId) {
         List<MktPromoterCommission> frozen = commissionMapper.selectList(new LambdaQueryWrapper<MktPromoterCommission>()
                 .eq(MktPromoterCommission::getReferralOrderId, referralOrderId)
@@ -118,6 +119,25 @@ public class MktCommissionService {
         int n = 0;
         for (MktPromoterCommission c : frozen) {
             n += unfreezeOne(c);
+        }
+        return n;
+    }
+
+    /** 收款红冲且账单已无实收时,可结算正向流水回冻;已结算/已提现流水不逆向改账。 */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public int refreezeByOrder(Long referralOrderId) {
+        List<MktPromoterCommission> settleable = commissionMapper.selectList(new LambdaQueryWrapper<MktPromoterCommission>()
+                .eq(MktPromoterCommission::getReferralOrderId, referralOrderId)
+                .eq(MktPromoterCommission::getStatus, C_SETTLEABLE)
+                .eq(MktPromoterCommission::getSign, SIGN_POSITIVE));
+        int n = 0;
+        for (MktPromoterCommission c : settleable) {
+            int updated = commissionMapper.update(null, new LambdaUpdateWrapper<MktPromoterCommission>()
+                    .eq(MktPromoterCommission::getId, c.getId())
+                    .eq(MktPromoterCommission::getStatus, C_SETTLEABLE)
+                    .eq(MktPromoterCommission::getSign, SIGN_POSITIVE)
+                    .set(MktPromoterCommission::getStatus, C_FROZEN));
+            n += updated;
         }
         return n;
     }
@@ -177,6 +197,9 @@ public class MktCommissionService {
         if (c == null) {
             throw new BizException("佣金流水不存在: " + commissionId);
         }
+        if (!Integer.valueOf(SIGN_POSITIVE).equals(c.getSign())) {
+            throw new BizException("扣回流水不可作废结算");
+        }
         voidOne(c, reason);
         auditService.log("commission.void", "commission", commissionId, reason);
     }
@@ -202,9 +225,13 @@ public class MktCommissionService {
             if (c == null) {
                 throw new BizException("佣金流水不存在: " + id);
             }
+            if (!Integer.valueOf(SIGN_POSITIVE).equals(c.getSign())) {
+                throw new BizException("扣回流水不可结算");
+            }
             int updated = commissionMapper.update(null, new LambdaUpdateWrapper<MktPromoterCommission>()
                     .eq(MktPromoterCommission::getId, id)
                     .eq(MktPromoterCommission::getStatus, C_SETTLEABLE)
+                    .eq(MktPromoterCommission::getSign, SIGN_POSITIVE)
                     .set(MktPromoterCommission::getStatus, C_SETTLED)
                     .set(MktPromoterCommission::getSettleBatchId, batch.getId()));
             if (updated == 0) {
@@ -218,6 +245,21 @@ public class MktCommissionService {
         batchMapper.updateById(batch);
         auditService.log("commission.settle", "settle_batch", batch.getId(), "结算 " + cnt + " 行,合计 " + total);
         return batch.getBatchNo();
+    }
+
+    /** 合同终止时无条件作废未结算的正向签约奖。 */
+    @Transactional
+    public void voidUnsettledBySource(int sourceType, Long sourceId, String reason) {
+        List<MktReferralOrder> orders = orderMapper.selectList(new LambdaQueryWrapper<MktReferralOrder>()
+                .eq(MktReferralOrder::getSourceType, sourceType)
+                .eq(MktReferralOrder::getSourceId, sourceId));
+        for (MktReferralOrder o : orders) {
+            List<MktPromoterCommission> rows = commissionMapper.selectList(new LambdaQueryWrapper<MktPromoterCommission>()
+                    .eq(MktPromoterCommission::getReferralOrderId, o.getId())
+                    .eq(MktPromoterCommission::getSign, SIGN_POSITIVE)
+                    .in(MktPromoterCommission::getStatus, C_FROZEN, C_SETTLEABLE));
+            for (MktPromoterCommission row : rows) voidOne(row, reason);
+        }
     }
 
     // ---------------- 内部 ----------------
@@ -280,9 +322,13 @@ public class MktCommissionService {
     }
 
     private void voidOne(MktPromoterCommission c, String reason) {
+        if (!Integer.valueOf(SIGN_POSITIVE).equals(c.getSign())) {
+            throw new BizException("扣回流水不可作废结算");
+        }
         int updated = commissionMapper.update(null, new LambdaUpdateWrapper<MktPromoterCommission>()
                 .eq(MktPromoterCommission::getId, c.getId())
                 .in(MktPromoterCommission::getStatus, C_FROZEN, C_SETTLEABLE)
+                .eq(MktPromoterCommission::getSign, SIGN_POSITIVE)
                 .set(MktPromoterCommission::getStatus, C_VOID)
                 .set(MktPromoterCommission::getVoidReason, reason));
         if (updated == 0) {

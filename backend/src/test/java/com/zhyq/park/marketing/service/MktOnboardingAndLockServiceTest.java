@@ -64,13 +64,14 @@ class MktOnboardingAndLockServiceTest {
 
         @Test
         void applyCreatesFiveStepsAndMovesToQualifying() {
-            MktWarehouse w = new MktWarehouse(); w.setCode("WH-1"); w.setName("杭州仓");
+            MktWarehouse w = new MktWarehouse(); w.setCode("WH-1"); w.setName("杭州仓"); w.setFeeModel("");
             when(warehouseMapper.insert(any(MktWarehouse.class))).thenAnswer(inv -> { w.setId(7L); return 1; });
             when(warehouseMapper.update(isNull(), any(Wrapper.class))).thenReturn(1);
 
             service.apply(w);
 
             assertThat(w.getJoinStatus()).isEqualTo(MktWarehouseOnboardingService.JS_APPLIED);
+            assertThat(w.getFeeModel()).isNull();
             ArgumentCaptor<MktWarehouseOnboarding> cap = ArgumentCaptor.forClass(MktWarehouseOnboarding.class);
             verify(stepMapper, times(5)).insert(cap.capture());
             assertThat(cap.getAllValues()).extracting(MktWarehouseOnboarding::getStep).containsExactly(1, 2, 3, 4, 5);
@@ -248,6 +249,16 @@ class MktOnboardingAndLockServiceTest {
         void markDealIsNoopWithoutActiveLock() {
             when(lockMapper.selectOne(any(Wrapper.class))).thenReturn(null);
             service.markDeal(5L);
+            verify(lockMapper, never()).update(isNull(), any(Wrapper.class));
+        }
+
+        @Test
+        void markDealRejectsContractPartnerDifferentFromLockedPartner() {
+            MktCustomerLock active = new MktCustomerLock();
+            active.setId(1L); active.setCustomerId(5L); active.setPromoterId(9L); active.setStatus(2);
+            when(lockMapper.selectOne(any(Wrapper.class))).thenReturn(active);
+            assertThatThrownBy(() -> service.markDeal(5L, 8L))
+                    .isInstanceOf(BizException.class).hasMessageContaining("不一致");
             verify(lockMapper, never()).update(isNull(), any(Wrapper.class));
         }
 

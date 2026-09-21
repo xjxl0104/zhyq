@@ -51,6 +51,11 @@ public sealed interface DomainEvent {
         public String type() { return "payment.received"; }
     }
 
+    /** 收款撤销(红冲完成,供佣金等依赖到账的下游回冻)。 */
+    record PaymentReversed(Long paymentId, Long billId, Long contractId, LocalDateTime occurredAt) implements DomainEvent {
+        public String type() { return "payment.reversed"; }
+    }
+
     /** 账单逾期(供催缴任务流消费,批次②)。 */
     record BillOverdue(Long billId, Long contractId, Long tenantRefId, LocalDateTime occurredAt) implements DomainEvent {
         public String type() { return "bill.overdue"; }

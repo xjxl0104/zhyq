@@ -116,13 +116,22 @@ public class MktLockService {
     /** 合同生效 → 已成交(归属固定到合同期)。 */
     @Transactional
     public void markDeal(Long customerId) {
+        markDeal(customerId, null);
+    }
+
+    /** 合同生效 → 已成交,可校验合同伙伴与锁客伙伴一致后再落状态。 */
+    @Transactional
+    public void markDeal(Long customerId, Long expectedPromoterId) {
         MktCustomerLock active = activeLockOf(customerId);
         if (active == null) {
             return;
         }
+        if (expectedPromoterId != null && !expectedPromoterId.equals(active.getPromoterId())) {
+            throw new BizException("合同伙伴与锁客伙伴不一致,不能成交");
+        }
         int updated = lockMapper.update(null, new LambdaUpdateWrapper<MktCustomerLock>()
                 .eq(MktCustomerLock::getId, active.getId())
-                .in(MktCustomerLock::getStatus, LS_PRELOCK, LS_LOCKED)
+                .eq(MktCustomerLock::getStatus, LS_LOCKED)
                 .set(MktCustomerLock::getStatus, LS_DEAL));
         if (updated == 1) {
             auditService.log("lock.deal", BIZ_TYPE, active.getId(), "合同生效");

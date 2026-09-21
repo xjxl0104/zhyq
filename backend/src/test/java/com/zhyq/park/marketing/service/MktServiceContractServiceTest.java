@@ -51,6 +51,7 @@ class MktServiceContractServiceTest {
     @Mock CustomerMapper customerMapper;
     @Mock BillMapper billMapper;
     @Mock MktCommissionService commissionService;
+    @Mock MktLockService lockService;
     @Mock MktAuditService auditService;
     @Mock ApplicationEventPublisher eventPublisher;
 
@@ -65,7 +66,7 @@ class MktServiceContractServiceTest {
     @BeforeEach
     void setUp() {
         service = new MktServiceContractService(contractMapper, versionMapper, gradeMapper, customerMapper,
-                billMapper, commissionService, auditService, eventPublisher);
+                billMapper, commissionService, lockService, auditService, eventPublisher);
     }
 
     // ---- 草稿 ----
@@ -83,6 +84,22 @@ class MktServiceContractServiceTest {
         assertThat(d.getGrade()).isEqualTo("B");
         assertThat(d.getPartnerId()).isEqualTo(99L);
         verify(contractMapper).insert(d);
+    }
+
+    @Test
+    void createDraftIgnoresClientSuppliedPartnerAndGrade() {
+        // B9:即使调用方(或未来某个新入口)传入 partnerId/grade,也必须以客户档案为准,防越权改佣金归属
+        Customer c = new Customer(); c.setId(5L); c.setGrade("C"); c.setReferrerId(11L);
+        when(customerMapper.selectById(5L)).thenReturn(c);
+        MktServiceContract d = new MktServiceContract();
+        d.setCustomerId(5L);
+        d.setPartnerId(999L);   // 伪造:想把佣金记到别人头上
+        d.setGrade("A");        // 伪造:想抬高比例
+
+        service.createDraft(d);
+
+        assertThat(d.getPartnerId()).isEqualTo(11L);
+        assertThat(d.getGrade()).isEqualTo("C");
     }
 
     @Test
@@ -135,6 +152,7 @@ class MktServiceContractServiceTest {
 
         service.signOffline(1L, "[12]");
 
+        verify(lockService).markDeal(5L, 99L);
         verify(eventPublisher).publishEvent(any(DomainEvent.ServiceContractEffective.class));
         ArgumentCaptor<CommissionEvent> ev = ArgumentCaptor.forClass(CommissionEvent.class);
         verify(commissionService).createAndSplit(ev.capture());
@@ -145,6 +163,7 @@ class MktServiceContractServiceTest {
         verify(billMapper).insert(bill.capture());
         assertThat(bill.getValue().getBillingKey()).isEqualTo("mkt_service:1:first");
         assertThat(bill.getValue().getAmount()).isEqualByComparingTo("5000");
+        assertThat(bill.getValue().getFeeType()).isEqualTo("保证金");
         assertThat(bill.getValue().getSource()).isEqualTo("mkt_service");
     }
 
@@ -184,6 +203,7 @@ class MktServiceContractServiceTest {
         when(contractMapper.selectById(1L)).thenReturn(contract(1L, MktServiceContractService.ST_DRAFT, 2));
         updated(1);
         service.effectDirect(1L);
+        verify(lockService).markDeal(5L, null);
         verify(eventPublisher).publishEvent(any(DomainEvent.ServiceContractEffective.class));
     }
 
@@ -238,7 +258,7 @@ class MktServiceContractServiceTest {
     }
 
     @Test
-    void terminateAfterClawbackWindowKeepsCommission() {
+    void terminateAfterClawbackWindowStillVoidsUnsettledCommission() {
         MktServiceContract c = contract(1L, MktServiceContractService.ST_PERFORMING, 1);
         c.setEffectiveAt(LocalDateTime.now().minusDays(120));
         when(contractMapper.selectById(1L)).thenReturn(c);
@@ -246,6 +266,7 @@ class MktServiceContractServiceTest {
 
         service.terminate(1L, "到期不续", 90);
 
+        verify(commissionService).voidUnsettledBySource(eq(MktCommissionService.SOURCE_CONTRACT_BONUS), eq(1L), anyString());
         verify(commissionService, never()).clawbackBySource(anyInt(), any(), any());
     }
 

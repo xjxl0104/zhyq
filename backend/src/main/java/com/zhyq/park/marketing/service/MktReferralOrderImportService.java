@@ -33,7 +33,9 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * 出库单文件导入(PARK-MKT-001 §5.3 文件方式,阶段 A 让路径 B 在没有真实 ERP 时能跑通):
@@ -60,6 +62,10 @@ public class MktReferralOrderImportService {
     static final String H_WAREHOUSE = "云仓编码";
     static final String H_GOODS_AMOUNT = "货值";
     private static final int HEADER_SCAN_ROWS = 5;
+    /** 导入上限:共用服务器上整个工作簿一次性读进内存,不设限会被一个大文件打挂 */
+    private static final long MAX_FILE_BYTES = 10L * 1024 * 1024;
+    private static final int MAX_ROWS = 5000;
+    private static final Set<String> ALLOWED_EXT = Set.of("xlsx", "xls");
     private static final String MODULE = "marketing";
 
     private final CustomerMapper customerMapper;
@@ -82,6 +88,20 @@ public class MktReferralOrderImportService {
         if (file == null || file.isEmpty()) {
             throw new BizException("请选择要导入的文件");
         }
+        if (file.getSize() > MAX_FILE_BYTES) {
+            throw new BizException("文件过大,请拆分后导入(单次 ≤ 10MB)");
+        }
+        String filename = file.getOriginalFilename();
+        if (StringUtils.hasText(filename)) {
+            int dot = filename.lastIndexOf('.');
+            // 没有扩展名时不拦(交给 POI 判断);有扩展名就必须在白名单内
+            if (dot >= 0) {
+                String ext = filename.substring(dot + 1).toLowerCase(Locale.ROOT);
+                if (!ALLOWED_EXT.contains(ext)) {
+                    throw new BizException("只支持 .xlsx / .xls 文件");
+                }
+            }
+        }
         List<OutboundRow> rows = new ArrayList<>();
         List<String> errors = new ArrayList<>();
         try (InputStream in = file.getInputStream(); Workbook wb = WorkbookFactory.create(in)) {
@@ -92,6 +112,9 @@ public class MktReferralOrderImportService {
             int headerRow = findHeaderRow(sheet);
             if (headerRow < 0) {
                 throw new BizException("没找到表头行(应含「" + H_ORDER_NO + "」列),请使用出库单导入模板");
+            }
+            if (sheet.getLastRowNum() - headerRow > MAX_ROWS) {
+                throw new BizException("单次最多导入 " + MAX_ROWS + " 行,请拆分后重试");
             }
             Map<String, Integer> col = readHeader(sheet.getRow(headerRow));
             for (int r = headerRow + 1; r <= sheet.getLastRowNum(); r++) {
@@ -150,7 +173,7 @@ public class MktReferralOrderImportService {
      * 一行出库单 → 计佣事件。基数 = 园区服务费(按客户履约中的服务合同单价表自算),池 = 基数 × 评级 erp_total_rate。
      * 客户无推荐伙伴 → 抛异常(不计佣,由调用方计入错误);客户没有履约中的合同 → 抛异常。
      */
-    CommissionEvent toEvent(OutboundRow row, Long projectId, int freezeDays) {
+    public CommissionEvent toEvent(OutboundRow row, Long projectId, int freezeDays) {
         if (!StringUtils.hasText(row.customerPhone())) {
             throw new BizException("缺客户手机号");
         }
@@ -182,6 +205,15 @@ public class MktReferralOrderImportService {
         return new CommissionEvent(MktCommissionService.SOURCE_OUTBOUND, row.orderNo(), contract.getId(),
                 customer.getId(), customer.getReferrerId(), gradeCode, rate, serviceFee, pool,
                 shipped, shipped.plusDays(freezeDays), projectId, contract.getWarehouseId());
+    }
+
+    /** 供开放接口:货主编码映射到客户后,取手机号复用 toEvent 的归属链路。 */
+    public String customerPhone(Long customerId) {
+        Customer c = customerMapper.selectById(customerId);
+        if (c == null || !StringUtils.hasText(c.getPhone())) {
+            throw new BizException("货主编码映射的客户不存在或无手机号: " + customerId);
+        }
+        return c.getPhone();
     }
 
     /** service_fee = perOrder × packages + perItem × qty;单价表缺项按 0。 */

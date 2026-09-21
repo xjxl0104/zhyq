@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.zhyq.park.common.exception.BizException;
 import com.zhyq.park.common.result.PageResult;
 import com.zhyq.park.common.result.Result;
@@ -18,7 +19,6 @@ import com.zhyq.park.marketing.mapper.MktContractWarehouseMapper;
 import com.zhyq.park.marketing.mapper.MktServiceContractMapper;
 import com.zhyq.park.marketing.mapper.MktServiceContractVersionMapper;
 import com.zhyq.park.marketing.mapper.MktWarehouseMapper;
-import com.zhyq.park.marketing.service.MktLockService;
 import com.zhyq.park.marketing.service.MktServiceContractService;
 import com.zhyq.park.marketing.service.MktWarehouseOnboardingService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -30,6 +30,7 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
+import java.math.BigDecimal;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -41,6 +42,31 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class MktServiceContractController {
 
+    /** Fields accepted when starting a contract draft; identity/snapshot fields are server-owned. */
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static record CreateReq(Long customerId, Long warehouseId, Integer signMode, Integer serviceType,
+                            Integer feeModel, Long templateId, LocalDate startDate, LocalDate endDate,
+                            BigDecimal deposit, Integer payCycle, String priceTable, String remark,
+                            Long projectId) {}
+
+    static MktServiceContract toDraft(CreateReq request) {
+        MktServiceContract draft = new MktServiceContract();
+        draft.setCustomerId(request.customerId());
+        draft.setWarehouseId(request.warehouseId());
+        draft.setSignMode(request.signMode());
+        draft.setServiceType(request.serviceType());
+        draft.setFeeModel(request.feeModel());
+        draft.setTemplateId(request.templateId());
+        draft.setStartDate(request.startDate());
+        draft.setEndDate(request.endDate());
+        draft.setDeposit(request.deposit());
+        draft.setPayCycle(request.payCycle());
+        draft.setPriceTable(request.priceTable());
+        draft.setRemark(request.remark());
+        draft.setProjectId(request.projectId());
+        return draft;
+    }
+
     private final MktServiceContractMapper contractMapper;
     private final MktServiceContractVersionMapper versionMapper;
     private final MktContractWarehouseMapper contractWarehouseMapper;
@@ -48,7 +74,6 @@ public class MktServiceContractController {
     private final CustomerMapper customerMapper;
     private final MktServiceContractService contractService;
     private final MktWarehouseOnboardingService onboardingService;
-    private final MktLockService lockService;
     private final BizSettings bizSettings;
 
     @Operation(summary = "分页(附客户名/云仓名)")
@@ -93,7 +118,8 @@ public class MktServiceContractController {
     @PreAuthorize("hasAuthority('crm:marketing:contract:edit')")
     @PostMapping
     @Transactional
-    public Result<MktServiceContract> create(@RequestBody MktServiceContract draft) {
+    public Result<MktServiceContract> create(@RequestBody CreateReq request) {
+        MktServiceContract draft = toDraft(request);
         MktWarehouse w = warehouseMapper.selectById(draft.getWarehouseId());
         if (!onboardingService.canAcceptCustomers(w)) {
             throw new BizException("承接云仓必须是已上线且 ERP 已联通");
@@ -142,12 +168,11 @@ public class MktServiceContractController {
     @Operation(summary = "线下签署 → 生效(佣金冻结生成、首期账单)") @PreAuthorize("hasAuthority('crm:marketing:contract:edit')") @PostMapping("/{id}/sign-offline")
     public Result<Void> signOffline(@PathVariable Long id, @RequestBody Map<String, String> body) {
         contractService.signOffline(id, body.get("files"));
-        markDeal(id);
         return Result.ok();
     }
 
     @Operation(summary = "直签备案生效") @PreAuthorize("hasAuthority('crm:marketing:contract:audit')") @PostMapping("/{id}/effect-direct")
-    public Result<Void> effectDirect(@PathVariable Long id) { contractService.effectDirect(id); markDeal(id); return Result.ok(); }
+    public Result<Void> effectDirect(@PathVariable Long id) { contractService.effectDirect(id); return Result.ok(); }
 
     @Operation(summary = "首期款到账 → 履约中(手动)") @PreAuthorize("hasAuthority('crm:marketing:contract:edit')") @PostMapping("/{id}/perform")
     public Result<Void> perform(@PathVariable Long id) { contractService.startPerforming(id); return Result.ok(); }
@@ -173,12 +198,6 @@ public class MktServiceContractController {
     @Operation(summary = "作废") @PreAuthorize("hasAuthority('crm:marketing:contract:audit')") @PostMapping("/{id}/void")
     public Result<Void> voidContract(@PathVariable Long id, @RequestBody Map<String, String> body) {
         contractService.voidContract(id, body.get("reason")); return Result.ok();
-    }
-
-    /** 合同生效 → 该客户的锁定置为已成交(归属固定到合同期)。 */
-    private void markDeal(Long contractId) {
-        MktServiceContract c = contractMapper.selectById(contractId);
-        if (c != null) lockService.markDeal(c.getCustomerId());
     }
 
     private Map<String, Object> enrich(MktServiceContract c) {

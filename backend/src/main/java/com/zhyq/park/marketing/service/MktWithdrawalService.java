@@ -88,21 +88,33 @@ public class MktWithdrawalService {
         w.setNetAmount(amount.subtract(tax));
         w.setStatus(WS_PENDING);
         w.setProjectId(p.getProjectId());
-        withdrawalMapper.insert(w);
-
-        // 锁定流水:全部已结算正向 + 可结算负向都归入本单(扣回必须一起抵掉),记 id 列表
+        // 只锁定覆盖本次金额的流水，不能把伙伴全部余额吞掉。
         List<MktPromoterCommission> rows = commissionMapper.selectList(new LambdaQueryWrapper<MktPromoterCommission>()
                 .eq(MktPromoterCommission::getPromoterId, promoterId)
                 .isNull(MktPromoterCommission::getWithdrawalId)
                 .and(q -> q.eq(MktPromoterCommission::getStatus, MktCommissionService.C_SETTLED).eq(MktPromoterCommission::getSign, 1)
                         .or().eq(MktPromoterCommission::getStatus, MktCommissionService.C_SETTLEABLE).eq(MktPromoterCommission::getSign, -1))
                 .orderByAsc(MktPromoterCommission::getId));
+        List<MktPromoterCommission> selected = new java.util.ArrayList<>();
+        BigDecimal selectedAmount = BigDecimal.ZERO;
         for (MktPromoterCommission c : rows) {
-            commissionMapper.update(null, new LambdaUpdateWrapper<MktPromoterCommission>()
+            if (selectedAmount.compareTo(amount) >= 0) break;
+            selected.add(c);
+            selectedAmount = selectedAmount.add(c.getAmount());
+        }
+        if (selectedAmount.compareTo(amount) != 0) {
+            throw new BizException("提现金额必须与完整流水金额一致,请调整申请金额");
+        }
+        withdrawalMapper.insert(w);
+        for (MktPromoterCommission c : selected) {
+            int locked = commissionMapper.update(null, new LambdaUpdateWrapper<MktPromoterCommission>()
                     .eq(MktPromoterCommission::getId, c.getId()).isNull(MktPromoterCommission::getWithdrawalId)
                     .set(MktPromoterCommission::getWithdrawalId, w.getId()));
+            if (locked != 1) {
+                throw new BizException("提现余额已被其它申请锁定,请刷新后重试");
+            }
         }
-        w.setCommissionIds("[" + rows.stream().map(c -> String.valueOf(c.getId())).collect(Collectors.joining(",")) + "]");
+        w.setCommissionIds("[" + selected.stream().map(c -> String.valueOf(c.getId())).collect(Collectors.joining(",")) + "]");
         withdrawalMapper.updateById(w);
         auditService.log("withdrawal.apply", BIZ_TYPE, w.getId(), "税前 " + amount + " 税 " + tax);
         return w;
@@ -154,6 +166,14 @@ public class MktWithdrawalService {
             return withdrawalMapper.selectOne(new LambdaQueryWrapper<MktWithdrawal>().eq(MktWithdrawal::getPayNo, payNo).last("limit 1"));
         }
         requireUpdated(updated, id);
+        List<MktPromoterCommission> linked = commissionMapper.selectList(new LambdaQueryWrapper<MktPromoterCommission>()
+                .eq(MktPromoterCommission::getWithdrawalId, id));
+        BigDecimal linkedAmount = linked.stream().map(MktPromoterCommission::getAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        MktWithdrawal current = withdrawalMapper.selectById(id);
+        if (current == null || linkedAmount.compareTo(current.getAmount()) != 0) {
+            throw new BizException("提现流水金额不一致,请刷新后重试");
+        }
         commissionMapper.update(null, new LambdaUpdateWrapper<MktPromoterCommission>()
                 .eq(MktPromoterCommission::getWithdrawalId, id)
                 .in(MktPromoterCommission::getStatus, MktCommissionService.C_SETTLED, MktCommissionService.C_SETTLEABLE)

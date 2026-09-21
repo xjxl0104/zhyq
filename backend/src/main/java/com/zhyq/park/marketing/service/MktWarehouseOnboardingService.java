@@ -61,6 +61,9 @@ public class MktWarehouseOnboardingService {
         if (!StringUtils.hasText(w.getCode()) || !StringUtils.hasText(w.getName())) {
             throw new BizException("云仓编码与名称必填");
         }
+        if (!StringUtils.hasText(w.getFeeModel())) {
+            w.setFeeModel(null);
+        }
         w.setJoinStatus(JS_APPLIED);
         w.setErpStatus(ERP_NONE);
         warehouseMapper.insert(w);

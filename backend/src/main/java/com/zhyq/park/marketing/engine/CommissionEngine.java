@@ -47,6 +47,7 @@ public final class CommissionEngine {
         Map<String, Integer> ladder = req.ladder();
         Set<Long> seen = new HashSet<>();
         int taken = 0;
+        BigDecimal allocated = BigDecimal.ZERO;
         for (ChainNode node : req.chain()) {
             if (!seen.add(node.promoterId())) {
                 throw new IllegalArgumentException("收款链出现重复伙伴: " + node.promoterId());
@@ -64,6 +65,11 @@ public final class CommissionEngine {
             if (!retainedByPark) {
                 BigDecimal amount = pool.multiply(BigDecimal.valueOf(diff))
                         .divide(HUNDRED, 2, RoundingMode.HALF_UP);
+                BigDecimal remaining = pool.subtract(allocated);
+                if (amount.compareTo(remaining) > 0) {
+                    amount = remaining.max(BigDecimal.ZERO).setScale(2, RoundingMode.HALF_UP);
+                }
+                allocated = allocated.add(amount);
                 out.add(new Split(node.promoterId(), node.positionCode(), share, diff, amount));
             }
             if (taken >= 100) {

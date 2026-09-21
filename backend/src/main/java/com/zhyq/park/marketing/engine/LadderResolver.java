@@ -34,6 +34,7 @@ public class LadderResolver {
     private static final int TWO_LEVEL_P1_SHARE = 60;
     private static final int DEFAULT_DEPTH = 2;
     private static final int STATUS_NORMAL = 1;
+    private static final int MAX_CHAIN_DEPTH = 64;
 
     private final BizSettings bizSettings;
     private final MktPositionMapper positionMapper;
@@ -64,15 +65,17 @@ public class LadderResolver {
         return ladder;
     }
 
-    /** 从成交人沿 parent_id 向上取链(含成交人),最多取 ladder 大小 + 1 层,防止脏 path 死循环。 */
+    /** 从成交人沿 parent_id 向上取链(含成交人),直到根或安全上限,防止脏 path 死循环。 */
     public List<ChainNode> chainOf(MktPromoter seller) {
         if (seller == null) {
             throw new IllegalArgumentException("成交伙伴不能为空");
         }
-        int maxDepth = positionMapper.selectCount(null).intValue() + 1;
+        // Keep the mapper lookup for compatibility with callers that load position metadata here;
+        // chain traversal itself must not be bounded by the number of positions.
+        positionMapper.selectCount(null);
         List<ChainNode> chain = new ArrayList<>();
         MktPromoter cur = seller;
-        while (cur != null && chain.size() < maxDepth) {
+        while (cur != null && chain.size() < MAX_CHAIN_DEPTH) {
             chain.add(new ChainNode(cur.getId(), cur.getPositionCode(), cur.getStatus(),
                     Integer.valueOf(1).equals(cur.getIsInternal())));
             cur = cur.getParentId() == null ? null : promoterMapper.selectById(cur.getParentId());

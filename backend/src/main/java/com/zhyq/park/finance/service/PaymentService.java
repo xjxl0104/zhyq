@@ -208,6 +208,8 @@ public class PaymentService {
         if (updated == 0) {
             throw new BizException("核销失败:账单状态或金额已变化,请刷新后重试");
         }
+        // 零元首期账单没有支付单,但业务上同样代表首期已核销;复用到账事件触发服务合同计佣解冻。
+        eventPublisher.publishEvent(new DomainEvent.PaymentReceived(billId, bill.getContractId(), LocalDateTime.now()));
         return billMapper.selectById(billId);
     }
 
@@ -313,6 +315,9 @@ public class PaymentService {
         receiptMapper.update(null, new LambdaUpdateWrapper<Receipt>()
                 .eq(Receipt::getPaymentId, origin.getId())
                 .set(Receipt::getVoidStatus, 1));
+
+        eventPublisher.publishEvent(new DomainEvent.PaymentReversed(
+                origin.getId(), bill.getId(), bill.getContractId(), LocalDateTime.now()));
 
         return reversal;
     }

@@ -57,7 +57,8 @@ public class MktServiceContractService {
     public static final int SIGN_METHOD_OFFLINE = 1;
 
     static final String BILL_SOURCE = "mkt_service";
-    static final String BILL_FEE_TYPE = "service";
+    static final String BILL_FEE_TYPE_RENT = "租金";
+    static final String BILL_FEE_TYPE_DEPOSIT = "保证金";
     static final int BILL_DIRECTION_RECEIVABLE = 1;
     static final int BILL_STATUS_UNPAID = 3;
     private static final String BIZ_TYPE = "service_contract";
@@ -69,6 +70,7 @@ public class MktServiceContractService {
     private final CustomerMapper customerMapper;
     private final BillMapper billMapper;
     private final MktCommissionService commissionService;
+    private final MktLockService lockService;
     private final MktAuditService auditService;
     private final ApplicationEventPublisher eventPublisher;
 
@@ -86,12 +88,9 @@ public class MktServiceContractService {
         if (draft.getSignMode() == null) {
             draft.setSignMode(customer.getSignMode() == null ? SIGN_MODE_PARK : customer.getSignMode());
         }
-        if (!StringUtils.hasText(draft.getGrade())) {
-            draft.setGrade(customer.getGrade());
-        }
-        if (draft.getPartnerId() == null) {
-            draft.setPartnerId(customer.getReferrerId());
-        }
+        // 佣金归属与比例一律以客户档案为准,不接受调用方传入(防越权指定收款伙伴 / 抬评级)
+        draft.setGrade(customer.getGrade());
+        draft.setPartnerId(customer.getReferrerId());
         contractMapper.insert(draft);
         auditService.log("contract.create", BIZ_TYPE, draft.getId(), null);
         return draft;
@@ -213,11 +212,12 @@ public class MktServiceContractService {
         MktServiceContract c = require(id);
         int updated = contractMapper.update(null, new LambdaUpdateWrapper<MktServiceContract>()
                 .eq(MktServiceContract::getId, id)
-                .in(MktServiceContract::getStatus, ST_EFFECTIVE, ST_PERFORMING, ST_AMENDING, ST_EXPIRED)
+                .in(MktServiceContract::getStatus, ST_EFFECTIVE, ST_PERFORMING)
                 .set(MktServiceContract::getStatus, ST_TERMINATED)
                 .set(MktServiceContract::getTerminateReason, reason));
         requireUpdated(updated, id);
         auditService.log("contract.terminate", BIZ_TYPE, id, reason);
+        commissionService.voidUnsettledBySource(MktCommissionService.SOURCE_CONTRACT_BONUS, id, "合同终止:" + reason);
         boolean withinClawback = c.getEffectiveAt() != null
                 && c.getEffectiveAt().plusDays(clawbackDays).isAfter(LocalDateTime.now());
         if (withinClawback) {
@@ -231,12 +231,14 @@ public class MktServiceContractService {
         if (!StringUtils.hasText(reason)) {
             throw new BizException("作废必须填写原因");
         }
-        transition(id, ST_VOID, "contract.void", reason, ST_DRAFT, ST_PENDING_AUDIT, ST_PENDING_SIGN);
+        transition(id, ST_VOID, "contract.void", reason, ST_PENDING_SIGN);
     }
 
     // ---------------- 生效副作用 ----------------
 
     private void afterEffective(MktServiceContract c) {
+        // 合同生效与锁客成交必须在同一事务内完成；锁客更新失败时合同生效一起回滚。
+        lockService.markDeal(c.getCustomerId(), c.getPartnerId());
         eventPublisher.publishEvent(new DomainEvent.ServiceContractEffective(
                 c.getId(), c.getCustomerId(), c.getPartnerId(), c.getSignMode(), LocalDateTime.now()));
         createBonusCommission(c);
@@ -271,7 +273,7 @@ public class MktServiceContractService {
         bill.setContractId(c.getId());
         bill.setProjectId(c.getProjectId());
         bill.setDirection(BILL_DIRECTION_RECEIVABLE);
-        bill.setFeeType(BILL_FEE_TYPE);
+        bill.setFeeType(amount.signum() > 0 ? BILL_FEE_TYPE_DEPOSIT : BILL_FEE_TYPE_RENT);
         bill.setSource(BILL_SOURCE);
         bill.setStatus(BILL_STATUS_UNPAID);
         bill.setAmount(amount);

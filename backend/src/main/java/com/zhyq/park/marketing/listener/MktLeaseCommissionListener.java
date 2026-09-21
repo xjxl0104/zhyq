@@ -5,6 +5,9 @@ import com.zhyq.park.common.event.DomainEvent;
 import com.zhyq.park.common.setting.BizSettings;
 import com.zhyq.park.contract.entity.Contract;
 import com.zhyq.park.contract.mapper.ContractMapper;
+import com.zhyq.park.finance.entity.Bill;
+import com.zhyq.park.finance.mapper.BillMapper;
+import com.zhyq.park.finance.service.BillMetrics;
 import com.zhyq.park.crm.entity.Commission;
 import com.zhyq.park.crm.entity.Customer;
 import com.zhyq.park.crm.mapper.CommissionMapper;
@@ -15,6 +18,8 @@ import com.zhyq.park.marketing.entity.MktReferralOrder;
 import com.zhyq.park.marketing.mapper.MktCustomerGradeMapper;
 import com.zhyq.park.marketing.mapper.MktReferralOrderMapper;
 import com.zhyq.park.marketing.service.MktCommissionService;
+import com.zhyq.park.marketing.service.MktLockService;
+import com.zhyq.park.marketing.service.MktServiceContractService;
 import com.zhyq.park.marketing.service.MktCommissionService.CommissionEvent;
 import com.zhyq.park.tenant.entity.BizTenant;
 import com.zhyq.park.tenant.mapper.BizTenantMapper;
@@ -50,12 +55,15 @@ public class MktLeaseCommissionListener {
     static final String SERVICE_BILL_SOURCE = "mkt_service";
 
     private final ContractMapper contractMapper;
+    private final BillMapper billMapper;
     private final BizTenantMapper tenantMapper;
     private final CustomerMapper customerMapper;
     private final CommissionMapper legacyCommissionMapper;
     private final MktCustomerGradeMapper gradeMapper;
     private final MktReferralOrderMapper orderMapper;
     private final MktCommissionService commissionService;
+    private final MktLockService lockService;
+    private final MktServiceContractService serviceContractService;
     private final BizSettings bizSettings;
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
@@ -73,9 +81,19 @@ public class MktLeaseCommissionListener {
             return;
         }
         try {
-            unfreezeForContract(e.contractId());
+            unfreezeForContract(e.contractId(), e.billId());
         } catch (Exception ex) {
             log.error("[mkt] 到账解冻失败 contractId={}", e.contractId(), ex);
+        }
+    }
+
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    public void onPaymentReversed(DomainEvent.PaymentReversed e) {
+        if (e.contractId() == null) return;
+        try {
+            refreezeForContract(e.contractId(), e.billId());
+        } catch (Exception ex) {
+            log.error("[mkt] 收款红冲回冻失败 contractId={}", e.contractId(), ex);
         }
     }
 
@@ -90,6 +108,8 @@ public class MktLeaseCommissionListener {
             log.info("[mkt] 合同 {} 的租客无推荐伙伴,不计佣", contractId);
             return;
         }
+        // 租赁合同审批也要结束对应客户的活锁,并校验锁客伙伴与推荐伙伴一致。
+        lockService.markDeal(customer.getId(), customer.getReferrerId());
         if (legacyCommissionExists(contractId) && bizSettings.getBoolean(MODULE, "old_channel_exclusive", true)) {
             log.warn("[mkt] 合同 {} 已有老渠道佣金,互斥开关开,跳过全民营销计佣", contractId);
             return;
@@ -109,11 +129,44 @@ public class MktLeaseCommissionListener {
         log.info("[mkt] 合同 {} 租赁一次性佣金已生成,池 {}", contractId, pool);
     }
 
-    void unfreezeForContract(Long contractId) {
+    void unfreezeForContract(Long contractId, Long billId) {
+        // fin_bill.contract_id 来自两张合同表，必须先按 source 分流，避免自增 id 撞号。
+        Bill bill = billMapper.selectById(billId);
+        if (isFirstServiceBill(bill, contractId)) {
+            unfreezeOrders(contractId, MktCommissionService.SOURCE_CONTRACT_BONUS);
+            serviceContractService.startPerforming(contractId);
+            return;
+        }
+        if (bill != null && SERVICE_BILL_SOURCE.equals(bill.getSource())) return;
+        unfreezeOrders(contractId, MktCommissionService.SOURCE_LEASE);
+    }
+
+    void refreezeForContract(Long contractId, Long billId) {
+        Bill bill = billMapper.selectById(billId);
+        if (bill == null || (bill.getPaidAmount() != null && bill.getPaidAmount().signum() > 0)) return;
+        boolean serviceFirst = isFirstServiceBill(bill, contractId);
+        if (SERVICE_BILL_SOURCE.equals(bill.getSource()) && !serviceFirst) return;
+        int sourceType = serviceFirst ? MktCommissionService.SOURCE_CONTRACT_BONUS : MktCommissionService.SOURCE_LEASE;
         List<MktReferralOrder> orders = orderMapper.selectList(new LambdaQueryWrapper<MktReferralOrder>()
                 .eq(MktReferralOrder::getSourceId, contractId)
-                .in(MktReferralOrder::getSourceType,
-                        MktCommissionService.SOURCE_LEASE, MktCommissionService.SOURCE_CONTRACT_BONUS));
+                .eq(MktReferralOrder::getSourceType, sourceType));
+        for (MktReferralOrder o : orders) commissionService.refreezeByOrder(o.getId());
+    }
+
+    private static boolean isFirstServiceBill(Bill bill, Long contractId) {
+        if (bill == null || !SERVICE_BILL_SOURCE.equals(bill.getSource())
+                || !("mkt_service:" + contractId + ":first").equals(bill.getBillingKey())
+                || !Integer.valueOf(BillMetrics.STATUS_SETTLED).equals(bill.getStatus())) {
+            return false;
+        }
+        return "租金".equals(bill.getFeeType())
+                || (bill.getFeeType() != null && bill.getFeeType().contains("保证金"));
+    }
+
+    private void unfreezeOrders(Long contractId, int sourceType) {
+        List<MktReferralOrder> orders = orderMapper.selectList(new LambdaQueryWrapper<MktReferralOrder>()
+                .eq(MktReferralOrder::getSourceId, contractId)
+                .eq(MktReferralOrder::getSourceType, sourceType));
         for (MktReferralOrder o : orders) {
             int n = commissionService.unfreezeByOrder(o.getId());
             if (n > 0) {

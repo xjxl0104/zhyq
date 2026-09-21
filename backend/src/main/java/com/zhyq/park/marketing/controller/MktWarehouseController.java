@@ -96,7 +96,8 @@ public class MktWarehouseController {
                 .set(MktWarehouse::getAddress, w.getAddress()).set(MktWarehouse::getContact, w.getContact())
                 .set(MktWarehouse::getPhone, w.getPhone()).set(MktWarehouse::getAreaSqm, w.getAreaSqm())
                 .set(MktWarehouse::getDailyCapacity, w.getDailyCapacity()).set(MktWarehouse::getCategories, w.getCategories())
-                .set(MktWarehouse::getSettleCycle, w.getSettleCycle()).set(MktWarehouse::getFeeModel, w.getFeeModel())
+                .set(MktWarehouse::getSettleCycle, w.getSettleCycle()).set(MktWarehouse::getFeeModel,
+                        StringUtils.hasText(w.getFeeModel()) ? w.getFeeModel() : null)
                 .set(MktWarehouse::getPlatformFeeModel, w.getPlatformFeeModel()).set(MktWarehouse::getRemark, w.getRemark()));
         auditService.log("warehouse.update", "warehouse", w.getId(), null, before, w);
         return Result.ok();

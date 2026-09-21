@@ -25,6 +25,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.mock.web.MockMultipartFile;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -133,6 +134,30 @@ class MktReferralOrderImportServiceTest {
         assertThat(r.imported()).isEqualTo(1);
         assertThat(r.errors()).hasSize(1).first().asString().contains("BAD");
         verify(commissionService, times(1)).createAndSplit(any());
+    }
+
+    @Test
+    void oversizeFileIsRejectedBeforeParsing() {
+        byte[] big = new byte[10 * 1024 * 1024 + 1];
+        MockMultipartFile f = new MockMultipartFile("file", "outbound.xlsx",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", big);
+        assertThatThrownBy(() -> service.importWorkbook(f, 1L))
+                .isInstanceOf(BizException.class).hasMessageContaining("文件过大");
+    }
+
+    @Test
+    void nonExcelExtensionIsRejected() {
+        MockMultipartFile f = new MockMultipartFile("file", "outbound.csv", "text/csv", "no".getBytes());
+        assertThatThrownBy(() -> service.importWorkbook(f, 1L))
+                .isInstanceOf(BizException.class).hasMessageContaining(".xlsx / .xls");
+    }
+
+    @Test
+    void extensionlessFileIsStillParsed() {
+        // 没有扩展名时不拦,交给 POI 判断(只做大小/行数兜底)
+        MockMultipartFile f = new MockMultipartFile("file", "outbound", "application/octet-stream", "not a workbook".getBytes());
+        assertThatThrownBy(() -> service.importWorkbook(f, 1L))
+                .isInstanceOf(BizException.class).hasMessageContaining("文件解析失败");
     }
 
     @Test

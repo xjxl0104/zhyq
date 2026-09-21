@@ -25,6 +25,9 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.annotation.Propagation;
+import java.lang.reflect.Method;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -118,6 +121,14 @@ class MktCommissionServiceTest {
     }
 
     @Test
+    void afterCommitEntryPointsRequireNewTransaction() throws Exception {
+        Method create = MktCommissionService.class.getMethod("createAndSplit", CommissionEvent.class);
+        Method unfreeze = MktCommissionService.class.getMethod("unfreezeByOrder", Long.class);
+        assertThat(create.getAnnotation(Transactional.class).propagation()).isEqualTo(Propagation.REQUIRES_NEW);
+        assertThat(unfreeze.getAnnotation(Transactional.class).propagation()).isEqualTo(Propagation.REQUIRES_NEW);
+    }
+
+    @Test
     void unfreezeByOrderOnlyMovesFrozenRowsAndPublishesEvent() {
         MktPromoterCommission frozen = commission(11L, MktCommissionService.C_FROZEN, "100");
         when(commissionMapper.selectList(any(Wrapper.class))).thenReturn(List.of(frozen));
@@ -127,6 +138,18 @@ class MktCommissionServiceTest {
 
         assertThat(n).isEqualTo(1);
         verify(eventPublisher).publishEvent(any(DomainEvent.CommissionUnfrozen.class));
+    }
+
+    @Test
+    void refreezeByOrderOnlyMovesSettleablePositiveRows() {
+        MktPromoterCommission settleable = commission(11L, MktCommissionService.C_SETTLEABLE, "100");
+        settleable.setSign(1);
+        when(commissionMapper.selectList(any(Wrapper.class))).thenReturn(List.of(settleable));
+        when(commissionMapper.update(isNull(), any(Wrapper.class))).thenReturn(1);
+
+        assertThat(service.refreezeByOrder(100L)).isEqualTo(1);
+        verify(commissionMapper).update(isNull(), any(Wrapper.class));
+        verify(eventPublisher, never()).publishEvent(any());
     }
 
     @Test
@@ -167,7 +190,9 @@ class MktCommissionServiceTest {
         when(batchMapper.insert(any(MktSettleBatch.class))).thenAnswer(inv -> {
             ((MktSettleBatch) inv.getArgument(0)).setId(9L); return 1;
         });
-        when(commissionMapper.selectById(11L)).thenReturn(commission(11L, MktCommissionService.C_FROZEN, "100"));
+        MktPromoterCommission frozen = commission(11L, MktCommissionService.C_FROZEN, "100");
+        frozen.setSign(1);
+        when(commissionMapper.selectById(11L)).thenReturn(frozen);
         when(commissionMapper.update(isNull(), any(Wrapper.class))).thenReturn(0);
 
         assertThatThrownBy(() -> service.settle(List.of(11L), "ops"))
@@ -176,21 +201,29 @@ class MktCommissionServiceTest {
     }
 
     @Test
+    void settleRejectsClawbackRows() {
+        when(batchMapper.insert(any(MktSettleBatch.class))).thenReturn(1);
+        MktPromoterCommission clawback = commission(11L, MktCommissionService.C_SETTLEABLE, "-20");
+        clawback.setSign(-1);
+        when(commissionMapper.selectById(11L)).thenReturn(clawback);
+        assertThatThrownBy(() -> service.settle(List.of(11L), "ops"))
+                .isInstanceOf(BizException.class).hasMessageContaining("扣回");
+        verify(commissionMapper, never()).update(isNull(), any(Wrapper.class));
+    }
+
+    @Test
     void settleSumsAmountsIntoBatch() {
         when(batchMapper.insert(any(MktSettleBatch.class))).thenAnswer(inv -> {
             ((MktSettleBatch) inv.getArgument(0)).setId(9L); return 1;
         });
-        when(commissionMapper.selectById(11L)).thenReturn(commission(11L, MktCommissionService.C_SETTLEABLE, "100.50"));
-        when(commissionMapper.selectById(12L)).thenReturn(commission(12L, MktCommissionService.C_SETTLEABLE, "-20"));
+        MktPromoterCommission positive = commission(11L, MktCommissionService.C_SETTLEABLE, "100.50"); positive.setSign(1);
+        MktPromoterCommission negative = commission(12L, MktCommissionService.C_SETTLEABLE, "-20"); negative.setSign(-1);
+        when(commissionMapper.selectById(11L)).thenReturn(positive);
+        when(commissionMapper.selectById(12L)).thenReturn(negative);
         when(commissionMapper.update(isNull(), any(Wrapper.class))).thenReturn(1);
 
-        String batchNo = service.settle(List.of(11L, 12L), "ops");
-
-        assertThat(batchNo).startsWith("SB-");
-        ArgumentCaptor<MktSettleBatch> cap = ArgumentCaptor.forClass(MktSettleBatch.class);
-        verify(batchMapper).updateById(cap.capture());
-        assertThat(cap.getValue().getCnt()).isEqualTo(2);
-        assertThat(cap.getValue().getTotalAmount()).isEqualByComparingTo("80.50");
+        assertThatThrownBy(() -> service.settle(List.of(11L, 12L), "ops"))
+                .isInstanceOf(BizException.class).hasMessageContaining("扣回");
     }
 
     private static CommissionEvent leaseEvent(String pool) {

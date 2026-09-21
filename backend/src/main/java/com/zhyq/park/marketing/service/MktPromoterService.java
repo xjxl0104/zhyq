@@ -122,6 +122,16 @@ public class MktPromoterService {
         auditService.log("promoter.parent.change", BIZ_TYPE, id, reason, me.getParentId(), newParentId);
     }
 
+    /** 无邀请码注册后补填:只允许当前没有上级的伙伴绑定一次,走 changeParent 的成环/退出校验。 */
+    @Transactional
+    public void changeParentByInvite(Long id, String inviteCode) {
+        if (!StringUtils.hasText(inviteCode)) throw new BizException("请输入邀请码");
+        MktPromoter parent = promoterMapper.selectOne(new LambdaQueryWrapper<MktPromoter>()
+                .eq(MktPromoter::getInviteCode, inviteCode.trim().toUpperCase()).last("limit 1"));
+        if (parent == null) throw new BizException("邀请码不存在");
+        changeParent(id, parent.getId(), "伙伴补填邀请码 " + parent.getInviteCode());
+    }
+
     @Transactional
     public void freeze(Long id, String reason) {
         requireReason(reason);
