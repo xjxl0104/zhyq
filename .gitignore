@@ -58,3 +58,8 @@ import/
 .claude/worktrees/
 .claude/launch.json
 .claude/settings.local.json
+
+# 小程序工程
+miniapp/node_modules/
+miniapp/dist/
+miniapp/unpackage/

@@ -8,11 +8,14 @@ import com.zhyq.park.contract.mapper.ContractMapper;
 import com.zhyq.park.crm.entity.Customer;
 import com.zhyq.park.crm.mapper.CommissionMapper;
 import com.zhyq.park.crm.mapper.CustomerMapper;
+import com.zhyq.park.finance.mapper.BillMapper;
 import com.zhyq.park.marketing.entity.MktCustomerGrade;
 import com.zhyq.park.marketing.entity.MktReferralOrder;
 import com.zhyq.park.marketing.mapper.MktCustomerGradeMapper;
 import com.zhyq.park.marketing.mapper.MktReferralOrderMapper;
 import com.zhyq.park.marketing.service.MktCommissionService;
+import com.zhyq.park.marketing.service.MktLockService;
+import com.zhyq.park.marketing.service.MktServiceContractService;
 import com.zhyq.park.marketing.service.MktCommissionService.CommissionEvent;
 import com.zhyq.park.tenant.entity.BizTenant;
 import com.zhyq.park.tenant.mapper.BizTenantMapper;
@@ -40,20 +43,23 @@ import static org.mockito.Mockito.when;
 class MktLeaseCommissionListenerTest {
 
     @Mock ContractMapper contractMapper;
+    @Mock BillMapper billMapper;
     @Mock BizTenantMapper tenantMapper;
     @Mock CustomerMapper customerMapper;
     @Mock CommissionMapper legacyCommissionMapper;
     @Mock MktCustomerGradeMapper gradeMapper;
     @Mock MktReferralOrderMapper orderMapper;
     @Mock MktCommissionService commissionService;
+    @Mock MktLockService lockService;
+    @Mock MktServiceContractService serviceContractService;
     @Mock BizSettings bizSettings;
 
     MktLeaseCommissionListener listener;
 
     @BeforeEach
     void setUp() {
-        listener = new MktLeaseCommissionListener(contractMapper, tenantMapper, customerMapper,
-                legacyCommissionMapper, gradeMapper, orderMapper, commissionService, bizSettings);
+        listener = new MktLeaseCommissionListener(contractMapper, billMapper, tenantMapper, customerMapper,
+                legacyCommissionMapper, gradeMapper, orderMapper, commissionService, lockService, serviceContractService, bizSettings);
     }
 
     @Test
@@ -69,6 +75,7 @@ class MktLeaseCommissionListenerTest {
 
         ArgumentCaptor<CommissionEvent> cap = ArgumentCaptor.forClass(CommissionEvent.class);
         verify(commissionService).createAndSplit(cap.capture());
+        verify(lockService).markDeal(5L, 99L);
         CommissionEvent ev = cap.getValue();
         assertThat(ev.sourceType()).isEqualTo(MktCommissionService.SOURCE_LEASE);
         assertThat(ev.sourceNo()).isEqualTo("LEASE-10");
@@ -124,6 +131,7 @@ class MktLeaseCommissionListenerTest {
         MktReferralOrder o1 = new MktReferralOrder(); o1.setId(31L);
         MktReferralOrder o2 = new MktReferralOrder(); o2.setId(32L);
         when(orderMapper.selectList(any(Wrapper.class))).thenReturn(List.of(o1, o2));
+        when(billMapper.selectById(500L)).thenReturn(new com.zhyq.park.finance.entity.Bill());
         lenient().when(commissionService.unfreezeByOrder(31L)).thenReturn(2);
         lenient().when(commissionService.unfreezeByOrder(32L)).thenReturn(0);
 
@@ -131,6 +139,48 @@ class MktLeaseCommissionListenerTest {
 
         verify(commissionService).unfreezeByOrder(31L);
         verify(commissionService).unfreezeByOrder(32L);
+    }
+
+    @Test
+    void serviceBillOnlyUnfreezesContractBonusAndStartsPerforming() {
+        MktReferralOrder o = new MktReferralOrder(); o.setId(31L);
+        com.zhyq.park.finance.entity.Bill bill = new com.zhyq.park.finance.entity.Bill();
+        bill.setSource("mkt_service"); bill.setBillingKey("mkt_service:10:first");
+        bill.setStatus(5); bill.setFeeType("租金");
+        when(billMapper.selectById(500L)).thenReturn(bill);
+        when(orderMapper.selectList(any(Wrapper.class))).thenReturn(List.of(o));
+        when(commissionService.unfreezeByOrder(31L)).thenReturn(1);
+        listener.onPaymentReceived(new DomainEvent.PaymentReceived(500L, 10L, LocalDateTime.now()));
+        verify(commissionService).unfreezeByOrder(31L);
+        verify(serviceContractService).startPerforming(10L);
+    }
+
+    @Test
+    void laterServiceBillDoesNotUnfreezeContractBonus() {
+        com.zhyq.park.finance.entity.Bill bill = new com.zhyq.park.finance.entity.Bill();
+        bill.setSource("mkt_service"); bill.setBillingKey("mkt_service:10:month-2");
+        bill.setStatus(5); bill.setFeeType("租金");
+        when(billMapper.selectById(500L)).thenReturn(bill);
+
+        listener.onPaymentReceived(new DomainEvent.PaymentReceived(500L, 10L, LocalDateTime.now()));
+
+        verify(commissionService, never()).unfreezeByOrder(any());
+        verify(serviceContractService, never()).startPerforming(any());
+    }
+
+    @Test
+    void reversedFirstServiceBillRefreezesOnlySettleableBonus() {
+        MktReferralOrder o = new MktReferralOrder(); o.setId(31L);
+        com.zhyq.park.finance.entity.Bill bill = new com.zhyq.park.finance.entity.Bill();
+        bill.setSource("mkt_service"); bill.setBillingKey("mkt_service:10:first");
+        bill.setStatus(5); bill.setFeeType("保证金");
+        bill.setPaidAmount(BigDecimal.ZERO);
+        when(billMapper.selectById(500L)).thenReturn(bill);
+        when(orderMapper.selectList(any(Wrapper.class))).thenReturn(List.of(o));
+
+        listener.onPaymentReversed(new DomainEvent.PaymentReversed(700L, 500L, 10L, LocalDateTime.now()));
+
+        verify(commissionService).refreezeByOrder(31L);
     }
 
     @Test
