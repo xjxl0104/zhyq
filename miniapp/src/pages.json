@@ -23,17 +23,17 @@
     { "path": "pages/warehouse-notice/index", "style": { "navigationBarTitleText": "消息通知" } }
   ],
   "tabBar": {
-    "color": "#8f959e", "selectedColor": "#4f46e5", "backgroundColor": "#ffffff",
+    "color": "#8a93a8", "selectedColor": "#3857f5", "backgroundColor": "#ffffff", "borderStyle": "white",
     "list": [
-      { "pagePath": "pages/home/index", "text": "首页" },
-      { "pagePath": "pages/customers/index", "text": "客户" },
-      { "pagePath": "pages/income/index", "text": "收益" },
-      { "pagePath": "pages/me/index", "text": "我的" }
+      { "pagePath": "pages/home/index", "text": "首页", "iconPath": "static/tabbar/home.png", "selectedIconPath": "static/tabbar/home-active.png" },
+      { "pagePath": "pages/customers/index", "text": "客户", "iconPath": "static/tabbar/customers.png", "selectedIconPath": "static/tabbar/customers-active.png" },
+      { "pagePath": "pages/income/index", "text": "收益", "iconPath": "static/tabbar/income.png", "selectedIconPath": "static/tabbar/income-active.png" },
+      { "pagePath": "pages/me/index", "text": "我的", "iconPath": "static/tabbar/me.png", "selectedIconPath": "static/tabbar/me-active.png" }
     ]
   },
   "globalStyle": {
     "navigationBarTextStyle": "black",
-    "navigationBarBackgroundColor": "#ffffff",
-    "backgroundColor": "#f5f6fa"
+    "navigationBarBackgroundColor": "#f4f6fb",
+    "backgroundColor": "#f4f6fb"
   }
 }

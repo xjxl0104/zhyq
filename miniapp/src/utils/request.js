@@ -1,6 +1,8 @@
 // 统一请求:带 token、解 Result 包、401 跳登录。伙伴端 /api/mp/v1/**，云仓端 /api/wh/v1/**。
-const BASE = import.meta.env.VITE_API_BASE || '/api/mp/v1'
-const WH_BASE = import.meta.env.VITE_WH_API_BASE || '/api/wh/v1'
+const injectedBase = typeof __ZHYQ_MP_API_BASE__ === 'string' ? __ZHYQ_MP_API_BASE__ : ''
+const injectedWhBase = typeof __ZHYQ_WH_API_BASE__ === 'string' ? __ZHYQ_WH_API_BASE__ : ''
+const BASE = injectedBase || import.meta.env.VITE_API_BASE || '/api/mp/v1'
+const WH_BASE = injectedWhBase || import.meta.env.VITE_WH_API_BASE || '/api/wh/v1'
 
 export const token = {
   get: () => uni.getStorageSync('mp_token') || '',

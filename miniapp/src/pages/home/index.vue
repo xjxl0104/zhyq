@@ -1,29 +1,40 @@
 <template>
-  <view>
-    <view class="card" style="background:#4f46e5;color:#fff">
-      <view class="muted" style="color:#c7d2fe">累计收益(元)</view>
-      <view style="font-size:56rpx;font-weight:600;margin:8rpx 0">{{ fmt(home.total) }}</view>
-      <view style="display:flex;gap:40rpx;font-size:24rpx">
-        <text>可提现 {{ fmt(home.withdrawable) }}</text>
-        <text>冻结中 {{ fmt(home.frozen) }}</text>
-        <text>本月 {{ fmt(home.month) }}</text>
+  <view class="page-wrap home-page">
+    <view class="card hero-card">
+      <view class="eyebrow">DIPARK · PARTNER NETWORK</view>
+      <view class="hero-title">园区伙伴工作台</view>
+      <view class="hero-subtitle">连接客户、空间与云仓服务，让每一次推荐都有回响</view>
+      <view class="hero-label">累计收益（元）</view>
+      <view class="hero-number">{{ fmt(home.total) }}</view>
+      <view class="hero-meta">
+        <text class="hero-meta-item">可提现 {{ fmt(home.withdrawable) }}</text>
+        <text class="hero-meta-item">冻结中 {{ fmt(home.frozen) }}</text>
+        <text class="hero-meta-item">本月 {{ fmt(home.month) }}</text>
       </view>
     </view>
 
-    <view class="grid" style="margin:0 20rpx">
-      <view class="stat" @click="go('/pages/referral/index')"><view>推荐客户</view><view class="muted">园区入驻 / 云仓服务</view></view>
-      <view class="stat" @click="go('/pages/position/index')"><view>我的岗位</view><view class="muted">{{ me.positionCode || '-' }} · 晋升进度</view></view>
-      <view class="stat" @click="go('/pages/team/index')"><view>我的团队</view><view class="muted">直属成员</view></view>
-      <view class="stat" @click="go('/pages/withdraw/index')"><view>提现</view><view class="muted">可提 {{ fmt(home.withdrawable) }}</view></view>
+    <view class="section-head"><text class="section-title">快捷入口</text><text class="section-link">运营服务</text></view>
+    <view class="grid quick-grid">
+      <view class="quick-card pressable" @click="go('/pages/referral/index')">
+        <view class="quick-icon">荐</view><view><view class="quick-title">推荐客户</view><view class="quick-desc">园区入驻 / 云仓服务</view></view>
+      </view>
+      <view class="quick-card pressable" @click="go('/pages/position/index')">
+        <view class="quick-icon">岗</view><view><view class="quick-title">我的岗位</view><view class="quick-desc">{{ me.positionCode || '-' }} · 晋升进度</view></view>
+      </view>
+      <view class="quick-card pressable" @click="go('/pages/team/index')">
+        <view class="quick-icon">团</view><view><view class="quick-title">我的团队</view><view class="quick-desc">查看直属成员</view></view>
+      </view>
+      <view class="quick-card pressable" @click="go('/pages/withdraw/index')">
+        <view class="quick-icon">提</view><view><view class="quick-title">申请提现</view><view class="quick-desc">可提 {{ fmt(home.withdrawable) }}</view></view>
+      </view>
     </view>
 
-    <view class="card">
-      <view style="font-weight:600;margin-bottom:12rpx">最近动态</view>
-      <view v-if="!home.recent?.length" class="muted">还没有收益记录,去推荐第一位客户吧</view>
+    <view class="section-head"><text class="section-title">最近动态</text><text class="caption">实时更新</text></view>
+    <view class="card activity-card">
+      <view v-if="!home.recent?.length" class="list-empty">还没有收益记录，去推荐第一位客户吧</view>
       <view class="row" v-for="(r, i) in home.recent" :key="i">
-        <text>{{ STATUS[r.status] }}</text>
-        <text class="money" :style="{ color: r.amount < 0 ? '#c00' : '' }">{{ fmt(r.amount) }}</text>
-        <text class="muted">{{ r.time?.slice(0, 10) }}</text>
+        <view><view>{{ STATUS[r.status] }}</view><view class="caption">{{ r.time?.slice(0, 16) }}</view></view>
+        <text class="money" :class="{ negative: r.amount < 0 }">{{ fmt(r.amount) }}</text>
       </view>
     </view>
   </view>
@@ -46,3 +57,10 @@ onShow(async () => {
   ;[home.value, me.value] = await Promise.all([meApi.home(), meApi.me()])
 })
 </script>
+
+<style scoped>
+.home-page { padding-top: 12rpx; }
+.quick-grid { margin: 0 24rpx; }
+.activity-card { padding-top: 14rpx; padding-bottom: 14rpx; }
+.negative { color: #c84b5c; }
+</style>
