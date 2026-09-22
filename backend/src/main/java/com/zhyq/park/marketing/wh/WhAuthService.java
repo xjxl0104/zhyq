@@ -39,9 +39,10 @@ public class WhAuthService {
     private final MktWarehouseContactMapper contactMapper;
     private final Map<String, SessionKey> sessionKeys = new ConcurrentHashMap<>();
     private record SessionKey(String value, long expiresAt) {}
-    @Value("${zhyq.mp.mock-login:true}") private boolean mockLogin;
-    @Value("${zhyq.mp.appid:}") private String appId;
-    @Value("${zhyq.mp.secret:}") private String appSecret;
+    // 云仓端是独立小程序,凭据与伙伴端(zhyq.mp.*)分开,不互相回落
+    @Value("${zhyq.wh.mock-login:true}") private boolean mockLogin;
+    @Value("${zhyq.wh.appid:}") private String appId;
+    @Value("${zhyq.wh.secret:}") private String appSecret;
 
     public WhAuthService(JwtService jwtService, MktWarehouseMapper warehouseMapper,
                          MktPromoterMapper promoterMapper, MktAuditService auditService,

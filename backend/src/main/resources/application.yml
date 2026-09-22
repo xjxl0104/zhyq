@@ -33,6 +33,11 @@ zhyq:
     mock-login: ${WX_MP_MOCK_LOGIN:true}
     appid: ${WX_MP_APPID:}
     secret: ${WX_MP_SECRET:}
+  wh:
+    # 云仓端小程序:与伙伴端是两个不同的小程序(2026-09-22 拍板),凭据独立,不回落到 mp
+    mock-login: ${WX_WH_MOCK_LOGIN:true}
+    appid: ${WX_WH_APPID:}
+    secret: ${WX_WH_SECRET:}
   jwt:
     # 生产必须由环境变量提供,不留默认值(HS256 密钥,建议 >=32 字节随机串)
     secret: ${JWT_SECRET}
