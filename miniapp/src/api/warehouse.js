@@ -25,5 +25,7 @@ export const warehouseApi = {
   createContract: (data) => whPost('/contracts', data),
   agreement: () => whGet('/agreement'),
   uploadAgreement: (file) => whPost('/agreement/upload', { file }),
-  notices: (params) => whGet('/notice/page', params)
+  notices: (params) => whGet('/notice/page', params),
+  noticeUnread: () => whGet('/notice/unread-count'),
+  noticeRead: (id) => whPost(`/notice/${id}/read`)
 }

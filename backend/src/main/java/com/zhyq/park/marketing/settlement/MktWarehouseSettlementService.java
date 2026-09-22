@@ -30,6 +30,7 @@ public class MktWarehouseSettlementService {
     private final MktErpReconcileSnapshotMapper reconcileMapper;
     private final MktCommissionService commissionService;
     private final MktNoticeService noticeService;
+    private final MktPromoterCommissionMapper commissionMapper;
 
     @Transactional
     public MktWarehouseSettlement generate(Long warehouseId, LocalDate start, LocalDate end) {
@@ -68,11 +69,24 @@ public class MktWarehouseSettlementService {
     public MktDirectSignPayment recordPayment(Long contractId, Long warehouseId, String paymentNo, BigDecimal amount) {
         if (contractId == null || warehouseId == null || paymentNo == null || paymentNo.isBlank()) throw new BizException("直签到账参数不完整");
         MktDirectSignPayment old = paymentMapper.selectOne(new LambdaQueryWrapper<MktDirectSignPayment>().eq(MktDirectSignPayment::getPaymentNo, paymentNo).last("limit 1"));
-        if (old != null) return old;
+        if (old != null) return old;   // 幂等:重复到账直接返回,绝不重复解冻
         if (amount == null || amount.signum() <= 0) throw new BizException("到账金额必须大于 0");
+        List<MktReferralOrder> platformOrders = orderMapper.selectList(new LambdaQueryWrapper<MktReferralOrder>().eq(MktReferralOrder::getSourceType, MktCommissionService.SOURCE_PLATFORM_FEE).eq(MktReferralOrder::getSourceId, contractId));
+        // 严口径:到账必须足额覆盖该合同平台费订单项下"当前仍冻结"的佣金合计,否则拒绝、不解冻
+        BigDecimal due = platformOrders.stream()
+                .map(o -> commissionMapper.selectList(new LambdaQueryWrapper<MktPromoterCommission>()
+                        .eq(MktPromoterCommission::getReferralOrderId, o.getId())
+                        .eq(MktPromoterCommission::getStatus, MktCommissionService.C_FROZEN)
+                        .eq(MktPromoterCommission::getSign, 1)))
+                .flatMap(List::stream)
+                .map(MktPromoterCommission::getAmount)
+                .filter(java.util.Objects::nonNull)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        if (amount.compareTo(due) < 0) {
+            throw new BizException("直签平台费到账不足:应付 " + due + " 实收 " + amount + ",已拒绝解冻");
+        }
         MktDirectSignPayment p = new MktDirectSignPayment(); p.setContractId(contractId); p.setWarehouseId(warehouseId); p.setPaymentNo(paymentNo); p.setAmount(amount); p.setStatus(1); p.setPaidAt(LocalDateTime.now());
         MktWarehouse w = warehouseMapper.selectById(warehouseId); p.setProjectId(w == null ? null : w.getProjectId()); paymentMapper.insert(p);
-        List<MktReferralOrder> platformOrders = orderMapper.selectList(new LambdaQueryWrapper<MktReferralOrder>().eq(MktReferralOrder::getSourceType, MktCommissionService.SOURCE_PLATFORM_FEE).eq(MktReferralOrder::getSourceId, contractId));
         for (MktReferralOrder o : platformOrders) commissionService.unfreezeByOrder(o.getId());
         return p;
     }

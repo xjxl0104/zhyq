@@ -2,7 +2,9 @@ package com.zhyq.park.marketing.settlement;
 
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
+import com.zhyq.park.common.exception.BizException;
 import com.zhyq.park.marketing.entity.MktDirectSignPayment;
+import com.zhyq.park.marketing.entity.MktPromoterCommission;
 import com.zhyq.park.marketing.entity.MktReferralOrder;
 import com.zhyq.park.marketing.entity.MktWarehouse;
 import com.zhyq.park.marketing.mapper.*;
@@ -19,6 +21,7 @@ import java.math.BigDecimal;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
@@ -33,20 +36,61 @@ class MktWarehouseSettlementServiceTest {
     @Mock MktErpReconcileSnapshotMapper reconcile;
     @Mock MktCommissionService commissions;
     @Mock MktNoticeService notices;
+    @Mock MktPromoterCommissionMapper commissionRows;
 
     @BeforeAll static void initTableInfo() {
         MapperBuilderAssistant a = new MapperBuilderAssistant(new MybatisConfiguration(), "");
-        TableInfoHelper.initTableInfo(a, MktDirectSignPayment.class); TableInfoHelper.initTableInfo(a, MktReferralOrder.class); TableInfoHelper.initTableInfo(a, MktWarehouse.class);
+        TableInfoHelper.initTableInfo(a, MktDirectSignPayment.class); TableInfoHelper.initTableInfo(a, MktReferralOrder.class);
+        TableInfoHelper.initTableInfo(a, MktWarehouse.class); TableInfoHelper.initTableInfo(a, MktPromoterCommission.class);
+    }
+
+    private MktWarehouseSettlementService service() {
+        return new MktWarehouseSettlementService(settlements, lines, bills, payments, orders, warehouses, reconcile, commissions, notices, commissionRows);
     }
 
     @Test void directSignPaymentIsIdempotentAndUnfreezesOnlyPlatformOrders() {
         when(payments.selectOne(any())).thenReturn(null);
         MktWarehouse w = new MktWarehouse(); w.setId(11L); w.setProjectId(7L); when(warehouses.selectById(11L)).thenReturn(w);
         MktReferralOrder o = new MktReferralOrder(); o.setId(31L); o.setSourceType(MktCommissionService.SOURCE_PLATFORM_FEE); o.setSourceId(9L); when(orders.selectList(any())).thenReturn(List.of(o));
+        when(commissionRows.selectList(any())).thenReturn(List.of(frozenCommission("88.00")));
         doAnswer(inv -> { ((MktDirectSignPayment) inv.getArgument(0)).setId(41L); return 1; }).when(payments).insert(any(MktDirectSignPayment.class));
-        MktWarehouseSettlementService service = new MktWarehouseSettlementService(settlements, lines, bills, payments, orders, warehouses, reconcile, commissions, notices);
-        MktDirectSignPayment p = service.recordPayment(9L, 11L, "PAY-1", new BigDecimal("88.00"));
+        MktDirectSignPayment p = service().recordPayment(9L, 11L, "PAY-1", new BigDecimal("88.00"));
         assertThat(p.getStatus()).isEqualTo(1); assertThat(p.getAmount()).isEqualByComparingTo("88.00");
         verify(commissions).unfreezeByOrder(31L);
+    }
+
+    @Test void rejectsPaymentBelowFrozenPlatformFeeAndDoesNotUnfreeze() {
+        when(payments.selectOne(any())).thenReturn(null);
+        MktReferralOrder o = new MktReferralOrder(); o.setId(31L); o.setSourceType(MktCommissionService.SOURCE_PLATFORM_FEE); o.setSourceId(9L); when(orders.selectList(any())).thenReturn(List.of(o));
+        when(commissionRows.selectList(any())).thenReturn(List.of(frozenCommission("100.00")));
+        assertThatThrownBy(() -> service().recordPayment(9L, 11L, "PAY-2", new BigDecimal("99.99")))
+                .isInstanceOf(BizException.class).hasMessageContaining("到账不足");
+        verify(commissions, never()).unfreezeByOrder(any());
+        verify(payments, never()).insert(any(MktDirectSignPayment.class));
+    }
+
+    @Test void acceptsPaymentExactlyEqualToDue() {
+        when(payments.selectOne(any())).thenReturn(null);
+        MktWarehouse w = new MktWarehouse(); w.setId(11L); w.setProjectId(7L); when(warehouses.selectById(11L)).thenReturn(w);
+        MktReferralOrder o = new MktReferralOrder(); o.setId(31L); o.setSourceType(MktCommissionService.SOURCE_PLATFORM_FEE); o.setSourceId(9L); when(orders.selectList(any())).thenReturn(List.of(o));
+        when(commissionRows.selectList(any())).thenReturn(List.of(frozenCommission("100.00")));
+        doAnswer(inv -> { ((MktDirectSignPayment) inv.getArgument(0)).setId(41L); return 1; }).when(payments).insert(any(MktDirectSignPayment.class));
+        service().recordPayment(9L, 11L, "PAY-3", new BigDecimal("100.00"));
+        verify(commissions).unfreezeByOrder(31L);
+    }
+
+    @Test void repeatedPaymentNoReturnsExistingWithoutUnfreezingAgain() {
+        MktDirectSignPayment existing = new MktDirectSignPayment(); existing.setId(7L); existing.setPaymentNo("PAY-4");
+        when(payments.selectOne(any())).thenReturn(existing);
+        MktDirectSignPayment p = service().recordPayment(9L, 11L, "PAY-4", new BigDecimal("1.00"));
+        assertThat(p.getId()).isEqualTo(7L);
+        verify(orders, never()).selectList(any());
+        verify(commissions, never()).unfreezeByOrder(any());
+    }
+
+    private MktPromoterCommission frozenCommission(String amount) {
+        MktPromoterCommission c = new MktPromoterCommission();
+        c.setReferralOrderId(31L); c.setStatus(MktCommissionService.C_FROZEN); c.setSign(1); c.setAmount(new BigDecimal(amount));
+        return c;
     }
 }

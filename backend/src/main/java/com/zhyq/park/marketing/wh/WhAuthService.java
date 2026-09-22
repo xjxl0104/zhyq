@@ -6,7 +6,9 @@ import com.zhyq.park.auth.JwtService;
 import com.zhyq.park.common.exception.BizException;
 import com.zhyq.park.marketing.entity.MktPromoter;
 import com.zhyq.park.marketing.entity.MktWarehouse;
+import com.zhyq.park.marketing.entity.MktWarehouseContact;
 import com.zhyq.park.marketing.mapper.MktPromoterMapper;
+import com.zhyq.park.marketing.mapper.MktWarehouseContactMapper;
 import com.zhyq.park.marketing.mapper.MktWarehouseMapper;
 import com.zhyq.park.marketing.mp.WxPhoneDecryptor;
 import com.zhyq.park.marketing.mp.WxSessionClient;
@@ -34,6 +36,7 @@ public class WhAuthService {
     private final MktAuditService auditService;
     private final WxSessionClient wxSessionClient;
     private final WxPhoneDecryptor wxPhoneDecryptor;
+    private final MktWarehouseContactMapper contactMapper;
     private final Map<String, SessionKey> sessionKeys = new ConcurrentHashMap<>();
     private record SessionKey(String value, long expiresAt) {}
     @Value("${zhyq.mp.mock-login:true}") private boolean mockLogin;
@@ -42,9 +45,11 @@ public class WhAuthService {
 
     public WhAuthService(JwtService jwtService, MktWarehouseMapper warehouseMapper,
                          MktPromoterMapper promoterMapper, MktAuditService auditService,
-                         WxSessionClient wxSessionClient, WxPhoneDecryptor wxPhoneDecryptor) {
+                         WxSessionClient wxSessionClient, WxPhoneDecryptor wxPhoneDecryptor,
+                         MktWarehouseContactMapper contactMapper) {
         this.jwtService = jwtService; this.warehouseMapper = warehouseMapper; this.promoterMapper = promoterMapper;
         this.auditService = auditService; this.wxSessionClient = wxSessionClient; this.wxPhoneDecryptor = wxPhoneDecryptor;
+        this.contactMapper = contactMapper;
     }
 
     public record LoginResult(boolean registered, String token, String openid, MktWarehouse warehouse) {
@@ -53,16 +58,28 @@ public class WhAuthService {
 
     public LoginResult wxLogin(String jsCode) { return wxLogin(null, jsCode); }
 
-    /** Optional warehouse id is only a lookup hint; ownership still requires contact_openid/phone match. */
+    /** Optional warehouse id is only a lookup hint; ownership still requires a contact row (or legacy contact_openid) match. */
     public LoginResult wxLogin(Long requestedWarehouseId, String jsCode) {
         WxSessionClient.Session session = code2Session(jsCode);
         if (!mockLogin) sessionKeys.put(session.openid(), new SessionKey(session.sessionKey(), System.currentTimeMillis() + 300_000));
-        LambdaQueryWrapper<MktWarehouse> q = new LambdaQueryWrapper<MktWarehouse>().eq(MktWarehouse::getContactOpenid, session.openid()).last("limit 1");
-        if (requestedWarehouseId != null) q.eq(MktWarehouse::getId, requestedWarehouseId);
-        MktWarehouse w = warehouseMapper.selectOne(q);
+        MktWarehouse w = resolveWarehouseByOpenid(session.openid(), requestedWarehouseId);
         if (w == null) return new LoginResult(false, null, session.openid(), null);
         touchLogin(w);
         return new LoginResult(true, issue(w), session.openid(), w);
+    }
+
+    /** 按 openid 找云仓:优先联系人表(P2-5 多联系人),回落到旧列 contact_openid(过渡期兼容)。 */
+    private MktWarehouse resolveWarehouseByOpenid(String openid, Long requestedWarehouseId) {
+        if (!StringUtils.hasText(openid)) return null;
+        MktWarehouseContact contact = contactMapper.selectOne(new LambdaQueryWrapper<MktWarehouseContact>()
+                .eq(MktWarehouseContact::getOpenid, openid).eq(MktWarehouseContact::getStatus, 1).last("limit 1"));
+        if (contact != null) {
+            if (requestedWarehouseId != null && !requestedWarehouseId.equals(contact.getWarehouseId())) return null;
+            return warehouseMapper.selectById(contact.getWarehouseId());
+        }
+        LambdaQueryWrapper<MktWarehouse> q = new LambdaQueryWrapper<MktWarehouse>().eq(MktWarehouse::getContactOpenid, openid).last("limit 1");
+        if (requestedWarehouseId != null) q.eq(MktWarehouse::getId, requestedWarehouseId);
+        return warehouseMapper.selectOne(q);
     }
 
     public LoginResult bindPhone(String openid, String phone) {
@@ -86,11 +103,32 @@ public class WhAuthService {
         if (partner != null) throw new BizException(409, "该手机号已绑定伙伴身份,请使用身份选择");
         MktWarehouse w = warehouseMapper.selectOne(new LambdaQueryWrapper<MktWarehouse>().eq(MktWarehouse::getPhone, phone).last("limit 1"));
         if (w == null) return new LoginResult(false, null, openid, null);
-        if (StringUtils.hasText(w.getContactOpenid()) && !openid.equals(w.getContactOpenid())) throw new BizException(409, "该云仓已绑定其他微信");
-        int updated = warehouseMapper.update(null, new LambdaUpdateWrapper<MktWarehouse>().eq(MktWarehouse::getId, w.getId()).isNull(MktWarehouse::getContactOpenid).set(MktWarehouse::getContactOpenid, openid));
-        if (updated == 0 && !openid.equals(w.getContactOpenid())) throw new BizException(409, "该云仓已绑定其他微信");
-        w.setContactOpenid(openid);
-        auditService.log("warehouse.bind", "warehouse", w.getId(), "微信手机号绑定");
+
+        // 该 openid 已作为某云仓联系人 → 幂等返回;已被别的 openid 认领联系人则冲突
+        MktWarehouseContact existingContact = contactMapper.selectOne(new LambdaQueryWrapper<MktWarehouseContact>()
+                .eq(MktWarehouseContact::getOpenid, openid).last("limit 1"));
+        if (existingContact != null) {
+            if (!existingContact.getWarehouseId().equals(w.getId())) throw new BizException(409, "该微信已绑定其他云仓");
+            return new LoginResult(true, issue(w), openid, w);
+        }
+        // 旧列兼容:已绑过旧列且是同一 openid → 幂等;绑了别的 openid → 冲突
+        if (StringUtils.hasText(w.getContactOpenid()) && !openid.equals(w.getContactOpenid())) throw new BizException(409, "该云仓主联系人已绑定其他微信");
+
+        // 绑定为 member 联系人(多联系人)。openid 唯一键:并发下可能撞唯一键,捕获后按冲突处理。
+        MktWarehouseContact c = new MktWarehouseContact();
+        c.setWarehouseId(w.getId()); c.setOpenid(openid); c.setPhone(phone);
+        c.setName(w.getContact()); c.setRole(StringUtils.hasText(w.getContactOpenid()) ? "member" : "owner");
+        c.setStatus(1); c.setProjectId(w.getProjectId());
+        try {
+            contactMapper.insert(c);
+        } catch (org.springframework.dao.DuplicateKeyException dup) {
+            throw new BizException(409, "该微信已绑定其他云仓");
+        }
+        // 旧列仍写首次绑定者,过渡期兼容
+        if (!StringUtils.hasText(w.getContactOpenid())) {
+            warehouseMapper.update(null, new LambdaUpdateWrapper<MktWarehouse>().eq(MktWarehouse::getId, w.getId()).isNull(MktWarehouse::getContactOpenid).set(MktWarehouse::getContactOpenid, openid));
+        }
+        auditService.log("warehouse.bind", "warehouse", w.getId(), "微信手机号绑定(联系人)");
         return new LoginResult(true, issue(w), openid, w);
     }
 
