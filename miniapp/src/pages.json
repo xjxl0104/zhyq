@@ -1,5 +1,6 @@
 {
   "pages": [
+    { "path": "pages/entry/index", "style": { "navigationBarTitleText": "选择身份" } },
     { "path": "pages/home/index", "style": { "navigationBarTitleText": "园区伙伴" } },
     { "path": "pages/login/index", "style": { "navigationBarTitleText": "登录" } },
     { "path": "pages/referral/index", "style": { "navigationBarTitleText": "推荐客户" } },
