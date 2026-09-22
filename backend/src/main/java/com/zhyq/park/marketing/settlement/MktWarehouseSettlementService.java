@@ -7,6 +7,7 @@ import com.zhyq.park.marketing.entity.*;
 import com.zhyq.park.marketing.finance.MktServiceFeeBillService;
 import com.zhyq.park.marketing.mapper.*;
 import com.zhyq.park.marketing.service.MktCommissionService;
+import com.zhyq.park.marketing.service.MktNoticeService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
@@ -28,6 +29,7 @@ public class MktWarehouseSettlementService {
     private final MktWarehouseMapper warehouseMapper;
     private final MktErpReconcileSnapshotMapper reconcileMapper;
     private final MktCommissionService commissionService;
+    private final MktNoticeService noticeService;
 
     @Transactional
     public MktWarehouseSettlement generate(Long warehouseId, LocalDate start, LocalDate end) {
@@ -42,9 +44,25 @@ public class MktWarehouseSettlementService {
         for (MktServiceFeeBill b : bills) { MktWarehouseSettlementLine l = new MktWarehouseSettlementLine(); l.setSettlementId(s.getId()); l.setBillId(b.getId()); l.setAmount(b.getAmount()); lineMapper.insert(l); }
         return s;
     }
-    @Transactional public void confirm(Long id, Long warehouseId) { change(id, warehouseId, PENDING, CONFIRMED, null); }
-    @Transactional public void dispute(Long id, Long warehouseId, String reason) { if (reason == null || reason.isBlank()) throw new BizException("争议原因必填"); change(id, warehouseId, PENDING, DISPUTED, reason); }
-    private void change(Long id, Long warehouseId, int from, int to, String reason) { int n = settlementMapper.update(null, new LambdaUpdateWrapper<MktWarehouseSettlement>().eq(MktWarehouseSettlement::getId, id).eq(MktWarehouseSettlement::getWarehouseId, warehouseId).eq(MktWarehouseSettlement::getStatus, from).set(MktWarehouseSettlement::getStatus, to).set(reason != null, MktWarehouseSettlement::getFrozenReason, reason)); if (n == 0) { MktWarehouseSettlement x = settlementMapper.selectById(id); if (x != null && x.getWarehouseId().equals(warehouseId) && x.getStatus() == to) return; throw new BizException("结算单状态已变化"); } }
+    @Transactional public void confirm(Long id, Long warehouseId) {
+        if (change(id, warehouseId, PENDING, CONFIRMED, null)) {
+            noticeService.push(warehouseId, "settlement.confirmed", "结算单已确认",
+                    "结算单 #" + id + " 已确认", "settlement", id);
+        }
+    }
+    @Transactional public void dispute(Long id, Long warehouseId, String reason) {
+        if (reason == null || reason.isBlank()) throw new BizException("争议原因必填");
+        if (change(id, warehouseId, PENDING, DISPUTED, reason)) {
+            noticeService.push(warehouseId, "settlement.disputed", "结算单争议已提交",
+                    "结算单 #" + id + " 争议:" + reason, "settlement", id);
+        }
+    }
+    /** @return 是否真的发生了状态迁移(false = 幂等的重复调用) */
+    private boolean change(Long id, Long warehouseId, int from, int to, String reason) {
+        int n = settlementMapper.update(null, new LambdaUpdateWrapper<MktWarehouseSettlement>().eq(MktWarehouseSettlement::getId, id).eq(MktWarehouseSettlement::getWarehouseId, warehouseId).eq(MktWarehouseSettlement::getStatus, from).set(MktWarehouseSettlement::getStatus, to).set(reason != null, MktWarehouseSettlement::getFrozenReason, reason));
+        if (n == 0) { MktWarehouseSettlement x = settlementMapper.selectById(id); if (x != null && x.getWarehouseId().equals(warehouseId) && x.getStatus() == to) return false; throw new BizException("结算单状态已变化"); }
+        return true;
+    }
 
     @Transactional
     public MktDirectSignPayment recordPayment(Long contractId, Long warehouseId, String paymentNo, BigDecimal amount) {

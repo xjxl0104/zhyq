@@ -7,12 +7,14 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.zhyq.park.common.exception.BizException;
 import com.zhyq.park.common.result.PageResult;
 import com.zhyq.park.common.result.Result;
+import com.zhyq.park.marketing.entity.MktNotice;
 import com.zhyq.park.marketing.entity.MktServiceContract;
 import com.zhyq.park.marketing.entity.MktWarehouse;
 import com.zhyq.park.marketing.entity.MktWarehouseSettlement;
 import com.zhyq.park.marketing.mapper.MktServiceContractMapper;
 import com.zhyq.park.marketing.mapper.MktWarehouseMapper;
 import com.zhyq.park.marketing.mapper.MktWarehouseSettlementMapper;
+import com.zhyq.park.marketing.service.MktNoticeService;
 import com.zhyq.park.marketing.settlement.MktWarehouseSettlementService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -23,6 +25,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -35,6 +38,7 @@ public class WhFinanceController {
     private final MktWarehouseSettlementMapper settlementMapper;
     private final MktServiceContractMapper contractMapper;
     private final MktWarehouseSettlementService settlementService;
+    private final MktNoticeService noticeService;
 
     @GetMapping("/settlement/page")
     public Result<PageResult<MktWarehouseSettlement>> settlements(@RequestParam(defaultValue = "1") int pageNo, @RequestParam(defaultValue = "20") int pageSize) {
@@ -74,6 +78,28 @@ public class WhFinanceController {
 
     @GetMapping("/notice/page")
     public Result<PageResult<Map<String, Object>>> notices(@RequestParam(defaultValue = "1") int pageNo, @RequestParam(defaultValue = "20") int pageSize) {
-        WhAuthContext.requireWarehouse(warehouseMapper); return Result.ok(PageResult.of(0, java.util.List.of()));
+        MktWarehouse w = WhAuthContext.requireWarehouse(warehouseMapper);
+        IPage<MktNotice> p = noticeService.page(w.getId(), pageNo, pageSize);
+        List<Map<String, Object>> rows = p.getRecords().stream().map(n -> {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("id", n.getId()); m.put("type", n.getType()); m.put("title", n.getTitle());
+            m.put("content", n.getContent()); m.put("bizType", n.getBizType()); m.put("bizId", n.getBizId());
+            m.put("readAt", n.getReadAt()); m.put("createTime", n.getCreateTime());
+            return m;
+        }).collect(java.util.stream.Collectors.toList());
+        return Result.ok(PageResult.of(p.getTotal(), rows));
+    }
+
+    @GetMapping("/notice/unread-count")
+    public Result<Long> noticeUnread() {
+        MktWarehouse w = WhAuthContext.requireWarehouse(warehouseMapper);
+        return Result.ok(noticeService.unread(w.getId()));
+    }
+
+    @PostMapping("/notice/{id}/read")
+    public Result<Void> noticeRead(@PathVariable Long id) {
+        MktWarehouse w = WhAuthContext.requireWarehouse(warehouseMapper);
+        noticeService.markRead(id, w.getId());
+        return Result.ok();
     }
 }

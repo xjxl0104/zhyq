@@ -11,6 +11,7 @@ import com.zhyq.park.marketing.mapper.MktReferralOrderMapper;
 import com.zhyq.park.marketing.mapper.MktServiceContractMapper;
 import com.zhyq.park.marketing.mapper.MktServiceFeeBillLineMapper;
 import com.zhyq.park.marketing.mapper.MktServiceFeeBillMapper;
+import com.zhyq.park.marketing.service.MktNoticeService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
@@ -28,6 +29,7 @@ public class MktServiceFeeBillService {
     private final MktServiceFeeBillLineMapper lineMapper;
     private final MktServiceContractMapper contractMapper;
     private final MktReferralOrderMapper orderMapper;
+    private final MktNoticeService noticeService;
 
     @Transactional
     public MktServiceFeeBill generate(Long contractId, LocalDate start, LocalDate end) {
@@ -48,6 +50,8 @@ public class MktServiceFeeBillService {
         for (MktReferralOrder order : orders) {
             MktServiceFeeBillLine line = new MktServiceFeeBillLine(); line.setBillId(bill.getId()); line.setReferralOrderId(order.getId()); line.setSourceType(order.getSourceType()); line.setSourceNo(order.getSourceNo()); line.setAmount(order.getServiceFee()); line.setSnapshotJson("{\"serviceFee\":" + order.getServiceFee() + "}"); lineMapper.insert(line);
         }
+        noticeService.push(bill.getWarehouseId(), "bill.ready", "服务费账单待确认",
+                "服务费账单 #" + bill.getId() + " 金额 " + total + " 待确认", "bill", bill.getId());
         return bill;
     }
 

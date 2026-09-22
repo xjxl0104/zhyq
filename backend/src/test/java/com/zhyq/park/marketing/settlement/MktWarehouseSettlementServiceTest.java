@@ -7,6 +7,7 @@ import com.zhyq.park.marketing.entity.MktReferralOrder;
 import com.zhyq.park.marketing.entity.MktWarehouse;
 import com.zhyq.park.marketing.mapper.*;
 import com.zhyq.park.marketing.service.MktCommissionService;
+import com.zhyq.park.marketing.service.MktNoticeService;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -31,6 +32,7 @@ class MktWarehouseSettlementServiceTest {
     @Mock MktWarehouseMapper warehouses;
     @Mock MktErpReconcileSnapshotMapper reconcile;
     @Mock MktCommissionService commissions;
+    @Mock MktNoticeService notices;
 
     @BeforeAll static void initTableInfo() {
         MapperBuilderAssistant a = new MapperBuilderAssistant(new MybatisConfiguration(), "");
@@ -42,7 +44,7 @@ class MktWarehouseSettlementServiceTest {
         MktWarehouse w = new MktWarehouse(); w.setId(11L); w.setProjectId(7L); when(warehouses.selectById(11L)).thenReturn(w);
         MktReferralOrder o = new MktReferralOrder(); o.setId(31L); o.setSourceType(MktCommissionService.SOURCE_PLATFORM_FEE); o.setSourceId(9L); when(orders.selectList(any())).thenReturn(List.of(o));
         doAnswer(inv -> { ((MktDirectSignPayment) inv.getArgument(0)).setId(41L); return 1; }).when(payments).insert(any(MktDirectSignPayment.class));
-        MktWarehouseSettlementService service = new MktWarehouseSettlementService(settlements, lines, bills, payments, orders, warehouses, reconcile, commissions);
+        MktWarehouseSettlementService service = new MktWarehouseSettlementService(settlements, lines, bills, payments, orders, warehouses, reconcile, commissions, notices);
         MktDirectSignPayment p = service.recordPayment(9L, 11L, "PAY-1", new BigDecimal("88.00"));
         assertThat(p.getStatus()).isEqualTo(1); assertThat(p.getAmount()).isEqualByComparingTo("88.00");
         verify(commissions).unfreezeByOrder(31L);

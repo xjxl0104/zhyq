@@ -10,6 +10,7 @@ import com.zhyq.park.marketing.mapper.MktReferralOrderMapper;
 import com.zhyq.park.marketing.mapper.MktServiceContractMapper;
 import com.zhyq.park.marketing.mapper.MktServiceFeeBillLineMapper;
 import com.zhyq.park.marketing.mapper.MktServiceFeeBillMapper;
+import com.zhyq.park.marketing.service.MktNoticeService;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -32,6 +33,7 @@ class MktServiceFeeBillServiceTest {
     @Mock MktServiceFeeBillLineMapper lines;
     @Mock MktServiceContractMapper contracts;
     @Mock MktReferralOrderMapper orders;
+    @Mock MktNoticeService notices;
 
     @BeforeAll static void initTableInfo() {
         MapperBuilderAssistant a = new MapperBuilderAssistant(new MybatisConfiguration(), "");
@@ -46,7 +48,7 @@ class MktServiceFeeBillServiceTest {
         MktReferralOrder o = new MktReferralOrder(); o.setId(21L); o.setSourceType(2); o.setSourceNo("O-21"); o.setStatus(2); o.setEventTime(LocalDateTime.of(2026, 9, 10, 10, 0)); o.setServiceFee(new BigDecimal("12.50"));
         when(orders.selectList(any())).thenReturn(List.of(o));
         doAnswer(inv -> { ((MktServiceFeeBill) inv.getArgument(0)).setId(31L); return 1; }).when(bills).insert(any(MktServiceFeeBill.class));
-        MktServiceFeeBillService service = new MktServiceFeeBillService(bills, lines, contracts, orders);
+        MktServiceFeeBillService service = new MktServiceFeeBillService(bills, lines, contracts, orders, notices);
         MktServiceFeeBill bill = service.generate(9L, LocalDate.of(2026, 9, 1), LocalDate.of(2026, 9, 30));
         assertThat(bill.getAmount()).isEqualByComparingTo("12.50");
         assertThat(bill.getBillingKey()).isEqualTo("contract:9:service:2026-09-01");
