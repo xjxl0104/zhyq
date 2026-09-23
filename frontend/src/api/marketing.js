@@ -55,6 +55,7 @@ export const mktGradeApi = {
 export const mktCustomerApi = {
   page: (params) => request.get(`${BASE}/customer/page`, { params }),
   get: (id) => request.get(`${BASE}/customer/${id}`),
+  remove: (id) => request.delete(`${BASE}/customer/${id}`),
   assignWarehouse: (id, data) => request.post(`${BASE}/customer/${id}/assign-warehouse`, data),
   progress: (id, data) => request.post(`${BASE}/customer/${id}/progress`, data),
   suggestGrade: (id) => request.get(`${BASE}/customer/${id}/suggest-grade`),

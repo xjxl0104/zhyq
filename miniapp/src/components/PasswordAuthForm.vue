@@ -3,12 +3,12 @@
     <view class="title">{{ registering ? '注册' + roleName : '账号密码登录' }}</view>
     <view class="auth-caption">{{ registering ? '创建账号后即可进入工作台，继续完善资料。' : '使用为当前身份注册或设置的账号。' }}</view>
     <view class="field-label">登录账号</view>
-    <input class="input" v-model="form.username" maxlength="32" placeholder="4–32 位字母、数字或下划线" :disabled="busy" aria-label="登录账号" />
+    <input class="input" v-model="form.username" :maxlength="-1" placeholder="请输入账号" :disabled="busy" aria-label="登录账号" />
     <view class="field-label">{{ registering ? '设置密码' : '密码' }}</view>
-    <input class="input" v-model="form.password" password maxlength="64" :placeholder="registering ? '8–64 位，包含字母和数字' : '请输入密码'" :disabled="busy" aria-label="密码" @confirm="submit" />
+    <input class="input" v-model="form.password" password :maxlength="-1" placeholder="请输入密码" :disabled="busy" aria-label="密码" @confirm="submit" />
     <template v-if="registering">
       <view class="field-label">确认密码</view>
-      <input class="input" v-model="confirmation" password maxlength="64" placeholder="再次输入密码" :disabled="busy" aria-label="确认密码" />
+      <input class="input" v-model="confirmation" password :maxlength="-1" placeholder="再次输入密码" :disabled="busy" aria-label="确认密码" />
       <view class="field-label">联系手机号</view>
       <input class="input" v-model="form.phone" type="number" maxlength="11" placeholder="用于业务联系" :disabled="busy" aria-label="联系手机号" />
       <view class="field-label">{{ warehouse ? '联系人姓名' : '姓名' }}</view>
@@ -50,10 +50,9 @@ async function submit() {
   if (busy.value) return
   error.value = ''
   const username = form.username.trim()
-  if (!/^[A-Za-z0-9_]{4,32}$/.test(username)) { error.value = '账号需为 4–32 位字母、数字或下划线'; return }
+  if (!username) { error.value = '请输入账号'; return }
   if (!form.password) { error.value = '请输入密码'; return }
   if (registering.value) {
-    if (form.password.length < 8 || form.password.length > 64 || !/[A-Za-z]/.test(form.password) || !/\d/.test(form.password)) { error.value = '密码需为 8–64 位，并包含字母和数字'; return }
     if (form.password !== confirmation.value) { error.value = '两次输入的密码不一致'; return }
     if (!/^1\d{10}$/.test(form.phone.trim())) { error.value = '请输入正确的 11 位手机号'; return }
     if (!form.name.trim()) { error.value = '请输入姓名'; return }

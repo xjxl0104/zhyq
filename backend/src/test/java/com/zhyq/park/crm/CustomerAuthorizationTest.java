@@ -31,7 +31,7 @@ class CustomerAuthorizationTest {
         @Bean CustomerMapper customers() { return mock(CustomerMapper.class); }
         @Bean LeadMapper leads() { return mock(LeadMapper.class); }
         @Bean CustomerController controller(CustomerMapper customers, LeadMapper leads) {
-            return new CustomerController(customers, leads, mock(MktCustomerAssignmentService.class), mock(MktLockService.class));
+            return new CustomerController(customers, leads, mock(MktCustomerAssignmentService.class), mock(MktLockService.class), mock(com.zhyq.park.marketing.service.MktCustomerDeletionService.class));
         }
     }
     @Autowired CustomerController controller;

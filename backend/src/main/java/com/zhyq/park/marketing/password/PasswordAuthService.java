@@ -28,8 +28,11 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.LocalDateTime;
 import java.util.HashMap;
+import java.util.HexFormat;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
@@ -69,15 +72,21 @@ public class PasswordAuthService {
     private final PasswordAttemptLimiter limiter;
     // A valid BCrypt hash makes unknown-user attempts perform the same expensive verification.
     private static final String DUMMY_HASH = "$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy";
+    private static final String PASSWORD_HASH_PREFIX = "{bcrypt-sha256}";
+    // This mirrors the credential column's storage capacity, not an account-format rule.
+    private static final int USERNAME_STORAGE_LENGTH = 512;
 
     public Map<String, Object> login(Identity identity, LoginRequest request, String remoteAddress) {
         limiter.check("login:ip:" + remoteAddress, 60);
         String username = username(request.username());
-        checkPasswordLength(request.password());
-        String attemptKey = "login:" + identity.code + ":" + username;
-        limiter.check(attemptKey, 10);
+        requirePassword(request.password());
         MktCredential credential = findByUsername(identity, username);
-        boolean matches = encoder.matches(request.password(), credential == null ? DUMMY_HASH : credential.getPasswordHash());
+        // The database may resolve different Unicode spellings to the same account.
+        // Rate-limit its stable identity so collation aliases share one attempt budget.
+        String attemptKey = "login:" + identity.code + ":" + (credential == null
+                ? "username:" + username : "identity:" + credential.getIdentityId());
+        limiter.check(attemptKey, 10);
+        boolean matches = matchesPassword(request.password(), credential == null ? null : credential.getPasswordHash());
         if (credential == null || !matches || !Integer.valueOf(1).equals(credential.getStatus())) {
             throw new BizException(401, "账号或密码错误");
         }
@@ -90,7 +99,7 @@ public class PasswordAuthService {
     public Map<String, Object> register(Identity identity, RegisterRequest request, String remoteAddress) {
         limiter.check("register:ip:" + remoteAddress, 10);
         String username = username(request.username());
-        validateNewPassword(request.password());
+        requirePassword(request.password());
         String phone = request.phone() == null ? "" : request.phone().trim();
         if (!phone.matches("^1\\d{10}$")) throw new BizException(400, "手机号格式不正确");
         String name = requiredText(request.name(), "姓名", 32);
@@ -98,7 +107,7 @@ public class PasswordAuthService {
         if (findByUsername(identity, username) != null) throw new BizException(409, "该账号已注册，请直接登录");
         rejectExistingPhone(phone);
         // Hash before creating business records; the surrounding transaction also rolls back conflicts.
-        String hash = encoder.encode(request.password());
+        String hash = encodePassword(request.password());
         Long identityId;
         if (identity == Identity.MP) {
             String invite = request.inviteCode() == null ? null : request.inviteCode().trim().toUpperCase(Locale.ROOT);
@@ -156,13 +165,12 @@ public class PasswordAuthService {
         String attemptKey = "setup:" + identity.code + ":" + identityId;
         limiter.check(attemptKey, 10);
         String username = username(request.username());
-        validateNewPassword(request.password());
+        requirePassword(request.password());
         MktCredential credential = findByIdentity(identity, identityId);
         if (credential != null) {
             if (!Integer.valueOf(1).equals(credential.getStatus())) throw new BizException(403, "账号已停用，请联系园区运营");
-            if (!StringUtils.hasText(request.currentPassword())) throw new BizException(400, "请填写当前密码");
-            checkPasswordLength(request.currentPassword());
-            if (!encoder.matches(request.currentPassword(), credential.getPasswordHash())) {
+            if (request.currentPassword() == null || request.currentPassword().isEmpty()) throw new BizException(400, "请填写当前密码");
+            if (!matchesPassword(request.currentPassword(), credential.getPasswordHash())) {
                 throw new BizException(400, "当前密码不正确");
             }
         }
@@ -174,14 +182,14 @@ public class PasswordAuthService {
                 credential.setIdentityType(identity.code);
                 credential.setIdentityId(identityId);
                 credential.setUsername(username);
-                credential.setPasswordHash(encoder.encode(request.password()));
+                credential.setPasswordHash(encodePassword(request.password()));
                 credential.setStatus(1);
                 insertCredential(credential);
             } else {
                 String oldHash = credential.getPasswordHash();
                 int updated = credentials.update(null, new LambdaUpdateWrapper<MktCredential>()
                         .eq(MktCredential::getId, credential.getId()).eq(MktCredential::getPasswordHash, oldHash)
-                        .set(MktCredential::getUsername, username).set(MktCredential::getPasswordHash, encoder.encode(request.password())));
+                        .set(MktCredential::getUsername, username).set(MktCredential::getPasswordHash, encodePassword(request.password())));
                 if (updated != 1) throw new BizException(409, "账号已更新，请重新登录后重试");
             }
         } catch (DuplicateKeyException e) {
@@ -265,21 +273,41 @@ public class PasswordAuthService {
 
     private static String username(String username) {
         String normalized = username == null ? "" : username.trim().toLowerCase(Locale.ROOT);
-        if (!normalized.matches("^[a-z0-9_]{4,32}$")) throw new BizException(400, "账号须为 4–32 位字母、数字或下划线");
+        if (normalized.isEmpty()) throw new BizException(400, "请输入账号");
+        if (normalized.codePointCount(0, normalized.length()) > USERNAME_STORAGE_LENGTH) {
+            throw new BizException(400, "账号超出存储容量，请控制在 512 个字符以内");
+        }
         return normalized;
     }
 
-    private static void validateNewPassword(String password) {
-        checkPasswordLength(password);
-        if (!password.matches("(?s).*[A-Za-z].*") || !password.matches("(?s).*\\d.*")) {
-            throw new BizException(400, "密码须同时包含字母和数字");
-        }
+    private static void requirePassword(String password) {
+        if (password == null || password.isEmpty()) throw new BizException(400, "请输入密码");
     }
 
-    private static void checkPasswordLength(String password) {
-        if (password == null || password.length() < 8 || password.length() > 64
-                || password.getBytes(StandardCharsets.UTF_8).length > 72) {
-            throw new BizException(400, "密码须为 8–64 位，且 UTF-8 编码不超过 72 字节");
+    private String encodePassword(String password) {
+        // Hash the entire input to printable ASCII before BCrypt's 72-byte boundary.
+        // The version prefix keeps already issued, plain BCrypt credentials valid.
+        return PASSWORD_HASH_PREFIX + encoder.encode(passwordDigest(password));
+    }
+
+    private boolean matchesPassword(String password, String hash) {
+        if (hash != null && hash.startsWith(PASSWORD_HASH_PREFIX)) {
+            return encoder.matches(passwordDigest(password), hash.substring(PASSWORD_HASH_PREFIX.length()));
+        }
+        // Legacy credentials were limited to 72 bytes. Never truncate a longer candidate
+        // or pass it to BCrypt implementations that reject oversized input.
+        if (hash == null || password.getBytes(StandardCharsets.UTF_8).length > 72) {
+            encoder.matches(passwordDigest(password), DUMMY_HASH);
+            return false;
+        }
+        return encoder.matches(password, hash);
+    }
+
+    private static String passwordDigest(String password) {
+        try {
+            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(password.getBytes(StandardCharsets.UTF_8)));
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 unavailable", e);
         }
     }
 

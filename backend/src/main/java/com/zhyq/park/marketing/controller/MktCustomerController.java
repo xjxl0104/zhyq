@@ -18,6 +18,7 @@ import com.zhyq.park.marketing.mapper.MktPromoterMapper;
 import com.zhyq.park.marketing.mapper.MktServiceContractMapper;
 import com.zhyq.park.marketing.service.MktAuditService;
 import com.zhyq.park.marketing.service.MktCustomerAssignmentService;
+import com.zhyq.park.marketing.service.MktCustomerDeletionService;
 import com.zhyq.park.marketing.service.MktLockService;
 import com.zhyq.park.marketing.service.MktPromoterService;
 import com.zhyq.park.marketing.service.MktServiceContractService;
@@ -51,6 +52,7 @@ public class MktCustomerController {
     private final MktLockService lockService;
     private final MktAuditService auditService;
     private final MktCustomerAssignmentService assignmentService;
+    private final MktCustomerDeletionService deletionService;
 
     @Operation(summary = "分页(附推荐人姓名与锁定状态)")
     @PreAuthorize("hasAuthority('crm:marketing:customer:query')")
@@ -79,6 +81,14 @@ public class MktCustomerController {
     @GetMapping("/{id}")
     public Result<Map<String, Object>> get(@PathVariable Long id) {
         return Result.ok(enrich(require(id)));
+    }
+
+    @Operation(summary = "管理员删除客户（保留业务历史，有合同或订单不可删除）")
+    @PreAuthorize("hasRole('admin')")
+    @DeleteMapping("/{id}")
+    public Result<Void> delete(@PathVariable Long id) {
+        deletionService.deleteAsAdmin(id);
+        return Result.ok();
     }
 
     @Operation(summary = "系统建议评级(租赁线按月租金、云仓线按月单量门槛;这里按现有字段粗估,专员确认)")

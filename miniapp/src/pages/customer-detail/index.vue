@@ -24,6 +24,7 @@
         <button class="btn" :loading="busy" :disabled="busy" @click="extend">延长锁定90天</button>
       </view>
       <button class="btn ghost" :disabled="loading" @click="load">刷新进度</button>
+      <DeleteCustomerButton :customer="c" :disabled="loading || busy" @deleted="uni.switchTab({ url: '/pages/customers/index' })" />
     </template>
   </view>
 </template>
@@ -31,6 +32,7 @@
 import { ref, computed } from 'vue'
 import { onLoad, onShow } from '@dcloudio/uni-app'
 import { bizApi } from '@/api'
+import DeleteCustomerButton from '@/components/DeleteCustomerButton.vue'
 const STATUS = {1:'跟进中',2:'已签约',3:'已流失'}
 const ASSIGN = {0:'待分派',1:'待商家确认',2:'已承接',3:'商家已拒绝，等待重新分派'}
 const c = ref(null), error = ref(''), loading = ref(false), busy = ref(false)

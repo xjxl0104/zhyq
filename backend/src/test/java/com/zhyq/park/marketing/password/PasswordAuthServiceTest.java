@@ -19,6 +19,9 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -30,6 +33,7 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static com.zhyq.park.marketing.password.PasswordAuthService.Identity.MP;
 import static com.zhyq.park.marketing.password.PasswordAuthService.Identity.WH;
@@ -71,8 +75,9 @@ class PasswordAuthServiceTest {
         Map<String, Object> result = service.register(MP, registration(), "127.0.0.1");
         ArgumentCaptor<MktCredential> saved = ArgumentCaptor.forClass(MktCredential.class);
         verify(credentials).insert(saved.capture());
-        assertThat(saved.getValue().getPasswordHash()).startsWith("$2").isNotEqualTo("Passw0rd123");
-        assertThat(encoder.matches("Passw0rd123", saved.getValue().getPasswordHash())).isTrue();
+        assertThat(saved.getValue().getPasswordHash()).startsWith("{bcrypt-sha256}$2").isNotEqualTo("Passw0rd123");
+        when(credentials.selectOne(any())).thenReturn(saved.getValue());
+        assertThat(service.login(MP, new PasswordAuthService.LoginRequest("demo_user", "Passw0rd123"), "ip")).containsKey("token");
         assertThat(saved.getValue().getUsername()).isEqualTo("demo_user");
         assertThat(saved.getValue().getIdentityType()).isEqualTo("mp");
         assertThat(saved.getValue().getIdentityId()).isEqualTo(31L);
@@ -115,15 +120,123 @@ class PasswordAuthServiceTest {
         verifyNoInteractions(warehouseService);
     }
 
-    @Test void registrationRequiresConsentAndStrongBoundedPasswordBeforeCreatingRecords() {
+    @Test void registrationRequiresConsentAndNonEmptyCredentialsBeforeCreatingRecords() {
         var request = registration();
         assertThatThrownBy(() -> service.register(MP, new PasswordAuthService.RegisterRequest(request.username(), request.password(), request.phone(), request.name(), null, null, false), "ip"))
                 .hasMessageContaining("同意");
-        assertThatThrownBy(() -> service.register(MP, new PasswordAuthService.RegisterRequest(request.username(), "a1" + "汉".repeat(30), request.phone(), request.name(), null, null, true), "ip"))
-                .hasMessageContaining("72 字节");
-        assertThatThrownBy(() -> service.register(MP, new PasswordAuthService.RegisterRequest(request.username(), "abcdefgh", request.phone(), request.name(), null, null, true), "ip"))
-                .hasMessageContaining("字母和数字");
+        assertThatThrownBy(() -> service.register(MP, new PasswordAuthService.RegisterRequest(request.username(), "", request.phone(), request.name(), null, null, true), "ip"))
+                .hasMessageContaining("请输入密码");
+        assertThatThrownBy(() -> service.register(MP, new PasswordAuthService.RegisterRequest("  ", "123", request.phone(), request.name(), null, null, true), "ip"))
+                .hasMessageContaining("请输入账号");
         verifyNoInteractions(credentials, promoterService, warehouseService);
+    }
+
+    @ParameterizedTest
+    @EnumSource(PasswordAuthService.Identity.class)
+    void bothIdentitiesCanRegisterAndLoginWith123(PasswordAuthService.Identity identity) {
+        if (identity == MP) {
+            when(settings.getInt("marketing", "invite_grace_days", 7)).thenReturn(7);
+            when(promoterService.register(any(), isNull(), eq("mp"))).thenAnswer(invocation -> {
+                MktPromoter p = invocation.getArgument(0); p.setId(31L); p.setStatus(1);
+                when(promoters.selectById(31L)).thenReturn(p); return p;
+            });
+        } else {
+            when(warehouseService.apply(any())).thenAnswer(invocation -> {
+                MktWarehouse w = invocation.getArgument(0); w.setId(31L); w.setJoinStatus(2);
+                when(warehouses.selectById(31L)).thenReturn(w); return w;
+            });
+        }
+        var request = new PasswordAuthService.RegisterRequest("123", "123", "13800138000", "新用户", null, "示例云仓", true);
+        assertThat(service.register(identity, request, "ip")).containsKey("token");
+        ArgumentCaptor<MktCredential> saved = ArgumentCaptor.forClass(MktCredential.class);
+        verify(credentials).insert(saved.capture());
+        assertThat(saved.getValue().getUsername()).isEqualTo("123");
+        when(credentials.selectOne(any())).thenReturn(saved.getValue());
+        assertThat(service.login(identity, new PasswordAuthService.LoginRequest("123", "123"), "ip")).containsKey("token");
+        assertThatThrownBy(() -> service.register(identity, request, "ip")).hasMessageContaining("已注册");
+    }
+
+    @ParameterizedTest
+    @EnumSource(PasswordAuthService.Identity.class)
+    void bothIdentitiesCanSetupAndChangeShortPasswordToFullLongPassword(PasswordAuthService.Identity identity) {
+        authenticate(identity.code + ":31", identity.role);
+        if (identity == MP) {
+            when(promoters.selectForUpdate(31L)).thenReturn(activePromoter());
+            when(promoters.selectById(31L)).thenReturn(activePromoter());
+        } else {
+            MktWarehouse warehouse = new MktWarehouse(); warehouse.setId(31L); warehouse.setJoinStatus(2);
+            when(warehouses.selectById(31L)).thenReturn(warehouse);
+        }
+        service.setup(identity, new PasswordAuthService.SetupRequest("123", "123", null), "ip");
+        ArgumentCaptor<MktCredential> saved = ArgumentCaptor.forClass(MktCredential.class);
+        verify(credentials).insert(saved.capture());
+        MktCredential credential = saved.getValue(); credential.setId(2L);
+        when(credentials.selectOne(any())).thenReturn(credential);
+        assertThat(service.login(identity, new PasswordAuthService.LoginRequest("123", "123"), "ip")).containsKey("token");
+
+        String longPassword = "密码🔑".repeat(300) + "末尾";
+        when(credentials.update(isNull(), any())).thenAnswer(invocation -> {
+            com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<MktCredential> update = invocation.getArgument(1);
+            update.getSqlSegment();
+            String hash = update.getParamNameValuePairs().values().stream()
+                    .filter(v -> v instanceof String text && text.startsWith("{bcrypt-sha256}$2") && !text.equals(credential.getPasswordHash()))
+                    .map(Object::toString).findFirst().orElseThrow();
+            credential.setPasswordHash(hash);
+            return 1;
+        });
+        service.setup(identity, new PasswordAuthService.SetupRequest("园区 伙伴@123", longPassword, "123"), "ip");
+        assertThat(service.login(identity, new PasswordAuthService.LoginRequest("园区 伙伴@123", longPassword), "ip")).containsKey("token");
+        assertThatThrownBy(() -> service.login(identity, new PasswordAuthService.LoginRequest("园区 伙伴@123", longPassword + "变"), "ip"))
+                .hasMessage("账号或密码错误");
+        assertThatThrownBy(() -> service.setup(identity, new PasswordAuthService.SetupRequest("123", "1", longPassword + "变"), "ip"))
+                .hasMessage("当前密码不正确");
+        // The full long password also works as the current password on the next change.
+        service.setup(identity, new PasswordAuthService.SetupRequest("123", "1", longPassword), "ip");
+        assertThat(service.login(identity, new PasswordAuthService.LoginRequest("123", "1"), "ip")).containsKey("token");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"1", "abcdefgh", "中文🔑!", " "})
+    void passwordHasNoCharacterCombinationRequirementAndWhitespaceIsPreserved(String password) {
+        authenticate("mp:31", "ROLE_MP");
+        when(promoters.selectForUpdate(31L)).thenReturn(activePromoter());
+        when(promoters.selectById(31L)).thenReturn(activePromoter());
+        service.setup(MP, new PasswordAuthService.SetupRequest("伙伴@1", password, null), "ip");
+        ArgumentCaptor<MktCredential> saved = ArgumentCaptor.forClass(MktCredential.class);
+        verify(credentials).insert(saved.capture());
+        when(credentials.selectOne(any())).thenReturn(saved.getValue());
+        assertThat(service.login(MP, new PasswordAuthService.LoginRequest("伙伴@1", password), "ip")).containsKey("token");
+    }
+
+    @Test void usernameStorageChecksNormalizedUnicodeCodePointsWithoutTruncation() {
+        authenticate("mp:31", "ROLE_MP");
+        when(promoters.selectForUpdate(31L)).thenReturn(activePromoter());
+        for (String username : List.of("a".repeat(512), "😀".repeat(512), "İ".repeat(256))) {
+            service.setup(MP, new PasswordAuthService.SetupRequest(username, "123", null), "ip");
+        }
+        ArgumentCaptor<MktCredential> saved = ArgumentCaptor.forClass(MktCredential.class);
+        verify(credentials, times(3)).insert(saved.capture());
+        assertThat(saved.getAllValues()).extracting(MktCredential::getUsername)
+                .containsExactly("a".repeat(512), "😀".repeat(512), "i\u0307".repeat(256));
+        for (String username : List.of("a".repeat(513), "😀".repeat(513), "İ".repeat(257))) {
+            assertThatThrownBy(() -> service.setup(MP, new PasswordAuthService.SetupRequest(username, "123", null), "ip"))
+                    .hasMessageContaining("存储容量");
+        }
+        verify(credentials, times(3)).insert(any(MktCredential.class));
+    }
+
+    @Test void legacyBcryptDoesNotAcceptTruncatedLongCandidatesOrThrowEncodingErrors() {
+        MktCredential credential = credential(); credential.setPasswordHash(encoder.encode("a".repeat(72)));
+        when(credentials.selectOne(any())).thenReturn(credential);
+        when(promoters.selectById(31L)).thenReturn(activePromoter());
+        assertThat(service.login(MP, new PasswordAuthService.LoginRequest("demo_user", "a".repeat(72)), "ip")).containsKey("token");
+        assertThatThrownBy(() -> service.login(MP, new PasswordAuthService.LoginRequest("demo_user", "a".repeat(72) + "尾"), "ip"))
+                .isInstanceOf(BizException.class).hasMessage("账号或密码错误");
+    }
+
+    @Test void unknownUserWithLongPasswordReturnsNormalLoginError() {
+        assertThatThrownBy(() -> service.login(MP, new PasswordAuthService.LoginRequest("无此用户", "密".repeat(300)), "ip"))
+                .isInstanceOf(BizException.class).hasMessage("账号或密码错误");
     }
 
     @Test void loginScopesUsernameLookupToRequestedIdentityAndNormalizesUsername() {
@@ -143,12 +256,26 @@ class PasswordAuthServiceTest {
     }
 
     @Test void wrongAndUnknownCredentialsHaveSameErrorAndAreRateLimited() {
-        when(credentials.selectOne(any())).thenReturn(credential(), null);
+        assertThatThrownBy(() -> service.login(MP, new PasswordAuthService.LoginRequest("unknown", "wrong123"), "ip"))
+                .isInstanceOf(BizException.class).hasMessage("账号或密码错误");
+        when(credentials.selectOne(any())).thenReturn(credential());
         for (int i = 0; i < 10; i++) {
             assertThatThrownBy(() -> service.login(MP, new PasswordAuthService.LoginRequest("demo_user", "wrong123"), "ip"))
                     .isInstanceOf(BizException.class).hasMessage("账号或密码错误");
         }
         assertThatThrownBy(() -> service.login(MP, new PasswordAuthService.LoginRequest("demo_user", "wrong123"), "other-ip"))
+                .hasMessageContaining("尝试次数过多");
+        verifyNoInteractions(promoters, warehouses);
+    }
+
+    @Test void unicodeAliasesResolvedByDatabaseShareOneAccountAttemptLimitAcrossAddresses() {
+        when(credentials.selectOne(any())).thenReturn(credential());
+        for (int i = 0; i < 10; i++) {
+            String username = i % 2 == 0 ? "123" : "１２３";
+            assertThatThrownBy(() -> service.login(MP, new PasswordAuthService.LoginRequest(username, "wrong"), "ip-" + username))
+                    .hasMessage("账号或密码错误");
+        }
+        assertThatThrownBy(() -> service.login(MP, new PasswordAuthService.LoginRequest("１２３", "wrong"), "another-ip"))
                 .hasMessageContaining("尝试次数过多");
         verifyNoInteractions(promoters, warehouses);
     }
@@ -207,20 +334,25 @@ class PasswordAuthServiceTest {
         authenticate("mp:31", "ROLE_MP");
         when(promoters.selectForUpdate(31L)).thenReturn(activePromoter());
         MktCredential credential = credential();
+        AtomicReference<String> updatedHash = new AtomicReference<>();
         when(credentials.selectOne(any())).thenReturn(credential, null);
         when(credentials.update(isNull(), any())).thenAnswer(invocation -> {
             com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<MktCredential> update = invocation.getArgument(1);
             update.getSqlSegment();
             assertThat(update.getParamNameValuePairs().values()).contains(credential.getId(), credential.getPasswordHash(), "new_user");
             String newHash = update.getParamNameValuePairs().values().stream().filter(v -> v instanceof String text
-                    && text.startsWith("$2") && !text.equals(credential.getPasswordHash())).map(Object::toString).findFirst().orElseThrow();
-            assertThat(encoder.matches("NewPass123", newHash)).isTrue();
+                    && text.startsWith("{bcrypt-sha256}$2")).map(Object::toString).findFirst().orElseThrow();
+            updatedHash.set(newHash);
             return 1;
         });
         assertThatCode(() -> service.setup(MP, new PasswordAuthService.SetupRequest("new_user", "NewPass123", "Passw0rd123"), "ip"))
                 .doesNotThrowAnyException();
         verify(credentials, never()).insert(any(MktCredential.class));
         verify(auditService).log("password.setup", "promoter", 31L, "设置账号密码");
+        credential.setPasswordHash(updatedHash.get());
+        when(credentials.selectOne(any())).thenReturn(credential);
+        when(promoters.selectById(31L)).thenReturn(activePromoter());
+        assertThat(service.login(MP, new PasswordAuthService.LoginRequest("new_user", "NewPass123"), "ip")).containsKey("token");
     }
 
     @Test void credentialUniquenessRaceReturnsUsefulConflictInsteadOfSqlDetails() {

@@ -14,6 +14,7 @@
           <view class="muted" style="margin-top:6rpx">{{ c.grade ? c.grade + ' 级' : '未评级' }} · {{ STATUS[c.status] || '' }}</view>
         </view>
       </view>
+      <DeleteCustomerButton :customer="c" :disabled="state.loading" @deleted="pager.load()" />
     </view>
     <view v-if="list.length" class="card"><button v-if="list.length < state.total" class="btn ghost" :loading="state.loading" :disabled="state.loading" @click="pager.load(false)">加载更多客户</button><view v-else class="muted">共 {{ state.total }} 位客户，已全部显示</view></view>
     <button v-if="list.length" class="btn" @click="uni.navigateTo({ url: '/pages/referral/index' })">推荐新客户</button>
@@ -25,6 +26,7 @@ import { reactive, computed, onUnmounted } from 'vue'
 import { onShow, onReachBottom } from '@dcloudio/uni-app'
 import { bizApi } from '@/api'
 import { createPager } from '@/utils/pagination.mjs'
+import DeleteCustomerButton from '@/components/DeleteCustomerButton.vue'
 
 const STATUS = { 1: '跟进中', 2: '已签约', 3: '已流失' }
 const state = reactive({})
