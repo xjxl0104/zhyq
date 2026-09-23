@@ -19,7 +19,13 @@
         </el-menu>
       </nav>
       <template #footer>
-        <div class="mobile-account"><span>{{ uname }}</span><el-button @click="onUserCmd('logout')">退出登录</el-button></div>
+        <div class="mobile-account">
+          <div class="mobile-account__identity">
+            <span>{{ uname }}</span>
+            <code class="build-version" :title="buildVersionTitle" :aria-label="buildVersionTitle">{{ buildVersion }}</code>
+          </div>
+          <el-button @click="onUserCmd('logout')">退出登录</el-button>
+        </div>
       </template>
     </el-drawer>
     <el-container class="body-row" :style="{ '--aside-w': asideWidth }">
@@ -69,6 +75,7 @@
               </el-dropdown-menu>
             </template>
           </el-dropdown>
+          <code class="build-version" :title="buildVersionTitle" :aria-label="buildVersionTitle">{{ buildVersion }}</code>
         </div>
       </el-aside>
       <el-main ref="mainRef" id="main-content" tabindex="-1">
@@ -104,6 +111,10 @@ const router = useRouter()
 const projectStore = useProjectStore()
 const { isMobile } = useResponsive()
 const mobileMenuOpen = ref(false)
+const configuredCommit = String(import.meta.env.VITE_GIT_SHA || '').trim().toLowerCase()
+const buildCommit = /^[0-9a-f]{40}$/.test(configuredCommit) ? configuredCommit : ''
+const buildVersion = buildCommit ? buildCommit.slice(0, 7) : '未标记'
+const buildVersionTitle = buildCommit ? `构建提交 ${buildCommit}` : '构建时未提供有效的提交号'
 watch(() => route.fullPath, () => {
   mobileMenuOpen.value = false
   nextTick(() => { if (mainRef.value?.$el) mainRef.value.$el.scrollTop = 0 })
@@ -269,7 +280,8 @@ function onClick(c) {
 /* el-menu collapse 下隐掉自定义的序号与文字,只留图标 */
 .sidebar.collapsed .side-menu :deep(.menu-index),
 .sidebar.collapsed .side-menu :deep(.menu-label) { display: none; }
-.sidebar.collapsed .user-zone { display: flex; justify-content: center; }
+.sidebar.collapsed .user-zone { align-items: center; }
+.sidebar.collapsed .build-version { margin: 4px 0 0; font-size: 10px; }
 
 .brand-zone {
   padding: 6px 14px 12px;
@@ -282,6 +294,8 @@ function onClick(c) {
 .switcher-zone { padding: 0 14px 12px; }
 .switcher-zone :deep(.project-switcher) { width: 100%; }
 .user-zone {
+  display: flex;
+  flex-direction: column;
   padding: 10px 12px 4px;
   border-top: 1px solid rgba(255, 255, 255, .09);
 }
@@ -299,6 +313,15 @@ function onClick(c) {
   flex-shrink: 0;
 }
 .uname { font-size: 14px; font-weight: 500; color: #e0e2ff; }
+.build-version {
+  display: block;
+  margin: 2px 10px 0;
+  color: var(--line-text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: nowrap;
+}
 .menu-scroll { flex: 1; position: relative; z-index: 1; }
 .menu-scroll :deep(.el-scrollbar__view) { min-height: 100%; }
 .menu-scroll :deep(.el-scrollbar__thumb) { background: rgba(255, 255, 255, .22); }
@@ -508,7 +531,9 @@ function onClick(c) {
 .is-mobile .body-row::after { display: none; }
 .is-mobile .el-main { height: 100%; margin: 0; min-width: 0; padding-bottom: env(safe-area-inset-bottom); border-radius: 0; clip-path: none; isolation: auto; scrollbar-gutter: auto; overflow-x: auto; }
 .mobile-account { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.mobile-account > span { overflow-wrap: anywhere; }
+.mobile-account__identity { min-width: 0; display: grid; gap: 4px; text-align: left; }
+.mobile-account__identity > span { overflow-wrap: anywhere; }
+.mobile-account .build-version { margin: 0; color: var(--el-text-color-secondary); }
 .mobile-drawer-menu { border: 0; --el-menu-item-height: 48px; --el-menu-sub-item-height: 48px; }
 .mobile-drawer-menu :deep(.el-menu-item), .mobile-drawer-menu :deep(.el-sub-menu__title) { min-height: 48px; }
 .mobile-drawer-menu :deep(.el-menu-item.is-active) { background: var(--el-color-primary-light-9); }

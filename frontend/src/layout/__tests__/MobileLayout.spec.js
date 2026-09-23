@@ -40,6 +40,7 @@ afterEach(() => {
   wrapper?.unmount()
   document.body.innerHTML = ''
   vi.unstubAllGlobals()
+  vi.unstubAllEnvs()
 })
 async function resize(mobile) {
   media.matches = mobile
@@ -58,6 +59,18 @@ describe('phone navigation', () => {
     await nextTick()
     expect(wrapper.get('button[aria-label="打开菜单"]').attributes('aria-expanded')).toBe('false')
     expect(localStorage.getItem('zhyq_sidebar_collapsed')).toBe('1')
+  })
+  it('keeps the short build revision with the account in the mobile drawer', async () => {
+    const commit = '817f566627148fba797d1fb31fa7d8edb40cefc8'
+    vi.stubEnv('VITE_GIT_SHA', commit)
+    render()
+    await wrapper.get('button[aria-label="打开菜单"]').trigger('click')
+    await flushPromises()
+
+    const account = document.querySelector('.mobile-account')
+    expect(account.querySelector('.build-version').textContent).toBe('817f566')
+    expect(account.querySelector('.build-version').title).toBe(`构建提交 ${commit}`)
+    expect(account.querySelector('button').textContent).toContain('退出登录')
   })
   it('closes the menu when the route or viewport changes', async () => {
     render()
