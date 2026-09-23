@@ -1,7 +1,6 @@
 <template>
   <view class="page-wrap home-page">
     <view class="card hero-card">
-      <view class="eyebrow">DIPARK · PARTNER NETWORK</view>
       <view class="hero-title">园区伙伴工作台</view>
       <view class="hero-subtitle">连接客户、空间与云仓服务，让每一次推荐都有回响</view>
       <view class="hero-label">累计收益（元）</view>
@@ -29,7 +28,7 @@
       </view>
     </view>
 
-    <view class="section-head"><text class="section-title">最近动态</text><text class="caption">实时更新</text></view>
+    <view class="section-head"><text class="section-title">最近动态</text><text class="caption" @click="uni.navigateTo({url:'/pages/notices/index'})">消息通知 ›</text></view>
     <view class="card activity-card">
       <view v-if="!home.recent?.length" class="list-empty">还没有收益记录，去推荐第一位客户吧</view>
       <view class="row" v-for="(r, i) in home.recent" :key="i">

@@ -26,6 +26,8 @@ public class CustomerController {
 
     private final CustomerMapper customerMapper;
     private final LeadMapper leadMapper;
+    private final com.zhyq.park.marketing.service.MktCustomerAssignmentService assignmentService;
+    private final com.zhyq.park.marketing.service.MktLockService marketingLocks;
 
     @Operation(summary = "分页查询意向客户")
     @GetMapping("/page")
@@ -54,20 +56,38 @@ public class CustomerController {
     @Operation(summary = "新增意向客户")
     @PostMapping
     public Result<Long> add(@RequestBody Customer customer) {
+        if (customer.getReferrerId() != null || customer.getGrade() != null)
+            throw new BizException("请先建档，再到全民营销设置推荐伙伴及评级");
         customerMapper.insert(customer);
         return Result.ok(customer.getId());
     }
 
     @Operation(summary = "修改意向客户")
     @PutMapping
+    @Transactional
     public Result<Void> update(@RequestBody Customer customer) {
-        customerMapper.updateById(customer);
+        Customer current = requireLocked(customer.getId());
+        if ((customer.getReferrerId() != null && !java.util.Objects.equals(customer.getReferrerId(), current.getReferrerId()))
+                || (customer.getGrade() != null && !java.util.Objects.equals(customer.getGrade(), current.getGrade()))
+                || (customer.getSignMode() != null && !java.util.Objects.equals(customer.getSignMode(), current.getSignMode())))
+            throw new BizException("请在全民营销客户管理中调整归属、评级或签约方式");
+        if (isMarketing(current) && ((customer.getStatus() != null && !java.util.Objects.equals(customer.getStatus(), current.getStatus()))
+                || (customer.getServiceType() != null && !java.util.Objects.equals(customer.getServiceType(), current.getServiceType()))
+                || (customer.getProjectId() != null && !java.util.Objects.equals(customer.getProjectId(), current.getProjectId()))))
+            throw new BizException("营销客户状态由合同和归属流程维护，请到全民营销处理");
+        customer.setVersion(current.getVersion());
+        if (customerMapper.updateById(customer) != 1) throw new BizException("客户已变化，请刷新后重试");
         return Result.ok();
     }
 
     @Operation(summary = "删除意向客户")
+    @Transactional
     @DeleteMapping("/{id}")
     public Result<Void> delete(@PathVariable Long id) {
+        Customer current = requireLocked(id);
+        assignmentService.assertNoActiveContracts(id);
+        if (isMarketing(current) || marketingLocks.displayLockOf(id) != null)
+            throw new BizException("该客户关联营销业务，请保留档案并按业务流程标记流失");
         customerMapper.deleteById(id);
         return Result.ok();
     }
@@ -104,8 +124,10 @@ public class CustomerController {
     }
 
     @Operation(summary = "签约(跟进中->已签约)")
+    @Transactional
     @PostMapping("/{id}/sign")
     public Result<Void> sign(@PathVariable Long id) {
+        if (isMarketing(requireLocked(id))) throw new BizException("营销客户请通过真实合同签署生效，不支持直接改为已签约");
         LambdaUpdateWrapper<Customer> uw = new LambdaUpdateWrapper<>();
         uw.eq(Customer::getId, id).eq(Customer::getStatus, 1).set(Customer::getStatus, 2);
         if (customerMapper.update(null, uw) == 0) {
@@ -115,13 +137,24 @@ public class CustomerController {
     }
 
     @Operation(summary = "流失(跟进中->已流失)")
+    @Transactional
     @PostMapping("/{id}/lose")
     public Result<Void> lose(@PathVariable Long id) {
+        if (isMarketing(requireLocked(id))) throw new BizException("请在全民营销中标记流失并填写原因");
+        assignmentService.assertNoActiveContracts(id);
         LambdaUpdateWrapper<Customer> uw = new LambdaUpdateWrapper<>();
         uw.eq(Customer::getId, id).eq(Customer::getStatus, 1).set(Customer::getStatus, 3);
         if (customerMapper.update(null, uw) == 0) {
             throw new BizException("仅跟进中客户可标记流失");
         }
         return Result.ok();
+    }
+    private Customer requireLocked(Long id) {
+        Customer c = id == null ? null : customerMapper.selectForUpdate(id);
+        if (c == null) throw new BizException("客户不存在");
+        return c;
+    }
+    private static boolean isMarketing(Customer c) {
+        return c.getReferrerId() != null || c.getAssignedWarehouseId() != null;
     }
 }

@@ -54,7 +54,7 @@ const busy = ref(false)
 const error = ref('')
 const agreed = ref(false)
 const form = reactive({ phone: '', name: '', inviteCode: '' })
-onLoad(q => { if (q?.invite) form.inviteCode = q.invite })
+onLoad(q => { const invite = q?.invite || q?.scene; if (invite && /^[A-Za-z0-9]{8}$/.test(decodeURIComponent(invite))) form.inviteCode = decodeURIComponent(invite) })
 function choose(value) { method.value = value; error.value = '' }
 function restart() { step.value = 'login'; openid.value = ''; loginTicket.value = ''; error.value = '' }
 async function wxLogin() {

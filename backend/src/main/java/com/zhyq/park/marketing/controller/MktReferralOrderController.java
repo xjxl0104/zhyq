@@ -53,6 +53,7 @@ public class MktReferralOrderController {
     private final MktReferralOrderImportService importService;
     private final MktCommissionService commissionService;
     private final MktAuditService auditService;
+    private final com.zhyq.park.marketing.mapper.MktServiceFeeBillLineMapper billLines;
 
     @Operation(summary = "分页(附客户/伙伴名)")
     @PreAuthorize("hasAuthority('crm:marketing:order:query')")
@@ -69,7 +70,7 @@ public class MktReferralOrderController {
                 .eq(sourceType != null, MktReferralOrder::getSourceType, sourceType)
                 .eq(status != null, MktReferralOrder::getStatus, status)
                 .eq(promoterId != null, MktReferralOrder::getPromoterId, promoterId)
-                .eq(projectId != null, MktReferralOrder::getProjectId, projectId)
+                .and(projectId != null, q -> q.eq(MktReferralOrder::getProjectId, projectId).or().isNull(MktReferralOrder::getProjectId))
                 .orderByDesc(MktReferralOrder::getId);
         IPage<MktReferralOrder> p = orderMapper.selectPage(new Page<>(pageNo, pageSize), qw);
         return Result.ok(PageResult.of(p.getTotal(), p.getRecords().stream().map(this::enrich).collect(Collectors.toList())));
@@ -124,6 +125,11 @@ public class MktReferralOrderController {
                 .eq(MktReferralOrder::getId, id).eq(MktReferralOrder::getStatus, MktCommissionService.ORDER_CONFIRMED)
                 .set(MktReferralOrder::getStatus, MktCommissionService.ORDER_CANCELLED).set(MktReferralOrder::getRemark, reason));
         if (updated == 0) throw new BizException("订单状态已变化");
+        // The order update holds its row lock. Billing takes the same lock before
+        // inserting a snapshot, so cancellation cannot race a new bill into existence.
+        if (billLines.selectCount(new LambdaQueryWrapper<com.zhyq.park.marketing.entity.MktServiceFeeBillLine>()
+                .eq(com.zhyq.park.marketing.entity.MktServiceFeeBillLine::getReferralOrderId, id)) > 0)
+            throw new BizException("该订单已进入服务费账单，请先联系财务更正账单，不能直接作废");
         commissionService.clawback(id, reason);
         auditService.log("order.void", "referral_order", id, reason);
         return Result.ok();
@@ -138,7 +144,7 @@ public class MktReferralOrderController {
         m.put("status", o.getStatus()); m.put("eventTime", o.getEventTime()); m.put("warehouseId", o.getWarehouseId()); m.put("remark", o.getRemark());
         Customer c = o.getCustomerId() == null ? null : customerMapper.selectById(o.getCustomerId());
         m.put("customerName", c == null ? null : c.getName());
-        MktPromoter p = promoterMapper.selectById(o.getPromoterId());
+        MktPromoter p = o.getPromoterId() == null ? null : promoterMapper.selectById(o.getPromoterId());
         m.put("promoterName", p == null ? null : p.getName());
         return m;
     }

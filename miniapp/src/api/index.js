@@ -13,6 +13,7 @@ export const meApi = {
   me: () => get('/me'),
   update: (data) => put('/me', data),
   agree: (version) => post('/me/agree', { version }),
+  accountStatus: () => get('/me/account'),
   account: (data) => put('/me/account', data),
   home: () => get('/home'),
   position: () => get('/position'),
@@ -31,5 +32,6 @@ export const bizApi = {
   balance: () => get('/withdrawal/balance'),
   withdraw: (amount) => post('/withdrawal', { amount }),
   withdrawals: (params) => get('/withdrawal/page', params),
+  noticeRead: (id) => post(`/notice/${id}/read`),
   notices: (params) => get('/notice/page', params)
 }

@@ -76,7 +76,14 @@ public class MktCommissionService {
     public record CommissionEvent(int sourceType, String sourceNo, Long sourceId, Long customerId,
                                   Long sellerPromoterId, String grade, BigDecimal poolFactor,
                                   BigDecimal baseAmount, BigDecimal poolAmount, LocalDateTime eventTime,
-                                  LocalDateTime unfreezeAt, Long projectId, Long warehouseId) {
+                                  LocalDateTime unfreezeAt, Long projectId, Long warehouseId,
+                                  Integer qty, Integer packages, BigDecimal goodsAmount, String logisticsNo) {
+        public CommissionEvent(int sourceType, String sourceNo, Long sourceId, Long customerId,
+                Long sellerPromoterId, String grade, BigDecimal poolFactor, BigDecimal baseAmount,
+                BigDecimal poolAmount, LocalDateTime eventTime, LocalDateTime unfreezeAt, Long projectId, Long warehouseId) {
+            this(sourceType, sourceNo, sourceId, customerId, sellerPromoterId, grade, poolFactor, baseAmount,
+                    poolAmount, eventTime, unfreezeAt, projectId, warehouseId, null, null, null, null);
+        }
     }
 
     /**
@@ -84,7 +91,17 @@ public class MktCommissionService {
      * 已存在同 (source_type, source_no) 的订单直接返回已有记录,不重复生成。
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public MktReferralOrder createAndSplit(CommissionEvent ev) {
+    public MktReferralOrder createAndSplit(CommissionEvent ev) { return createInternal(ev); }
+
+    /** Use this entry point from a contract/payment transaction so all records commit together. */
+    @Transactional
+    public MktReferralOrder createAndSplitInTransaction(CommissionEvent ev) { return createInternal(ev); }
+
+    private MktReferralOrder createInternal(CommissionEvent ev) {
+        if (ev == null || ev.sourceNo() == null || ev.sourceNo().isBlank() || ev.sourceNo().length() > 64
+                || ev.baseAmount() == null || ev.baseAmount().signum() < 0 || ev.poolAmount() == null
+                || ev.poolAmount().signum() < 0 || ev.poolFactor() == null || ev.poolFactor().signum() < 0)
+            throw new BizException("计佣事件参数或金额无效");
         MktReferralOrder existing = findOrder(ev.sourceType(), ev.sourceNo());
         if (existing != null) {
             log.info("[mkt] 计佣事件已存在,跳过: type={} no={}", ev.sourceType(), ev.sourceNo());
@@ -112,7 +129,12 @@ public class MktCommissionService {
 
     /** 冻结 → 可结算(路径 A:到账事件触发)。返回解冻行数。 */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public int unfreezeByOrder(Long referralOrderId) {
+    public int unfreezeByOrder(Long referralOrderId) { return unfreezeOrder(referralOrderId); }
+
+    @Transactional
+    public int unfreezeByOrderInTransaction(Long referralOrderId) { return unfreezeOrder(referralOrderId); }
+
+    private int unfreezeOrder(Long referralOrderId) {
         List<MktPromoterCommission> frozen = commissionMapper.selectList(new LambdaQueryWrapper<MktPromoterCommission>()
                 .eq(MktPromoterCommission::getReferralOrderId, referralOrderId)
                 .eq(MktPromoterCommission::getStatus, C_FROZEN));
@@ -169,7 +191,16 @@ public class MktCommissionService {
         List<MktPromoterCommission> rows = commissionMapper.selectList(new LambdaQueryWrapper<MktPromoterCommission>()
                 .eq(MktPromoterCommission::getReferralOrderId, referralOrderId)
                 .eq(MktPromoterCommission::getSign, SIGN_POSITIVE));
+        // Match withdrawal/account lock order. A locking re-read is required under MySQL
+        // REPEATABLE READ so a just-committed withdrawal cannot be missed by the first snapshot.
+        rows.stream().map(MktPromoterCommission::getPromoterId).filter(java.util.Objects::nonNull)
+                .distinct().sorted().forEach(promoterMapper::selectForUpdate);
+        rows = commissionMapper.selectList(new LambdaQueryWrapper<MktPromoterCommission>()
+                .eq(MktPromoterCommission::getReferralOrderId, referralOrderId)
+                .eq(MktPromoterCommission::getSign, SIGN_POSITIVE).orderByAsc(MktPromoterCommission::getId).last("FOR UPDATE"));
         for (MktPromoterCommission c : rows) {
+            if (c.getWithdrawalId() != null && c.getStatus() != C_WITHDRAWN)
+                throw new BizException("该订单佣金已有待打款提现申请,请先驳回提现再退款/作废");
             if (c.getStatus() == C_FROZEN || c.getStatus() == C_SETTLEABLE) {
                 voidOne(c, reason);
             } else if (c.getStatus() == C_SETTLED || c.getStatus() == C_WITHDRAWN) {
@@ -220,7 +251,7 @@ public class MktCommissionService {
 
         BigDecimal total = BigDecimal.ZERO;
         int cnt = 0;
-        for (Long id : commissionIds) {
+        for (Long id : new java.util.LinkedHashSet<>(commissionIds)) {
             MktPromoterCommission c = commissionMapper.selectById(id);
             if (c == null) {
                 throw new BizException("佣金流水不存在: " + id);
@@ -231,6 +262,7 @@ public class MktCommissionService {
             int updated = commissionMapper.update(null, new LambdaUpdateWrapper<MktPromoterCommission>()
                     .eq(MktPromoterCommission::getId, id)
                     .eq(MktPromoterCommission::getStatus, C_SETTLEABLE)
+                    .isNull(MktPromoterCommission::getWithdrawalId)
                     .eq(MktPromoterCommission::getSign, SIGN_POSITIVE)
                     .set(MktPromoterCommission::getStatus, C_SETTLED)
                     .set(MktPromoterCommission::getSettleBatchId, batch.getId()));
@@ -281,6 +313,8 @@ public class MktCommissionService {
         o.setCustomerGrade(ev.grade());
         o.setPoolFactor(ev.poolFactor());
         o.setBaseAmount(ev.baseAmount());
+        if (ev.sourceType() == SOURCE_OUTBOUND) o.setServiceFee(ev.baseAmount());
+        o.setQty(ev.qty()); o.setPackages(ev.packages()); o.setGoodsAmount(ev.goodsAmount()); o.setLogisticsNo(ev.logisticsNo());
         o.setPoolAmount(ev.poolAmount());
         o.setBaseMode(ev.sourceType() == SOURCE_LEASE ? 4 : 1);
         o.setStatus(ORDER_CONFIRMED);
@@ -328,6 +362,7 @@ public class MktCommissionService {
         int updated = commissionMapper.update(null, new LambdaUpdateWrapper<MktPromoterCommission>()
                 .eq(MktPromoterCommission::getId, c.getId())
                 .in(MktPromoterCommission::getStatus, C_FROZEN, C_SETTLEABLE)
+                .isNull(MktPromoterCommission::getWithdrawalId)
                 .eq(MktPromoterCommission::getSign, SIGN_POSITIVE)
                 .set(MktPromoterCommission::getStatus, C_VOID)
                 .set(MktPromoterCommission::getVoidReason, reason));

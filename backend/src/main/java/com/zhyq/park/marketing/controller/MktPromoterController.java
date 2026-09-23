@@ -38,6 +38,7 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class MktPromoterController {
 
+    private final com.zhyq.park.marketing.service.MktPromoterAccountService accountService;
     private final MktPromoterMapper promoterMapper;
     private final MktPromoterService promoterService;
     private final MktPositionReviewService reviewService;
@@ -61,7 +62,7 @@ public class MktPromoterController {
                         .or().like(MktPromoter::getPhone, keyword).or().eq(MktPromoter::getInviteCode, keyword))
                 .eq(StringUtils.hasText(positionCode), MktPromoter::getPositionCode, positionCode)
                 .eq(status != null, MktPromoter::getStatus, status)
-                .eq(projectId != null, MktPromoter::getProjectId, projectId)
+                .and(projectId != null, q -> q.eq(MktPromoter::getProjectId, projectId).or().isNull(MktPromoter::getProjectId))
                 .orderByDesc(MktPromoter::getId);
         IPage<MktPromoter> p = promoterMapper.selectPage(new Page<>(pageNo, pageSize), qw);
         return Result.ok(PageResult.of(p.getTotal(), p.getRecords().stream().map(PromoterVO::of).collect(java.util.stream.Collectors.toList())));
@@ -74,6 +75,22 @@ public class MktPromoterController {
         MktPromoter p = promoterMapper.selectById(id);
         if (p == null) throw new BizException("伙伴不存在");
         return Result.ok(PromoterVO.of(p));
+    }
+
+    @GetMapping("/{id}/account")
+    @PreAuthorize("hasAuthority('crm:marketing:account:audit')")
+    public Result<Map<String, Object>> account(@PathVariable Long id) {
+        return Result.ok(accountService.view(id, true));
+    }
+
+    public record AccountReview(Integer version, Boolean pass, String reason) {}
+    @PostMapping("/{id}/account/review")
+    @PreAuthorize("hasAuthority('crm:marketing:account:audit')")
+    public Result<Void> reviewAccount(@PathVariable Long id, @RequestBody AccountReview body) {
+        if (body.pass() == null) throw new BizException("请选择审核结果");
+        accountService.review(id, body.version(), body.pass(), body.reason(),
+                com.zhyq.park.common.config.MyMetaObjectHandler.currentOperator());
+        return Result.ok();
     }
 
     @Operation(summary = "直属团队(一层)")
@@ -89,12 +106,12 @@ public class MktPromoterController {
                                     String path, String positionCode, LocalDateTime positionSince, Integer status,
                                     Integer isInternal, String agreementVersion, LocalDateTime agreedAt, Integer idVerified,
                                     LocalDateTime bindTime, LocalDateTime inviteDeadline, LocalDateTime lastLogin,
-                                    String source, String remark, Long projectId) {
+                                    String source, String remark, Long projectId, LocalDateTime createTime) {
         static PromoterVO of(MktPromoter p) {
             return new PromoterVO(p.getId(), p.getName(), p.getPhone(), p.getAvatar(), p.getInviteCode(), p.getParentId(),
                     p.getPath(), p.getPositionCode(), p.getPositionSince(), p.getStatus(), p.getIsInternal(),
                     p.getAgreementVersion(), p.getAgreedAt(), p.getIdVerified(), p.getBindTime(), p.getInviteDeadline(),
-                    p.getLastLogin(), p.getSource(), p.getRemark(), p.getProjectId());
+                    p.getLastLogin(), p.getSource(), p.getRemark(), p.getProjectId(), p.getCreateTime());
         }
     }
 

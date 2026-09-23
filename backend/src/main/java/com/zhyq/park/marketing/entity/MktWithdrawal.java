@@ -36,5 +36,14 @@ public class MktWithdrawal extends BaseEntity {
     private String rejectReason;
     /** 本次提现覆盖的流水 id */
     private String commissionIds;
+    private Long accountId;
+    private String accountName;
+    private Integer accountType;
+    @com.fasterxml.jackson.annotation.JsonIgnore @lombok.ToString.Exclude
+    private String accountNoEnc;
+    private String accountTail;
+    private String bankName;
+    private LocalDateTime accountVerifiedAt;
+    private String payProof;
     private Long projectId;
 }

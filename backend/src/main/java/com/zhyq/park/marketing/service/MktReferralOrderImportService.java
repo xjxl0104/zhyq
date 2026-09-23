@@ -11,6 +11,8 @@ import com.zhyq.park.marketing.engine.PoolCalculator;
 import com.zhyq.park.marketing.entity.MktCustomerGrade;
 import com.zhyq.park.marketing.entity.MktReferralOrder;
 import com.zhyq.park.marketing.entity.MktServiceContract;
+import com.zhyq.park.marketing.entity.MktWarehouse;
+import org.springframework.dao.DuplicateKeyException;
 import com.zhyq.park.marketing.mapper.MktCustomerGradeMapper;
 import com.zhyq.park.marketing.mapper.MktReferralOrderMapper;
 import com.zhyq.park.marketing.mapper.MktServiceContractMapper;
@@ -39,8 +41,8 @@ import java.util.Set;
 
 /**
  * 出库单文件导入(PARK-MKT-001 §5.3 文件方式,阶段 A 让路径 B 在没有真实 ERP 时能跑通):
- * Excel 每行一张出库单 → 按客户履约中的服务合同单价表算园区服务费 → 池 = 服务费 × 评级总比例 → 级差拆分(冻结,
- * 发货时间 + freeze_days 后自动解冻)。
+ * 园区签：每行出库单按服务合同计算园区服务费和冻结佣金；发货时间 + freeze_days 后可解冻。
+ * 云仓直签：只保存真实运营出库记录，所有园区金额为零，不调用计佣服务；平台费实收另行登记。
  *
  * <p>模板列(按表头文字认列,不看顺序):出库单号 · 客户手机号 · 件数 · 包裹数 · 发货时间 · 物流单号 · 云仓编码(可选) · 货值(可选)。
  * 同一出库单号重复导入跳过(唯一键 uk_referral_order_source 兜底)。单行失败不拖垮整批,按行号回报。</p>
@@ -75,6 +77,7 @@ public class MktReferralOrderImportService {
     private final MktCommissionService commissionService;
     private final BizSettings bizSettings;
     private final ObjectMapper objectMapper;
+    private final com.zhyq.park.marketing.mapper.MktWarehouseMapper warehouseMapper;
 
     public record ImportResult(int imported, int skipped, List<String> errors) {
     }
@@ -160,8 +163,14 @@ public class MktReferralOrderImportService {
                     skipped++;
                     continue;
                 }
-                commissionService.createAndSplit(toEvent(row, projectId, freezeDays));
-                imported++;
+                ResolvedOutbound resolved = resolve(row, projectId);
+                if (Integer.valueOf(2).equals(resolved.contract().getSignMode())) {
+                    if (saveDirectOutbound(row, resolved, projectId)) imported++;
+                    else skipped++;
+                } else {
+                    commissionService.createAndSplit(toParkEvent(row, resolved, projectId, freezeDays));
+                    imported++;
+                }
             } catch (Exception ex) {
                 errors.add("出库单 " + row.orderNo() + ":" + ex.getMessage());
             }
@@ -174,6 +183,18 @@ public class MktReferralOrderImportService {
      * 客户无推荐伙伴 → 抛异常(不计佣,由调用方计入错误);客户没有履约中的合同 → 抛异常。
      */
     public CommissionEvent toEvent(OutboundRow row, Long projectId, int freezeDays) {
+        return toParkEvent(row, resolve(row, projectId), projectId, freezeDays);
+    }
+
+    private record ResolvedOutbound(Customer customer, MktServiceContract contract, MktWarehouse warehouse) {}
+
+    /** Both operating records and commission events must reference a real active contract and online warehouse. */
+    private ResolvedOutbound resolve(OutboundRow row, Long projectId) {
+        if (row == null || !StringUtils.hasText(row.orderNo()) || row.orderNo().length() > 64)
+            throw new BizException("出库单号必填且不能超过64字");
+        if (row.qty() < 0 || row.packages() <= 0) throw new BizException("件数不能为负,包裹数必须为正整数");
+        if (row.shippedAt() == null || row.shippedAt().isAfter(LocalDateTime.now().plusMinutes(5)))
+            throw new BizException("请填写有效且不晚于当前时间的发货时间");
         if (!StringUtils.hasText(row.customerPhone())) {
             throw new BizException("缺客户手机号");
         }
@@ -182,11 +203,17 @@ public class MktReferralOrderImportService {
         if (customer == null) {
             throw new BizException("手机号 " + row.customerPhone() + " 不是系统客户");
         }
-        if (customer.getReferrerId() == null) {
-            throw new BizException("客户 " + customer.getName() + " 无推荐伙伴,不计佣");
+        Long warehouseId = null;
+        if (StringUtils.hasText(row.warehouseCode())) {
+            var warehouse = warehouseMapper.selectOne(new LambdaQueryWrapper<com.zhyq.park.marketing.entity.MktWarehouse>()
+                    .eq(com.zhyq.park.marketing.entity.MktWarehouse::getCode, row.warehouseCode()).last("limit 1"));
+            if (warehouse == null) throw new BizException("云仓编码不存在");
+            warehouseId = warehouse.getId();
         }
         MktServiceContract contract = contractMapper.selectOne(new LambdaQueryWrapper<MktServiceContract>()
                 .eq(MktServiceContract::getCustomerId, customer.getId())
+                .eq(warehouseId != null, MktServiceContract::getWarehouseId, warehouseId)
+                .eq(projectId != null, MktServiceContract::getProjectId, projectId)
                 .in(MktServiceContract::getStatus,
                         MktServiceContractService.ST_EFFECTIVE, MktServiceContractService.ST_PERFORMING,
                         MktServiceContractService.ST_AMENDING)
@@ -194,17 +221,69 @@ public class MktReferralOrderImportService {
         if (contract == null) {
             throw new BizException("客户 " + customer.getName() + " 没有生效中的服务合同");
         }
+        if (contract.getWarehouseId() == null) throw new BizException("合同尚未指定承接云仓");
+        if ((contract.getStartDate() != null && row.shippedAt().toLocalDate().isBefore(contract.getStartDate()))
+                || (contract.getEndDate() != null && row.shippedAt().toLocalDate().isAfter(contract.getEndDate())))
+            throw new BizException("发货时间不在合同有效期内");
+        if (!Integer.valueOf(1).equals(contract.getSignMode()) && !Integer.valueOf(2).equals(contract.getSignMode()))
+            throw new BizException("合同签约方式无效，请核对合同");
+        MktWarehouse warehouse = warehouseMapper.selectById(contract.getWarehouseId());
+        if (warehouse == null || !Integer.valueOf(5).equals(warehouse.getJoinStatus()))
+            throw new BizException("承接云仓未上线,不能导入出库单");
+        if (projectId != null && contract.getProjectId() != null && !projectId.equals(contract.getProjectId()))
+            throw new BizException("合同不属于当前园区");
+        if (row.logisticsNo() != null && row.logisticsNo().length() > 64) throw new BizException("物流单号不能超过64字");
+        if (row.goodsAmount() != null && (row.goodsAmount().signum() < 0 || row.goodsAmount().stripTrailingZeros().scale() > 2
+                || row.goodsAmount().compareTo(new BigDecimal("999999999999.99")) > 0))
+            throw new BizException("货值须为非负金额且最多两位小数");
+        return new ResolvedOutbound(customer, contract, warehouse);
+    }
+
+    private CommissionEvent toParkEvent(OutboundRow row, ResolvedOutbound resolved, Long projectId, int freezeDays) {
+        Customer customer = resolved.customer(); MktServiceContract contract = resolved.contract();
+        if (!Integer.valueOf(1).equals(contract.getSignMode()))
+            throw new BizException("云仓直签出库仅记录运营数据，佣金须按实际收到的平台费登记");
+        if (freezeDays < 0) throw new BizException("冻结天数配置不合法");
+        if (contract.getPartnerId() == null && customer.getReferrerId() == null)
+            throw new BizException("客户 " + customer.getName() + " 无推荐伙伴,不计佣");
         BigDecimal serviceFee = serviceFee(contract.getPriceTable(), row.qty(), row.packages());
         String gradeCode = StringUtils.hasText(contract.getGrade()) ? contract.getGrade()
                 : StringUtils.hasText(customer.getGrade()) ? customer.getGrade() : "D";
         MktCustomerGrade grade = gradeMapper.selectOne(new LambdaQueryWrapper<MktCustomerGrade>()
                 .eq(MktCustomerGrade::getCode, gradeCode).last("limit 1"));
-        BigDecimal rate = grade == null ? new BigDecimal("3") : grade.getErpTotalRate();
+        BigDecimal rate = grade == null ? null : grade.getErpTotalRate();
+        if (serviceFee.signum() <= 0) throw new BizException("合同缺少有效的单票/按件服务单价");
+        if (rate == null || rate.signum() < 0 || rate.compareTo(new BigDecimal("100")) > 0) throw new BizException("客户评级佣金比例配置不合法");
         BigDecimal pool = PoolCalculator.ratePool(serviceFee, rate);
+        BigDecimal cost = serviceFee(resolved.warehouse().getFeeModel(), row.qty(), row.packages());
+        if (cost.signum() <= 0) throw new BizException("云仓应付费率尚未配置,请先核算成本");
+        if (serviceFee.subtract(cost).subtract(pool).signum() < 0)
+            throw new BizException("本单园区毛利为负(服务费−云仓成本−佣金),请核对合同报价和云仓费率");
         LocalDateTime shipped = row.shippedAt() == null ? LocalDateTime.now() : row.shippedAt();
         return new CommissionEvent(MktCommissionService.SOURCE_OUTBOUND, row.orderNo(), contract.getId(),
-                customer.getId(), customer.getReferrerId(), gradeCode, rate, serviceFee, pool,
-                shipped, shipped.plusDays(freezeDays), projectId, contract.getWarehouseId());
+                customer.getId(), contract.getPartnerId() == null ? customer.getReferrerId() : contract.getPartnerId(), gradeCode, rate, serviceFee, pool,
+                shipped, shipped.plusDays(freezeDays), contract.getProjectId() == null ? projectId : contract.getProjectId(), contract.getWarehouseId(),
+                row.qty(), row.packages(), row.goodsAmount(), row.logisticsNo());
+    }
+
+    /** A direct-sign shipment is an operating record, never a commission event or park receivable. */
+    private boolean saveDirectOutbound(OutboundRow row, ResolvedOutbound resolved, Long projectId) {
+        MktServiceContract contract = resolved.contract();
+        MktReferralOrder order = new MktReferralOrder();
+        order.setSourceType(MktCommissionService.SOURCE_OUTBOUND); order.setSourceNo(row.orderNo());
+        order.setSourceId(contract.getId()); order.setCustomerId(resolved.customer().getId()); order.setWarehouseId(contract.getWarehouseId());
+        // Keep operating rows out of partner income queries; attribution remains on the contract, not this shipment.
+        order.setPromoterId(null); order.setBaseMode(1); order.setBaseAmount(BigDecimal.ZERO);
+        order.setServiceFee(BigDecimal.ZERO); order.setPoolAmount(BigDecimal.ZERO); order.setPoolFactor(BigDecimal.ZERO);
+        order.setQty(row.qty()); order.setPackages(row.packages()); order.setGoodsAmount(row.goodsAmount()); order.setLogisticsNo(row.logisticsNo());
+        order.setStatus(MktCommissionService.ORDER_CONFIRMED); order.setEventTime(row.shippedAt()); order.setConfirmTime(LocalDateTime.now());
+        order.setProjectId(contract.getProjectId() == null ? projectId : contract.getProjectId());
+        order.setRemark("云仓直签运营出库记录，不计佣、不产生园区应收或云仓应付；平台费实际到账另行登记");
+        try { orderMapper.insert(order); return true; }
+        catch (DuplicateKeyException concurrentImport) {
+            if (orderExists(row.orderNo())) return false;
+            throw concurrentImport;
+        }
     }
 
     /** 供开放接口:货主编码映射到客户后,取手机号复用 toEvent 的归属链路。 */
@@ -223,15 +302,17 @@ public class MktReferralOrderImportService {
         if (StringUtils.hasText(priceTableJson)) {
             try {
                 JsonNode n = objectMapper.readTree(priceTableJson);
+                if ((n.hasNonNull("perOrder") && !n.get("perOrder").isNumber()) || (n.hasNonNull("perItem") && !n.get("perItem").isNumber())) throw new IllegalArgumentException();
                 perOrder = n.hasNonNull("perOrder") ? n.get("perOrder").decimalValue() : BigDecimal.ZERO;
                 perItem = n.hasNonNull("perItem") ? n.get("perItem").decimalValue() : BigDecimal.ZERO;
             } catch (Exception e) {
                 throw new BizException("合同单价表 JSON 不合法");
             }
         }
+        if (perOrder.signum() < 0 || perItem.signum() < 0) throw new BizException("合同单价不能为负数");
         return perOrder.multiply(BigDecimal.valueOf(packages))
                 .add(perItem.multiply(BigDecimal.valueOf(qty)))
-                .setScale(2, BigDecimal.ROUND_HALF_UP);
+                .setScale(2, java.math.RoundingMode.HALF_UP);
     }
 
     private boolean orderExists(String orderNo) {
@@ -269,7 +350,7 @@ public class MktReferralOrderImportService {
 
     private static int intOf(String s, int dflt) {
         if (s == null || s.isBlank()) return dflt;
-        return new BigDecimal(s).intValue();
+        return new BigDecimal(s).intValueExact();
     }
 
     private static BigDecimal decimalOrNull(String s) {
@@ -289,7 +370,7 @@ public class MktReferralOrderImportService {
             return s.length() <= 10 ? java.time.LocalDate.parse(s).atStartOfDay()
                     : LocalDateTime.parse(s.replace(' ', 'T'));
         } catch (Exception e) {
-            return null;
+            throw new BizException("发货时间格式应为 yyyy-MM-dd HH:mm:ss");
         }
     }
 

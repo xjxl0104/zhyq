@@ -20,33 +20,37 @@
 
     <div class="table-card">
       <div class="toolbar">
-        <span class="hint">客户建档仍在「招商 › 意向客户」;本页只做全民营销相关:评级、推荐人、签约方式、锁定。</span>
+        <span class="hint">管理推荐归属、云仓承接和伙伴可见进度。客户资料可在「招商 › 意向客户」补充。</span>
       </div>
       <el-table :data="list" v-loading="loading" border stripe>
-        <el-table-column prop="name" label="客户" min-width="150" />
-        <el-table-column prop="contact" label="联系人" width="100" />
-        <el-table-column prop="phone" label="电话" width="130" />
-        <el-table-column label="评级" width="80" align="center">
-          <template #default="{ row }"><el-tag v-if="row.grade" :type="gradeType(row.grade)">{{ row.grade }}</el-tag><span v-else>-</span></template>
+        <el-table-column prop="name" label="客户 / 联系方式" min-width="180">
+          <template #default="{ row }"><div>{{ row.name }}</div><div class="project-note">{{ row.contact || '联系人未填写' }} · {{ row.phone || '电话未填写' }}</div><div class="project-note">{{ projectLabel(row.projectId) }}</div></template>
         </el-table-column>
-        <el-table-column label="推荐伙伴" width="110" align="center">
+        <el-table-column label="推荐伙伴" width="100">
           <template #default="{ row }">{{ row.referrerName || (row.referrerId ? `#${row.referrerId}` : '—') }}</template>
         </el-table-column>
-        <el-table-column label="业务线" width="80"><template #default="{ row }">{{ BIZ[row.bizLine] || '-' }}</template></el-table-column>
-        <el-table-column label="签约方式" width="100"><template #default="{ row }">{{ SIGN[row.signMode] || '园区默认' }}</template></el-table-column>
-        <el-table-column label="锁定" width="130">
-          <template #default="{ row }">
-            <el-tag v-if="row.lockStatus" :type="lockType(row.lockStatus)" size="small">{{ LOCK[row.lockStatus] }}<span v-if="row.lockDaysLeft != null"> · {{ row.lockDaysLeft }}天</span></el-tag>
-            <span v-else class="muted">公海</span>
-          </template>
+        <el-table-column label="评级" width="65" align="center">
+          <template #default="{ row }"><el-tag v-if="row.grade" :type="gradeType(row.grade)">{{ row.grade }}</el-tag><span v-else>—</span></template>
         </el-table-column>
-        <el-table-column label="状态" width="90"><template #default="{ row }"><el-tag :type="statusType(row.status)">{{ STATUS[row.status] || row.status }}</el-tag></template></el-table-column>
-        <el-table-column label="操作" width="280" fixed="right">
+        <el-table-column label="客户状态" width="100">
+          <template #default="{ row }"><el-tag :type="statusType(row.status)">{{ STATUS[row.status] || row.status }}</el-tag><div class="project-note">{{ BIZ[row.bizLine] || '业务待确认' }} · {{ SIGN[row.signMode] || '默认签约' }}</div></template>
+        </el-table-column>
+        <el-table-column label="归属锁定" width="100">
+          <template #default="{ row }"><el-tag v-if="row.lockStatus" :type="lockType(row.lockStatus)" size="small">{{ LOCK[row.lockStatus] }}</el-tag><span v-else class="muted">未锁定</span><div v-if="[1, 2].includes(row.lockStatus) && row.lockDaysLeft != null" class="project-note">剩余 {{ row.lockDaysLeft }} 天</div></template>
+        </el-table-column>
+        <el-table-column label="云仓承接" min-width="150">
+          <template #default="{ row }"><div>{{ row.assignedWarehouseName || '尚未分派' }}</div><div class="project-note">{{ ASSIGN[row.warehouseAssignmentStatus || 0] }}</div><div v-if="row.intendedWarehouseName" class="project-note">意向：{{ row.intendedWarehouseName }}</div></template>
+        </el-table-column>
+        <el-table-column prop="publicProgress" label="伙伴可见进度" min-width="155" show-overflow-tooltip />
+        <el-table-column label="操作" width="245" fixed="right">
           <template #default="{ row }">
-            <el-button link type="primary" @click="openGrade(row)">评级</el-button>
-            <el-button link type="primary" @click="openReferrer(row)">推荐人</el-button>
-            <el-button link type="primary" @click="openSignMode(row)">签约方式</el-button>
+            <el-button link type="primary" @click="openAssignment(row)">分派云仓</el-button>
+            <el-button link type="primary" @click="openProgress(row)">更新进度</el-button>
             <el-button link type="primary" @click="openLock(row)">锁定</el-button>
+            <el-dropdown trigger="click" @command="handleMore($event, row)">
+              <el-button link type="primary" class="more-action">更多</el-button>
+              <template #dropdown><el-dropdown-menu><el-dropdown-item command="grade">客户评级</el-dropdown-item><el-dropdown-item command="referrer">设置推荐人</el-dropdown-item><el-dropdown-item command="sign">签约方式</el-dropdown-item></el-dropdown-menu></template>
+            </el-dropdown>
           </template>
         </el-table-column>
       </el-table>
@@ -55,6 +59,19 @@
                      v-model:page-size="query.pageSize" :page-sizes="[10,20,50]" @change="load" />
     </div>
 
+    <el-dialog v-model="assignment.visible" title="分派承接云仓" width="500px">
+      <el-alert type="info" :closable="false" title="分派后商家需要确认承接。已有生效合同的客户不能更换承接仓。" />
+      <el-form label-width="90px" style="margin-top:20px">
+        <el-form-item label="承接云仓"><el-select v-model="assignment.warehouseId" filterable placeholder="选择已上线云仓" style="width:100%"><el-option v-for="w in warehouses" :key="w.id" :value="w.id" :label="w.name" /></el-select></el-form-item>
+        <el-form-item label="分派原因"><el-input v-model="assignment.reason" type="textarea" maxlength="500" /></el-form-item>
+      </el-form>
+      <template #footer><el-button @click="assignment.visible = false">取消</el-button><el-button type="primary" :loading="assignment.busy" @click="assignWarehouse">确认分派</el-button></template>
+    </el-dialog>
+    <el-dialog v-model="progress.visible" title="更新伙伴可见进度" width="500px">
+      <el-alert type="info" :closable="false" title="此内容会展示给推荐伙伴，请填写可对外说明的进度。" />
+      <el-input v-model="progress.summary" type="textarea" :rows="4" maxlength="500" show-word-limit style="margin-top:20px" />
+      <template #footer><el-button @click="progress.visible = false">取消</el-button><el-button type="primary" :loading="progress.busy" @click="saveProgress">发布进度</el-button></template>
+    </el-dialog>
     <!-- 评级 -->
     <el-dialog v-model="grade.visible" title="客户评级" width="460px">
       <el-alert v-if="grade.suggest" type="info" :closable="false" class="mb">
@@ -106,8 +123,8 @@
           <el-button v-if="[1, 2].includes(lock.data.status)" @click="lockTransfer">转移给其他伙伴</el-button>
         </div>
       </template>
-      <template v-else>
-        <el-empty description="当前没有有效锁定(公海)">
+      <template v-if="!lock.data || lock.data.status === 4">
+        <el-empty :description="lock.data ? '该客户已释放，可以重新报备' : '当前没有有效锁定（公海）'">
           <el-form :inline="true">
             <el-form-item label="伙伴 ID"><el-input-number v-model="lock.newPromoterId" :min="1" /></el-form-item>
             <el-button type="primary" @click="lockPrelock">代伙伴报备(预锁 7 天)</el-button>
@@ -121,8 +138,32 @@
 <script setup>
 import { reactive, ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { mktCustomerApi } from '@/api/marketing'
+import { mktCustomerApi, mktWarehouseApi } from '@/api/marketing'
+import { useProjectStore } from '@/stores/project'
 
+const projectStore = useProjectStore()
+const projectLabel = id => id == null ? '待分配园区' : (projectStore.projects.find(p => String(p.id) === String(id))?.name || `园区 #${id}`)
+const ASSIGN = {0:'待分派',1:'待商家确认',2:'已承接',3:'已拒绝'}
+const warehouses = ref([])
+const assignment = reactive({visible:false,id:null,warehouseId:null,reason:'',busy:false})
+const progress = reactive({visible:false,id:null,summary:'',busy:false})
+async function openAssignment(row) {
+  warehouses.value = await mktWarehouseApi.online()
+  Object.assign(assignment,{visible:true,id:row.id,warehouseId:row.assignedWarehouseId || row.intendedWarehouseId,reason:'',busy:false})
+}
+async function assignWarehouse() {
+  if (!assignment.warehouseId || !assignment.reason.trim()) return ElMessage.error('请选择云仓并填写分派原因')
+  assignment.busy = true
+  try { await mktCustomerApi.assignWarehouse(assignment.id,{warehouseId:assignment.warehouseId,reason:assignment.reason}); assignment.visible=false; ElMessage.success('已分派，等待商家确认'); await load() }
+  finally { assignment.busy=false }
+}
+function openProgress(row) { Object.assign(progress,{visible:true,id:row.id,summary:row.publicProgress || '',busy:false}) }
+async function saveProgress() {
+  if (!progress.summary.trim()) return ElMessage.error('请填写进度')
+  progress.busy=true
+  try { await mktCustomerApi.progress(progress.id,{summary:progress.summary}); progress.visible=false; ElMessage.success('已发布'); await load() }
+  finally { progress.busy=false }
+}
 const BIZ = { 1: '租赁', 2: '云仓' }
 const SIGN = { 1: '园区签', 2: '云仓直签' }
 const LOCK = { 1: '预锁', 2: '有效锁定', 3: '已成交', 4: '已释放' }
@@ -145,6 +186,12 @@ async function load() {
 }
 function search() { query.pageNo = 1; load() }
 function reset() { Object.assign(query, { pageNo: 1, keyword: '', grade: null, referredOnly: null }); load() }
+
+function handleMore(action, row) {
+  if (action === 'grade') return openGrade(row)
+  if (action === 'referrer') return openReferrer(row)
+  if (action === 'sign') return openSignMode(row)
+}
 
 // 评级
 const grade = reactive({ visible: false, row: null, value: 'D', reason: '', suggest: null })
@@ -203,6 +250,8 @@ onMounted(load)
 </script>
 
 <style scoped>
+.more-action { margin-left: 10px; }
+.project-note { color: var(--el-text-color-secondary); font-size: 12px; line-height: 1.5; margin-top: 4px; overflow-wrap: anywhere; }
 .pager { margin-top: 16px; justify-content: flex-end; }
 .hint { color: var(--el-text-color-secondary); font-size: 12px; }
 .muted { color: var(--el-text-color-placeholder); }

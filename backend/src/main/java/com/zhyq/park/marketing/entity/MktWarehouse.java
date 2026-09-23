@@ -30,6 +30,8 @@ public class MktWarehouse extends BaseEntity {
     private Integer joinStatus;
     /** 0未对接 1已联通(沙箱) 2已联通(正式) 3断连 */
     private Integer erpStatus;
+    /** erp 外部系统接入 / manual 运营导入出库单 */
+    private String orderMode;
     /** 阶段 A 人工标记已联通的运营 */
     private String erpMarkedBy;
     private LocalDateTime erpMarkedAt;

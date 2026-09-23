@@ -21,6 +21,7 @@ import com.zhyq.park.marketing.mapper.MktReferralOrderMapper;
 import com.zhyq.park.marketing.mapper.MktWarehouseMapper;
 import com.zhyq.park.marketing.mapper.MktWithdrawalMapper;
 import com.zhyq.park.marketing.service.MktAuditService;
+import com.zhyq.park.marketing.service.MktCustomerAssignmentService;
 import com.zhyq.park.marketing.service.MktCommissionService;
 import com.zhyq.park.marketing.service.MktLockService;
 import com.zhyq.park.marketing.service.MktWarehouseOnboardingService;
@@ -66,6 +67,7 @@ public class MpBizController {
     private final MktWithdrawalService withdrawalService;
     private final BizSettings bizSettings;
     private final MktAuditService auditService;
+    private final MktCustomerAssignmentService assignmentService;
 
     // ---------------- 推荐 / 报备(§2.2 + §2.2a) ----------------
 
@@ -90,8 +92,22 @@ public class MpBizController {
         c.setName(name); c.setContact(str(body, "contact")); c.setPhone(phone);
         c.setIndustry(str(body, "industry")); c.setDemandArea(str(body, "demand"));
         Object st = body.get("serviceType");
-        c.setServiceType(st == null ? 2 : Integer.valueOf(st.toString()));
+        int serviceType;
+        try { serviceType = st == null ? 2 : Integer.parseInt(st.toString()); }
+        catch (NumberFormatException e) { throw new BizException("需求类型不正确"); }
+        if (serviceType < 1 || serviceType > 4) throw new BizException("需求类型不正确");
+        c.setServiceType(serviceType);
         c.setBizLine(c.getServiceType() == 4 ? 1 : 2);
+        String intended = str(body, "warehouseId");
+        if (StringUtils.hasText(intended)) {
+            Long warehouseId;
+            try { warehouseId = Long.valueOf(intended); }
+            catch (NumberFormatException e) { throw new BizException("意向云仓不正确"); }
+            if (serviceType == 4) throw new BizException("园区入驻需求不选择云仓");
+            assignmentService.requireAvailableWarehouse(warehouseId, me.getProjectId());
+            c.setIntendedWarehouseId(warehouseId);
+        }
+        c.setWarehouseAssignmentStatus(MktCustomerAssignmentService.UNASSIGNED);
         c.setReferrerId(pid);
         c.setStatus(1);
         c.setOwner("待分配");
@@ -139,12 +155,12 @@ public class MpBizController {
         return Result.ok();
     }
 
-    @Operation(summary = "意向云仓下拉(只列已上线且已联通)")
+    @Operation(summary = "意向云仓下拉(已上线；线下履约不要求外部 ERP 接入)")
     @GetMapping("/warehouses")
     public Result<List<Map<String, Object>>> warehouses() {
         return Result.ok(warehouseMapper.selectList(new LambdaQueryWrapper<MktWarehouse>()
                 .eq(MktWarehouse::getJoinStatus, MktWarehouseOnboardingService.JS_ONLINE)
-                .in(MktWarehouse::getErpStatus, MktWarehouseOnboardingService.ERP_SANDBOX, MktWarehouseOnboardingService.ERP_LIVE))
+                .and(q -> q.eq(MktWarehouse::getOrderMode, "manual").or().eq(MktWarehouse::getErpStatus, MktWarehouseOnboardingService.ERP_LIVE)))
                 .stream().map(w -> Map.<String, Object>of("id", w.getId(), "code", w.getCode(), "name", w.getName(), "region", String.valueOf(w.getRegion())))
                 .collect(Collectors.toList()));
     }
@@ -219,11 +235,12 @@ public class MpBizController {
         m.put("id", c.getId()); m.put("name", c.getName()); m.put("contact", c.getContact());
         m.put("phone", c.getPhone() == null || c.getPhone().length() < 11 ? c.getPhone() : c.getPhone().substring(0, 3) + "****" + c.getPhone().substring(7));
         m.put("grade", c.getGrade()); m.put("serviceType", c.getServiceType()); m.put("status", c.getStatus()); m.put("createTime", c.getCreateTime());
-        MktCustomerLock lock = lockService.activeLockOf(c.getId());
+        m.putAll(assignmentService.assignmentView(c));
+        MktCustomerLock lock = lockService.displayLockOf(c.getId());
         if (lock != null) {
             m.put("lockStatus", lock.getStatus());
             LocalDateTime until = lock.getStatus() == MktLockService.LS_PRELOCK ? lock.getPrelockUntil() : lock.getLockUntil();
-            m.put("lockDaysLeft", until == null ? null : Math.max(0, Duration.between(LocalDateTime.now(), until).toDays()));
+            m.put("lockDaysLeft", until == null ? null : Math.max(0, (Duration.between(LocalDateTime.now(), until).getSeconds() + 86_399) / 86_400));
             m.put("canExtend", lock.getStatus() == MktLockService.LS_LOCKED && (lock.getExtendedCount() == null || lock.getExtendedCount() == 0));
         }
         return m;

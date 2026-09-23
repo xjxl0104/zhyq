@@ -20,5 +20,9 @@ public class MktServiceFeeBill extends BaseEntity {
     private Integer status;
     private BigDecimal amount;
     private String disputeReason;
+    private String receiptNo;
+    private String receiptProof;
+    private java.time.LocalDateTime receivedAt;
+    private String receivedBy;
     private Long projectId;
 }

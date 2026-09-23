@@ -22,8 +22,10 @@ export const mktPromoterApi = {
   orders: (id, params) => request.get(`${BASE}/promoter/${id}/orders`, { params }),
   commissions: (id, params) => request.get(`${BASE}/promoter/${id}/commissions`, { params }),
   withdrawals: (id, params) => request.get(`${BASE}/promoter/${id}/withdrawals`, { params }),
+  account: (id) => request.get(`${BASE}/promoter/${id}/account`),
+  reviewAccount: (id, data) => request.post(`${BASE}/promoter/${id}/account/review`, data),
   history: (id) => request.get(`${BASE}/promoter/${id}/history`),
-  // 阶段 A 没有小程序,后台手工录入伙伴
+  // 运营手工录入伙伴
   manual: (data) => request.post(`${BASE}/promoter/manual`, data),
   audit: (id, data) => request.post(`${BASE}/promoter/${id}/audit`, data),
   position: (id, data) => request.post(`${BASE}/promoter/${id}/position`, data),
@@ -52,6 +54,8 @@ export const mktGradeApi = {
 export const mktCustomerApi = {
   page: (params) => request.get(`${BASE}/customer/page`, { params }),
   get: (id) => request.get(`${BASE}/customer/${id}`),
+  assignWarehouse: (id, data) => request.post(`${BASE}/customer/${id}/assign-warehouse`, data),
+  progress: (id, data) => request.post(`${BASE}/customer/${id}/progress`, data),
   suggestGrade: (id) => request.get(`${BASE}/customer/${id}/suggest-grade`),
   grade: (id, data) => request.post(`${BASE}/customer/${id}/grade`, data),
   signMode: (id, data) => request.post(`${BASE}/customer/${id}/sign-mode`, data),
@@ -102,8 +106,9 @@ export const mktWarehouseApi = {
   apply: (data) => request.post(`${BASE}/warehouse`, data),
   update: (data) => request.put(`${BASE}/warehouse`, data),
   steps: (id) => request.get(`${BASE}/warehouse/${id}/steps`),
-  passQualification: (id) => request.post(`${BASE}/warehouse/${id}/qualify/pass`),
+  passQualification: (id, data) => request.post(`${BASE}/warehouse/${id}/qualify/pass`, data),
   rejectQualification: (id, data) => request.post(`${BASE}/warehouse/${id}/qualify/reject`, data),
+  useManual: (id) => request.post(`${BASE}/warehouse/${id}/order-mode/manual`),
   markErp: (id) => request.post(`${BASE}/warehouse/${id}/erp/mark-connected`),
   signAgreement: (id, data) => request.post(`${BASE}/warehouse/${id}/agreement`, data),
   pause: (id, data) => request.post(`${BASE}/warehouse/${id}/pause`, data),
@@ -133,6 +138,7 @@ export const mktCommissionApi = {
 // 提现
 export const mktWithdrawalApi = {
   page: (params) => request.get(`${BASE}/withdrawal/page`, { params }),
+  payAccount: (id) => request.get(`${BASE}/withdrawal/${id}/pay-account`),
   balance: (promoterId) => request.get(`${BASE}/withdrawal/balance/${promoterId}`),
   manual: (data) => request.post(`${BASE}/withdrawal/manual`, data),
   approve: (id) => request.post(`${BASE}/withdrawal/${id}/approve`),
@@ -159,4 +165,22 @@ export const mktErpApi = {
   saveMapping: (warehouseId, data) => request.post(`${BASE}/erp/warehouse/${warehouseId}/mappings`, data),
   deleteMapping: (id) => request.delete(`${BASE}/erp/mappings/${id}`),
   logs: (params) => request.get(`${BASE}/erp/logs`, { params })
+}
+
+export const mktBillApi = {
+  generateFixed: () => request.post(`${BASE}/bill/generate-fixed`),
+  receive: (id,data) => request.post(`${BASE}/bill/${id}/receive`, data),
+  page: (params) => request.get(`${BASE}/bill/page`, { params }),
+  generate: (data) => request.post(`${BASE}/bill/generate`, data),
+  lines: (id) => request.get(`${BASE}/bill/${id}/lines`),
+  resolve: (id, data) => request.post(`${BASE}/bill/${id}/resolve`, data)
+}
+export const mktSettlementApi = {
+  directPayments: (params) => request.get(`${BASE}/settlement/direct-payment/page`, { params }),
+  page: (params) => request.get(`${BASE}/settlement/page`, { params }),
+  generate: (data) => request.post(`${BASE}/settlement/generate`, data),
+  lines: (id) => request.get(`${BASE}/settlement/${id}/lines`),
+  resolve: (id, data) => request.post(`${BASE}/settlement/${id}/resolve`, data),
+  pay: (id, data) => request.post(`${BASE}/settlement/${id}/pay`, data),
+  directPayment: (data) => request.post(`${BASE}/settlement/direct-payment`, data)
 }

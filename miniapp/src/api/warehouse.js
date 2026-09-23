@@ -1,4 +1,4 @@
-import { whGet, whPost, whPut } from '@/utils/request'
+import { whGet, whPost, whPut, uploadWarehouseFile, openWarehouseFile } from '@/utils/request'
 
 export const warehouseAuthApi = {
   wxLogin: (jsCode, warehouseId, appId) => whPost('/auth/wx-login', { jsCode, warehouseId, appId }),
@@ -9,6 +9,16 @@ export const warehouseAuthApi = {
   bindPhone: (data) => whPost('/auth/bind-phone', data)
 }
 export const warehouseApi = {
+  uploadFile: uploadWarehouseFile,
+  openFile: openWarehouseFile,
+  files: () => whGet('/files'),
+  submitApply: () => whPost('/apply/submit'),
+  customerProgress: (id, data) => whPost(`/customers/${id}/progress`, data),
+  acceptCustomer: (id) => whPost(`/customers/${id}/accept`),
+  rejectCustomer: (id, reason) => whPost(`/customers/${id}/reject`, { reason }),
+  updateContract: (id, data) => whPut(`/contracts/${id}`, data),
+  submitContract: (id) => whPost(`/contracts/${id}/submit`),
+  settlementLines: (id) => whGet(`/settlement/${id}/lines`),
   apply: () => whGet('/apply'),
   saveApply: (data) => whPut('/apply', data),
   onboarding: () => whGet('/onboarding'),
@@ -22,10 +32,14 @@ export const warehouseApi = {
   testResults: (params) => whGet('/erp/test-results', params),
   syncLogs: (params) => whGet('/erp/sync-logs', params),
   ping: () => whGet('/erp/ping'),
+  bills: (params) => whGet('/bill/page', params),
+  billLines: (id) => whGet(`/bill/${id}/lines`),
+  confirmBill: (id) => whPost(`/bill/${id}/confirm`),
+  disputeBill: (id, reason) => whPost(`/bill/${id}/dispute`, { reason }),
   settlements: (params) => whGet('/settlement/page', params),
   confirmSettlement: (id) => whPost(`/settlement/${id}/confirm`),
   disputeSettlement: (id, reason) => whPost(`/settlement/${id}/dispute`, { reason }),
-  contracts: () => whGet('/contracts'),
+  contracts: (params) => whGet('/contracts', params),
   createContract: (data) => whPost('/contracts', data),
   agreement: () => whGet('/agreement'),
   uploadAgreement: (file) => whPost('/agreement/upload', { file }),

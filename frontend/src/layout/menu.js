@@ -50,6 +50,8 @@ export const menuTree = [
           { title: 'ERP 对接', path: '/crm/marketing/erp' },
           { title: '计佣订单', path: '/crm/marketing/order' },
           { title: '佣金结算', path: '/crm/marketing/commission' },
+          { title: '服务费账单', path: '/crm/marketing/bill' },
+          { title: '云仓结算', path: '/crm/marketing/settlement' },
           { title: '提现审核', path: '/crm/marketing/withdrawal' },
           { title: '规则参数', path: '/crm/marketing/setting' },
           { title: '审计日志', path: '/crm/marketing/audit' }

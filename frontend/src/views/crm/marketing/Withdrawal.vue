@@ -18,7 +18,7 @@
     <div class="table-card">
       <div class="toolbar">
         <el-button type="primary" @click="openManual"><el-icon><Plus /></el-icon>代伙伴申请提现</el-button>
-        <span class="hint">阶段 A 线下打款:运营审核 → 财务标记打款(填打款凭证号,幂等)。税务=个税代扣,显示税前/税额/税后。</span>
+        <span class="hint">收款资料须先审核通过。申请时固定收款账户，审核后由财务线下付款并上传真实凭证。</span>
       </div>
       <el-table :data="list" v-loading="loading" border stripe>
         <el-table-column prop="withdrawalNo" label="提现单号" width="170" />
@@ -28,7 +28,8 @@
         <el-table-column label="税后实付(元)" width="120" align="right"><template #default="{ row }">{{ money(row.netAmount) }}</template></el-table-column>
         <el-table-column label="税务" width="90"><template #default="{ row }">{{ TAX[row.taxMode] }}</template></el-table-column>
         <el-table-column label="状态" width="90"><template #default="{ row }"><el-tag :type="stType(row.status)">{{ ST[row.status] }}</el-tag></template></el-table-column>
-        <el-table-column prop="payNo" label="打款凭证" width="150" />
+        <el-table-column label="申请时收款账户" min-width="190"><template #default="{ row }">{{ row.accountName || '待补资料' }} · 尾号 {{ row.accountTail || '—' }}<div class="hint">{{ row.bankName }}</div></template></el-table-column>
+        <el-table-column prop="payNo" label="打款流水号" width="150" />
         <el-table-column prop="auditBy" label="审核人" width="90" />
         <el-table-column prop="payAt" label="打款时间" width="160" />
         <el-table-column prop="rejectReason" label="驳回原因" min-width="120" />
@@ -38,7 +39,8 @@
               <el-button link type="success" @click="approve(row)">审核通过</el-button>
               <el-button link type="danger" @click="reject(row)">驳回</el-button>
             </template>
-            <el-button v-else-if="row.status === 2" link type="success" @click="pay(row)">标记已打款</el-button>
+            <template v-else-if="row.status === 2"><el-button link type="success" @click="pay(row)">登记线下打款</el-button><el-button link type="danger" @click="reject(row)">驳回</el-button></template>
+            <el-button v-if="row.payProof" link @click="downloadProof(row)">查看凭证</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -46,6 +48,13 @@
                      :total="total" v-model:current-page="query.pageNo"
                      v-model:page-size="query.pageSize" :page-sizes="[10,20,50]" @change="load" />
     </div>
+
+    <el-dialog v-model="payment.visible" title="核对账户并登记线下打款" width="min(580px,94vw)">
+      <el-descriptions :column="1" border v-loading="payment.loading"><el-descriptions-item label="收款人">{{ payment.account?.name }}</el-descriptions-item><el-descriptions-item label="收款账号">{{ payment.account?.accountNo }}</el-descriptions-item><el-descriptions-item label="银行/类型">{{ payment.account?.bankName || ACCOUNT_TYPE[payment.account?.accountType] }}</el-descriptions-item><el-descriptions-item label="税后实付">{{ money(payment.row?.netAmount) }} 元</el-descriptions-item></el-descriptions>
+      <el-form label-position="top" class="payment-form"><el-form-item label="银行流水号 / 转账单号" required><el-input v-model="payment.payNo" maxlength="64" /></el-form-item><el-form-item label="实际付款凭证" required><FileUpload v-model="payment.files" biz-type="mkt_withdrawal" :biz-id="payment.row?.id" accept=".pdf,.jpg,.jpeg,.png" /></el-form-item></el-form>
+      <p class="hint">请按以上申请时账户完成真实付款后登记，系统不会自动转账。</p>
+      <template #footer><el-button @click="payment.visible=false">取消</el-button><el-button type="primary" :loading="saving" :disabled="saving || payment.loading || !payment.account || !payment.payNo.trim() || !payment.files.length" @click="savePayment">确认已完成付款</el-button></template>
+    </el-dialog>
 
     <el-dialog v-model="manual.visible" title="代伙伴申请提现" width="460px">
       <el-form label-width="100px">
@@ -62,12 +71,17 @@
 import { reactive, ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { mktWithdrawalApi } from '@/api/marketing'
+import FileUpload from '@/components/FileUpload.vue'
+import { startFileDownload } from '@/utils/fileDownload'
 import { money } from '@/utils/format'
 
 const ST = { 1: '待审核', 2: '已审核', 3: '已打款', 4: '已驳回' }
 const TAX = { 1: '个税代扣', 2: '灵工代征' }
 const stType = (s) => ({ 1: 'warning', 2: 'primary', 3: 'success', 4: 'danger' }[s] || 'info')
 
+const saving = ref(false)
+const ACCOUNT_TYPE={1:'微信',2:'银行卡',3:'支付宝'}
+const payment=reactive({visible:false,row:null,account:null,payNo:'',files:[],loading:false})
 const loading = ref(false)
 const list = ref([])
 const total = ref(0)
@@ -97,14 +111,21 @@ async function reject(row) {
   await mktWithdrawalApi.reject(row.id, { reason: value }); ElMessage.success('已驳回'); load()
 }
 async function pay(row) {
-  const { value } = await ElMessageBox.prompt(`税后实付 ${row.netAmount} 元。请填写打款凭证号(银行流水号 / 转账单号,唯一)`, '标记已打款', { inputPattern: /\S+/, inputErrorMessage: '凭证号必填' })
-  await mktWithdrawalApi.pay(row.id, { payNo: value }); ElMessage.success('已打款'); load()
+  Object.assign(payment,{visible:true,row,account:null,payNo:'',files:[],loading:true})
+  try { payment.account=await mktWithdrawalApi.payAccount(row.id) } finally { payment.loading=false }
 }
+async function savePayment(){
+  if(saving.value || !payment.payNo.trim() || !payment.files.length)return
+  saving.value=true
+  try{await mktWithdrawalApi.pay(payment.row.id,{payNo:payment.payNo.trim(),payProof:`file:${payment.files[0].id}`});payment.visible=false;ElMessage.success('付款凭证已保存');await load()}finally{saving.value=false}
+}
+async function downloadProof(row){const id=row.payProof?.match(/^file:(\d+)$/)?.[1];if(id)await startFileDownload(id,'提现付款凭证')}
 onMounted(load)
 </script>
 
 <style scoped>
-.toolbar { display: flex; align-items: center; gap: 12px; }
+.payment-form{margin-top:20px}
+.toolbar { display: flex; flex-wrap:wrap; align-items: center; gap: 12px; }
 .hint { color: var(--el-text-color-secondary); font-size: 12px; }
 .pager { margin-top: 16px; justify-content: flex-end; }
 </style>

@@ -71,6 +71,31 @@ public class DefaultWxSessionClient implements WxSessionClient {
         return phone;
     }
 
+    /** Official getUnlimitedQRCode API. Never expose the access token to the client. */
+    public byte[] invitationCode(String appId, String appSecret, String inviteCode, String env) {
+        if (!inviteCode.matches("[A-Za-z0-9]{8}") || !java.util.Set.of("release", "trial", "develop").contains(env))
+            throw new BizException("邀请码或版本无效");
+        try {
+            String token = accessToken(appId, appSecret);
+            var body = Map.of("scene", inviteCode, "page", "pages/login/index", "env_version", env,
+                    "check_path", "release".equals(env), "width", 430);
+            var req = HttpRequest.newBuilder(URI.create(apiBase + "/wxa/getwxacodeunlimit?access_token=" + enc(token)))
+                    .timeout(Duration.ofSeconds(10)).header("Content-Type", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(body))).build();
+            var response = httpClient.send(req, HttpResponse.BodyHandlers.ofByteArray());
+            byte[] data = response.body();
+            boolean image = data.length > 8 && ((data[0] == (byte)137 && data[1] == 80 && data[2] == 78 && data[3] == 71)
+                    || (data[0] == (byte)255 && data[1] == (byte)216));
+            if (response.statusCode() != 200 || !image) {
+                if (data.length > 0 && data[0] == '{') checkError(objectMapper.readTree(data), "邀请码生成");
+                throw new BizException("暂无法生成小程序码，可先分享邀请卡片或复制邀请码");
+            }
+            return data;
+        } catch (BizException e) { throw e; }
+        catch (InterruptedException e) { Thread.currentThread().interrupt(); throw new BizException("生成中断，请重试"); }
+        catch (Exception e) { throw new BizException("生成小程序码失败，可先分享邀请卡片或复制邀请码"); }
+    }
+
     private synchronized String accessToken(String appId, String appSecret) {
         AccessToken cached = accessTokens.get(appId);
         if (cached != null && cached.expiresAt() > System.currentTimeMillis()) return cached.value();

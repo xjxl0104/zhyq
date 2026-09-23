@@ -19,7 +19,7 @@ public class MktLockExpireJob {
     private static final int REMIND_DAYS = 15;
 
     private final MktLockService lockService;
-    private final NotificationService notificationService;
+    private final com.zhyq.park.marketing.service.MktPartnerNoticeService notificationService;
 
     @Scheduled(cron = "0 0 2 * * ?")
     public void run() {
@@ -29,8 +29,8 @@ public class MktLockExpireJob {
                 log.info("[mkt] LockExpireJob 释放 {} 条锁定", n);
             }
             for (MktCustomerLock l : lockService.expiringWithin(LocalDateTime.now(), REMIND_DAYS)) {
-                notificationService.sendInApp(l.getPromoterId(), "客户锁定即将到期",
-                        "您报备的客户锁定将于 " + l.getLockUntil().toLocalDate() + " 到期,请尽快推进", "customer_lock", l.getId());
+                notificationService.push(l.getPromoterId(), "客户锁定即将到期",
+                        "您报备的客户锁定将于 " + l.getLockUntil().toLocalDate() + " 到期,请尽快推进");
             }
         } catch (Exception e) {
             log.error("[mkt] LockExpireJob 失败", e);

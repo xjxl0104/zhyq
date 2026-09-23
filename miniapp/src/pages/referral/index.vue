@@ -13,7 +13,7 @@
       </picker>
       <input class="input" v-model="form.demand" placeholder="需求(面积 / 日单量 / 品类)" />
       <textarea class="input" v-model="form.remark" placeholder="备注" style="height:120rpx" />
-      <button class="btn" :loading="loading" @click="submit">提交推荐</button>
+      <button class="btn" :loading="loading" :disabled="loading" @click="submit">提交推荐</button>
     </view>
   </view>
 </template>
@@ -24,18 +24,19 @@ import { onLoad } from '@dcloudio/uni-app'
 import { bizApi } from '@/api'
 
 const TYPES = [{ value: 2, label: '一件代发' }, { value: 1, label: '仓储' }, { value: 3, label: '仓配一体' }, { value: 4, label: '园区入驻(租仓/租办公)' }]
-const warehouses = ref([])
+const warehouses = ref([{id:null,name:'不限'}])
 const loading = ref(false)
 const form = reactive({ name: '', contact: '', phone: '', serviceType: 2, warehouseId: null, demand: '', remark: '' })
 
-onLoad(async () => { try { warehouses.value = await bizApi.warehouses() } catch (e) { /* 可为空 */ } })
+onLoad(async () => { try { warehouses.value = [{id:null,name:'不限'}, ...await bizApi.warehouses()] } catch (e) { /* 可为空 */ } })
 
 async function submit() {
+  if (loading.value) return
   if (!form.name.trim()) return uni.showToast({ title: '请填客户名称', icon: 'none' })
   if (!/^1\d{10}$/.test(form.phone)) return uni.showToast({ title: '手机号格式不对', icon: 'none' })
   loading.value = true
   try {
-    const r = await bizApi.referral(form)
+    const r = await bizApi.referral({...form, warehouseId:form.serviceType === 4 ? null : form.warehouseId})
     uni.showModal({ title: '推荐成功', content: `已为您预锁至 ${r.prelockUntil?.slice(0, 10)},招商专员将尽快联系客户。`, showCancel: false,
       success: () => uni.switchTab({ url: '/pages/customers/index' }) })
   } finally { loading.value = false }

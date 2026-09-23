@@ -46,7 +46,7 @@ public class MktCommissionController {
                 .eq(promoterId != null, MktPromoterCommission::getPromoterId, promoterId)
                 .eq(status != null, MktPromoterCommission::getStatus, status)
                 .eq(referralOrderId != null, MktPromoterCommission::getReferralOrderId, referralOrderId)
-                .eq(projectId != null, MktPromoterCommission::getProjectId, projectId)
+                .and(projectId != null, q -> q.eq(MktPromoterCommission::getProjectId, projectId).or().isNull(MktPromoterCommission::getProjectId))
                 .orderByDesc(MktPromoterCommission::getId);
         IPage<MktPromoterCommission> p = commissionMapper.selectPage(new Page<>(pageNo, pageSize), qw);
         Map<Long, String> names = new HashMap<>();

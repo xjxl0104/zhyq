@@ -5,6 +5,9 @@ import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.zhyq.park.common.event.DomainEvent;
 import com.zhyq.park.common.exception.BizException;
 import com.zhyq.park.common.setting.BizSettings;
+import com.zhyq.park.crm.entity.Customer;
+import com.zhyq.park.crm.mapper.CustomerMapper;
+import java.util.Objects;
 import com.zhyq.park.marketing.entity.MktCustomerLock;
 import com.zhyq.park.marketing.entity.MktPosition;
 import com.zhyq.park.marketing.entity.MktPromoter;
@@ -48,16 +51,25 @@ public class MktLockService {
     private final BizSettings bizSettings;
     private final MktAuditService auditService;
     private final ApplicationEventPublisher eventPublisher;
+    private final CustomerMapper customerMapper;
+    private final MktCustomerAssignmentService assignmentService;
 
     /** 报备 = 预锁。校验:伙伴正常、未超岗位上限、不在冷却期;唯一键兜底并发。 */
     @Transactional
     public MktCustomerLock prelock(Long customerId, Long promoterId) {
+        Customer customer = requireCustomer(customerId);
+        assignmentService.assertNoActiveContracts(customerId);
+        if (customer.getReferrerId() != null && !Objects.equals(customer.getReferrerId(), promoterId)) {
+            throw new BizException("报备伙伴与客户归属不一致");
+        }
         MktPromoter p = promoterMapper.selectById(promoterId);
         if (p == null || p.getStatus() == null || p.getStatus() != 1) {
             throw new BizException("伙伴状态异常,不能报备");
         }
+        validatePromoter(customer, p);
         checkCap(p);
         checkCooldown(customerId, promoterId);
+        if (customer.getReferrerId() == null) setReferrer(customer, promoterId);
 
         MktCustomerLock lock = new MktCustomerLock();
         lock.setCustomerId(customerId);
@@ -116,27 +128,61 @@ public class MktLockService {
     /** 合同生效 → 已成交(归属固定到合同期)。 */
     @Transactional
     public void markDeal(Long customerId) {
-        markDeal(customerId, null);
+        markDeal(customerId, requireCustomer(customerId).getReferrerId());
     }
 
     /** 合同生效 → 已成交,可校验合同伙伴与锁客伙伴一致后再落状态。 */
     @Transactional
     public void markDeal(Long customerId, Long expectedPromoterId) {
+        Customer customer = requireCustomer(customerId);
+        if (expectedPromoterId != null && !Objects.equals(expectedPromoterId, customer.getReferrerId())) {
+            throw new BizException("合同伙伴与客户归属不一致,不能成交");
+        }
         MktCustomerLock active = activeLockOf(customerId);
         if (active == null) {
+            MktCustomerLock last = displayLockOf(customerId);
+            if (last != null && Integer.valueOf(LS_DEAL).equals(last.getStatus())) {
+                if (!Objects.equals(last.getPromoterId(), expectedPromoterId)) throw new BizException("成交锁归属不一致");
+                return;
+            }
+            if (expectedPromoterId == null) return;
+            // 报备保护期结束后正式签约仍需明确展示合同的归属，而不是显示未锁定。
+            MktCustomerLock deal = new MktCustomerLock();
+            deal.setCustomerId(customerId); deal.setPromoterId(expectedPromoterId);
+            deal.setStatus(LS_DEAL); deal.setExtendedCount(0); deal.setProjectId(customer.getProjectId());
+            lockMapper.insert(deal);
+            auditService.log("lock.deal", BIZ_TYPE, deal.getId(), "合同生效确认归属");
+            publish(deal);
             return;
         }
-        if (expectedPromoterId != null && !expectedPromoterId.equals(active.getPromoterId())) {
+        if (!Objects.equals(expectedPromoterId, active.getPromoterId())) {
             throw new BizException("合同伙伴与锁客伙伴不一致,不能成交");
         }
+        if (Integer.valueOf(LS_PRELOCK).equals(active.getStatus())) throw new BizException("请先确认客户报备归属，再签署生效合同");
         int updated = lockMapper.update(null, new LambdaUpdateWrapper<MktCustomerLock>()
                 .eq(MktCustomerLock::getId, active.getId())
                 .eq(MktCustomerLock::getStatus, LS_LOCKED)
                 .set(MktCustomerLock::getStatus, LS_DEAL));
-        if (updated == 1) {
-            auditService.log("lock.deal", BIZ_TYPE, active.getId(), "合同生效");
-            publish(require(active.getId()));
-        }
+        requireUpdated(updated, active.getId());
+        auditService.log("lock.deal", BIZ_TYPE, active.getId(), "合同生效");
+        active.setStatus(LS_DEAL);
+        publish(active);
+    }
+
+    /** 最后一份有效合同关闭后释放成交锁，保留历史供两端展示。 */
+    @Transactional
+    public void releaseDeal(Long customerId, String reason) {
+        requireCustomer(customerId);
+        assignmentService.assertNoActiveContracts(customerId);
+        MktCustomerLock deal = displayLockOf(customerId);
+        if (deal == null || !Integer.valueOf(LS_DEAL).equals(deal.getStatus())) return;
+        requireUpdated(lockMapper.update(null, new LambdaUpdateWrapper<MktCustomerLock>()
+                .eq(MktCustomerLock::getId, deal.getId()).eq(MktCustomerLock::getStatus, LS_DEAL)
+                .set(MktCustomerLock::getStatus, LS_RELEASED).set(MktCustomerLock::getReleasedReason, reason)
+                .set(MktCustomerLock::getReleasedBy, "contract").set(MktCustomerLock::getReleasedAt, LocalDateTime.now())), deal.getId());
+        auditService.log("lock.contract.release", BIZ_TYPE, deal.getId(), reason);
+        deal.setStatus(LS_RELEASED);
+        publish(deal);
     }
 
     /** 释放(到期 / 客户拒绝 / 专员判无效 / 运营释放)→ 公海。 */
@@ -160,12 +206,18 @@ public class MktLockService {
     public MktCustomerLock transfer(Long lockId, Long toPromoterId, String reason) {
         requireReason(reason);
         MktCustomerLock old = require(lockId);
+        Customer customer = requireCustomer(old.getCustomerId());
+        assignmentService.assertNoActiveContracts(old.getCustomerId());
+        if (!Objects.equals(customer.getReferrerId(), old.getPromoterId())) throw new BizException("锁定与客户归属不一致，请先核对");
+        if (Objects.equals(old.getPromoterId(), toPromoterId)) throw new BizException("请选择其他伙伴");
         release(lockId, "转移:" + reason, MktAuditService.currentOperator());
         MktPromoter to = promoterMapper.selectById(toPromoterId);
         if (to == null || to.getStatus() == null || to.getStatus() != 1) {
             throw new BizException("目标伙伴状态异常");
         }
+        validatePromoter(customer, to);
         checkCap(to);
+        setReferrer(customer, toPromoterId);
         MktCustomerLock lock = new MktCustomerLock();
         lock.setCustomerId(old.getCustomerId());
         lock.setPromoterId(toPromoterId);
@@ -217,6 +269,34 @@ public class MktLockService {
                 .eq(MktCustomerLock::getCustomerId, customerId)
                 .in(MktCustomerLock::getStatus, LS_PRELOCK, LS_LOCKED)
                 .last("limit 1"));
+    }
+
+    /** 展示最新一条锁客历史，成交和释放状态不得退化为“未锁定”。 */
+    public MktCustomerLock displayLockOf(Long customerId) {
+        return lockMapper.selectOne(new LambdaQueryWrapper<MktCustomerLock>()
+                .eq(MktCustomerLock::getCustomerId, customerId).orderByDesc(MktCustomerLock::getId).last("limit 1"));
+    }
+
+    private Customer requireCustomer(Long customerId) {
+        Customer customer = customerMapper.selectForUpdate(customerId);
+        if (customer == null) throw new BizException("客户不存在");
+        return customer;
+    }
+
+    private void setReferrer(Customer customer, Long promoterId) {
+        int updated = customerMapper.update(null, new LambdaUpdateWrapper<Customer>()
+                .eq(Customer::getId, customer.getId()).eq(customer.getVersion() != null, Customer::getVersion, customer.getVersion())
+                .set(Customer::getReferrerId, promoterId).setSql("version = version + 1"));
+        if (updated != 1) throw new BizException("客户归属已变化，请刷新后重试");
+    }
+
+    private void validatePromoter(Customer customer, MktPromoter promoter) {
+        if (customer.getProjectId() != null && promoter.getProjectId() != null && !customer.getProjectId().equals(promoter.getProjectId())) {
+            throw new BizException("不能跨园区调整客户归属");
+        }
+        if (StringUtils.hasText(customer.getPhone()) && customer.getPhone().equals(promoter.getPhone())) {
+            throw new BizException("不能将伙伴自己的业务绑定给该伙伴");
+        }
     }
 
     // ---------------- 内部 ----------------

@@ -24,5 +24,8 @@ public class MktPromoterAccount extends BaseEntity {
     private String accountTail;
     private String bankName;
     private LocalDateTime verifiedAt;
+    private Integer reviewStatus;
+    private String reviewReason;
+    private String reviewedBy;
     private Long projectId;
 }

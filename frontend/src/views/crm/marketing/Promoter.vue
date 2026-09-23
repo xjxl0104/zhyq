@@ -29,7 +29,7 @@
       </div>
       <el-table :data="list" v-loading="loading" border stripe>
         <el-table-column type="index" label="#" width="60" />
-        <el-table-column prop="name" label="姓名" width="110" />
+        <el-table-column prop="name" label="姓名" min-width="150"><template #default="{ row }"><div>{{ row.name }}</div><div class="project-note">{{ projectLabel(row.projectId) }}</div></template></el-table-column>
         <el-table-column label="手机" width="130">
           <template #default="{ row }">{{ maskPhone(row.phone) }}</template>
         </el-table-column>
@@ -46,9 +46,10 @@
         </el-table-column>
         <el-table-column prop="source" label="来源" width="80" />
         <el-table-column prop="createTime" label="注册时间" width="160" />
-        <el-table-column label="操作" width="260" fixed="right">
+        <el-table-column label="操作" width="340" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click="openDetail(row)">详情</el-button>
+            <el-button v-if="canReviewAccount" link type="primary" @click="openAccount(row)">收款资料</el-button>
             <el-button link type="primary" @click="openPosition(row)">调岗</el-button>
             <el-button link type="primary" @click="openParent(row)">改上级</el-button>
             <el-button v-if="row.status === 1" link type="warning" @click="freeze(row)">冻结</el-button>
@@ -104,6 +105,27 @@
       </template>
     </el-dialog>
 
+    <el-dialog v-model="accountReview.visible" title="收款资料人工审核" width="560px">
+      <el-alert title="请按园区流程核对资料后审核。此操作不代表第三方实名认证。" type="info" :closable="false" />
+      <el-descriptions v-if="accountReview.data?.submitted" :column="1" border style="margin-top:16px">
+        <el-descriptions-item label="姓名">{{ accountReview.data.realName }}</el-descriptions-item>
+        <el-descriptions-item label="身份证号">{{ accountReview.data.idNo }}</el-descriptions-item>
+        <el-descriptions-item label="收款方式">{{ ['微信','银行卡','支付宝'][accountReview.data.accountType - 1] }}</el-descriptions-item>
+        <el-descriptions-item label="收款账号">{{ accountReview.data.accountNo }}</el-descriptions-item>
+        <el-descriptions-item label="开户行">{{ accountReview.data.bankName || '—' }}</el-descriptions-item>
+        <el-descriptions-item label="状态">{{ {0:'待审核',1:'已通过',2:'已退回'}[accountReview.data.reviewStatus] }}</el-descriptions-item>
+        <el-descriptions-item label="审核说明">{{ accountReview.data.reviewReason || '—' }}</el-descriptions-item>
+      </el-descriptions>
+      <el-empty v-else description="伙伴尚未提交收款资料" />
+      <el-input v-if="accountReview.data?.reviewStatus === 0" v-model="accountReview.reason" type="textarea" maxlength="500" placeholder="填写核对依据或退回原因" style="margin-top:16px" />
+      <template #footer>
+        <el-button @click="accountReview.visible = false">关闭</el-button>
+        <template v-if="accountReview.data?.reviewStatus === 0">
+          <el-button :disabled="accountReview.busy" @click="reviewAccount(false)">退回补充</el-button>
+          <el-button type="primary" :loading="accountReview.busy" @click="reviewAccount(true)">审核通过</el-button>
+        </template>
+      </template>
+    </el-dialog>
     <!-- 详情 Drawer -->
     <el-drawer v-model="detail.visible" :title="`伙伴详情 · ${detail.row?.name || ''}`" size="720px">
       <el-tabs v-model="detail.tab" @tab-change="loadTab">
@@ -156,10 +178,15 @@
 </template>
 
 <script setup>
-import { reactive, ref, onMounted } from 'vue'
+import { reactive, ref, onMounted, computed } from 'vue'
 import { ElMessage } from 'element-plus'
 import { mktPromoterApi, mktPositionApi } from '@/api/marketing'
 import { money } from '@/utils/format'
+import { hasPermission } from '@/utils/permission'
+import { useProjectStore } from '@/stores/project'
+
+const projectStore = useProjectStore()
+const projectLabel = id => id == null ? '待分配园区' : (projectStore.projects.find(p => String(p.id) === String(id))?.name || `园区 #${id}`)
 
 const statusOptions = [
   { value: 1, label: '正常' }, { value: 2, label: '冻结' }, { value: 3, label: '待审核' }, { value: 4, label: '已退出' }
@@ -169,6 +196,20 @@ const statusType = (v) => ({ 1: 'success', 2: 'warning', 3: 'warning', 4: 'info'
 const commissionStatus = (v) => ({ 1: '冻结', 2: '可结算', 3: '已结算', 4: '已提现', 5: '作废' }[v] || '-')
 const maskPhone = (p) => (p && p.length === 11 ? p.slice(0, 3) + '****' + p.slice(7) : p || '-')
 
+const canReviewAccount = computed(() => hasPermission('crm:marketing:account:audit'))
+const accountReview = reactive({ visible:false, id:null, data:null, reason:'', busy:false })
+async function openAccount(row) {
+  const data = await mktPromoterApi.account(row.id)
+  Object.assign(accountReview, { visible:true, id:row.id, data, reason:'', busy:false })
+}
+async function reviewAccount(pass) {
+  if (!accountReview.reason.trim()) return ElMessage.error('请填写审核依据或退回原因')
+  accountReview.busy = true
+  try {
+    await mktPromoterApi.reviewAccount(accountReview.id, { version:accountReview.data.version, pass, reason:accountReview.reason })
+    ElMessage.success('审核结果已保存'); accountReview.visible = false; await load()
+  } finally { accountReview.busy = false }
+}
 const positions = ref([])
 const positionName = (code) => positions.value.find(p => p.code === code)?.name || code
 
@@ -252,6 +293,7 @@ onMounted(async () => {
 </script>
 
 <style scoped>
+.project-note { color: var(--el-text-color-secondary); font-size: 12px; line-height: 1.5; margin-top: 4px; overflow-wrap: anywhere; }
 .toolbar { display: flex; align-items: center; gap: 12px; }
 .hint { color: var(--el-text-color-secondary); font-size: 12px; }
 .pager { margin-top: 16px; justify-content: flex-end; }

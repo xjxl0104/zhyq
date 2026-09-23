@@ -10,5 +10,6 @@ import java.time.LocalDate;
 @Data @EqualsAndHashCode(callSuper = true) @TableName("crm_warehouse_settlement")
 public class MktWarehouseSettlement extends BaseEntity {
     private Long warehouseId; private String batchNo; private LocalDate periodStart; private LocalDate periodEnd;
+    private String payNo; private String payProof; private java.time.LocalDateTime paidAt; private String paidBy;
     private Integer status; private BigDecimal amount; private String frozenReason; private Long projectId;
 }

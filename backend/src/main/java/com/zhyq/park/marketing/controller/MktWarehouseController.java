@@ -14,6 +14,7 @@ import com.zhyq.park.marketing.mapper.MktServiceContractMapper;
 import com.zhyq.park.marketing.mapper.MktWarehouseMapper;
 import com.zhyq.park.marketing.mapper.MktWarehouseOnboardingMapper;
 import com.zhyq.park.marketing.service.MktAuditService;
+import com.zhyq.park.marketing.service.MktWarehouseFileService;
 import com.zhyq.park.marketing.service.MktServiceContractService;
 import com.zhyq.park.marketing.service.MktWarehouseOnboardingService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -37,6 +38,7 @@ public class MktWarehouseController {
     private final MktServiceContractMapper contractMapper;
     private final MktWarehouseOnboardingService onboardingService;
     private final MktAuditService auditService;
+    private final MktWarehouseFileService files;
 
     @Operation(summary = "分页;inProgress=1 只看未上线(加盟申请页)")
     @PreAuthorize("hasAuthority('crm:marketing:warehouse:query')")
@@ -53,7 +55,7 @@ public class MktWarehouseController {
                 .in(Integer.valueOf(1).equals(inProgress), MktWarehouse::getJoinStatus,
                         MktWarehouseOnboardingService.JS_APPLIED, MktWarehouseOnboardingService.JS_QUALIFYING,
                         MktWarehouseOnboardingService.JS_ERP_CONNECTING, MktWarehouseOnboardingService.JS_PENDING_AGREEMENT)
-                .eq(projectId != null, MktWarehouse::getProjectId, projectId)
+                .and(projectId != null, q -> q.eq(MktWarehouse::getProjectId, projectId).or().isNull(MktWarehouse::getProjectId))
                 .orderByDesc(MktWarehouse::getId);
         IPage<MktWarehouse> p = warehouseMapper.selectPage(new Page<>(pageNo, pageSize), qw);
         return Result.ok(PageResult.of(p.getTotal(), p.getRecords()));
@@ -65,7 +67,7 @@ public class MktWarehouseController {
     public Result<List<MktWarehouse>> online() {
         return Result.ok(warehouseMapper.selectList(new LambdaQueryWrapper<MktWarehouse>()
                 .eq(MktWarehouse::getJoinStatus, MktWarehouseOnboardingService.JS_ONLINE)
-                .in(MktWarehouse::getErpStatus, MktWarehouseOnboardingService.ERP_SANDBOX, MktWarehouseOnboardingService.ERP_LIVE)
+                .and(q -> q.eq(MktWarehouse::getOrderMode, "manual").or().eq(MktWarehouse::getErpStatus, MktWarehouseOnboardingService.ERP_LIVE))
                 .select(MktWarehouse::getId, MktWarehouse::getCode, MktWarehouse::getName, MktWarehouse::getRegion)));
     }
 
@@ -100,28 +102,36 @@ public class MktWarehouseController {
         w.setPlatformFeeModel(req.getPlatformFeeModel());
         w.setRemark(req.getRemark());
         w.setProjectId(req.getProjectId());
+        validateRates(w);
         return Result.ok(onboardingService.apply(w));
     }
 
     @Operation(summary = "编辑资料(不改状态)") @PreAuthorize("hasAuthority('crm:marketing:warehouse:edit')") @PutMapping
     public Result<Void> update(@RequestBody MktWarehouse w) {
+        MktWarehouseOnboardingService.validateProfile(w);
+        validateRates(w);
         MktWarehouse before = warehouseMapper.selectById(w.getId());
         if (before == null) throw new BizException("云仓不存在");
-        warehouseMapper.update(null, new LambdaUpdateWrapper<MktWarehouse>()
-                .eq(MktWarehouse::getId, w.getId())
+        int updated = warehouseMapper.update(null, new LambdaUpdateWrapper<MktWarehouse>()
+                .eq(MktWarehouse::getId, w.getId()).ne(MktWarehouse::getJoinStatus, 7)
                 .set(MktWarehouse::getName, w.getName()).set(MktWarehouse::getRegion, w.getRegion())
                 .set(MktWarehouse::getAddress, w.getAddress()).set(MktWarehouse::getContact, w.getContact())
                 .set(MktWarehouse::getPhone, w.getPhone()).set(MktWarehouse::getAreaSqm, w.getAreaSqm())
                 .set(MktWarehouse::getDailyCapacity, w.getDailyCapacity()).set(MktWarehouse::getCategories, w.getCategories())
                 .set(MktWarehouse::getSettleCycle, w.getSettleCycle()).set(MktWarehouse::getFeeModel,
                         StringUtils.hasText(w.getFeeModel()) ? w.getFeeModel() : null)
-                .set(MktWarehouse::getPlatformFeeModel, w.getPlatformFeeModel()).set(MktWarehouse::getRemark, w.getRemark()));
+                .set(MktWarehouse::getPlatformFeeModel, w.getPlatformFeeModel()).set(MktWarehouse::getRemark, w.getRemark())
+                .setSql("version = version + 1"));
+        if (updated != 1) throw new BizException("云仓状态已变化，请刷新重试");
         auditService.log("warehouse.update", "warehouse", w.getId(), null, before, w);
         return Result.ok();
     }
 
     @Operation(summary = "资质审核通过") @PreAuthorize("hasAuthority('crm:marketing:onboarding:audit')") @PostMapping("/{id}/qualify/pass")
-    public Result<Void> passQualification(@PathVariable Long id) { onboardingService.passQualification(id); return Result.ok(); }
+    public Result<Void> passQualification(@PathVariable Long id, @RequestBody QualificationReview body) {
+        onboardingService.passQualification(id, body.version()); return Result.ok();
+    }
+    public record QualificationReview(Integer version) {}
 
     @Operation(summary = "资质驳回") @PreAuthorize("hasAuthority('crm:marketing:onboarding:audit')") @PostMapping("/{id}/qualify/reject")
     public Result<Void> rejectQualification(@PathVariable Long id, @RequestBody Map<String, String> body) {
@@ -131,8 +141,14 @@ public class MktWarehouseController {
     @Operation(summary = "人工标记 ERP 已联通(阶段 A)") @PreAuthorize("hasAuthority('crm:marketing:onboarding:audit')") @PostMapping("/{id}/erp/mark-connected")
     public Result<Void> markErp(@PathVariable Long id) { onboardingService.markErpConnected(id, MktAuditService.currentOperator()); return Result.ok(); }
 
+    @Operation(summary = "采用人工导入出库单")
+    @PreAuthorize("hasAuthority('crm:marketing:onboarding:audit')")
+    @PostMapping("/{id}/order-mode/manual")
+    public Result<Void> useManual(@PathVariable Long id) { onboardingService.useManualOrders(id); return Result.ok(); }
+
     @Operation(summary = "上传加盟协议 → 上线") @PreAuthorize("hasAuthority('crm:marketing:onboarding:audit')") @PostMapping("/{id}/agreement")
     public Result<Void> signAgreement(@PathVariable Long id, @RequestBody Map<String, String> body) {
+        files.requireReference(body.get("contractFile"), id);
         onboardingService.signAgreement(id, body.get("contractFile")); return Result.ok();
     }
 
@@ -150,5 +166,22 @@ public class MktWarehouseController {
         if (serving > 0) throw new BizException("该云仓还有 " + serving + " 份生效中的服务合同,不能退出");
         onboardingService.exit(id, body.get("reason"));
         return Result.ok();
+    }
+    private static void validateRates(MktWarehouse w) {
+        if (w.getSettleCycle() != null && (w.getSettleCycle() < 1 || w.getSettleCycle() > 3)) throw new BizException("请选择有效结算周期");
+        if (!StringUtils.hasText(w.getFeeModel())) return;
+        try {
+            var node = new com.fasterxml.jackson.databind.ObjectMapper().readTree(w.getFeeModel());
+            if (!node.isObject() || node.isEmpty()) throw new BizException("请填写云仓约定单价，或清空未约定费率");
+            var keys = node.fieldNames();
+            while (keys.hasNext()) {
+                String key = keys.next(); var value = node.get(key);
+                if (!java.util.Set.of("perOrder", "perItem").contains(key) || !value.isNumber()
+                        || value.decimalValue().signum() < 0 || value.decimalValue().scale() > 2
+                        || value.decimalValue().compareTo(new java.math.BigDecimal("99999999.99")) > 0)
+                    throw new BizException("云仓单价须为非负金额，最多两位小数");
+            }
+        } catch (BizException e) { throw e; }
+        catch (Exception e) { throw new BizException("云仓费率格式无效"); }
     }
 }

@@ -45,6 +45,8 @@ public class MpMeController {
     private static final String MODULE = "marketing";
     private static final String TOP_CODE = "P4";
 
+    private final com.zhyq.park.marketing.service.MktPromoterAccountService accountService;
+    private final com.zhyq.park.marketing.service.MktWithdrawalService withdrawalService;
     private final MktPromoterMapper promoterMapper;
     private final MktPromoterAccountMapper accountMapper;
     private final MktPositionMapper positionMapper;
@@ -85,27 +87,14 @@ public class MpMeController {
         return Result.ok();
     }
 
-    @Operation(summary = "实名 + 收款账户(身份证/账号加密存,只回尾号)") @PutMapping("/me/account")
+    @Operation(summary = "收款资料及人工审核状态") @GetMapping("/me/account")
+    public Result<Map<String, Object>> accountStatus() {
+        return Result.ok(accountService.view(MpAuthService.currentPromoterId(), false));
+    }
+
+    @Operation(summary = "提交收款资料，等待人工审核") @PutMapping("/me/account")
     public Result<Void> account(@RequestBody Map<String, String> body) {
-        Long pid = MpAuthService.currentPromoterId();
-        String idNo = body.get("idNo");
-        String accountNo = body.get("accountNo");
-        if (!StringUtils.hasText(body.get("realName")) || !StringUtils.hasText(idNo) || !StringUtils.hasText(accountNo)) {
-            throw new BizException("姓名、身份证、收款账号必填");
-        }
-        MktPromoterAccount a = accountMapper.selectOne(new LambdaQueryWrapper<MktPromoterAccount>().eq(MktPromoterAccount::getPromoterId, pid));
-        boolean isNew = a == null;
-        if (isNew) { a = new MktPromoterAccount(); a.setPromoterId(pid); }
-        a.setRealName(body.get("realName"));
-        a.setIdNoEnc(encryption.encrypt(idNo));
-        a.setAccountType(Integer.valueOf(body.getOrDefault("accountType", "2")));
-        a.setAccountNoEnc(encryption.encrypt(accountNo));
-        a.setAccountTail(accountNo.length() > 4 ? accountNo.substring(accountNo.length() - 4) : accountNo);
-        a.setBankName(body.get("bankName"));
-        a.setVerifiedAt(LocalDateTime.now());
-        if (isNew) accountMapper.insert(a); else accountMapper.updateById(a);
-        promoterMapper.update(null, new LambdaUpdateWrapper<MktPromoter>().eq(MktPromoter::getId, pid).set(MktPromoter::getIdVerified, 1));
-        auditService.log("promoter.account", "promoter", pid, "小程序实名/账户");
+        accountService.submit(MpAuthService.currentPromoterId(), body);
         return Result.ok();
     }
 
@@ -124,7 +113,7 @@ public class MpMeController {
             if (c.getCreateTime() != null && c.getCreateTime().isAfter(monthStart)) month = month.add(c.getAmount());
         }
         Map<String, Object> m = new HashMap<>();
-        m.put("total", total); m.put("withdrawable", settleable); m.put("frozen", frozen); m.put("month", month);
+        m.put("total", total); m.put("withdrawable", withdrawalService.balance(pid)); m.put("frozen", frozen); m.put("month", month);
         m.put("recent", rows.stream().sorted((a, b) -> b.getId().compareTo(a.getId())).limit(10)
                 .map(c -> Map.of("amount", c.getAmount(), "status", c.getStatus(), "time", String.valueOf(c.getCreateTime()))).collect(Collectors.toList()));
         return Result.ok(m);

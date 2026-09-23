@@ -17,7 +17,7 @@
 
     <div class="table-card">
       <div class="toolbar">
-        <el-button type="primary" :disabled="!settleable.length" @click="settle">批量结算(已选 {{ settleable.length }} 条,合计 {{ settleSum }})</el-button>
+        <el-button type="primary" :disabled="!settleable.length || settling" :loading="settling" @click="settle">批量结算(已选 {{ settleable.length }} 条,合计 {{ settleSum }})</el-button>
         <el-button @click="batches.visible = true; loadBatches()">结算批次</el-button>
         <span class="hint">只有「可结算」状态的行能结算;冻结行等到账/解冻期满后自动转可结算。</span>
       </div>
@@ -37,7 +37,7 @@
         <el-table-column prop="settleBatchId" label="批次" width="80" />
         <el-table-column label="操作" width="90" fixed="right">
           <template #default="{ row }">
-            <el-button v-if="[1, 2].includes(row.status)" link type="danger" @click="voidOne(row)">作废</el-button>
+            <el-button v-if="[1, 2].includes(row.status) && row.sign === 1 && !row.withdrawalId" link type="danger" @click="voidOne(row)">作废</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -69,13 +69,14 @@ import { money } from '@/utils/format'
 const ST = { 1: '冻结', 2: '可结算', 3: '已结算', 4: '已提现', 5: '作废' }
 const stType = (s) => ({ 2: 'success', 3: '', 4: 'info', 5: 'danger' }[s] || 'warning')
 
+const settling = ref(false)
 const loading = ref(false)
 const list = ref([])
 const total = ref(0)
 const query = reactive({ pageNo: 1, pageSize: 20, promoterId: null, status: null })
 const selected = ref([])
 // 扣回行(sign=-1)只能在打款时抵扣,不能拿去结算,否则余额公式就不再认它
-const isSettleable = (row) => row.status === 2 && row.sign !== -1
+const isSettleable = (row) => row.status === 2 && row.sign === 1 && !row.withdrawalId
 const settleable = computed(() => selected.value.filter(isSettleable))
 const settleSum = computed(() => settleable.value.reduce((a, r) => a + Number(r.amount || 0), 0).toFixed(2))
 
@@ -92,8 +93,11 @@ function onSelect(rows) { selected.value = rows }
 
 async function settle() {
   await ElMessageBox.confirm(`将 ${settleable.value.length} 条可结算流水结算为「已结算」,合计 ${settleSum.value} 元?`, '批量结算', { type: 'warning' })
-  const batchNo = await mktCommissionApi.settle(settleable.value.map(r => r.id))
-  ElMessage.success(`已结算,批次 ${batchNo}`); load()
+  if(settling.value)return
+  settling.value=true
+  try { const batchNo = await mktCommissionApi.settle(settleable.value.map(r => r.id)); selected.value=[]
+    ElMessage.success(`已结算,批次 ${batchNo}`); await load()
+  } finally { settling.value=false }
 }
 async function voidOne(row) {
   const { value } = await ElMessageBox.prompt('作废原因', '作废佣金', { inputPattern: /\S+/, inputErrorMessage: '原因必填' })

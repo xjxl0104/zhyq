@@ -15,6 +15,11 @@ import com.zhyq.park.marketing.mapper.MktServiceContractMapper;
 import com.zhyq.park.marketing.mapper.MktWarehouseMapper;
 import com.zhyq.park.marketing.mapper.MktWarehouseSettlementMapper;
 import com.zhyq.park.marketing.service.MktNoticeService;
+import com.zhyq.park.marketing.service.MktWarehouseFileService;
+import com.zhyq.park.marketing.service.MktServiceContractService;
+import com.zhyq.park.crm.mapper.CustomerMapper;
+import org.springframework.transaction.annotation.Transactional;
+import java.util.Objects;
 import com.zhyq.park.marketing.settlement.MktWarehouseSettlementService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -39,6 +44,10 @@ public class WhFinanceController {
     private final MktServiceContractMapper contractMapper;
     private final MktWarehouseSettlementService settlementService;
     private final MktNoticeService noticeService;
+    private final MktWarehouseFileService files;
+    private final MktServiceContractService contractService;
+    private final com.zhyq.park.marketing.mapper.MktContractWarehouseMapper contractWarehouses;
+    private final CustomerMapper customers;
 
     @GetMapping("/settlement/page")
     public Result<PageResult<MktWarehouseSettlement>> settlements(@RequestParam(defaultValue = "1") int pageNo, @RequestParam(defaultValue = "20") int pageSize) {
@@ -53,27 +62,92 @@ public class WhFinanceController {
     public Result<Void> dispute(@PathVariable Long id, @RequestBody Map<String, String> body) { settlementService.dispute(id, WhAuthContext.currentWarehouseId(), body.get("reason")); return Result.ok(); }
 
     @GetMapping("/contracts")
-    public Result<PageResult<MktServiceContract>> contracts(@RequestParam(defaultValue = "1") int pageNo, @RequestParam(defaultValue = "20") int pageSize) {
+    public Result<PageResult<Map<String, Object>>> contracts(@RequestParam(defaultValue = "1") int pageNo, @RequestParam(defaultValue = "20") int pageSize) {
         MktWarehouse w = WhAuthContext.requireWarehouse(warehouseMapper);
-        IPage<MktServiceContract> p = contractMapper.selectPage(new Page<>(pageNo, pageSize), new LambdaQueryWrapper<MktServiceContract>().eq(MktServiceContract::getWarehouseId, w.getId()).eq(w.getProjectId() != null, MktServiceContract::getProjectId, w.getProjectId()).orderByDesc(MktServiceContract::getId));
-        return Result.ok(PageResult.of(p.getTotal(), p.getRecords()));
+        IPage<MktServiceContract> p = contractMapper.selectPage(new Page<>(Math.max(1, pageNo), Math.min(100, Math.max(1,pageSize))), new LambdaQueryWrapper<MktServiceContract>()
+                .eq(MktServiceContract::getWarehouseId, w.getId()).eq(w.getProjectId() != null, MktServiceContract::getProjectId, w.getProjectId()).orderByDesc(MktServiceContract::getId));
+        return Result.ok(PageResult.of(p.getTotal(), p.getRecords().stream().map(this::contractView).toList()));
     }
 
     @PostMapping("/contracts")
-    public Result<MktServiceContract> createContract(@RequestBody MktServiceContract body) {
+    @Transactional
+    public Result<Map<String, Object>> createContract(@RequestBody MktServiceContract body) {
         MktWarehouse w = WhAuthContext.requireWarehouse(warehouseMapper);
-        MktServiceContract c = new MktServiceContract(); c.setContractNo("WH-" + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMddHHmmss")) + "-" + UUID.randomUUID().toString().substring(0, 6));
-        c.setWarehouseId(w.getId()); c.setProjectId(w.getProjectId()); c.setCustomerId(body.getCustomerId()); c.setPartnerId(body.getPartnerId()); c.setSignMode(2); c.setServiceType(body.getServiceType()); c.setFeeModel(body.getFeeModel()); c.setPriceTable(body.getPriceTable()); c.setDeposit(body.getDeposit()); c.setStartDate(body.getStartDate()); c.setEndDate(body.getEndDate()); c.setPayCycle(body.getPayCycle()); c.setStatus(1); c.setContractVersion(1); c.setRemark(body.getRemark());
-        contractMapper.insert(c); return Result.ok(c);
+        MktServiceContract draft = merchantDraft(body, w);
+        draft.setFiles(files.validateReferences(body.getFiles() == null ? "[]" : body.getFiles(), w.getId()));
+        MktServiceContract created = contractService.createDraft(draft);
+        com.zhyq.park.marketing.entity.MktContractWarehouse link = new com.zhyq.park.marketing.entity.MktContractWarehouse();
+        link.setContractId(created.getId()); link.setWarehouseId(created.getWarehouseId()); link.setIsPrimary(1);
+        link.setEffectiveFrom(created.getStartDate()); link.setProjectId(created.getProjectId());
+        contractWarehouses.insert(link);
+        return Result.ok(contractView(created));
+    }
+
+    @PutMapping("/contracts/{id}")
+    @Transactional
+    public Result<Void> updateContract(@PathVariable Long id, @RequestBody MktServiceContract body) {
+        MktWarehouse w = WhAuthContext.requireWarehouse(warehouseMapper);
+        MktServiceContract current = ownedContract(id, w.getId());
+        if (!Integer.valueOf(2).equals(current.getSignMode())) throw new BizException("园区签合同由园区维护");
+        MktServiceContract draft = merchantDraft(body, w);
+        draft.setId(id); draft.setCustomerId(current.getCustomerId()); draft.setSignMode(current.getSignMode());
+        draft.setFiles(files.validateReferences(body.getFiles() == null ? "[]" : body.getFiles(), w.getId()));
+        contractService.updateDraft(draft);
+        return Result.ok();
+    }
+
+    @PostMapping("/contracts/{id}/submit")
+    @Transactional
+    public Result<Void> submitContract(@PathVariable Long id) {
+        MktServiceContract c = ownedContract(id, WhAuthContext.currentWarehouseId());
+        if (!Integer.valueOf(2).equals(c.getSignMode())) throw new BizException("园区签合同由园区提交审核");
+        files.validateReferences(c.getFiles(), c.getWarehouseId());
+        contractService.submit(id); return Result.ok();
+    }
+
+    private MktServiceContract ownedContract(Long id, Long warehouseId) {
+        MktServiceContract c = contractMapper.selectById(id);
+        if (c == null || !Objects.equals(warehouseId, c.getWarehouseId())) throw new BizException(403, "合同不存在或无权访问");
+        return c;
+    }
+
+    private MktServiceContract merchantDraft(MktServiceContract body, MktWarehouse w) {
+        MktServiceContract c = new MktServiceContract();
+        c.setWarehouseId(w.getId()); c.setProjectId(w.getProjectId()); c.setCustomerId(body.getCustomerId());
+        c.setSignMode(2); c.setServiceType(body.getServiceType()); c.setFeeModel(body.getFeeModel()); c.setPriceTable(body.getPriceTable());
+        c.setDeposit(body.getDeposit()); c.setStartDate(body.getStartDate()); c.setEndDate(body.getEndDate()); c.setPayCycle(body.getPayCycle());
+        c.setRemark(body.getRemark()); return c;
+    }
+
+    private Map<String, Object> contractView(MktServiceContract c) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("id", c.getId()); out.put("contractNo", c.getContractNo()); out.put("customerId", c.getCustomerId());
+        var customer = c.getCustomerId() == null ? null : customers.selectById(c.getCustomerId());
+        out.put("customerName", customer == null ? "" : customer.getName()); out.put("signMode", c.getSignMode());
+        out.put("status", c.getStatus()); out.put("serviceType", c.getServiceType()); out.put("feeModel", c.getFeeModel());
+        out.put("priceTable", c.getPriceTable()); out.put("deposit", c.getDeposit()); out.put("startDate", c.getStartDate());
+        out.put("endDate", c.getEndDate()); out.put("payCycle", c.getPayCycle()); out.put("files", c.getFiles());
+        out.put("auditReason", c.getAuditReason()); out.put("remark", c.getRemark()); return out;
     }
 
     @GetMapping("/agreement")
-    public Result<Map<String, Object>> agreement() { MktWarehouse w = WhAuthContext.requireWarehouse(warehouseMapper); return Result.ok(Map.of("warehouseId", w.getId(), "contractFile", w.getContractFile() == null ? "" : w.getContractFile())); }
+    public Result<Map<String, Object>> agreement() {
+        MktWarehouse w = WhAuthContext.requireWarehouse(warehouseMapper);
+        Map<String, Object> out = new LinkedHashMap<>(); out.put("warehouseId", w.getId()); out.put("joinStatus", w.getJoinStatus());
+        out.put("contractFile", w.getContractFile() == null ? "" : w.getContractFile());
+        if (w.getContractFile() != null && w.getContractFile().startsWith("file:"))
+            out.put("file", MktWarehouseFileService.view(files.requireReference(w.getContractFile(), w.getId())));
+        return Result.ok(out);
+    }
 
     @PostMapping("/agreement/upload")
     public Result<Void> uploadAgreement(@RequestBody Map<String, String> body) {
-        MktWarehouse w = WhAuthContext.requireWarehouse(warehouseMapper); String file = body.get("file"); if (file == null || file.isBlank()) throw new BizException("协议文件引用必填");
-        warehouseMapper.update(null, new LambdaUpdateWrapper<MktWarehouse>().eq(MktWarehouse::getId, w.getId()).set(MktWarehouse::getContractFile, file)); return Result.ok();
+        MktWarehouse w = WhAuthContext.requireWarehouse(warehouseMapper);
+        String reference = body.get("file"); files.requireReference(reference, w.getId());
+        int updated = warehouseMapper.update(null, new LambdaUpdateWrapper<MktWarehouse>().eq(MktWarehouse::getId, w.getId())
+                .eq(MktWarehouse::getJoinStatus, 4).set(MktWarehouse::getContractFile, reference));
+        if (updated != 1) throw new BizException("仅待签协议阶段可提交加盟协议，已上线协议不能自行替换");
+        return Result.ok();
     }
 
     @GetMapping("/notice/page")

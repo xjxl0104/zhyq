@@ -28,6 +28,7 @@ import com.zhyq.park.marketing.mapper.MktWarehouseMapper;
 import com.zhyq.park.marketing.mapper.MktWarehouseOnboardingMapper;
 import com.zhyq.park.marketing.mapper.MktWithdrawalMapper;
 import com.zhyq.park.marketing.service.MktAuditService;
+import com.zhyq.park.marketing.service.MktCustomerAssignmentService;
 import com.zhyq.park.marketing.service.MktLockService;
 import com.zhyq.park.marketing.service.MktPositionReviewService;
 import com.zhyq.park.marketing.service.MktPromoterService;
@@ -153,7 +154,7 @@ class MktP1HardeningTest {
         void applyDoesNotPassContactOpenidToService() {
             MktWarehouse captured = warehouse(1L);
             MktWarehouseController controller = new MktWarehouseController(
-                    warehouseMapper, stepMapper, null, onboarding, audit);
+                    warehouseMapper, stepMapper, null, onboarding, audit, null);
             when(onboarding.apply(any(MktWarehouse.class))).thenReturn(captured);
 
             MktWarehouse req = warehouse(null);
@@ -280,6 +281,7 @@ class MktP1HardeningTest {
     /** C7:设推荐人拒绝非正常状态伙伴。 */
     @Nested
     class ReferrerPromoterStatus {
+        @Mock MktCustomerAssignmentService assignmentService;
         @Mock CustomerMapper customerMapper;
         @Mock MktPromoterMapper promoterMapper;
         @Mock MktCustomerGradeMapper gradeMapper;
@@ -290,8 +292,8 @@ class MktP1HardeningTest {
         @Test
         void rejectsFrozenPromoter() {
             MktCustomerController controller = new MktCustomerController(
-                    customerMapper, promoterMapper, gradeMapper, contractMapper, lockService, audit);
-            when(customerMapper.selectById(1L)).thenReturn(customer(1L));
+                    customerMapper, promoterMapper, gradeMapper, contractMapper, lockService, audit, assignmentService);
+            when(customerMapper.selectForUpdate(1L)).thenReturn(customer(1L));
             when(promoterMapper.selectOne(any(Wrapper.class))).thenReturn(promoter(9L, MktPromoterService.ST_FROZEN));
 
             assertThatThrownBy(() -> controller.referrer(1L, Map.of("inviteCode", "ABC")))
@@ -301,8 +303,8 @@ class MktP1HardeningTest {
         @Test
         void acceptsNormalPromoter() {
             MktCustomerController controller = new MktCustomerController(
-                    customerMapper, promoterMapper, gradeMapper, contractMapper, lockService, audit);
-            when(customerMapper.selectById(1L)).thenReturn(customer(1L));
+                    customerMapper, promoterMapper, gradeMapper, contractMapper, lockService, audit, assignmentService);
+            when(customerMapper.selectForUpdate(1L)).thenReturn(customer(1L));
             when(promoterMapper.selectOne(any(Wrapper.class))).thenReturn(promoter(9L, MktPromoterService.ST_NORMAL));
             when(lockService.activeLockOf(1L)).thenReturn(null);
             when(customerMapper.update(isNull(), any(Wrapper.class))).thenReturn(1);

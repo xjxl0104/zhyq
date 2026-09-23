@@ -46,6 +46,22 @@ class DefaultWxSessionClientTest {
         server.start();
         client = new DefaultWxSessionClient(mapper, HttpClient.newHttpClient(), "http://127.0.0.1:" + server.getAddress().getPort());
     }
+    @Test void invitationCodeUsesOwnSceneAndVersionAndRejectsNonImageResponse() throws Exception {
+        server.createContext("/wxa/getwxacodeunlimit", exchange -> {
+            requestBody.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+            byte[] bytes = "{\"errcode\":41030}".getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(200, bytes.length); exchange.getResponseBody().write(bytes); exchange.close();
+        });
+        assertThatThrownBy(() -> client.invitationCode("app", "secret", "ABCD1234", "trial")).isInstanceOf(BizException.class);
+        var body=mapper.readTree(requestBody.get());
+        assertThat(body.path("scene").asText()).isEqualTo("ABCD1234");
+        assertThat(body.path("env_version").asText()).isEqualTo("trial");
+        assertThat(body.path("check_path").asBoolean()).isFalse();
+    }
+    @Test void rejectsInvalidInvitationSceneWithoutCallingWechat() {
+        assertThatThrownBy(() -> client.invitationCode("app", "secret", "malicious?scene", "release")).isInstanceOf(BizException.class);
+        assertThat(tokenCalls.get()).isZero();
+    }
     @AfterEach void stop() { server.stop(0); }
 
     @Test void exchangesDynamicPhoneCodeAndCachesStableToken() throws Exception {

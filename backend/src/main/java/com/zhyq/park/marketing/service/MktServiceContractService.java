@@ -2,6 +2,8 @@ package com.zhyq.park.marketing.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.zhyq.park.common.event.DomainEvent;
 import com.zhyq.park.common.exception.BizException;
 import com.zhyq.park.crm.entity.Customer;
@@ -15,6 +17,7 @@ import com.zhyq.park.marketing.mapper.MktCustomerGradeMapper;
 import com.zhyq.park.marketing.mapper.MktServiceContractMapper;
 import com.zhyq.park.marketing.mapper.MktServiceContractVersionMapper;
 import com.zhyq.park.marketing.service.MktCommissionService.CommissionEvent;
+import com.zhyq.park.marketing.finance.MktFixedFeeBillingService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
@@ -28,6 +31,8 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.UUID;
+import java.util.Objects;
+import java.util.Set;
 
 /**
  * 云仓服务合同状态机(PARK-MKT-001 §2.4):
@@ -73,11 +78,14 @@ public class MktServiceContractService {
     private final MktLockService lockService;
     private final MktAuditService auditService;
     private final ApplicationEventPublisher eventPublisher;
+    private final MktCustomerAssignmentService assignmentService;
+    private static final ObjectMapper JSON = new ObjectMapper();
+    private static final Set<String> PRICE_KEYS = Set.of("perOrder", "perItem", "storage", "monthly");
 
     /** 新建草稿:自动编号 CS-yyyyMM-xxxx,sign_mode 取客户设置(空则园区签),评级/推荐人从客户快照。 */
     @Transactional
     public MktServiceContract createDraft(MktServiceContract draft) {
-        Customer customer = customerMapper.selectById(draft.getCustomerId());
+        Customer customer = assignmentService.validateContractWarehouse(draft);
         if (customer == null) {
             throw new BizException("客户不存在: " + draft.getCustomerId());
         }
@@ -88,22 +96,66 @@ public class MktServiceContractService {
         if (draft.getSignMode() == null) {
             draft.setSignMode(customer.getSignMode() == null ? SIGN_MODE_PARK : customer.getSignMode());
         }
+        if (draft.getAutoRenew() == null) draft.setAutoRenew(0);
+        validateTerms(draft);
+        if (StringUtils.hasText(draft.getFiles())) validateFiles(draft.getFiles(), false);
+        draft.setId(null);
+        draft.setProjectId(customer.getProjectId());
+        draft.setEffectiveAt(null); draft.setSignedAt(null); draft.setSignMethod(null);
+        draft.setAuditReason(null); draft.setTerminateReason(null);
         // 佣金归属与比例一律以客户档案为准,不接受调用方传入(防越权指定收款伙伴 / 抬评级)
         draft.setGrade(customer.getGrade());
         draft.setPartnerId(customer.getReferrerId());
+        validateEconomics(draft);
         contractMapper.insert(draft);
         auditService.log("contract.create", BIZ_TYPE, draft.getId(), null);
         return draft;
     }
 
+    /** 草稿编辑只允许改商业条款和附件，不允许通过 PUT 改合同归属或状态。 */
+    @Transactional
+    public void updateDraft(MktServiceContract draft) {
+        MktServiceContract current = require(draft.getId());
+        if (!Integer.valueOf(ST_DRAFT).equals(current.getStatus())) throw new BizException("仅草稿合同可编辑");
+        if (!Objects.equals(current.getCustomerId(), draft.getCustomerId())
+                || !Objects.equals(current.getWarehouseId(), draft.getWarehouseId())
+                || !Objects.equals(current.getSignMode(), draft.getSignMode())) {
+            throw new BizException("客户、承接云仓和签约方式不可在草稿编辑中更换，请重新建合同");
+        }
+        assignmentService.validateContractWarehouse(current);
+        if (draft.getAutoRenew() == null) draft.setAutoRenew(current.getAutoRenew() == null ? 0 : current.getAutoRenew());
+        validateTerms(draft);
+        draft.setGrade(current.getGrade());
+        validateEconomics(draft);
+        if (StringUtils.hasText(draft.getFiles())) validateFiles(draft.getFiles(), false);
+        int updated = contractMapper.update(null, new LambdaUpdateWrapper<MktServiceContract>()
+                .eq(MktServiceContract::getId, current.getId()).eq(MktServiceContract::getStatus, ST_DRAFT)
+                .set(MktServiceContract::getServiceType, draft.getServiceType()).set(MktServiceContract::getFeeModel, draft.getFeeModel())
+                .set(MktServiceContract::getPriceTable, draft.getPriceTable()).set(MktServiceContract::getDeposit, draft.getDeposit())
+                .set(MktServiceContract::getStartDate, draft.getStartDate()).set(MktServiceContract::getEndDate, draft.getEndDate())
+                .set(MktServiceContract::getPayCycle, draft.getPayCycle()).set(MktServiceContract::getAutoRenew, draft.getAutoRenew())
+                .set(MktServiceContract::getTemplateId, draft.getTemplateId()).set(MktServiceContract::getFiles, draft.getFiles())
+                .set(MktServiceContract::getRemark, draft.getRemark()));
+        requireUpdated(updated, current.getId());
+        auditService.log("contract.draft.update", BIZ_TYPE, current.getId(), null);
+    }
+
     @Transactional
     public void submit(Long id) {
+        MktServiceContract c = require(id);
+        if (Integer.valueOf(ST_PENDING_AUDIT).equals(c.getStatus())) return;
+        assignmentService.validateContractWarehouse(c);
+        validateTerms(c);
+        validateEconomics(c);
+        if (Integer.valueOf(SIGN_MODE_DIRECT).equals(c.getSignMode())) validateFiles(c.getFiles(), true);
         transition(id, ST_PENDING_AUDIT, "contract.submit", null, ST_DRAFT);
     }
 
     @Transactional
     public void audit(Long id, boolean pass, String reason) {
         if (pass) {
+            MktServiceContract c = require(id);
+            if (Integer.valueOf(SIGN_MODE_DIRECT).equals(c.getSignMode())) { effectDirect(id); return; }
             transition(id, ST_PENDING_SIGN, "contract.audit.pass", reason, ST_PENDING_AUDIT);
         } else {
             if (!StringUtils.hasText(reason)) {
@@ -123,6 +175,11 @@ public class MktServiceContractService {
     @Transactional
     public void signOffline(Long id, String filesJson) {
         MktServiceContract c = require(id);
+        validateFiles(filesJson, true);
+        if (isActive(c)) return;
+        assignmentService.validateContractWarehouse(c);
+        validateTerms(c);
+        validateEconomics(c);
         int updated = contractMapper.update(null, new LambdaUpdateWrapper<MktServiceContract>()
                 .eq(MktServiceContract::getId, id)
                 .eq(MktServiceContract::getStatus, ST_PENDING_SIGN)
@@ -132,6 +189,7 @@ public class MktServiceContractService {
                 .set(MktServiceContract::getEffectiveAt, LocalDateTime.now())
                 .set(filesJson != null, MktServiceContract::getFiles, filesJson));
         requireUpdated(updated, id);
+        c.setFiles(filesJson);
         auditService.log("contract.effect", BIZ_TYPE, id, "线下签署件上传");
         afterEffective(c);
     }
@@ -143,9 +201,15 @@ public class MktServiceContractService {
         if (c.getSignMode() == null || c.getSignMode() != SIGN_MODE_DIRECT) {
             throw new BizException("只有云仓直签合同可以备案生效");
         }
+        if (isActive(c)) return;
+        if (!Integer.valueOf(ST_PENDING_AUDIT).equals(c.getStatus())) throw new BizException("直签合同须先提交审核，才能备案生效");
+        assignmentService.validateContractWarehouse(c);
+        validateTerms(c);
+        validateEconomics(c);
+        validateFiles(c.getFiles(), true);
         int updated = contractMapper.update(null, new LambdaUpdateWrapper<MktServiceContract>()
                 .eq(MktServiceContract::getId, id)
-                .in(MktServiceContract::getStatus, ST_DRAFT, ST_PENDING_AUDIT)
+                .eq(MktServiceContract::getStatus, ST_PENDING_AUDIT)
                 .set(MktServiceContract::getStatus, ST_EFFECTIVE)
                 .set(MktServiceContract::getEffectiveAt, LocalDateTime.now()));
         requireUpdated(updated, id);
@@ -181,7 +245,12 @@ public class MktServiceContractService {
 
     @Transactional
     public void expire(Long id) {
-        transition(id, ST_EXPIRED, "contract.expire", null, ST_PERFORMING);
+        MktServiceContract c = require(id);
+        if (Integer.valueOf(ST_EXPIRED).equals(c.getStatus())) return;
+        lockCustomer(c);
+        if (c.getEndDate() == null || !c.getEndDate().isBefore(LocalDate.now())) throw new BizException("合同尚未到期");
+        transition(id, ST_EXPIRED, "contract.expire", null, ST_EFFECTIVE, ST_PERFORMING, ST_AMENDING);
+        closeCustomer(c, "合同到期");
     }
 
     /** 续签:到期 → 履约中,新起止 + 版本 +1。 */
@@ -191,6 +260,9 @@ public class MktServiceContractService {
         if (newStart == null || newEnd == null || !newEnd.isAfter(newStart)) {
             throw new BizException("续签起止日期不合法");
         }
+        if (Integer.valueOf(ST_PERFORMING).equals(c.getStatus()) && newStart.equals(c.getStartDate()) && newEnd.equals(c.getEndDate())) return;
+        assignmentService.validateContractWarehouse(c);
+        if (c.getEndDate() != null && !newStart.isAfter(c.getEndDate())) throw new BizException("续签开始日期须晚于原合同结束日期");
         int updated = contractMapper.update(null, new LambdaUpdateWrapper<MktServiceContract>()
                 .eq(MktServiceContract::getId, id)
                 .eq(MktServiceContract::getStatus, ST_EXPIRED)
@@ -199,6 +271,8 @@ public class MktServiceContractService {
                 .set(MktServiceContract::getEndDate, newEnd)
                 .set(MktServiceContract::getContractVersion, c.getContractVersion() + 1));
         requireUpdated(updated, id);
+        assignmentService.contractEffective(c);
+        lockService.markDeal(c.getCustomerId(), c.getPartnerId());
         snapshot(c, "续签");
         auditService.log("contract.renew", BIZ_TYPE, id, newStart + " ~ " + newEnd);
     }
@@ -209,13 +283,17 @@ public class MktServiceContractService {
         if (!StringUtils.hasText(reason)) {
             throw new BizException("终止必须填写原因");
         }
+        if (clawbackDays < 0) throw new BizException("扣回期限不能为负数");
         MktServiceContract c = require(id);
+        if (Integer.valueOf(ST_TERMINATED).equals(c.getStatus())) return;
+        lockCustomer(c);
         int updated = contractMapper.update(null, new LambdaUpdateWrapper<MktServiceContract>()
                 .eq(MktServiceContract::getId, id)
-                .in(MktServiceContract::getStatus, ST_EFFECTIVE, ST_PERFORMING)
+                .in(MktServiceContract::getStatus, ST_EFFECTIVE, ST_PERFORMING, ST_AMENDING)
                 .set(MktServiceContract::getStatus, ST_TERMINATED)
                 .set(MktServiceContract::getTerminateReason, reason));
         requireUpdated(updated, id);
+        closeCustomer(c, "合同终止");
         auditService.log("contract.terminate", BIZ_TYPE, id, reason);
         commissionService.voidUnsettledBySource(MktCommissionService.SOURCE_CONTRACT_BONUS, id, "合同终止:" + reason);
         boolean withinClawback = c.getEffectiveAt() != null
@@ -238,6 +316,7 @@ public class MktServiceContractService {
 
     private void afterEffective(MktServiceContract c) {
         // 合同生效与锁客成交必须在同一事务内完成；锁客更新失败时合同生效一起回滚。
+        assignmentService.contractEffective(c);
         lockService.markDeal(c.getCustomerId(), c.getPartnerId());
         eventPublisher.publishEvent(new DomainEvent.ServiceContractEffective(
                 c.getId(), c.getCustomerId(), c.getPartnerId(), c.getSignMode(), LocalDateTime.now()));
@@ -258,36 +337,130 @@ public class MktServiceContractService {
             return;
         }
         BigDecimal bonus = grade.getContractBonus();
-        commissionService.createAndSplit(new CommissionEvent(
+        commissionService.createAndSplitInTransaction(new CommissionEvent(
                 MktCommissionService.SOURCE_CONTRACT_BONUS, "BONUS-" + c.getId(), c.getId(),
                 c.getCustomerId(), c.getPartnerId(), c.getGrade(), new BigDecimal("100"), bonus, bonus,
                 LocalDateTime.now(), null, c.getProjectId(), c.getWarehouseId()));
     }
 
-    /** 园区签首期应收:保证金 > 0 记保证金账单,否则记首月服务费(price_table.monthly,无则 0 元占位由财务改)。 */
+    /** 园区签首期应收:保证金优先；无保证金只对明确固定月费生成账单，按量计费等实际业务发生。 */
     private void createFirstBill(MktServiceContract c) {
-        BigDecimal amount = c.getDeposit() != null && c.getDeposit().signum() > 0 ? c.getDeposit() : BigDecimal.ZERO;
+        boolean deposit = c.getDeposit() != null && c.getDeposit().signum() > 0;
+        BigDecimal amount = deposit ? c.getDeposit() : fixedFirstAmount(c);
+        if (amount.signum() <= 0) return;
         Bill bill = new Bill();
         bill.setCode("MS-" + c.getContractNo());
-        bill.setBillingKey("mkt_service:" + c.getId() + ":first");
+        bill.setBillingKey("mkt_service:" + c.getId() + (deposit ? ":first" : ":rent:" + c.getStartDate()));
         bill.setContractId(c.getId());
         bill.setProjectId(c.getProjectId());
         bill.setDirection(BILL_DIRECTION_RECEIVABLE);
-        bill.setFeeType(amount.signum() > 0 ? BILL_FEE_TYPE_DEPOSIT : BILL_FEE_TYPE_RENT);
+        bill.setFeeType(deposit ? BILL_FEE_TYPE_DEPOSIT : BILL_FEE_TYPE_RENT);
         bill.setSource(BILL_SOURCE);
         bill.setStatus(BILL_STATUS_UNPAID);
         bill.setAmount(amount);
         bill.setPaidAmount(BigDecimal.ZERO);
         bill.setLateFee(BigDecimal.ZERO);
         bill.setPeriodStart(c.getStartDate());
-        bill.setPeriodEnd(c.getStartDate());
+        bill.setPeriodEnd(deposit ? c.getStartDate() : MktFixedFeeBillingService.periodEnd(c, c.getStartDate().plusMonths(1)));
         bill.setDueDate(c.getStartDate() == null ? LocalDate.now().plusDays(7) : c.getStartDate());
-        bill.setRemark("云仓服务合同首期款(" + (amount.signum() > 0 ? "保证金" : "待财务补金额") + ")");
+        bill.setRemark("云仓服务合同首期款(" + (deposit ? "保证金" : "首月固定服务费") + ")");
         try {
             billMapper.insert(bill);
         } catch (DuplicateKeyException dup) {
             log.info("[mkt] 合同 {} 首期账单已存在,跳过", c.getId());
         }
+    }
+
+    private static BigDecimal fixedFirstAmount(MktServiceContract c) {
+        if (!Integer.valueOf(1).equals(c.getFeeModel()) && !Integer.valueOf(4).equals(c.getFeeModel())) {
+            return BigDecimal.ZERO;
+        }
+        return MktFixedFeeBillingService.fixedAmount(c, c.getStartDate(), c.getStartDate().plusMonths(1));
+    }
+
+    /** 按量报价必须覆盖承接成本及佣金；出库时仍按实际件数复核，避免报价后配置变化。 */
+    private void validateEconomics(MktServiceContract c) {
+        if (!Integer.valueOf(SIGN_MODE_PARK).equals(c.getSignMode())
+                || !(Integer.valueOf(2).equals(c.getFeeModel()) || Integer.valueOf(3).equals(c.getFeeModel()))) return;
+        var warehouse = assignmentService.requireAvailableWarehouse(c.getWarehouseId(), c.getProjectId());
+        JsonNode costs = parseJson(warehouse.getFeeModel(), "请先配置承接云仓的单票/按件成本价");
+        if (!costs.isObject()) throw new BizException("云仓成本价格式无效");
+        String gradeCode = StringUtils.hasText(c.getGrade()) ? c.getGrade() : "D";
+        MktCustomerGrade grade = gradeMapper.selectOne(new LambdaQueryWrapper<MktCustomerGrade>()
+                .eq(MktCustomerGrade::getCode, gradeCode).last("limit 1"));
+        if (grade == null || grade.getErpTotalRate() == null || grade.getErpTotalRate().signum() < 0
+                || grade.getErpTotalRate().compareTo(new BigDecimal("100")) > 0) throw new BizException("请先配置客户评级佣金比例");
+        BigDecimal retained = BigDecimal.ONE.subtract(grade.getErpTotalRate().movePointLeft(2));
+        JsonNode prices = parseJson(c.getPriceTable(), "单价表不是合法 JSON");
+        BigDecimal totalCost = BigDecimal.ZERO;
+        for (String key : java.util.List.of("perOrder", "perItem")) {
+            JsonNode costNode = costs.get(key);
+            if (costNode != null && (!costNode.isNumber() || costNode.decimalValue().signum() < 0)) throw new BizException("云仓成本价不合法");
+            BigDecimal cost = costNode == null ? BigDecimal.ZERO : costNode.decimalValue();
+            totalCost = totalCost.add(cost);
+            BigDecimal price = prices.has(key) ? prices.get(key).decimalValue() : BigDecimal.ZERO;
+            if (price.multiply(retained).compareTo(cost) < 0) throw new BizException("报价不足以覆盖云仓成本与佣金，请调整合同单价：" + key);
+        }
+        if (totalCost.signum() <= 0) throw new BizException("请先配置承接云仓的单票/按件成本价");
+    }
+
+    private void lockCustomer(MktServiceContract c) {
+        if (customerMapper.selectForUpdate(c.getCustomerId()) == null) throw new BizException("合同客户不存在");
+    }
+
+    private void closeCustomer(MktServiceContract c, String reason) {
+        if (assignmentService.contractClosed(c.getCustomerId())) lockService.releaseDeal(c.getCustomerId(), reason);
+    }
+
+    private static boolean isActive(MktServiceContract c) {
+        return Integer.valueOf(ST_EFFECTIVE).equals(c.getStatus()) || Integer.valueOf(ST_PERFORMING).equals(c.getStatus())
+                || Integer.valueOf(ST_AMENDING).equals(c.getStatus());
+    }
+
+    /** 两个入口共用同一份条款校验；调用方不能通过草稿编辑绕开签约校验。 */
+    public static void validateTerms(MktServiceContract c) {
+        if (c.getCustomerId() == null || c.getWarehouseId() == null) throw new BizException("请选择客户和承接云仓");
+        if (c.getSignMode() == null || c.getSignMode() < 1 || c.getSignMode() > 2) throw new BizException("签约方式不合法");
+        if (c.getServiceType() == null || c.getServiceType() < 1 || c.getServiceType() > 3) throw new BizException("服务类型不合法");
+        if (c.getFeeModel() == null || c.getFeeModel() < 1 || c.getFeeModel() > 4) throw new BizException("计费模式不合法");
+        if (c.getStartDate() == null || c.getEndDate() == null || !c.getEndDate().isAfter(c.getStartDate())) throw new BizException("合同起止日期不合法");
+        if (c.getPayCycle() == null || c.getPayCycle() < 1 || c.getPayCycle() > 3) throw new BizException("结算周期不合法");
+        if (c.getAutoRenew() != null && c.getAutoRenew() != 0 && c.getAutoRenew() != 1) throw new BizException("自动续签设置不合法");
+        if (c.getDeposit() == null) c.setDeposit(BigDecimal.ZERO);
+        if (c.getDeposit().signum() < 0 || c.getDeposit().stripTrailingZeros().scale() > 2 || c.getDeposit().compareTo(new BigDecimal("99999999.99")) > 0) {
+            throw new BizException("保证金须为非负金额，最多两位小数");
+        }
+        JsonNode prices = parseJson(c.getPriceTable(), "单价表不是合法 JSON");
+        if (!prices.isObject() || prices.isEmpty()) throw new BizException("单价表须为非空 JSON 对象");
+        var fields = prices.fields();
+        while (fields.hasNext()) {
+            var entry = fields.next();
+            JsonNode value = entry.getValue();
+            if (!PRICE_KEYS.contains(entry.getKey()) || !value.isNumber() || value.decimalValue().signum() < 0
+                    || value.decimalValue().stripTrailingZeros().scale() > 4 || value.decimalValue().compareTo(new BigDecimal("99999999.99")) > 0) {
+                throw new BizException("单价仅支持 perOrder、perItem、storage、monthly 的非负金额，最多四位小数");
+            }
+        }
+        String required = switch (c.getFeeModel()) { case 1 -> "storage"; case 2 -> "perOrder"; case 3 -> "perItem"; default -> "monthly"; };
+        if (!prices.has(required) || prices.get(required).decimalValue().signum() <= 0) throw new BizException("当前计费模式必须填写正数单价：" + required);
+    }
+
+    private static void validateFiles(String value, boolean required) {
+        if (!StringUtils.hasText(value)) { if (required) throw new BizException("请先上传已签署合同附件"); return; }
+        JsonNode files = parseJson(value, "合同附件格式不合法");
+        if (!files.isArray() || (required && files.isEmpty()) || files.size() > 20) throw new BizException("合同附件须为 1–20 个文件引用");
+        for (JsonNode file : files) {
+            JsonNode id = file.isObject() ? file.get("id") : file;
+            if (id == null || !id.isIntegralNumber() || !id.canConvertToLong() || id.longValue() <= 0) throw new BizException("合同附件缺少有效文件编号");
+        }
+    }
+
+    private static JsonNode parseJson(String value, String error) {
+        try {
+            JsonNode json = value == null ? null : JSON.readTree(value);
+            if (json == null || json.isNull()) throw new BizException(error);
+            return json;
+        } catch (java.io.IOException ex) { throw new BizException(error); }
     }
 
     // ---------------- 工具 ----------------

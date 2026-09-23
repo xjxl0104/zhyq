@@ -20,6 +20,7 @@ import com.zhyq.park.marketing.mapper.MktServiceContractMapper;
 import com.zhyq.park.marketing.mapper.MktServiceContractVersionMapper;
 import com.zhyq.park.marketing.mapper.MktWarehouseMapper;
 import com.zhyq.park.marketing.service.MktServiceContractService;
+import com.zhyq.park.marketing.service.MktWarehouseFileService;
 import com.zhyq.park.marketing.service.MktWarehouseOnboardingService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -47,7 +48,7 @@ public class MktServiceContractController {
     public static record CreateReq(Long customerId, Long warehouseId, Integer signMode, Integer serviceType,
                             Integer feeModel, Long templateId, LocalDate startDate, LocalDate endDate,
                             BigDecimal deposit, Integer payCycle, String priceTable, String remark,
-                            Long projectId) {}
+                            Long projectId, String files) {}
 
     static MktServiceContract toDraft(CreateReq request) {
         MktServiceContract draft = new MktServiceContract();
@@ -64,6 +65,7 @@ public class MktServiceContractController {
         draft.setPriceTable(request.priceTable());
         draft.setRemark(request.remark());
         draft.setProjectId(request.projectId());
+        draft.setFiles(request.files());
         return draft;
     }
 
@@ -75,6 +77,7 @@ public class MktServiceContractController {
     private final MktServiceContractService contractService;
     private final MktWarehouseOnboardingService onboardingService;
     private final BizSettings bizSettings;
+    private final MktWarehouseFileService files;
 
     @Operation(summary = "分页(附客户名/云仓名)")
     @PreAuthorize("hasAuthority('crm:marketing:contract:query')")
@@ -91,7 +94,7 @@ public class MktServiceContractController {
                 .eq(status != null, MktServiceContract::getStatus, status)
                 .eq(signMode != null, MktServiceContract::getSignMode, signMode)
                 .eq(customerId != null, MktServiceContract::getCustomerId, customerId)
-                .eq(projectId != null, MktServiceContract::getProjectId, projectId)
+                .and(projectId != null, q -> q.eq(MktServiceContract::getProjectId, projectId).or().isNull(MktServiceContract::getProjectId))
                 .orderByDesc(MktServiceContract::getId);
         IPage<MktServiceContract> p = contractMapper.selectPage(new Page<>(pageNo, pageSize), qw);
         return Result.ok(PageResult.of(p.getTotal(), p.getRecords().stream().map(this::enrich).collect(Collectors.toList())));
@@ -122,8 +125,9 @@ public class MktServiceContractController {
         MktServiceContract draft = toDraft(request);
         MktWarehouse w = warehouseMapper.selectById(draft.getWarehouseId());
         if (!onboardingService.canAcceptCustomers(w)) {
-            throw new BizException("承接云仓必须是已上线且 ERP 已联通");
+            throw new BizException("承接云仓必须已上线并配置订单接入方式");
         }
+        draft.setFiles(files.validateReferences(draft.getFiles() == null ? "[]" : draft.getFiles(), w.getId()));
         MktServiceContract c = contractService.createDraft(draft);
         MktContractWarehouse cw = new MktContractWarehouse();
         cw.setContractId(c.getId());
@@ -139,21 +143,11 @@ public class MktServiceContractController {
     @PreAuthorize("hasAuthority('crm:marketing:contract:edit')")
     @PutMapping
     public Result<Void> update(@RequestBody MktServiceContract c) {
-        int updated = contractMapper.update(null, new LambdaUpdateWrapper<MktServiceContract>()
-                .eq(MktServiceContract::getId, c.getId())
-                .eq(MktServiceContract::getStatus, MktServiceContractService.ST_DRAFT)
-                .set(MktServiceContract::getWarehouseId, c.getWarehouseId())
-                .set(MktServiceContract::getServiceType, c.getServiceType())
-                .set(MktServiceContract::getFeeModel, c.getFeeModel())
-                .set(MktServiceContract::getPriceTable, c.getPriceTable())
-                .set(MktServiceContract::getDeposit, c.getDeposit())
-                .set(MktServiceContract::getStartDate, c.getStartDate())
-                .set(MktServiceContract::getEndDate, c.getEndDate())
-                .set(MktServiceContract::getPayCycle, c.getPayCycle())
-                .set(MktServiceContract::getTemplateId, c.getTemplateId())
-                .set(MktServiceContract::getSignMode, c.getSignMode())
-                .set(MktServiceContract::getRemark, c.getRemark()));
-        if (updated == 0) throw new BizException("只有草稿可编辑");
+        MktServiceContract before = contractMapper.selectById(c.getId());
+        if (before == null) throw new BizException("合同不存在");
+        c.setCustomerId(before.getCustomerId()); c.setWarehouseId(before.getWarehouseId()); c.setSignMode(before.getSignMode());
+        c.setFiles(files.validateReferences(c.getFiles() == null ? (before.getFiles() == null ? "[]" : before.getFiles()) : c.getFiles(), before.getWarehouseId()));
+        contractService.updateDraft(c);
         return Result.ok();
     }
 
@@ -167,12 +161,19 @@ public class MktServiceContractController {
 
     @Operation(summary = "线下签署 → 生效(佣金冻结生成、首期账单)") @PreAuthorize("hasAuthority('crm:marketing:contract:edit')") @PostMapping("/{id}/sign-offline")
     public Result<Void> signOffline(@PathVariable Long id, @RequestBody Map<String, String> body) {
-        contractService.signOffline(id, body.get("files"));
+        MktServiceContract c = contractMapper.selectById(id);
+        if (c == null) throw new BizException("合同不存在");
+        contractService.signOffline(id, files.validateReferences(body.get("files"), c.getWarehouseId()));
         return Result.ok();
     }
 
     @Operation(summary = "直签备案生效") @PreAuthorize("hasAuthority('crm:marketing:contract:audit')") @PostMapping("/{id}/effect-direct")
-    public Result<Void> effectDirect(@PathVariable Long id) { contractService.effectDirect(id); return Result.ok(); }
+    public Result<Void> effectDirect(@PathVariable Long id) {
+        MktServiceContract c = contractMapper.selectById(id);
+        if (c == null) throw new BizException("合同不存在");
+        files.validateReferences(c.getFiles(), c.getWarehouseId());
+        contractService.effectDirect(id); return Result.ok();
+    }
 
     @Operation(summary = "首期款到账 → 履约中(手动)") @PreAuthorize("hasAuthority('crm:marketing:contract:edit')") @PostMapping("/{id}/perform")
     public Result<Void> perform(@PathVariable Long id) { contractService.startPerforming(id); return Result.ok(); }

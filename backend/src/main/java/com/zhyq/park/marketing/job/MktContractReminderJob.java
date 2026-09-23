@@ -27,7 +27,7 @@ public class MktContractReminderJob {
 
     private final MktServiceContractMapper contractMapper;
     private final MktServiceContractService contractService;
-    private final NotificationService notificationService;
+    private final com.zhyq.park.marketing.service.MktPartnerNoticeService notificationService;
 
     @Scheduled(cron = "0 0 9 * * ?")
     public void run() {
@@ -35,18 +35,18 @@ public class MktContractReminderJob {
             LocalDate today = LocalDate.now();
             for (int d : REMIND_DAYS) {
                 for (MktServiceContract c : performingEndingOn(today.plusDays(d))) {
-                    notificationService.sendInApp(c.getPartnerId(), "服务合同即将到期",
-                            "合同 " + c.getContractNo() + " 将于 " + c.getEndDate() + " 到期", "service_contract", c.getId());
+                    notificationService.push(c.getPartnerId(), "服务合同即将到期",
+                            "合同 " + c.getContractNo() + " 将于 " + c.getEndDate() + " 到期");
                 }
             }
             for (MktServiceContract c : contractMapper.selectList(new LambdaQueryWrapper<MktServiceContract>()
                     .eq(MktServiceContract::getStatus, MktServiceContractService.ST_PENDING_SIGN)
                     .le(MktServiceContract::getUpdateTime, today.minusDays(PENDING_SIGN_DAYS).atStartOfDay()))) {
-                notificationService.sendInApp(c.getPartnerId(), "服务合同待签超时",
-                        "合同 " + c.getContractNo() + " 待客户签署已超 " + PENDING_SIGN_DAYS + " 天", "service_contract", c.getId());
+                notificationService.push(c.getPartnerId(), "服务合同待签超时",
+                        "合同 " + c.getContractNo() + " 待客户签署已超 " + PENDING_SIGN_DAYS + " 天");
             }
             for (MktServiceContract c : contractMapper.selectList(new LambdaQueryWrapper<MktServiceContract>()
-                    .eq(MktServiceContract::getStatus, MktServiceContractService.ST_PERFORMING)
+                    .in(MktServiceContract::getStatus, MktServiceContractService.ST_EFFECTIVE, MktServiceContractService.ST_PERFORMING, MktServiceContractService.ST_AMENDING)
                     .lt(MktServiceContract::getEndDate, today))) {
                 contractService.expire(c.getId());
             }
@@ -57,7 +57,7 @@ public class MktContractReminderJob {
 
     private List<MktServiceContract> performingEndingOn(LocalDate day) {
         return contractMapper.selectList(new LambdaQueryWrapper<MktServiceContract>()
-                .eq(MktServiceContract::getStatus, MktServiceContractService.ST_PERFORMING)
+                .in(MktServiceContract::getStatus, MktServiceContractService.ST_EFFECTIVE, MktServiceContractService.ST_PERFORMING, MktServiceContractService.ST_AMENDING)
                 .eq(MktServiceContract::getEndDate, day));
     }
 }

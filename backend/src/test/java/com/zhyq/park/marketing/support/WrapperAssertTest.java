@@ -39,6 +39,18 @@ class WrapperAssertTest {
     }
 
     @Test
+    void separatesRawArithmeticSetsWithWhitespace() {
+        LambdaUpdateWrapper<MktServiceContract> w = new LambdaUpdateWrapper<MktServiceContract>()
+                .eq(MktServiceContract::getStatus, 2).set(MktServiceContract::getStatus, 3)
+                .setSql("version = version + 1, contract_version = contract_version + 1");
+        WrapperAssert actual = WrapperAssert.of(w);
+        actual.isStatusTransition("status", 3, 2);
+        assertThat(actual.setValue("version")).isEqualTo("version + 1");
+        assertThat(actual.setValue("contract_version")).isEqualTo("contract_version + 1");
+        assertThat(actual.setColumns()).containsExactly("status", "version", "contract_version");
+    }
+
+    @Test
     void parsesSingleEqAsOneElementSet() {
         LambdaUpdateWrapper<MktServiceContract> w = new LambdaUpdateWrapper<MktServiceContract>()
                 .eq(MktServiceContract::getId, 1L)

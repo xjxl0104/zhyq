@@ -1,5 +1,9 @@
-<template><view><view class="card"><view class="title">加盟进度</view><view v-for="s in steps" :key="s.step" class="row"><view>第 {{s.step}} 步</view><view :class="['tag', s.status === 2 ? 'ok' : s.status === 3 ? 'warn' : '']">{{label(s.status)}}</view><view class="muted">{{s.rejectReason || ''}}</view></view></view></view></template>
+<template><view class="page-wrap"><view class="card"><view class="wh-title">加盟进度</view><view class="wh-note">{{ profile.orderMode === 'manual' ? '当前采用人工导入出库单，无需外部 ERP 接入。' : '资质审核后，由园区确认订单接入方式。' }}</view><view v-if="loading" class="wh-note">正在读取进度…</view><view v-if="error" class="wh-error">{{ error }}</view><view v-for="s in steps" :key="s.step" class="wh-item"><view class="wh-item-title">{{ names[s.step] || '办理步骤' }}</view><view class="wh-status">{{ labels[s.status] || '待处理' }}</view><view v-if="s.rejectReason" class="wh-error">驳回原因：{{ s.rejectReason }}</view><view v-if="s.doneTime" class="wh-note">完成于 {{ s.doneTime.replace('T', ' ') }}</view></view><view v-if="!loading && !error && !steps.length" class="wh-note">暂无进度，请联系园区确认申请记录。</view><view class="wh-actions"><button class="wh-secondary" :disabled="loading" @click="load">刷新进度</button><button class="wh-secondary" @click="go">{{ profile.joinStatus === 4 ? '提交加盟协议' : '查看申请资料' }}</button></view></view></view></template>
 <script setup>
 import { ref } from 'vue'; import { onShow } from '@dcloudio/uni-app'; import { warehouseApi } from '@/api/warehouse'
-const steps = ref([]); const label = s => ({0:'待处理',1:'进行中',2:'已通过',3:'已驳回'}[s] || '未知'); onShow(async () => { steps.value = await warehouseApi.onboarding() })
-</script>
+const steps = ref([]); const profile = ref({}); const loading = ref(false); const error = ref('')
+const names = {1:'提交申请',2:'资质审核',3:'确认订单接入方式',4:'签署加盟协议',5:'正式上线'}; const labels = {0:'待处理',1:'进行中',2:'已通过',3:'已驳回'}
+async function load() { loading.value = true; error.value = ''; try { const [s,p] = await Promise.all([warehouseApi.onboarding(),warehouseApi.apply()]); steps.value=s; profile.value=p } catch(e) { error.value=e.message || '进度读取失败，请刷新重试' } finally {loading.value=false} }
+function go() { uni.navigateTo({url:profile.value.joinStatus===4?'/pages/warehouse-contracts/index':'/pages/warehouse-apply/index'}) }
+onShow(load)
+</script><style scoped>@import '../../styles/warehouse.css';</style>

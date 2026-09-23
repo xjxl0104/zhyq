@@ -22,11 +22,11 @@
 
     <div class="table-card">
       <div class="toolbar">
-        <el-upload :show-file-list="false" accept=".xlsx,.xls" :http-request="doImport">
+        <el-upload :show-file-list="false" accept=".xlsx,.xls" :disabled="importing" :http-request="doImport">
           <el-button type="primary" :loading="importing"><el-icon><Upload /></el-icon>导入出库单(Excel)</el-button>
         </el-upload>
         <el-button link type="primary" @click="downloadTemplate">下载模板</el-button>
-        <span class="hint">列:出库单号 · 客户手机号 · 件数 · 包裹数 · 发货时间 · 物流单号 · 云仓编码(可选) · 货值(可选)。服务费按客户合同单价表由园区自算,冻结 7 天后自动解冻。</span>
+        <span class="hint">列:出库单号 · 客户手机号 · 件数 · 包裹数 · 发货时间 · 物流单号 · 云仓编码(可选) · 货值(可选)。服务费按园区签合同单价表计算；佣金按已配置冻结期到期解冻。发货日期须在合同有效期内。直签出库只记录运营数量，不生成园区服务费或佣金；平台费实际到账请到服务费账单页登记。</span>
       </div>
       <el-alert v-if="importResult" :type="importResult.errors.length ? 'warning' : 'success'" :closable="true" class="mb" @close="importResult = null">
         导入 {{ importResult.imported }} 条,跳过 {{ importResult.skipped }} 条(重复单号)
@@ -40,16 +40,18 @@
         <el-table-column prop="customerName" label="客户" min-width="130" />
         <el-table-column prop="promoterName" label="成交伙伴" width="110" />
         <el-table-column prop="customerGrade" label="评级" width="60" align="center" />
+        <el-table-column prop="qty" label="件数" width="80" /><el-table-column prop="packages" label="包裹数" width="85" /><el-table-column label="服务费(元)" width="115" align="right"><template #default="{ row }">{{ money(row.serviceFee) }}</template></el-table-column>
         <el-table-column label="基数(元)" width="110" align="right"><template #default="{ row }">{{ money(row.baseAmount) }}</template></el-table-column>
         <el-table-column label="系数" width="90" align="right">
           <template #default="{ row }">{{ row.sourceType === 1 ? `${row.poolFactor} 月` : `${row.poolFactor}%` }}</template>
         </el-table-column>
         <el-table-column label="佣金池(元)" width="110" align="right"><template #default="{ row }">{{ money(row.poolAmount) }}</template></el-table-column>
         <el-table-column label="状态" width="90"><template #default="{ row }"><el-tag :type="stType(row.status)">{{ ST[row.status] }}</el-tag></template></el-table-column>
+        <el-table-column prop="remark" label="业务说明" min-width="170" show-overflow-tooltip />
         <el-table-column prop="eventTime" label="事件时间" width="160" />
         <el-table-column label="操作" width="150" fixed="right">
           <template #default="{ row }">
-            <el-button link type="primary" @click="openSplits(row)">拆分</el-button>
+            <el-button v-if="Number(row.poolAmount) > 0" link type="primary" @click="openSplits(row)">拆分</el-button>
             <el-button v-if="row.status === 2" link type="danger" @click="voidOrder(row)">作废</el-button>
           </template>
         </el-table-column>

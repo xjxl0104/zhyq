@@ -17,6 +17,7 @@ import com.zhyq.park.marketing.mapper.MktCustomerGradeMapper;
 import com.zhyq.park.marketing.mapper.MktPromoterMapper;
 import com.zhyq.park.marketing.mapper.MktServiceContractMapper;
 import com.zhyq.park.marketing.service.MktAuditService;
+import com.zhyq.park.marketing.service.MktCustomerAssignmentService;
 import com.zhyq.park.marketing.service.MktLockService;
 import com.zhyq.park.marketing.service.MktPromoterService;
 import com.zhyq.park.marketing.service.MktServiceContractService;
@@ -25,6 +26,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.util.StringUtils;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
@@ -48,6 +50,7 @@ public class MktCustomerController {
     private final MktServiceContractMapper contractMapper;
     private final MktLockService lockService;
     private final MktAuditService auditService;
+    private final MktCustomerAssignmentService assignmentService;
 
     @Operation(summary = "分页(附推荐人姓名与锁定状态)")
     @PreAuthorize("hasAuthority('crm:marketing:customer:query')")
@@ -57,12 +60,14 @@ public class MktCustomerController {
                                                         @RequestParam(required = false) String keyword,
                                                         @RequestParam(required = false) String grade,
                                                         @RequestParam(required = false) Integer referredOnly,
-                                                        @RequestParam(required = false) Long projectId) {
+                                                        @RequestParam(required = false) Long projectId,
+                                                        @RequestParam(required = false) Integer warehouseAssignmentStatus) {
         LambdaQueryWrapper<Customer> qw = new LambdaQueryWrapper<Customer>()
                 .and(StringUtils.hasText(keyword), w -> w.like(Customer::getName, keyword).or().like(Customer::getPhone, keyword))
                 .eq(StringUtils.hasText(grade), Customer::getGrade, grade)
                 .isNotNull(Integer.valueOf(1).equals(referredOnly), Customer::getReferrerId)
-                .eq(projectId != null, Customer::getProjectId, projectId)
+                .and(projectId != null, q -> q.eq(Customer::getProjectId, projectId).or().isNull(Customer::getProjectId))
+                .eq(warehouseAssignmentStatus != null, Customer::getWarehouseAssignmentStatus, warehouseAssignmentStatus)
                 .orderByDesc(Customer::getId);
         IPage<Customer> p = customerMapper.selectPage(new Page<>(pageNo, pageSize), qw);
         List<Map<String, Object>> rows = p.getRecords().stream().map(this::enrich).collect(Collectors.toList());
@@ -107,8 +112,10 @@ public class MktCustomerController {
     @Operation(summary = "设置/更换推荐伙伴(按邀请码)")
     @PreAuthorize("hasAuthority('crm:marketing:customer:edit')")
     @PostMapping("/{id}/referrer")
+    @Transactional
     public Result<Void> referrer(@PathVariable Long id, @RequestBody Map<String, String> body) {
-        Customer c = require(id);
+        Customer c = customerMapper.selectForUpdate(id);
+        if (c == null) throw new BizException("客户不存在");
         MktPromoter p = promoterMapper.selectOne(new LambdaQueryWrapper<MktPromoter>()
                 .eq(MktPromoter::getInviteCode, String.valueOf(body.get("inviteCode")).trim().toUpperCase()).last("limit 1"));
         if (p == null) throw new BizException("邀请码不存在");
@@ -117,17 +124,38 @@ public class MktCustomerController {
             throw new BizException("该伙伴当前状态不可作为推荐人(status=" + p.getStatus() + ")");
         }
         if (StringUtils.hasText(c.getPhone()) && c.getPhone().equals(p.getPhone())) throw new BizException("不能自我推荐");
+        if (c.getProjectId() != null && p.getProjectId() != null && !c.getProjectId().equals(p.getProjectId())) throw new BizException("不能跨园区调整推荐归属");
         if (c.getReferrerId() != null && !StringUtils.hasText(body.get("reason"))) throw new BizException("更换推荐人必须填写原因");
+        if (!p.getId().equals(c.getReferrerId())) assignmentService.assertNoActiveContracts(id);
         // 已存在别的伙伴的有效锁/预锁时,变更推荐人会和锁定归属打架,要求先释放或转移
         MktCustomerLock active = lockService.activeLockOf(id);
         if (active != null && active.getPromoterId() != null && !active.getPromoterId().equals(p.getId())) {
             throw new BizException("该客户已有其它伙伴的有效锁,请先释放或转移锁定再改推荐人");
         }
         int updated = customerMapper.update(null, new LambdaUpdateWrapper<Customer>().eq(Customer::getId, id)
+                .eq(c.getVersion() != null, Customer::getVersion, c.getVersion()).setSql("version = version + 1")
                 .set(Customer::getReferrerId, p.getId())
                 .set(Customer::getAttributionNote, "后台设置推荐人 " + p.getInviteCode() + (StringUtils.hasText(body.get("reason")) ? ":" + body.get("reason") : "")));
         if (updated == 0) throw new BizException("客户状态已变化,请刷新后重试");
         auditService.log("customer.referrer", "customer", id, body.get("reason"), c.getReferrerId(), p.getId());
+        return Result.ok();
+    }
+
+    public record WarehouseAssignmentRequest(Long warehouseId, String reason) {}
+
+    @Operation(summary = "分派或调整承接云仓，等待商家确认")
+    @PreAuthorize("hasAuthority('crm:marketing:customer:edit')")
+    @PostMapping("/{id}/assign-warehouse")
+    public Result<Void> assignWarehouse(@PathVariable Long id, @RequestBody WarehouseAssignmentRequest request) {
+        assignmentService.assign(id, request.warehouseId(), request.reason());
+        return Result.ok();
+    }
+
+    @Operation(summary = "发布伙伴可见的跟进进度（不公开内部备注）")
+    @PreAuthorize("hasAuthority('crm:marketing:customer:edit')")
+    @PostMapping("/{id}/progress")
+    public Result<Void> publishProgress(@PathVariable Long id, @RequestBody Map<String, String> body) {
+        assignmentService.updateProgress(id, body.get("summary"));
         return Result.ok();
     }
 
@@ -150,8 +178,12 @@ public class MktCustomerController {
     @Operation(summary = "标记流失")
     @PreAuthorize("hasAuthority('crm:marketing:customer:edit')")
     @PostMapping("/{id}/lose")
+    @Transactional
     public Result<Void> lose(@PathVariable Long id, @RequestBody Map<String, String> body) {
         if (!StringUtils.hasText(body.get("reason"))) throw new BizException("请填写流失原因");
+        Customer current = customerMapper.selectForUpdate(id);
+        if (current == null) throw new BizException("客户不存在");
+        assignmentService.assertNoActiveContracts(id);
         int updated = customerMapper.update(null, new LambdaUpdateWrapper<Customer>()
                 .eq(Customer::getId, id).ne(Customer::getStatus, 3).set(Customer::getStatus, 3));
         if (updated == 0) throw new BizException("客户状态已变化");
@@ -161,11 +193,11 @@ public class MktCustomerController {
 
     // ---------------- 锁定 ----------------
 
-    @Operation(summary = "当前有效锁(无则 null)")
+    @Operation(summary = "最新锁定状态（包含成交及释放历史，无记录返回 null）")
     @PreAuthorize("hasAuthority('crm:marketing:customer:query')")
     @GetMapping("/{id}/lock")
     public Result<MktCustomerLock> lock(@PathVariable Long id) {
-        return Result.ok(lockService.activeLockOf(id));
+        return Result.ok(lockService.displayLockOf(id));
     }
 
     @Operation(summary = "代伙伴报备(预锁)")
@@ -217,18 +249,20 @@ public class MktCustomerController {
     private Map<String, Object> enrich(Customer c) {
         Map<String, Object> m = new HashMap<>();
         m.put("id", c.getId()); m.put("name", c.getName()); m.put("contact", c.getContact()); m.put("phone", c.getPhone());
+        m.put("projectId", c.getProjectId());
         m.put("grade", c.getGrade()); m.put("referrerId", c.getReferrerId()); m.put("serviceType", c.getServiceType());
         m.put("bizLine", c.getBizLine()); m.put("signMode", c.getSignMode()); m.put("status", c.getStatus());
         m.put("attributionNote", c.getAttributionNote()); m.put("intentLevel", c.getIntentLevel()); m.put("owner", c.getOwner());
+        m.putAll(assignmentService.assignmentView(c));
         if (c.getReferrerId() != null) {
             MktPromoter p = promoterMapper.selectById(c.getReferrerId());
             m.put("referrerName", p == null ? null : p.getName());
         }
-        MktCustomerLock lock = lockService.activeLockOf(c.getId());
+        MktCustomerLock lock = lockService.displayLockOf(c.getId());
         if (lock != null) {
             m.put("lockStatus", lock.getStatus());
             LocalDateTime until = lock.getStatus() == MktLockService.LS_PRELOCK ? lock.getPrelockUntil() : lock.getLockUntil();
-            m.put("lockDaysLeft", until == null ? null : Math.max(0, Duration.between(LocalDateTime.now(), until).toDays()));
+            m.put("lockDaysLeft", until == null ? null : Math.max(0, (Duration.between(LocalDateTime.now(), until).getSeconds() + 86_399) / 86_400));
         }
         return m;
     }

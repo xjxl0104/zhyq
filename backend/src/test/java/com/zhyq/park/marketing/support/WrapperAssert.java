@@ -120,7 +120,7 @@ public final class WrapperAssert {
         }
         // set 片段形如 "status=2,terminate_reason=退租,pay_at=2026-09-21T01:00";值里本身不会出现逗号+列名=,
         // 简单按 ",<identifier>=" 边界切。
-        Matcher m = Pattern.compile(",(?=\\w+=)").matcher(set);
+        Matcher m = Pattern.compile(",(?=\\s*\\w+\\s*=)").matcher(set);
         int last = 0;
         while (m.find()) {
             out.add(set.substring(last, m.start()));

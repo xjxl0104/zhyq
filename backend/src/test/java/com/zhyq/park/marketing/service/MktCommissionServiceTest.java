@@ -167,6 +167,17 @@ class MktCommissionServiceTest {
     }
 
     @Test
+    void clawbackRechecksWithdrawalAfterTakingPromoterLock() {
+        var stale = commission(11L, MktCommissionService.C_SETTLED, "100"); stale.setPromoterId(7L);
+        var locked = commission(11L, MktCommissionService.C_SETTLED, "100"); locked.setPromoterId(7L); locked.setWithdrawalId(99L);
+        when(commissionMapper.selectList(any())).thenReturn(List.of(stale), List.of(locked));
+        assertThatThrownBy(() -> service.clawback(100L, "退款")).isInstanceOf(BizException.class).hasMessageContaining("先驳回提现");
+        var order = org.mockito.Mockito.inOrder(commissionMapper, promoterMapper);
+        order.verify(commissionMapper).selectList(any()); order.verify(promoterMapper).selectForUpdate(7L); order.verify(commissionMapper).selectList(any());
+        verify(commissionMapper, never()).insert(any(MktPromoterCommission.class));
+    }
+
+    @Test
     void clawbackVoidsUnsettledAndInsertsNegativeRowForSettled() {
         MktPromoterCommission frozen = commission(11L, MktCommissionService.C_FROZEN, "100");
         MktPromoterCommission settled = commission(12L, MktCommissionService.C_SETTLED, "60");

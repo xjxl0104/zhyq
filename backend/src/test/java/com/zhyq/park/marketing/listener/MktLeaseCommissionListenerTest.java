@@ -53,13 +53,14 @@ class MktLeaseCommissionListenerTest {
     @Mock MktLockService lockService;
     @Mock MktServiceContractService serviceContractService;
     @Mock BizSettings bizSettings;
+    @Mock com.zhyq.park.marketing.mapper.MktServiceContractMapper serviceContracts;
 
     MktLeaseCommissionListener listener;
 
     @BeforeEach
     void setUp() {
         listener = new MktLeaseCommissionListener(contractMapper, billMapper, tenantMapper, customerMapper,
-                legacyCommissionMapper, gradeMapper, orderMapper, commissionService, lockService, serviceContractService, bizSettings);
+                legacyCommissionMapper, gradeMapper, orderMapper, commissionService, lockService, serviceContractService, bizSettings, serviceContracts);
     }
 
     @Test
@@ -156,6 +157,20 @@ class MktLeaseCommissionListenerTest {
     }
 
     @Test
+    void firstAnchoredRentBillUnfreezesBonus() {
+        var bill = new com.zhyq.park.finance.entity.Bill();
+        bill.setSource("mkt_service"); bill.setBillingKey("mkt_service:10:rent:2026-01-31");
+        bill.setStatus(5); bill.setFeeType("租金");
+        var contract = new com.zhyq.park.marketing.entity.MktServiceContract();
+        contract.setStartDate(java.time.LocalDate.of(2026, 1, 31));
+        when(serviceContracts.selectById(10L)).thenReturn(contract);
+        when(billMapper.selectById(500L)).thenReturn(bill);
+        when(orderMapper.selectList(any(Wrapper.class))).thenReturn(List.of());
+        listener.onPaymentReceived(new DomainEvent.PaymentReceived(500L, 10L, LocalDateTime.now()));
+        verify(serviceContractService).startPerforming(10L);
+    }
+
+    @Test
     void laterServiceBillDoesNotUnfreezeContractBonus() {
         com.zhyq.park.finance.entity.Bill bill = new com.zhyq.park.finance.entity.Bill();
         bill.setSource("mkt_service"); bill.setBillingKey("mkt_service:10:month-2");
@@ -173,7 +188,7 @@ class MktLeaseCommissionListenerTest {
         MktReferralOrder o = new MktReferralOrder(); o.setId(31L);
         com.zhyq.park.finance.entity.Bill bill = new com.zhyq.park.finance.entity.Bill();
         bill.setSource("mkt_service"); bill.setBillingKey("mkt_service:10:first");
-        bill.setStatus(5); bill.setFeeType("保证金");
+        bill.setStatus(3); bill.setFeeType("保证金");
         bill.setPaidAmount(BigDecimal.ZERO);
         when(billMapper.selectById(500L)).thenReturn(bill);
         when(orderMapper.selectList(any(Wrapper.class))).thenReturn(List.of(o));

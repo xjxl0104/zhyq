@@ -1,9 +1,11 @@
 package com.zhyq.park.crm.entity;
 
 import com.baomidou.mybatisplus.annotation.TableName;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.zhyq.park.common.base.BaseEntity;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
+import java.time.LocalDateTime;
 
 @Data
 @EqualsAndHashCode(callSuper = true)
@@ -38,4 +40,17 @@ public class Customer extends BaseEntity {
     /** 归因判定记录 */
     private String attributionNote;
     private Long projectId;
+    /** 伙伴填报的意向，不等于正式分派。仅业务端点写入，通用客户 CRUD 不可绕过分派流程。 */
+    @JsonProperty(access = JsonProperty.Access.READ_ONLY)
+    private Long intendedWarehouseId;
+    @JsonProperty(access = JsonProperty.Access.READ_ONLY)
+    private Long assignedWarehouseId;
+    /** 0未分派 1待商家确认 2已承接 3已拒绝 */
+    @JsonProperty(access = JsonProperty.Access.READ_ONLY)
+    private Integer warehouseAssignmentStatus;
+    /** 经明确发布、可向伙伴展示的进度，不复用内部备注。 */
+    @JsonProperty(access = JsonProperty.Access.READ_ONLY)
+    private String publicProgress;
+    @JsonProperty(access = JsonProperty.Access.READ_ONLY)
+    private LocalDateTime progressUpdatedAt;
 }

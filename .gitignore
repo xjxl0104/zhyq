@@ -63,3 +63,10 @@ import/
 miniapp/node_modules/
 miniapp/dist/
 miniapp/unpackage/
+
+# Local dependency links in isolated worktrees
+/frontend/node_modules
+/miniapp/node_modules
+
+# Local acceptance script bytecode
+__pycache__/

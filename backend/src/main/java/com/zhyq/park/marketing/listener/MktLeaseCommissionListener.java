@@ -65,6 +65,7 @@ public class MktLeaseCommissionListener {
     private final MktLockService lockService;
     private final MktServiceContractService serviceContractService;
     private final BizSettings bizSettings;
+    private final com.zhyq.park.marketing.mapper.MktServiceContractMapper serviceContracts;
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
     public void onContractApproved(DomainEvent.ContractApproved e) {
@@ -132,7 +133,7 @@ public class MktLeaseCommissionListener {
     void unfreezeForContract(Long contractId, Long billId) {
         // fin_bill.contract_id 来自两张合同表，必须先按 source 分流，避免自增 id 撞号。
         Bill bill = billMapper.selectById(billId);
-        if (isFirstServiceBill(bill, contractId)) {
+        if (isFirstServiceBill(bill, contractId) && Integer.valueOf(BillMetrics.STATUS_SETTLED).equals(bill.getStatus())) {
             unfreezeOrders(contractId, MktCommissionService.SOURCE_CONTRACT_BONUS);
             serviceContractService.startPerforming(contractId);
             return;
@@ -153,14 +154,18 @@ public class MktLeaseCommissionListener {
         for (MktReferralOrder o : orders) commissionService.refreezeByOrder(o.getId());
     }
 
-    private static boolean isFirstServiceBill(Bill bill, Long contractId) {
+    private boolean isFirstServiceBill(Bill bill, Long contractId) {
         if (bill == null || !SERVICE_BILL_SOURCE.equals(bill.getSource())
-                || !("mkt_service:" + contractId + ":first").equals(bill.getBillingKey())
-                || !Integer.valueOf(BillMetrics.STATUS_SETTLED).equals(bill.getStatus())) {
+) {
             return false;
         }
-        return "租金".equals(bill.getFeeType())
+        boolean feeEligible = "租金".equals(bill.getFeeType())
                 || (bill.getFeeType() != null && bill.getFeeType().contains("保证金"));
+        if (!feeEligible) return false;
+        if (("mkt_service:" + contractId + ":first").equals(bill.getBillingKey())) return true;
+        var contract = serviceContracts.selectById(contractId);
+        return contract != null && contract.getStartDate() != null
+                && ("mkt_service:" + contractId + ":rent:" + contract.getStartDate()).equals(bill.getBillingKey());
     }
 
     private void unfreezeOrders(Long contractId, int sourceType) {

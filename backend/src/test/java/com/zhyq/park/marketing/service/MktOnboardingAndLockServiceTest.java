@@ -6,6 +6,8 @@ import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.zhyq.park.common.event.DomainEvent;
 import com.zhyq.park.common.exception.BizException;
 import com.zhyq.park.common.setting.BizSettings;
+import com.zhyq.park.crm.entity.Customer;
+import com.zhyq.park.crm.mapper.CustomerMapper;
 import com.zhyq.park.marketing.entity.MktCustomerLock;
 import com.zhyq.park.marketing.entity.MktPosition;
 import com.zhyq.park.marketing.entity.MktPromoter;
@@ -18,6 +20,7 @@ import com.zhyq.park.marketing.mapper.MktWarehouseMapper;
 import com.zhyq.park.marketing.mapper.MktWarehouseOnboardingMapper;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -52,6 +55,7 @@ class MktOnboardingAndLockServiceTest {
         TableInfoHelper.initTableInfo(a, MktWarehouse.class);
         TableInfoHelper.initTableInfo(a, MktWarehouseOnboarding.class);
         TableInfoHelper.initTableInfo(a, MktCustomerLock.class);
+        TableInfoHelper.initTableInfo(a, Customer.class);
     }
 
     @Nested
@@ -61,6 +65,11 @@ class MktOnboardingAndLockServiceTest {
         @Mock MktWarehouseOnboardingMapper stepMapper;
         @Mock MktAuditService auditService;
         @InjectMocks MktWarehouseOnboardingService service;
+
+        private MktWarehouse completeWarehouse() {
+            MktWarehouse w = new MktWarehouse(); w.setId(7L); w.setName("杭州仓"); w.setPhone("13800000000");
+            w.setContact("联系人"); w.setRegion("杭州"); w.setAddress("杭州园区"); w.setOrderMode("manual"); w.setErpStatus(0); return w;
+        }
 
         @Test
         void applyCreatesFiveStepsAndMovesToQualifying() {
@@ -87,10 +96,20 @@ class MktOnboardingAndLockServiceTest {
 
         @Test
         void passQualificationMovesToErpConnecting() {
+            when(warehouseMapper.selectById(7L)).thenReturn(completeWarehouse());
             when(warehouseMapper.update(isNull(), any(Wrapper.class))).thenReturn(1);
-            service.passQualification(7L);
+            service.passQualification(7L, 1);
             verify(auditService).log(eq("warehouse.qualify.pass"), any(), eq(7L), isNull());
             verify(stepMapper, times(2)).update(isNull(), any(Wrapper.class)); // 步骤2通过 + 步骤3开始
+        }
+
+        @Test void qualificationRejectsUnreviewedOrChangedVersion() {
+            assertThatThrownBy(() -> service.passQualification(7L, null)).isInstanceOf(BizException.class);
+            when(warehouseMapper.selectById(7L)).thenReturn(completeWarehouse());
+            when(warehouseMapper.update(isNull(), any(Wrapper.class))).thenReturn(0);
+            assertThatThrownBy(() -> service.passQualification(7L, 1)).isInstanceOf(BizException.class).hasMessageContaining("资料或审核状态已变化");
+            verify(stepMapper, never()).update(isNull(), any(Wrapper.class));
+            verify(auditService, never()).log(eq("warehouse.qualify.pass"), any(), any(), any());
         }
 
         @Test
@@ -99,24 +118,30 @@ class MktOnboardingAndLockServiceTest {
         }
 
         @Test
-        void markErpConnectedFromWrongStateThrows() {
+        void manualOrdersFromWrongStateThrows() {
             when(warehouseMapper.update(isNull(), any(Wrapper.class))).thenReturn(0);
-            assertThatThrownBy(() -> service.markErpConnected(7L, "ops")).isInstanceOf(BizException.class);
+            assertThatThrownBy(() -> service.useManualOrders(7L)).isInstanceOf(BizException.class);
         }
 
         @Test
-        void markErpConnectedMovesToPendingAgreement() {
+        void manualOrdersMovesToPendingAgreement() {
             when(warehouseMapper.update(isNull(), any(Wrapper.class))).thenReturn(1);
-            service.markErpConnected(7L, "ops");
-            verify(auditService).log(eq("warehouse.erp.mark"), any(), eq(7L), any());
+            service.useManualOrders(7L);
+            verify(auditService).log(eq("warehouse.orders.manual"), any(), eq(7L), any());
         }
 
         @Test
         void signAgreementRequiresFileAndGoesOnline() {
             assertThatThrownBy(() -> service.signAgreement(7L, "")).isInstanceOf(BizException.class);
             when(warehouseMapper.update(isNull(), any(Wrapper.class))).thenReturn(1);
-            service.signAgreement(7L, "/files/agreement.pdf");
+            when(warehouseMapper.selectById(7L)).thenReturn(completeWarehouse());
+            service.signAgreement(7L, "file:1");
             verify(auditService).log(eq("warehouse.online"), any(), eq(7L), any());
+        }
+
+        @Test void operatorCannotPretendErpIsConnected() {
+            assertThatThrownBy(() -> service.markErpConnected(7L, "ops")).isInstanceOf(BizException.class).hasMessageContaining("不能人工标记");
+            verify(warehouseMapper, never()).update(isNull(), any(Wrapper.class));
         }
 
         @Test
@@ -134,10 +159,12 @@ class MktOnboardingAndLockServiceTest {
 
         @Test
         void canAcceptCustomersOnlyWhenOnlineAndConnected() {
-            MktWarehouse w = new MktWarehouse(); w.setJoinStatus(5); w.setErpStatus(1);
+            MktWarehouse w = new MktWarehouse(); w.setJoinStatus(5); w.setErpStatus(2);
             assertThat(service.canAcceptCustomers(w)).isTrue();
             w.setErpStatus(0);
             assertThat(service.canAcceptCustomers(w)).isFalse();
+            w.setOrderMode("manual");
+            assertThat(service.canAcceptCustomers(w)).isTrue();
             w.setErpStatus(2); w.setJoinStatus(6);
             assertThat(service.canAcceptCustomers(w)).isFalse();
         }
@@ -152,7 +179,15 @@ class MktOnboardingAndLockServiceTest {
         @Mock BizSettings bizSettings;
         @Mock MktAuditService auditService;
         @Mock ApplicationEventPublisher eventPublisher;
+        @Mock CustomerMapper customerMapper;
+        @Mock MktCustomerAssignmentService assignmentService;
         @InjectMocks MktLockService service;
+
+        @BeforeEach
+        void customerFixture() {
+            Customer c = new Customer(); c.setId(5L); c.setReferrerId(9L);
+            lenient().when(customerMapper.selectForUpdate(5L)).thenReturn(c);
+        }
 
         private MktPromoter normalPromoter() {
             MktPromoter p = new MktPromoter(); p.setId(9L); p.setStatus(1); p.setPositionCode("P1");
@@ -246,17 +281,20 @@ class MktOnboardingAndLockServiceTest {
         }
 
         @Test
-        void markDealIsNoopWithoutActiveLock() {
+        void markDealCreatesHistoryForFormallySignedCustomerWithoutActiveLock() {
             when(lockMapper.selectOne(any(Wrapper.class))).thenReturn(null);
             service.markDeal(5L);
             verify(lockMapper, never()).update(isNull(), any(Wrapper.class));
+            ArgumentCaptor<MktCustomerLock> deal = ArgumentCaptor.forClass(MktCustomerLock.class);
+            verify(lockMapper).insert(deal.capture());
+            assertThat(deal.getValue().getStatus()).isEqualTo(MktLockService.LS_DEAL);
+            assertThat(deal.getValue().getPromoterId()).isEqualTo(9L);
         }
 
         @Test
         void markDealRejectsContractPartnerDifferentFromLockedPartner() {
             MktCustomerLock active = new MktCustomerLock();
             active.setId(1L); active.setCustomerId(5L); active.setPromoterId(9L); active.setStatus(2);
-            when(lockMapper.selectOne(any(Wrapper.class))).thenReturn(active);
             assertThatThrownBy(() -> service.markDeal(5L, 8L))
                     .isInstanceOf(BizException.class).hasMessageContaining("不一致");
             verify(lockMapper, never()).update(isNull(), any(Wrapper.class));

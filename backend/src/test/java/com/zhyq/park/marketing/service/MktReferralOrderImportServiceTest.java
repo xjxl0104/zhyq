@@ -51,6 +51,7 @@ class MktReferralOrderImportServiceTest {
     @Mock MktReferralOrderMapper orderMapper;
     @Mock MktCommissionService commissionService;
     @Mock BizSettings bizSettings;
+    @Mock com.zhyq.park.marketing.mapper.MktWarehouseMapper warehouseMapper;
 
     MktReferralOrderImportService service;
 
@@ -61,12 +62,26 @@ class MktReferralOrderImportServiceTest {
         TableInfoHelper.initTableInfo(a, MktServiceContract.class);
         TableInfoHelper.initTableInfo(a, Customer.class);
         TableInfoHelper.initTableInfo(a, MktCustomerGrade.class);
+        TableInfoHelper.initTableInfo(a, com.zhyq.park.marketing.entity.MktWarehouse.class);
     }
 
     @BeforeEach
     void setUp() {
         service = new MktReferralOrderImportService(customerMapper, contractMapper, gradeMapper, orderMapper,
-                commissionService, bizSettings, new ObjectMapper());
+                commissionService, bizSettings, new ObjectMapper(), warehouseMapper);
+        var warehouse = new com.zhyq.park.marketing.entity.MktWarehouse(); warehouse.setId(7L); warehouse.setJoinStatus(5); warehouse.setFeeModel("{\"perOrder\":1,\"perItem\":0}");
+        lenient().when(warehouseMapper.selectById(7L)).thenReturn(warehouse);
+    }
+
+    @Test
+    void rejectsNegativeMarginAndMissingCommissionRate() {
+        when(customerMapper.selectOne(any(Wrapper.class))).thenReturn(customer(5L,99L,"A"));
+        var contract=new MktServiceContract();contract.setId(20L);contract.setSignMode(1);contract.setWarehouseId(7L);contract.setGrade("A");contract.setPriceTable("{\"perOrder\":1}");
+        when(contractMapper.selectOne(any(Wrapper.class))).thenReturn(contract);
+        assertThatThrownBy(()->service.toEvent(row("RATE"),null,7)).isInstanceOf(BizException.class).hasMessageContaining("比例配置");
+        var grade=new MktCustomerGrade();grade.setErpTotalRate(new BigDecimal("5"));when(gradeMapper.selectOne(any(Wrapper.class))).thenReturn(grade);
+        assertThatThrownBy(()->service.toEvent(row("LOSS"),null,7)).isInstanceOf(BizException.class).hasMessageContaining("毛利为负");
+        verify(commissionService,never()).createAndSplit(any());
     }
 
     @Test
@@ -83,7 +98,7 @@ class MktReferralOrderImportServiceTest {
         Customer c = customer(5L, 99L, "A");
         when(customerMapper.selectOne(any(Wrapper.class))).thenReturn(c);
         MktServiceContract k = new MktServiceContract();
-        k.setId(20L); k.setGrade("B"); k.setWarehouseId(7L); k.setPriceTable("{\"perOrder\":10,\"perItem\":0.5}");
+        k.setId(20L); k.setSignMode(1); k.setGrade("B"); k.setWarehouseId(7L); k.setPriceTable("{\"perOrder\":10,\"perItem\":0.5}");
         when(contractMapper.selectOne(any(Wrapper.class))).thenReturn(k);
         MktCustomerGrade g = new MktCustomerGrade(); g.setCode("B"); g.setErpTotalRate(new BigDecimal("6"));
         when(gradeMapper.selectOne(any(Wrapper.class))).thenReturn(g);
@@ -100,11 +115,14 @@ class MktReferralOrderImportServiceTest {
         assertThat(ev.unfreezeAt()).isEqualTo(shipped.plusDays(7));
         assertThat(ev.warehouseId()).isEqualTo(7L);
         assertThat(ev.sourceId()).isEqualTo(20L);
+        assertThat(ev.qty()).isEqualTo(5); assertThat(ev.packages()).isEqualTo(1); assertThat(ev.logisticsNo()).isEqualTo("SF1");
     }
 
     @Test
     void customerWithoutReferrerIsRejected() {
         when(customerMapper.selectOne(any(Wrapper.class))).thenReturn(customer(5L, null, "A"));
+        MktServiceContract c = new MktServiceContract(); c.setId(20L); c.setWarehouseId(7L); c.setSignMode(1);
+        when(contractMapper.selectOne(any())).thenReturn(c);
         assertThatThrownBy(() -> service.toEvent(row("OUT001"), 1L, 7))
                 .isInstanceOf(BizException.class).hasMessageContaining("无推荐伙伴");
     }
@@ -123,7 +141,7 @@ class MktReferralOrderImportServiceTest {
         when(orderMapper.selectCount(any(Wrapper.class))).thenReturn(1L, 0L, 0L);
         // 第 2 行客户不存在 → 错误;第 3 行正常
         when(customerMapper.selectOne(any(Wrapper.class))).thenReturn(null, customer(5L, 99L, "A"));
-        MktServiceContract k = new MktServiceContract(); k.setId(20L); k.setGrade("A"); k.setPriceTable("{\"perOrder\":10}");
+        MktServiceContract k = new MktServiceContract(); k.setId(20L); k.setSignMode(1); k.setWarehouseId(7L); k.setGrade("A"); k.setPriceTable("{\"perOrder\":10}");
         lenient().when(contractMapper.selectOne(any(Wrapper.class))).thenReturn(k);
         MktCustomerGrade g = new MktCustomerGrade(); g.setCode("A"); g.setErpTotalRate(new BigDecimal("8"));
         lenient().when(gradeMapper.selectOne(any(Wrapper.class))).thenReturn(g);
@@ -165,6 +183,104 @@ class MktReferralOrderImportServiceTest {
         assertThatThrownBy(() -> service.toEvent(new OutboundRow("X", "", 1, 1, null, null, null, null), 1L, 7))
                 .isInstanceOf(BizException.class);
         verify(customerMapper, never()).selectOne(any(Wrapper.class));
+    }
+
+    @Test void negativeQuantityAndFutureShippingAreRejected() {
+        assertThatThrownBy(() -> service.toEvent(new OutboundRow("X","13800000001",-1,1,LocalDateTime.now(),null,null,null),null,7))
+                .isInstanceOf(BizException.class).hasMessageContaining("件数");
+        assertThatThrownBy(() -> service.toEvent(new OutboundRow("X","13800000001",1,1,LocalDateTime.now().plusDays(1),null,null,null),null,7))
+                .isInstanceOf(BizException.class).hasMessageContaining("发货时间");
+    }
+    @Test void refusesDirectSignTurnoverAsParkRevenue() {
+        when(customerMapper.selectOne(any())).thenReturn(customer(5L,99L,"A"));
+        MktServiceContract c=new MktServiceContract();c.setWarehouseId(7L);c.setSignMode(2);
+        when(contractMapper.selectOne(any())).thenReturn(c);
+        assertThatThrownBy(() -> service.toEvent(row("DIRECT"),null,7)).isInstanceOf(BizException.class).hasMessageContaining("直签");
+    }
+    @Test void directShipmentsWithoutPartnerAreStoredWithoutAnyFinancialEvent() {
+        when(customerMapper.selectOne(any())).thenReturn(customer(5L,null,null));
+        MktServiceContract contract = directContract(); contract.setProjectId(3L);
+        // Operating imports do not need park cost rates or a commission grade.
+        contract.setPriceTable("{\"monthly\":20000}");
+        when(contractMapper.selectOne(any())).thenReturn(contract);
+        var warehouse = new com.zhyq.park.marketing.entity.MktWarehouse(); warehouse.setId(7L); warehouse.setJoinStatus(5);
+        when(warehouseMapper.selectById(7L)).thenReturn(warehouse);
+        LocalDateTime shipped = LocalDateTime.now().minusDays(1);
+        OutboundRow actual = new OutboundRow("DIRECT-OPS", "13800000001", 12, 3, shipped, "SF-DIRECT", null, new BigDecimal("800.50"));
+
+        ImportResult result = service.importRows(List.of(actual), 3L);
+
+        assertThat(result.imported()).isEqualTo(1); assertThat(result.skipped()).isZero(); assertThat(result.errors()).isEmpty();
+        ArgumentCaptor<MktReferralOrder> order = ArgumentCaptor.forClass(MktReferralOrder.class);
+        verify(orderMapper).insert(order.capture());
+        MktReferralOrder stored = order.getValue();
+        assertThat(stored.getSourceType()).isEqualTo(MktCommissionService.SOURCE_OUTBOUND);
+        assertThat(stored.getSourceId()).isEqualTo(20L); assertThat(stored.getCustomerId()).isEqualTo(5L);
+        assertThat(stored.getWarehouseId()).isEqualTo(7L); assertThat(stored.getProjectId()).isEqualTo(3L);
+        assertThat(stored.getPromoterId()).isNull();
+        assertThat(stored.getServiceFee()).isZero(); assertThat(stored.getBaseAmount()).isZero();
+        assertThat(stored.getPoolAmount()).isZero(); assertThat(stored.getPoolFactor()).isZero();
+        assertThat(stored.getQty()).isEqualTo(12); assertThat(stored.getPackages()).isEqualTo(3);
+        assertThat(stored.getGoodsAmount()).isEqualByComparingTo("800.50"); assertThat(stored.getLogisticsNo()).isEqualTo("SF-DIRECT");
+        assertThat(stored.getEventTime()).isEqualTo(shipped); assertThat(stored.getStatus()).isEqualTo(2);
+        assertThat(stored.getRemark()).contains("不计佣", "不产生园区应收");
+        org.mockito.Mockito.verifyNoInteractions(commissionService,gradeMapper);
+    }
+
+    @Test void directImportRejectsInactiveWarehouseAndOutOfContractDates() {
+        when(customerMapper.selectOne(any())).thenReturn(customer(5L,null,null));
+        MktServiceContract contract = directContract(); contract.setStartDate(java.time.LocalDate.now().plusDays(1));
+        when(contractMapper.selectOne(any())).thenReturn(contract);
+        ImportResult dates = service.importRows(List.of(row("BEFORE-CONTRACT")), null);
+        assertThat(dates.errors()).singleElement().asString().contains("合同有效期");
+        contract.setStartDate(null);
+        var suspended = new com.zhyq.park.marketing.entity.MktWarehouse(); suspended.setJoinStatus(6);
+        when(warehouseMapper.selectById(7L)).thenReturn(suspended);
+        ImportResult status = service.importRows(List.of(row("SUSPENDED")), null);
+        assertThat(status.errors()).singleElement().asString().contains("未上线");
+        verify(orderMapper,never()).insert(any(MktReferralOrder.class));
+        org.mockito.Mockito.verifyNoInteractions(commissionService,gradeMapper);
+    }
+
+    @Test void directImportDoesNotBypassRowOrProjectValidation() {
+        when(customerMapper.selectOne(any())).thenReturn(customer(5L,null,null));
+        MktServiceContract contract = directContract(); contract.setProjectId(3L);
+        when(contractMapper.selectOne(any())).thenReturn(contract);
+        ImportResult invalid = service.importRows(List.of(new OutboundRow("BAD-QTY","13800000001",-1,1,LocalDateTime.now(),null,null,null), row("OTHER-PROJECT")), 99L);
+        assertThat(invalid.imported()).isZero(); assertThat(invalid.errors()).hasSize(2);
+        assertThat(invalid.errors().get(0)).contains("件数"); assertThat(invalid.errors().get(1)).contains("当前园区");
+        verify(orderMapper,never()).insert(any(MktReferralOrder.class));
+        org.mockito.Mockito.verifyNoInteractions(commissionService,gradeMapper);
+    }
+
+    @Test void concurrentDirectDuplicateIsSkippedWithoutCommission() {
+        when(orderMapper.selectCount(any())).thenReturn(0L,1L);
+        when(customerMapper.selectOne(any())).thenReturn(customer(5L,null,null));
+        when(contractMapper.selectOne(any())).thenReturn(directContract());
+        when(orderMapper.insert(any(MktReferralOrder.class))).thenThrow(new org.springframework.dao.DuplicateKeyException("uk_referral_order_source"));
+        ImportResult result = service.importRows(List.of(row("CONCURRENT")), null);
+        assertThat(result.imported()).isZero(); assertThat(result.skipped()).isEqualTo(1); assertThat(result.errors()).isEmpty();
+        org.mockito.Mockito.verifyNoInteractions(commissionService,gradeMapper);
+    }
+
+    @Test void directAndParkRowsUseSeparateImportPathsInOneWorkbook() {
+        when(customerMapper.selectOne(any())).thenReturn(customer(5L,99L,"A"));
+        MktServiceContract direct = directContract();
+        MktServiceContract park = directContract(); park.setId(21L); park.setSignMode(1); park.setPriceTable("{\"perOrder\":10}");
+        when(contractMapper.selectOne(any())).thenReturn(direct,park);
+        MktCustomerGrade grade = new MktCustomerGrade(); grade.setCode("A"); grade.setErpTotalRate(new BigDecimal("5"));
+        when(gradeMapper.selectOne(any())).thenReturn(grade);
+        ImportResult result = service.importRows(List.of(row("DIRECT-MIX"),row("PARK-MIX")),null);
+        assertThat(result.imported()).isEqualTo(2); assertThat(result.errors()).isEmpty();
+        verify(orderMapper,times(1)).insert(any(MktReferralOrder.class));
+        ArgumentCaptor<CommissionEvent> event=ArgumentCaptor.forClass(CommissionEvent.class);
+        verify(commissionService,times(1)).createAndSplit(event.capture());
+        assertThat(event.getValue().sourceNo()).isEqualTo("PARK-MIX");
+        assertThat(event.getValue().poolAmount()).isEqualByComparingTo("0.50");
+    }
+
+    private static MktServiceContract directContract() {
+        MktServiceContract c = new MktServiceContract(); c.setId(20L); c.setWarehouseId(7L); c.setCustomerId(5L); c.setStatus(4); c.setSignMode(2); return c;
     }
 
     private static OutboundRow row(String no) {

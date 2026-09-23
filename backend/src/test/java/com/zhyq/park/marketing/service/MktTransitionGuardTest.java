@@ -1,5 +1,7 @@
 package com.zhyq.park.marketing.service;
 
+import com.zhyq.park.marketing.entity.MktPromoter;
+
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.conditions.Wrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
@@ -7,6 +9,7 @@ import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.zhyq.park.common.setting.BizSettings;
 import com.zhyq.park.finance.mapper.BillMapper;
 import com.zhyq.park.crm.mapper.CustomerMapper;
+import com.zhyq.park.crm.entity.Customer;
 import com.zhyq.park.marketing.engine.LadderResolver;
 import com.zhyq.park.marketing.entity.MktCustomerLock;
 import com.zhyq.park.marketing.entity.MktPromoterCommission;
@@ -99,7 +102,7 @@ class MktTransitionGuardTest {
     @BeforeAll
     static void initMp() {
         MapperBuilderAssistant a = new MapperBuilderAssistant(new MybatisConfiguration(), "");
-        for (Class<?> c : List.of(MktServiceContract.class, MktCustomerLock.class, MktWarehouse.class,
+        for (Class<?> c : List.of(Customer.class, MktServiceContract.class, MktCustomerLock.class, MktWarehouse.class,
                 MktWarehouseOnboarding.class, MktPromoterCommission.class, MktWithdrawal.class)) {
             TableInfoHelper.initTableInfo(a, c);
         }
@@ -117,18 +120,26 @@ class MktTransitionGuardTest {
         @Mock MktLockService lockService;
         @Mock MktAuditService auditService;
         @Mock ApplicationEventPublisher eventPublisher;
+        @Mock MktCustomerAssignmentService assignmentService;
         ArgumentCaptor<Wrapper<MktServiceContract>> captor;
         MktServiceContractService service;
 
         @BeforeEach
         void setUp() {
             service = new MktServiceContractService(contractMapper, versionMapper, gradeMapper, customerMapper,
-                    billMapper, commissionService, lockService, auditService, eventPublisher);
+                    billMapper, commissionService, lockService, auditService, eventPublisher, assignmentService);
             captor = ArgumentCaptor.forClass(Wrapper.class);
             when(contractMapper.update(isNull(), captor.capture())).thenReturn(1);
             MktServiceContract c = new MktServiceContract();
             c.setId(1L); c.setStatus(ST_PENDING_SIGN); c.setCustomerId(5L); c.setContractVersion(1);
             c.setEffectiveAt(LocalDateTime.now().minusDays(1)); c.setSignMode(1);
+            c.setWarehouseId(7L); c.setServiceType(2); c.setFeeModel(2); c.setPayCycle(3); c.setPriceTable("{\"perOrder\":10}");
+            c.setStartDate(LocalDate.of(2025, 1, 1)); c.setEndDate(LocalDate.now().minusDays(1));
+            when(customerMapper.selectForUpdate(anyLong())).thenReturn(new Customer());
+            var warehouse = new MktWarehouse(); warehouse.setFeeModel("{\"perOrder\":5}");
+            when(assignmentService.requireAvailableWarehouse(any(), any())).thenReturn(warehouse);
+            var grade = new com.zhyq.park.marketing.entity.MktCustomerGrade(); grade.setErpTotalRate(new java.math.BigDecimal("8"));
+            when(gradeMapper.selectOne(any(Wrapper.class))).thenReturn(grade);
             when(contractMapper.selectById(anyLong())).thenReturn(c);
         }
 
@@ -158,7 +169,7 @@ class MktTransitionGuardTest {
         void amendDone() { service.amendDone(1L); last().isStatusTransition("status", ST_PERFORMING, ST_AMENDING); }
 
         @Test @DisplayName("履约中 → 到期")
-        void expire() { service.expire(1L); last().isStatusTransition("status", ST_EXPIRED, ST_PERFORMING); }
+        void expire() { service.expire(1L); last().isStatusTransition("status", ST_EXPIRED, ST_EFFECTIVE, ST_PERFORMING, ST_AMENDING); }
 
         @Test @DisplayName("到期 → 履约中(续签)")
         void renew() {
@@ -167,10 +178,10 @@ class MktTransitionGuardTest {
             assertThat(last().setValue("contract_version")).isEqualTo("2");
         }
 
-        @Test @DisplayName("§2.4 终止只能从 已生效 / 履约中 出发 —— 变更中、到期不是合法前态")
+        @Test @DisplayName("终止可从已生效、履约中或变更中出发，不能从到期出发")
         void terminateOnlyFromEffectiveOrPerforming() {
             service.terminate(1L, "退租", 90);
-            last().isStatusTransition("status", ST_TERMINATED, ST_EFFECTIVE, ST_PERFORMING);
+            last().isStatusTransition("status", ST_TERMINATED, ST_EFFECTIVE, ST_PERFORMING, ST_AMENDING);
         }
 
         @Test @DisplayName("§2.4 作废只能从 待客户签 出发 —— 草稿、待审核不是合法前态")
@@ -189,12 +200,16 @@ class MktTransitionGuardTest {
         @Mock BizSettings bizSettings;
         @Mock MktAuditService auditService;
         @Mock ApplicationEventPublisher eventPublisher;
+        @Mock CustomerMapper customerMapper;
+        @Mock MktCustomerAssignmentService assignmentService;
         ArgumentCaptor<Wrapper<MktCustomerLock>> captor;
         MktLockService service;
 
         @BeforeEach
         void setUp() {
-            service = new MktLockService(lockMapper, promoterMapper, positionMapper, bizSettings, auditService, eventPublisher);
+            service = new MktLockService(lockMapper, promoterMapper, positionMapper, bizSettings, auditService, eventPublisher, customerMapper, assignmentService);
+            Customer customer = new Customer(); customer.setId(5L); customer.setReferrerId(9L);
+            when(customerMapper.selectForUpdate(5L)).thenReturn(customer);
             captor = ArgumentCaptor.forClass(Wrapper.class);
             when(lockMapper.update(isNull(), captor.capture())).thenReturn(1);
             when(bizSettings.getInt(anyString(), anyString(), anyInt())).thenAnswer(inv -> inv.getArgument(2));
@@ -259,7 +274,7 @@ class MktTransitionGuardTest {
             service = new MktWarehouseOnboardingService(warehouseMapper, stepMapper, auditService);
             captor = ArgumentCaptor.forClass(Wrapper.class);
             when(warehouseMapper.update(isNull(), captor.capture())).thenReturn(1);
-            MktWarehouse w = new MktWarehouse(); w.setId(3L); w.setJoinStatus(JS_PAUSED); w.setErpStatus(ERP_LIVE);
+            MktWarehouse w = new MktWarehouse(); w.setId(3L); w.setJoinStatus(JS_PAUSED); w.setErpStatus(ERP_LIVE); w.setName("测试仓"); w.setContact("联系人"); w.setPhone("13800000000"); w.setRegion("杭州"); w.setAddress("杭州园区");
             when(warehouseMapper.selectById(anyLong())).thenReturn(w);
         }
 
@@ -268,21 +283,21 @@ class MktTransitionGuardTest {
         }
 
         @Test @DisplayName("资质审核 → ERP 对接中(通过)")
-        void qualifyPass() { service.passQualification(3L); first().isStatusTransition("join_status", JS_ERP_CONNECTING, JS_QUALIFYING); }
+        void qualifyPass() { service.passQualification(3L, 1); first().isStatusTransition("join_status", JS_ERP_CONNECTING, JS_QUALIFYING); assertThat(first().whereEq("version")).isEqualTo("1"); }
 
         @Test @DisplayName("资质审核 → 申请(驳回,可重提)")
         void qualifyReject() { service.rejectQualification(3L, "资质不全"); first().isStatusTransition("join_status", JS_APPLIED, JS_QUALIFYING); }
 
-        @Test @DisplayName("ERP 对接中 → 待签协议,ERP 状态置沙箱")
+        @Test @DisplayName("人工订单模式 → 待签协议,ERP 保持未连接")
         void erpMarked() {
-            service.markErpConnected(3L, "运营");
+            service.useManualOrders(3L);
             first().isStatusTransition("join_status", JS_PENDING_AGREEMENT, JS_ERP_CONNECTING);
-            assertThat(first().setValue("erp_status")).isEqualTo(String.valueOf(ERP_SANDBOX));
+            assertThat(first().setValue("erp_status")).isEqualTo(String.valueOf(MktWarehouseOnboardingService.ERP_NONE));
         }
 
         @Test @DisplayName("待签协议 → 已上线,ERP 切正式")
         void signAgreement() {
-            service.signAgreement(3L, "/files/agreement.pdf");
+            service.signAgreement(3L, "file:1");
             first().isStatusTransition("join_status", JS_ONLINE, JS_PENDING_AGREEMENT);
             assertThat(first().setValue("erp_status")).isEqualTo(String.valueOf(ERP_LIVE));
         }
@@ -353,16 +368,18 @@ class MktTransitionGuardTest {
         @Mock MktPromoterMapper promoterMapper;
         @Mock BizSettings bizSettings;
         @Mock MktAuditService auditService;
+        @Mock com.zhyq.park.marketing.mapper.MktPromoterAccountMapper accounts;
+        @Mock MktPaymentProofService proofs;
         ArgumentCaptor<Wrapper<MktWithdrawal>> captor;
         MktWithdrawalService service;
 
         @BeforeEach
         void setUp() {
-            service = new MktWithdrawalService(withdrawalMapper, commissionMapper, promoterMapper, bizSettings, auditService);
+            service = new MktWithdrawalService(withdrawalMapper, commissionMapper, promoterMapper, bizSettings, auditService, accounts, proofs);
             captor = ArgumentCaptor.forClass(Wrapper.class);
             when(withdrawalMapper.update(isNull(), captor.capture())).thenReturn(1);
             MktWithdrawal w = new MktWithdrawal(); w.setId(21L); w.setPromoterId(9L); w.setStatus(WS_APPROVED);
-            w.setAmount(new BigDecimal("500.00"));
+            w.setAmount(new BigDecimal("500.00"));w.setAccountNoEnc("encrypted");w.setAccountVerifiedAt(LocalDateTime.now());
             when(withdrawalMapper.selectById(anyLong())).thenReturn(w);
             when(withdrawalMapper.selectOne(any())).thenReturn(null);
         }
@@ -379,10 +396,13 @@ class MktTransitionGuardTest {
 
         @Test @DisplayName("已审核 → 已打款,写 pay_no")
         void pay() {
+            var promoter = new MktPromoter(); promoter.setId(9L); promoter.setStatus(1);
+            when(promoterMapper.selectForUpdate(9L)).thenReturn(promoter);
             MktPromoterCommission row = new MktPromoterCommission();
-            row.setAmount(new BigDecimal("500.00")); row.setWithdrawalId(21L);
+            row.setAmount(new BigDecimal("500.00")); row.setWithdrawalId(21L);row.setPromoterId(9L);row.setStatus(C_SETTLED);row.setSign(1);
+            when(commissionMapper.update(any(),any())).thenReturn(1);
             when(commissionMapper.selectList(any())).thenReturn(List.of(row));
-            service.pay(21L, "PAY-20260921-001", "财务");
+            service.pay(21L, "PAY-20260921-001", "file:10", "财务");
             first().isStatusTransition("status", WS_PAID, WS_APPROVED).hasWhereId(21L);
             assertThat(first().setValue("pay_no")).isEqualTo("PAY-20260921-001");
         }

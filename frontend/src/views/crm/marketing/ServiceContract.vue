@@ -43,11 +43,10 @@
             <template v-if="row.status === 1">
               <el-button link type="primary" @click="openDialog(row)">编辑</el-button>
               <el-button link type="success" @click="act(row, 'submit', '已提交审核')">提交</el-button>
-              <el-button v-if="row.signMode === 2" link type="success" @click="act(row, 'effectDirect', '直签备案生效')">备案生效</el-button>
-              <el-button link type="danger" @click="reasonAct(row, 'void', '作废合同')">作废</el-button>
+
             </template>
             <template v-else-if="row.status === 2">
-              <el-button link type="success" @click="auditPass(row)">审核通过</el-button>
+              <el-button v-if="row.signMode === 1" link type="success" @click="auditPass(row)">审核通过</el-button>
               <el-button link type="danger" @click="auditReject(row)">驳回</el-button>
               <el-button v-if="row.signMode === 2" link type="success" @click="act(row, 'effectDirect', '直签备案生效')">备案生效</el-button>
             </template>
@@ -56,7 +55,7 @@
               <el-button link type="danger" @click="reasonAct(row, 'void', '作废合同')">作废</el-button>
             </template>
             <template v-else-if="row.status === 4">
-              <el-button link type="success" @click="act(row, 'perform', '已进入履约')">首期款到账 → 履约</el-button>
+              <el-button link type="success" @click="act(row, 'perform', '已进入履约')">开始履约</el-button>
               <el-button link type="danger" @click="reasonAct(row, 'terminate', '终止合同')">终止</el-button>
             </template>
             <template v-else-if="row.status === 5">
@@ -77,12 +76,12 @@
     <el-dialog v-model="dialog.visible" :title="dialog.title" width="680px">
       <el-form ref="formRef" :model="form" :rules="rules" label-width="110px">
         <el-row :gutter="12">
-          <el-col :span="12"><el-form-item label="客户 ID" prop="customerId"><el-input-number v-model="form.customerId" :min="1" style="width: 100%" :disabled="!!form.id" /></el-form-item></el-col>
+          <el-col :span="12"><el-form-item label="客户" prop="customerId"><el-select v-model="form.customerId" filterable remote :remote-method="searchCustomers" :loading="customersLoading" :disabled="!!form.id" placeholder="搜索已由云仓承接的客户" @change="selectCustomer"><el-option v-for="c in customers" :key="c.id" :value="c.id" :label="c.name" /></el-select></el-form-item></el-col>
           <el-col :span="12"><el-form-item label="签约方式">
-            <el-select v-model="form.signMode" style="width: 100%" placeholder="留空取客户设置"><el-option label="园区签" :value="1" /><el-option label="云仓直签" :value="2" /></el-select>
+            <el-select v-model="form.signMode" :disabled="!!form.id" style="width: 100%" placeholder="签约方式"><el-option label="园区签" :value="1" /><el-option label="云仓直签" :value="2" /></el-select>
           </el-form-item></el-col>
           <el-col :span="12"><el-form-item label="承接云仓" prop="warehouseId">
-            <el-select v-model="form.warehouseId" style="width: 100%" placeholder="只列已上线且 ERP 联通的仓">
+            <el-select v-model="form.warehouseId" disabled style="width: 100%" placeholder="按客户已承接云仓填写">
               <el-option v-for="w in warehouses" :key="w.id" :label="`${w.code} ${w.name}`" :value="w.id" />
             </el-select>
           </el-form-item></el-col>
@@ -102,18 +101,18 @@
             <el-select v-model="form.payCycle" style="width: 100%"><el-option label="周" :value="1" /><el-option label="半月" :value="2" /><el-option label="月" :value="3" /></el-select>
           </el-form-item></el-col>
           <el-col :span="24"><el-form-item label="单价表">
-            <el-input v-model="form.priceTable" placeholder='客户付园区,JSON:{"perOrder":10,"perItem":0.5,"storage":0,"monthly":0}' />
-            <div class="hint">出库单佣金基数 = perOrder × 包裹数 + perItem × 件数(园区自算,不信任 ERP 金额)。</div>
+            <div><div v-for="(label,key) in PRICE" :key="key" class="price-row"><span>{{ label }}（元）</span><el-input-number v-model="prices[key]" :min="0" :max="99999999" :precision="2" placeholder="未约定" /></div><div class="hint">填写客户实际合同单价，至少一项大于零。请勿将云仓成本费率填入此处。</div></div>
           </el-form-item></el-col>
-          <el-col :span="24"><el-form-item label="备注"><el-input v-model="form.remark" type="textarea" /></el-form-item></el-col>
+          <el-col :span="24"><el-form-item label="签署附件"><WarehouseAttachments v-model="attachments" :warehouse-id="form.warehouseId" @busy="uploading=$event" /></el-form-item></el-col><el-col :span="24"><el-form-item label="备注"><el-input v-model="form.remark" type="textarea" maxlength="500" show-word-limit /></el-form-item></el-col>
         </el-row>
       </el-form>
       <template #footer>
         <el-button @click="dialog.visible = false">取消</el-button>
-        <el-button type="primary" @click="submit">保存</el-button>
+        <el-button type="primary" :loading="saving" :disabled="uploading" @click="submit">保存</el-button>
       </template>
     </el-dialog>
 
+    <el-dialog v-model="signing.visible" title="上传签署件并生效" width="560px"><p>{{ signing.row?.contractNo }} · {{ signing.row?.customerName }}</p><WarehouseAttachments v-model="signing.files" :warehouse-id="signing.row?.warehouseId" @busy="uploading=$event" /><template #footer><el-button @click="signing.visible=false">取消</el-button><el-button type="primary" :loading="saving" :disabled="uploading || !signing.files.length" @click="confirmSign">确认签署并生效</el-button></template></el-dialog>
     <!-- 详情 -->
     <el-drawer v-model="detail.visible" :title="detail.row?.contractNo" size="640px">
       <el-tabs v-if="detail.row">
@@ -126,7 +125,7 @@
             <el-descriptions-item label="评级">{{ detail.row.grade || '-' }}</el-descriptions-item>
             <el-descriptions-item label="状态">{{ ST[detail.row.status] }}</el-descriptions-item>
             <el-descriptions-item label="期限" :span="2">{{ detail.row.startDate }} ~ {{ detail.row.endDate }}</el-descriptions-item>
-            <el-descriptions-item label="单价表" :span="2"><code>{{ detail.row.priceTable }}</code></el-descriptions-item>
+            <el-descriptions-item label="单价表" :span="2">{{ formatPrices(detail.row.priceTable) }}</el-descriptions-item><el-descriptions-item label="签署附件" :span="2"><WarehouseAttachments :model-value="parseFiles(detail.row.files)" readonly /></el-descriptions-item>
             <el-descriptions-item label="生效时间">{{ detail.row.effectiveAt || '-' }}</el-descriptions-item>
             <el-descriptions-item label="签署">{{ detail.row.signedAt || '-' }}</el-descriptions-item>
             <el-descriptions-item label="审核意见" :span="2">{{ detail.row.auditReason || '-' }}</el-descriptions-item>
@@ -149,8 +148,9 @@
 <script setup>
 import { reactive, ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { mktContractApi, mktWarehouseApi, mktTemplateApi } from '@/api/marketing'
+import { mktContractApi, mktWarehouseApi, mktTemplateApi, mktCustomerApi } from '@/api/marketing'
 import { money } from '@/utils/format'
+import WarehouseAttachments from '@/components/WarehouseAttachments.vue'
 
 const ST = { 1: '草稿', 2: '待审核', 3: '待客户签', 4: '已生效', 5: '履约中', 6: '变更中', 7: '到期', 8: '终止', 9: '作废' }
 const SIGN = { 1: '园区签', 2: '云仓直签' }
@@ -158,7 +158,14 @@ const SVC = { 1: '仓储', 2: '代发', 3: '仓配' }
 const FEE = { 1: '仓租', 2: '单票', 3: '按件', 4: '包月' }
 const stType = (s) => ({ 1: 'info', 2: 'warning', 3: 'warning', 4: 'success', 5: 'primary', 6: 'warning', 7: 'info', 8: 'danger', 9: 'danger' }[s] || 'info')
 
-const loading = ref(false)
+const loading = ref(false), saving = ref(false), uploading = ref(false), customersLoading = ref(false)
+const customers = ref([]), attachments = ref([])
+const prices = reactive({storage:undefined,perOrder:undefined,perItem:undefined,monthly:undefined})
+const PRICE = {storage:'仓储',perOrder:'每票',perItem:'每件',monthly:'包月'}
+function parseFiles(raw){try{return JSON.parse(raw||'[]').map(f=>typeof f==='number'?{id:f,name:'附件 '+f}:f).filter(f=>f.id)}catch{return []}}
+function formatPrices(raw){try{return Object.entries(JSON.parse(raw||'{}')).map(([k,v])=>(PRICE[k]||k)+' '+money(v)+'元').join('，')||'未设置'}catch{return '未设置'}}
+async function searchCustomers(keyword=''){customersLoading.value=true;try{const data=await mktCustomerApi.page({pageNo:1,pageSize:100,keyword,warehouseAssignmentStatus:2});customers.value=data.records.filter(c=>c.warehouseAssignmentStatus===2)}finally{customersLoading.value=false}}
+function selectCustomer(id){const c=customers.value.find(c=>c.id===id);form.warehouseId=c?.assignedWarehouseId;form.signMode=c?.signMode||1}
 const list = ref([])
 const total = ref(0)
 const query = reactive({ pageNo: 1, pageSize: 10, keyword: '', status: null, signMode: null })
@@ -177,12 +184,12 @@ function reset() { Object.assign(query, { pageNo: 1, keyword: '', status: null, 
 
 const formRef = ref()
 const dialog = reactive({ visible: false, title: '' })
-const emptyForm = () => ({ id: null, customerId: null, signMode: null, warehouseId: null, serviceType: 2, feeModel: 2, templateId: null, startDate: null, endDate: null, deposit: 0, payCycle: 3, priceTable: '{"perOrder":10,"perItem":0.5,"storage":0,"monthly":0}', remark: '' })
+const emptyForm = () => ({ id: null, customerId: null, signMode: null, warehouseId: null, serviceType: 2, feeModel: 2, templateId: null, startDate: null, endDate: null, deposit: 0, payCycle: 3, priceTable: '{}', files:'[]', remark: '' })
 const form = reactive(emptyForm())
 // 行数据里还带 customerName/status 等只读字段,只拷表单里有的键,避免它们跟着 PUT 回去
 const pickForm = (row) => Object.fromEntries(Object.entries(row).filter(([k]) => k in form))
 const rules = {
-  customerId: [{ required: true, message: '请填客户 ID', trigger: 'change' }],
+  customerId: [{ required: true, message: '请选择已承接的客户', trigger: 'change' }],
   warehouseId: [{ required: true, message: '请选择承接云仓', trigger: 'change' }]
 }
 async function openDialog(row) {
@@ -191,13 +198,18 @@ async function openDialog(row) {
   dialog.visible = true
   dialog.title = row ? `编辑 ${row.contractNo}` : '起草云仓服务合同'
   Object.assign(form, emptyForm(), row ? pickForm(row) : {})
+  attachments.value=parseFiles(form.files);let p={};try{p=JSON.parse(form.priceTable||'{}')}catch{}
+  Object.keys(prices).forEach(k=>prices[k]=p[k])
+  await searchCustomers();if(row&&!customers.value.some(c=>c.id===row.customerId))customers.value.push({id:row.customerId,name:row.customerName})
 }
 async function submit() {
-  await formRef.value.validate()
-  try { JSON.parse(form.priceTable) } catch (e) { return ElMessage.error('单价表不是合法 JSON') }
-  if (form.id) await mktContractApi.update(form)
-  else await mktContractApi.create(form)
-  ElMessage.success('已保存'); dialog.visible = false; load()
+  if(saving.value||uploading.value)return
+  if(!await formRef.value.validate().catch(()=>false))return
+  if(!form.startDate||!form.endDate||form.endDate<=form.startDate)return ElMessage.error('请填写正确的合同起止日期')
+  const terms=Object.fromEntries(Object.entries(prices).filter(([,v])=>v!=null));if(!Object.values(terms).some(v=>v>0))return ElMessage.error('请填写至少一项真实正单价')
+  form.priceTable=JSON.stringify(terms);form.files=JSON.stringify(attachments.value)
+  saving.value=true
+  try { if(form.id)await mktContractApi.update(form);else await mktContractApi.create(form);ElMessage.success('已保存');dialog.visible=false;await load() } finally { saving.value=false }
 }
 
 async function act(row, fn, okMsg) { await mktContractApi[fn](row.id); ElMessage.success(okMsg); load() }
@@ -210,10 +222,10 @@ async function auditReject(row) {
   const { value } = await ElMessageBox.prompt('驳回原因', '驳回', { inputPattern: /\S+/, inputErrorMessage: '原因必填' })
   await mktContractApi.audit(row.id, { pass: false, reason: value }); ElMessage.success('已驳回'); load()
 }
-async function signOffline(row) {
-  const { value } = await ElMessageBox.prompt('签署件附件 ID 列表(JSON 数组,如 [12,13])', '上传盖章件', { inputValue: '[]' })
-  await mktContractApi.signOffline(row.id, { files: value }); ElMessage.success('合同已生效,佣金已冻结生成'); load()
-}
+const signing = reactive({visible:false,row:null,files:[]})
+function signOffline(row){signing.row=row;signing.files=parseFiles(row.files);signing.visible=true}
+async function confirmSign(){if(saving.value||!signing.files.length)return;saving.value=true;try{await mktContractApi.signOffline(signing.row.id,{files:JSON.stringify(signing.files)});ElMessage.success('合同已生效');signing.visible=false;await load()}finally{saving.value=false}}
+
 async function renew(row) {
   const { value: start } = await ElMessageBox.prompt('新起始日 YYYY-MM-DD', '续签', { inputPattern: /^\d{4}-\d{2}-\d{2}$/, inputErrorMessage: '格式 YYYY-MM-DD' })
   const { value: end } = await ElMessageBox.prompt('新结束日 YYYY-MM-DD', '续签', { inputPattern: /^\d{4}-\d{2}-\d{2}$/, inputErrorMessage: '格式 YYYY-MM-DD' })
@@ -231,6 +243,7 @@ onMounted(load)
 </script>
 
 <style scoped>
+.price-row{display:flex;align-items:center;gap:16px;margin-bottom:8px}.price-row span{min-width:90px}
 .pager { margin-top: 16px; justify-content: flex-end; }
 .hint { color: var(--el-text-color-secondary); font-size: 12px; line-height: 1.4; margin-top: 4px; }
 </style>

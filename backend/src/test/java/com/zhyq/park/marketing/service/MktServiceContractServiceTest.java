@@ -54,6 +54,7 @@ class MktServiceContractServiceTest {
     @Mock MktLockService lockService;
     @Mock MktAuditService auditService;
     @Mock ApplicationEventPublisher eventPublisher;
+    @Mock MktCustomerAssignmentService assignmentService;
 
     MktServiceContractService service;
 
@@ -66,15 +67,21 @@ class MktServiceContractServiceTest {
     @BeforeEach
     void setUp() {
         service = new MktServiceContractService(contractMapper, versionMapper, gradeMapper, customerMapper,
-                billMapper, commissionService, lockService, auditService, eventPublisher);
+                billMapper, commissionService, lockService, auditService, eventPublisher, assignmentService);
+        lenient().when(customerMapper.selectForUpdate(any())).thenReturn(new Customer());
+        var warehouse = new com.zhyq.park.marketing.entity.MktWarehouse(); warehouse.setFeeModel("{\"perOrder\":5}");
+        lenient().when(assignmentService.requireAvailableWarehouse(any(), any())).thenReturn(warehouse);
+        var grade = new MktCustomerGrade(); grade.setErpTotalRate(new BigDecimal("8"));
+        lenient().when(gradeMapper.selectOne(any(Wrapper.class))).thenReturn(grade);
+        lenient().when(contractMapper.selectById(1L)).thenReturn(contract(1L, MktServiceContractService.ST_DRAFT, 1));
     }
 
     // ---- 草稿 ----
     @Test
     void createDraftSnapshotsCustomerSignModeGradeAndReferrer() {
         Customer c = new Customer(); c.setId(5L); c.setSignMode(2); c.setGrade("B"); c.setReferrerId(99L);
-        when(customerMapper.selectById(5L)).thenReturn(c);
-        MktServiceContract d = new MktServiceContract(); d.setCustomerId(5L);
+        when(assignmentService.validateContractWarehouse(any())).thenReturn(c);
+        MktServiceContract d = contract(null, 1, 1); d.setSignMode(null);
 
         service.createDraft(d);
 
@@ -90,9 +97,8 @@ class MktServiceContractServiceTest {
     void createDraftIgnoresClientSuppliedPartnerAndGrade() {
         // B9:即使调用方(或未来某个新入口)传入 partnerId/grade,也必须以客户档案为准,防越权改佣金归属
         Customer c = new Customer(); c.setId(5L); c.setGrade("C"); c.setReferrerId(11L);
-        when(customerMapper.selectById(5L)).thenReturn(c);
-        MktServiceContract d = new MktServiceContract();
-        d.setCustomerId(5L);
+        when(assignmentService.validateContractWarehouse(any())).thenReturn(c);
+        MktServiceContract d = contract(null, 1, 1);
         d.setPartnerId(999L);   // 伪造:想把佣金记到别人头上
         d.setGrade("A");        // 伪造:想抬高比例
 
@@ -105,8 +111,8 @@ class MktServiceContractServiceTest {
     @Test
     void createDraftDefaultsToParkSignMode() {
         Customer c = new Customer(); c.setId(5L);
-        when(customerMapper.selectById(5L)).thenReturn(c);
-        MktServiceContract d = new MktServiceContract(); d.setCustomerId(5L);
+        when(assignmentService.validateContractWarehouse(any())).thenReturn(c);
+        MktServiceContract d = contract(null, 1, 1); d.setSignMode(null);
         service.createDraft(d);
         assertThat(d.getSignMode()).isEqualTo(MktServiceContractService.SIGN_MODE_PARK);
     }
@@ -147,7 +153,7 @@ class MktServiceContractServiceTest {
         c.setPartnerId(99L); c.setGrade("A"); c.setDeposit(new BigDecimal("5000")); c.setStartDate(LocalDate.of(2026, 10, 1));
         when(contractMapper.selectById(1L)).thenReturn(c);
         updated(1);
-        MktCustomerGrade g = new MktCustomerGrade(); g.setCode("A"); g.setContractBonus(new BigDecimal("2000"));
+        MktCustomerGrade g = new MktCustomerGrade(); g.setCode("A"); g.setContractBonus(new BigDecimal("2000")); g.setErpTotalRate(new BigDecimal("8"));
         when(gradeMapper.selectOne(any(Wrapper.class))).thenReturn(g);
 
         service.signOffline(1L, "[12]");
@@ -155,7 +161,7 @@ class MktServiceContractServiceTest {
         verify(lockService).markDeal(5L, 99L);
         verify(eventPublisher).publishEvent(any(DomainEvent.ServiceContractEffective.class));
         ArgumentCaptor<CommissionEvent> ev = ArgumentCaptor.forClass(CommissionEvent.class);
-        verify(commissionService).createAndSplit(ev.capture());
+        verify(commissionService).createAndSplitInTransaction(ev.capture());
         assertThat(ev.getValue().sourceType()).isEqualTo(MktCommissionService.SOURCE_CONTRACT_BONUS);
         assertThat(ev.getValue().poolAmount()).isEqualByComparingTo("2000");
         assertThat(ev.getValue().unfreezeAt()).isNull();
@@ -173,7 +179,7 @@ class MktServiceContractServiceTest {
         when(contractMapper.selectById(1L)).thenReturn(c);
         updated(1);
 
-        service.signOffline(1L, null);
+        service.signOffline(1L, "[12]");
 
         verify(billMapper, never()).insert(any(Bill.class));
     }
@@ -184,12 +190,12 @@ class MktServiceContractServiceTest {
         c.setPartnerId(99L); c.setGrade("D");
         when(contractMapper.selectById(1L)).thenReturn(c);
         updated(1);
-        MktCustomerGrade g = new MktCustomerGrade(); g.setCode("D"); g.setContractBonus(BigDecimal.ZERO);
+        MktCustomerGrade g = new MktCustomerGrade(); g.setCode("D"); g.setContractBonus(BigDecimal.ZERO); g.setErpTotalRate(new BigDecimal("8"));
         when(gradeMapper.selectOne(any(Wrapper.class))).thenReturn(g);
 
-        service.signOffline(1L, null);
+        service.signOffline(1L, "[12]");
 
-        verify(commissionService, never()).createAndSplit(any());
+        verify(commissionService, never()).createAndSplitInTransaction(any());
     }
 
     @Test
@@ -199,12 +205,82 @@ class MktServiceContractServiceTest {
     }
 
     @Test
-    void effectDirectFromDraftWorks() {
+    void effectDirectFromDraftIsRejected() {
         when(contractMapper.selectById(1L)).thenReturn(contract(1L, MktServiceContractService.ST_DRAFT, 2));
+        assertThatThrownBy(() -> service.effectDirect(1L)).isInstanceOf(BizException.class).hasMessageContaining("先提交审核");
+        verify(contractMapper, never()).update(isNull(), any(Wrapper.class));
+        verify(commissionService, never()).createAndSplitInTransaction(any());
+    }
+
+    @Test
+    void effectDirectRequiresSignedAttachmentThenActivatesFromAudit() {
+        MktServiceContract c = contract(1L, MktServiceContractService.ST_PENDING_AUDIT, 2);
+        c.setFiles("[]");
+        when(contractMapper.selectById(1L)).thenReturn(c);
+        assertThatThrownBy(() -> service.effectDirect(1L)).isInstanceOf(BizException.class).hasMessageContaining("附件");
+        c.setFiles("[{\"id\":12,\"name\":\"签署件.pdf\",\"size\":321,\"ext\":\"pdf\"}]");
         updated(1);
         service.effectDirect(1L);
+        verify(assignmentService).contractEffective(c);
         verify(lockService).markDeal(5L, null);
-        verify(eventPublisher).publishEvent(any(DomainEvent.ServiceContractEffective.class));
+    }
+
+    @Test
+    void effectiveRetryDoesNotCreateAnotherBillOrCommission() {
+        when(contractMapper.selectById(1L)).thenReturn(contract(1L, MktServiceContractService.ST_EFFECTIVE, 2));
+        service.effectDirect(1L);
+        verify(contractMapper, never()).update(isNull(), any(Wrapper.class));
+        verify(commissionService, never()).createAndSplitInTransaction(any());
+        verify(billMapper, never()).insert(any(Bill.class));
+    }
+
+    @Test
+    void unitPricedContractDoesNotCreateZeroAmountPlaceholderBill() {
+        when(contractMapper.selectById(1L)).thenReturn(contract(1L, MktServiceContractService.ST_PENDING_SIGN, 1));
+        updated(1);
+        service.signOffline(1L, "[12]");
+        verify(billMapper, never()).insert(any(Bill.class));
+    }
+
+    @Test
+    void monthlyContractCreatesRealFirstMonthRent() {
+        MktServiceContract c = contract(1L, MktServiceContractService.ST_PENDING_SIGN, 1);
+        c.setFeeModel(4); c.setPriceTable("{\"monthly\":1800}");
+        when(contractMapper.selectById(1L)).thenReturn(c);
+        updated(1);
+        service.signOffline(1L, "[12]");
+        ArgumentCaptor<Bill> bill = ArgumentCaptor.forClass(Bill.class);
+        verify(billMapper).insert(bill.capture());
+        assertThat(bill.getValue().getAmount()).isEqualByComparingTo("1800");
+        assertThat(bill.getValue().getFeeType()).isEqualTo("租金");
+    }
+
+    @Test
+    void invalidTermsAndAttachmentCannotActivate() {
+        MktServiceContract c = contract(1L, MktServiceContractService.ST_PENDING_SIGN, 1);
+        when(contractMapper.selectById(1L)).thenReturn(c);
+        assertThatThrownBy(() -> service.signOffline(1L, "[]")).isInstanceOf(BizException.class).hasMessageContaining("附件");
+        assertThatThrownBy(() -> service.signOffline(1L, "[{\"id\":-1}]")).isInstanceOf(BizException.class).hasMessageContaining("编号");
+        c.setPriceTable("{\"perOrder\":-2}");
+        assertThatThrownBy(() -> service.signOffline(1L, "[12]")).isInstanceOf(BizException.class).hasMessageContaining("非负金额");
+        verify(contractMapper, never()).update(isNull(), any(Wrapper.class));
+    }
+
+    @Test
+    void editingDraftCannotChangeAssignedWarehouse() {
+        when(contractMapper.selectById(1L)).thenReturn(contract(1L, MktServiceContractService.ST_DRAFT, 1));
+        MktServiceContract edited = contract(1L, 1, 1); edited.setWarehouseId(999L);
+        assertThatThrownBy(() -> service.updateDraft(edited)).isInstanceOf(BizException.class).hasMessageContaining("不可");
+        verify(contractMapper, never()).update(isNull(), any(Wrapper.class));
+    }
+
+    @Test
+    void lastContractTerminationReleasesDealAfterCustomerSync() {
+        when(contractMapper.selectById(1L)).thenReturn(contract(1L, MktServiceContractService.ST_PERFORMING, 1));
+        when(assignmentService.contractClosed(5L)).thenReturn(true);
+        updated(1);
+        service.terminate(1L, "正常终止", 90);
+        verify(lockService).releaseDeal(5L, "合同终止");
     }
 
     // ---- 履约 / 变更 / 到期 / 续签 ----
@@ -292,7 +368,10 @@ class MktServiceContractServiceTest {
     private static MktServiceContract contract(Long id, int status, int signMode) {
         MktServiceContract c = new MktServiceContract();
         c.setId(id); c.setStatus(status); c.setSignMode(signMode); c.setContractNo("CS-202609-TEST");
-        c.setCustomerId(5L); c.setContractVersion(1);
+        c.setCustomerId(5L); c.setWarehouseId(7L); c.setContractVersion(1);
+        c.setServiceType(2); c.setFeeModel(2); c.setPriceTable("{\"perOrder\":10}");
+        c.setStartDate(LocalDate.of(2026, 1, 1)); c.setEndDate(LocalDate.of(2026, 12, 31)); c.setPayCycle(3);
+        c.setFiles("[12]");
         return c;
     }
 }

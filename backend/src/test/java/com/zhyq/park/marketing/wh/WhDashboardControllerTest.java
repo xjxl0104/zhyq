@@ -32,6 +32,7 @@ class WhDashboardControllerTest {
     @Mock MktCustomerErpMapMapper mappings;
     @Mock CustomerMapper customers;
     @Mock MktReferralOrderMapper orders;
+    @Mock com.zhyq.park.marketing.service.MktCustomerAssignmentService assignments;
 
     @AfterEach void clear() { SecurityContextHolder.clearContext(); }
 
@@ -40,6 +41,7 @@ class WhDashboardControllerTest {
         TableInfoHelper.initTableInfo(a, MktWarehouse.class);
         TableInfoHelper.initTableInfo(a, MktCustomerErpMap.class);
         TableInfoHelper.initTableInfo(a, MktReferralOrder.class);
+        TableInfoHelper.initTableInfo(a, com.zhyq.park.crm.entity.Customer.class);
     }
 
     @Test void dashboardUsesTokenWarehouseAndProject() {
@@ -48,13 +50,29 @@ class WhDashboardControllerTest {
         MktWarehouse current = new MktWarehouse(); current.setId(11L); current.setProjectId(7L);
         current.setCode("WH-11"); current.setName("A"); current.setJoinStatus(5); current.setErpStatus(2);
         when(warehouses.selectById(11L)).thenReturn(current);
-        when(mappings.selectCount(any())).thenReturn(0L);
-        when(orders.selectList(any())).thenReturn(List.of());
-        WhDashboardController controller = new WhDashboardController(warehouses, mappings, customers, orders);
+        when(customers.selectCount(any())).thenReturn(0L);
+        when(orders.selectCount(any())).thenReturn(0L);
+        WhDashboardController controller = new WhDashboardController(warehouses, mappings, customers, orders, assignments);
         Object data = controller.dashboard().getData();
         assertThat(data.toString()).contains("warehouseId=11", "WH-11");
         verify(warehouses, never()).selectById(99L);
-        verify(mappings).selectCount(any());
-        verify(orders).selectList(any());
+        verify(customers,times(2)).selectCount(any());
+        verifyNoInteractions(mappings);
+        verify(orders,times(2)).selectCount(any());
+    }
+    @Test void merchantOrdersExcludeBonusAndPlatformFeeFinancialEvents() {
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken("wh:11", null, List.of()));
+        MktWarehouse current = new MktWarehouse(); current.setId(11L); current.setProjectId(7L);
+        when(warehouses.selectById(11L)).thenReturn(current);
+        when(orders.selectPage(any(),any())).thenAnswer(inv -> {
+            com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<MktReferralOrder> query = inv.getArgument(1);
+            assertThat(query.getSqlSegment()).contains("warehouse_id =", "project_id =", "source_type =");
+            assertThat(query.getParamNameValuePairs()).containsValues(11L,7L,2);
+            IPage<MktReferralOrder> page = inv.getArgument(0); page.setRecords(List.of()); return page;
+        });
+        WhDashboardController controller = new WhDashboardController(warehouses,mappings,customers,orders,assignments);
+        assertThat(controller.orders(1,20,null).getData().getTotal()).isZero();
+        verify(orders).selectPage(any(),any());
     }
 }
