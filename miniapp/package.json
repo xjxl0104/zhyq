@@ -5,7 +5,7 @@
   "description": "园区伙伴小程序(全民营销)· uni-app Vue3",
   "scripts": {
     "dev:mp-weixin": "uni -p mp-weixin",
-    "build:mp-weixin": "uni build -p mp-weixin",
+    "build:mp-weixin": "uni build -p mp-weixin && node scripts/check-wechat-build.mjs",
     "dev:h5": "uni",
     "build:h5": "uni build"
   },

@@ -1,7 +1,11 @@
 import { whGet, whPost, whPut } from '@/utils/request'
 
 export const warehouseAuthApi = {
-  wxLogin: (jsCode, warehouseId) => whPost('/auth/wx-login', { jsCode, warehouseId }),
+  wxLogin: (jsCode, warehouseId, appId) => whPost('/auth/wx-login', { jsCode, warehouseId, appId }),
+  passwordLogin: (data) => whPost('/auth/password-login', data),
+  passwordRegister: (data) => whPost('/auth/password-register', data),
+  passwordSetup: (data) => whPost('/auth/password-setup', data),
+  passwordStatus: () => whGet('/auth/password-status'),
   bindPhone: (data) => whPost('/auth/bind-phone', data)
 }
 export const warehouseApi = {

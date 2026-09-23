@@ -25,7 +25,7 @@
     <div class="table-card">
       <div class="toolbar">
         <el-button type="primary" @click="openManual"><el-icon><Plus /></el-icon>录入伙伴</el-button>
-        <span class="hint">阶段 A 尚无小程序,伙伴由运营在此手工录入;上线小程序后由伙伴扫码自助注册。</span>
+        <span class="hint">伙伴可通过小程序微信或账号密码注册，注册资料自动显示在此；运营也可手工录入。</span>
       </div>
       <el-table :data="list" v-loading="loading" border stripe>
         <el-table-column type="index" label="#" width="60" />

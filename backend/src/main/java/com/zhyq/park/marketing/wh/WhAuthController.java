@@ -20,7 +20,7 @@ public class WhAuthController {
     public Result<WhAuthService.LoginResult> wxLogin(@RequestBody Map<String, Object> body) {
         Object id = body.get("warehouseId");
         Long warehouseId = id == null ? null : Long.valueOf(id.toString());
-        return Result.ok(authService.wxLogin(warehouseId, text(body, "jsCode", "js_code")));
+        return Result.ok(authService.wxLogin(warehouseId, text(body, "jsCode", "js_code"), text(body, "appId")));
     }
 
     @Operation(summary = "绑定手机号")
@@ -29,7 +29,8 @@ public class WhAuthController {
         String openid = text(body, "openid");
         String encrypted = text(body, "encryptedData", "encrypted_data");
         String iv = text(body, "iv");
-        if (encrypted != null || iv != null) return Result.ok(authService.bindPhone(openid, encrypted, iv));
+        if (!authService.isMockLogin()) return Result.ok(authService.bindPhoneAuthorized(openid,
+                text(body, "loginTicket"), text(body, "phoneCode"), encrypted, iv));
         return Result.ok(authService.bindPhone(openid, text(body, "phone")));
     }
 

@@ -27,6 +27,7 @@
     </view>
 
     <view class="card">
+      <view class="row" @click="uni.navigateTo({ url: '/pages/account-security/index?role=mp' })"><text>账号与密码</text><text class="muted">设置密码登录 ›</text></view>
       <view class="row" @click="uni.navigateTo({ url: '/pages/team/index' })"><text>我的团队</text><text class="muted">›</text></view>
       <view class="row" @click="uni.navigateTo({ url: '/pages/position/index' })"><text>我的岗位</text><text class="muted">›</text></view>
       <view class="row" @click="share"><text>邀请海报</text><text class="muted">›</text></view>

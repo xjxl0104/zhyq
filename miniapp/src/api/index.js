@@ -1,7 +1,11 @@
 import { get, post, put } from '@/utils/request'
 
 export const authApi = {
-  wxLogin: (jsCode) => post('/auth/wx-login', { jsCode }),
+  wxLogin: (jsCode, appId) => post('/auth/wx-login', { jsCode, appId }),
+  passwordLogin: (data) => post('/auth/password-login', data),
+  passwordRegister: (data) => post('/auth/password-register', data),
+  passwordSetup: (data) => post('/auth/password-setup', data),
+  passwordStatus: () => get('/auth/password-status'),
   bindPhone: (data) => post('/auth/bind-phone', data),
   bindInvite: (inviteCode) => post('/auth/bind-invite', { inviteCode })
 }

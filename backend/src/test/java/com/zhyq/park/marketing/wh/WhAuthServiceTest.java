@@ -22,7 +22,12 @@ import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 class WhAuthServiceTest {
+    @org.junit.jupiter.api.BeforeAll static void initTableInfo() {
+        com.baomidou.mybatisplus.core.metadata.TableInfoHelper.initTableInfo(
+            new org.apache.ibatis.builder.MapperBuilderAssistant(new com.baomidou.mybatisplus.core.MybatisConfiguration(), ""), MktWarehouse.class);
+    }
     @Mock JwtService jwt;
+    @Mock com.zhyq.park.marketing.mp.WxPhoneBindingGuard phoneBindingGuard;
     @Mock MktWarehouseMapper warehouses;
     @Mock MktPromoterMapper promoters;
     @Mock MktAuditService audit;
@@ -34,7 +39,7 @@ class WhAuthServiceTest {
         when(jwt.issue(eq(11L), eq("wh:11"), any())).thenReturn("wh-token");
         WhAuthService service = new WhAuthService(jwt, warehouses, promoters, audit,
                 (a, s, c) -> { throw new AssertionError("mock mode must not call WeChat"); },
-                (key, encrypted, iv) -> "13800138000", contacts);
+                (key, encrypted, iv) -> "13800138000", contacts, phoneBindingGuard);
         service.setMockLogin(true);
         WhAuthService.LoginResult r = service.wxLogin("wx-11");
         assertThat(r.registered()).isTrue();
@@ -45,7 +50,7 @@ class WhAuthServiceTest {
     @Test void realLoginRejectsMissingSessionFields() {
         WhAuthService service = new WhAuthService(jwt, warehouses, promoters, audit,
                 (a, s, c) -> new WxSessionClient.Session("openid", null),
-                (key, encrypted, iv) -> "13800138000", contacts);
+                (key, encrypted, iv) -> "13800138000", contacts, phoneBindingGuard);
         service.setMockLogin(false); service.setAppId("app"); service.setAppSecret("secret");
         assertThatThrownBy(() -> service.wxLogin("code"))
                 .isInstanceOf(BizException.class).hasMessageContaining("openid/session_key");
@@ -57,7 +62,7 @@ class WhAuthServiceTest {
         when(promoters.selectOne(any())).thenReturn(p);
         WhAuthService service = new WhAuthService(jwt, warehouses, promoters, audit,
                 (a, s, c) -> new WxSessionClient.Session("openid", "session"),
-                (key, encrypted, iv) -> "13800138000", contacts);
+                (key, encrypted, iv) -> "13800138000", contacts, phoneBindingGuard);
         service.setMockLogin(true);
         assertThatThrownBy(() -> service.bindPhone("openid", "13800138000"))
                 .isInstanceOf(BizException.class).hasMessageContaining("伙伴身份");
@@ -74,7 +79,7 @@ class WhAuthServiceTest {
         when(jwt.issue(eq(11L), eq("wh:11"), any())).thenReturn("wh-token");
         WhAuthService service = new WhAuthService(jwt, warehouses, promoters, audit,
                 (a, s, c2) -> { throw new AssertionError("mock mode must not call WeChat"); },
-                (key, encrypted, iv) -> "13800138000", contacts);
+                (key, encrypted, iv) -> "13800138000", contacts, phoneBindingGuard);
         service.setMockLogin(true);
         WhAuthService.LoginResult r = service.wxLogin("wx-B");
         assertThat(r.registered()).isTrue();
@@ -87,11 +92,37 @@ class WhAuthServiceTest {
         when(contacts.selectOne(any())).thenReturn(c);
         WhAuthService service = new WhAuthService(jwt, warehouses, promoters, audit,
                 (a, s, c2) -> { throw new AssertionError("mock"); },
-                (key, encrypted, iv) -> "13800138000", contacts);
+                (key, encrypted, iv) -> "13800138000", contacts, phoneBindingGuard);
         service.setMockLogin(true);
         // 请求指定 11 号仓,但该 openid 属于 22 号仓 → 拒绝
         WhAuthService.LoginResult r = service.wxLogin(11L, "wx-B");
         assertThat(r.registered()).isFalse();
+    }
+
+    @Test void mismatchedAppIdFailsBeforeWechatCall() {
+        WhAuthService service = new WhAuthService(jwt, warehouses, promoters, audit,
+                (a, s, c) -> { throw new AssertionError("wrong app must not be called"); }, (k, e, i) -> "unused", contacts, phoneBindingGuard);
+        service.setMockLogin(false); service.setAppId("warehouse-app"); service.setAppSecret("secret");
+        assertThatThrownBy(() -> service.wxLogin(null, "code", "partner-app"))
+                .isInstanceOf(BizException.class).hasMessageContaining("AppID");
+    }
+
+    @Test void modernPhoneBindingRequiresOriginalTicket() {
+        WxSessionClient client = mock(WxSessionClient.class);
+        when(client.exchange("app", "secret", "code")).thenReturn(new WxSessionClient.Session("openid", "key"));
+        when(client.exchangePhone("app", "secret", "phone-code")).thenReturn("13800138000");
+        WhAuthService service = new WhAuthService(jwt, warehouses, promoters, audit, client, (k, e, i) -> "unused", contacts, phoneBindingGuard);
+        service.setMockLogin(false); service.setAppId("app"); service.setAppSecret("secret");
+        String ticket = service.wxLogin("code").loginTicket();
+        assertThatThrownBy(() -> service.bindPhoneAuthorized("forged", ticket, "phone-code", null, null))
+                .isInstanceOf(BizException.class);
+        MktWarehouse w = warehouse(11L, null, null, "13800138000");
+        when(warehouses.selectOne(any())).thenReturn(w);
+        assertThat(service.bindPhoneAuthorized("openid", ticket, "phone-code", null, null).registered()).isTrue();
+        verify(phoneBindingGuard).assertCanBind("wh", 11L);
+        verify(contacts).insert(argThat((MktWarehouseContact c) -> "openid".equals(c.getOpenid()) && "13800138000".equals(c.getPhone())));
+        assertThatThrownBy(() -> service.bindPhoneAuthorized("openid", ticket, "phone-code", null, null))
+                .isInstanceOf(BizException.class);
     }
 
     private static MktWarehouse warehouse(Long id, String openid, String contactOpenid, String phone) {

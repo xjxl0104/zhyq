@@ -24,7 +24,8 @@ function requestWith(base, auth, loginPath, method, url, data = {}) {
       data,
       header: { 'Content-Type': 'application/json', Authorization: auth.get() ? 'Bearer ' + auth.get() : '' },
       success: ({ statusCode, data: body }) => {
-        if (statusCode === 401) {
+        const publicAuth = /^\/auth\/(wx-login|bind-phone|password-login|password-register)$/.test(url)
+        if ((statusCode === 401 || body?.code === 401) && !publicAuth) {
           auth.clear()
           uni.reLaunch({ url: loginPath })
           return reject(new Error('请先登录'))
@@ -36,7 +37,7 @@ function requestWith(base, auth, loginPath, method, url, data = {}) {
       },
       fail: (e) => {
         uni.showToast({ title: '网络异常', icon: 'none' })
-        reject(e)
+        reject(new Error('网络连接失败，请检查网络后重试'))
       }
     })
   })

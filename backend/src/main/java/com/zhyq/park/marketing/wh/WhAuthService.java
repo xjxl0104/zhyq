@@ -12,6 +12,8 @@ import com.zhyq.park.marketing.mapper.MktWarehouseContactMapper;
 import com.zhyq.park.marketing.mapper.MktWarehouseMapper;
 import com.zhyq.park.marketing.mp.WxPhoneDecryptor;
 import com.zhyq.park.marketing.mp.WxSessionClient;
+import com.zhyq.park.marketing.mp.WxLoginTickets;
+import com.zhyq.park.marketing.mp.WxPhoneBindingGuard;
 import com.zhyq.park.marketing.service.MktAuditService;
 import io.jsonwebtoken.Claims;
 import lombok.extern.slf4j.Slf4j;
@@ -19,10 +21,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
-import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 
 /** 微信身份 for warehouse portal. One contact_openid owns one warehouse in this phase. */
 @Slf4j
@@ -37,34 +36,41 @@ public class WhAuthService {
     private final WxSessionClient wxSessionClient;
     private final WxPhoneDecryptor wxPhoneDecryptor;
     private final MktWarehouseContactMapper contactMapper;
-    private final Map<String, SessionKey> sessionKeys = new ConcurrentHashMap<>();
-    private record SessionKey(String value, long expiresAt) {}
-    // 云仓端是独立小程序,凭据与伙伴端(zhyq.mp.*)分开,不互相回落
-    @Value("${zhyq.wh.mock-login:true}") private boolean mockLogin;
+    private final WxPhoneBindingGuard phoneBindingGuard;
+    private final WxLoginTickets loginTickets = new WxLoginTickets();
+    // 按身份显式配置凭据;共用同一小程序时配置同一组 AppID/Secret,不自动跨端回落
+    @Value("${zhyq.wh.mock-login:false}") private boolean mockLogin;
     @Value("${zhyq.wh.appid:}") private String appId;
     @Value("${zhyq.wh.secret:}") private String appSecret;
 
     public WhAuthService(JwtService jwtService, MktWarehouseMapper warehouseMapper,
                          MktPromoterMapper promoterMapper, MktAuditService auditService,
                          WxSessionClient wxSessionClient, WxPhoneDecryptor wxPhoneDecryptor,
-                         MktWarehouseContactMapper contactMapper) {
+                         MktWarehouseContactMapper contactMapper, WxPhoneBindingGuard phoneBindingGuard) {
         this.jwtService = jwtService; this.warehouseMapper = warehouseMapper; this.promoterMapper = promoterMapper;
         this.auditService = auditService; this.wxSessionClient = wxSessionClient; this.wxPhoneDecryptor = wxPhoneDecryptor;
         this.contactMapper = contactMapper;
+        this.phoneBindingGuard = phoneBindingGuard;
     }
 
-    public record LoginResult(boolean registered, String token, String openid, MktWarehouse warehouse) {
+    public record LoginResult(boolean registered, String token, String openid, MktWarehouse warehouse, String loginTicket) {
+        public LoginResult(boolean registered, String token, String openid, MktWarehouse warehouse) {
+            this(registered, token, openid, warehouse, null);
+        }
         public Long warehouseId() { return warehouse == null ? null : warehouse.getId(); }
     }
 
     public LoginResult wxLogin(String jsCode) { return wxLogin(null, jsCode); }
 
     /** Optional warehouse id is only a lookup hint; ownership still requires a contact row (or legacy contact_openid) match. */
-    public LoginResult wxLogin(Long requestedWarehouseId, String jsCode) {
+    public LoginResult wxLogin(Long requestedWarehouseId, String jsCode) { return wxLogin(requestedWarehouseId, jsCode, null); }
+
+    public LoginResult wxLogin(Long requestedWarehouseId, String jsCode, String clientAppId) {
+        if (!mockLogin && StringUtils.hasText(clientAppId) && !clientAppId.equals(appId))
+            throw new BizException("当前小程序 AppID 与云仓商家服务配置不一致,请联系管理员检查配置");
         WxSessionClient.Session session = code2Session(jsCode);
-        if (!mockLogin) sessionKeys.put(session.openid(), new SessionKey(session.sessionKey(), System.currentTimeMillis() + 300_000));
         MktWarehouse w = resolveWarehouseByOpenid(session.openid(), requestedWarehouseId);
-        if (w == null) return new LoginResult(false, null, session.openid(), null);
+        if (w == null) return new LoginResult(false, null, session.openid(), null, mockLogin ? null : loginTickets.issue(session));
         touchLogin(w);
         return new LoginResult(true, issue(w), session.openid(), w);
     }
@@ -84,17 +90,23 @@ public class WhAuthService {
     }
 
     public LoginResult bindPhone(String openid, String phone) {
-        if (!mockLogin) throw new BizException("真实模式必须使用 encryptedData 和 iv");
+        if (!mockLogin) throw new BizException("真实模式必须使用微信手机号授权");
+        return bindPhoneInternal(openid, phone);
+    }
+
+    public LoginResult bindPhoneAuthorized(String openid, String loginTicket, String phoneCode, String encryptedData, String iv) {
+        if (mockLogin) throw new BizException("mock 模式请使用明文手机号");
+        if (!StringUtils.hasText(phoneCode) && (!StringUtils.hasText(encryptedData) || !StringUtils.hasText(iv)))
+            throw new BizException("缺少 phoneCode 或 encryptedData/iv 手机号授权参数");
+        String sessionKey = loginTickets.consume(loginTicket, openid);
+        String phone = StringUtils.hasText(phoneCode)
+                ? wxSessionClient.exchangePhone(appId, appSecret, phoneCode)
+                : wxPhoneDecryptor.decryptPhoneNumber(sessionKey, encryptedData, iv, appId);
         return bindPhoneInternal(openid, phone);
     }
 
     public LoginResult bindPhone(String openid, String encryptedData, String iv) {
-        if (mockLogin) throw new BizException("mock 模式请使用明文手机号");
-        if (!StringUtils.hasText(openid) || !StringUtils.hasText(encryptedData) || !StringUtils.hasText(iv)) throw new BizException("缺少微信登录参数");
-        SessionKey key = sessionKeys.remove(openid);
-        if (key == null || key.expiresAt() < System.currentTimeMillis()) throw new BizException("请先完成微信登录");
-        String phone = wxPhoneDecryptor.decryptPhoneNumber(key.value(), encryptedData, iv);
-        return bindPhoneInternal(openid, phone);
+        return bindPhoneAuthorized(openid, null, null, encryptedData, iv);
     }
 
     private LoginResult bindPhoneInternal(String openid, String phone) {
@@ -104,6 +116,7 @@ public class WhAuthService {
         if (partner != null) throw new BizException(409, "该手机号已绑定伙伴身份,请使用身份选择");
         MktWarehouse w = warehouseMapper.selectOne(new LambdaQueryWrapper<MktWarehouse>().eq(MktWarehouse::getPhone, phone).last("limit 1"));
         if (w == null) return new LoginResult(false, null, openid, null);
+        phoneBindingGuard.assertCanBind("wh", w.getId());
 
         // 该 openid 已作为某云仓联系人 → 幂等返回;已被别的 openid 认领联系人则冲突
         MktWarehouseContact existingContact = contactMapper.selectOne(new LambdaQueryWrapper<MktWarehouseContact>()
@@ -156,4 +169,5 @@ public class WhAuthService {
     public void setMockLogin(boolean value) { mockLogin = value; }
     public void setAppId(String value) { appId = value; }
     public void setAppSecret(String value) { appSecret = value; }
+    public boolean isMockLogin() { return mockLogin; }
 }

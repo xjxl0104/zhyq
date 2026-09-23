@@ -22,11 +22,15 @@
       <view class="operation-row pressable" @click="go('/pages/warehouse-erp/index')"><view class="operation-icon gold">ERP</view><view class="operation-copy"><view>ERP 接入</view><view class="muted">凭证、联通和同步日志</view></view><text class="operation-arrow">›</text></view>
       <view class="operation-row pressable" @click="go('/pages/warehouse-orders/index')"><view class="operation-icon ink">单</view><view class="operation-copy"><view>出库单</view><view class="muted">追踪订单与物流状态</view></view><text class="operation-arrow">›</text></view>
       <view class="operation-row pressable" @click="go('/pages/warehouse-notice/index')"><view class="operation-icon violet">信</view><view class="operation-copy"><view>消息通知</view><view class="muted">结算、账单与服务提醒</view></view><text class="operation-arrow">›</text></view>
+      <view class="operation-row pressable" @click="go('/pages/account-security/index?role=wh')"><view class="operation-copy"><view>账号与密码</view><view class="muted">设置或修改账号密码登录</view></view><text class="operation-arrow">›</text></view>
+      <view class="operation-row pressable" @click="logout"><view class="operation-copy"><view>退出登录</view></view><text class="operation-arrow">›</text></view>
     </view>
   </view>
 </template>
 <script setup>
 import { reactive } from 'vue'; import { onShow } from '@dcloudio/uni-app'; import { warehouseApi } from '@/api/warehouse'; const stats = reactive({}); onShow(async () => Object.assign(stats, await warehouseApi.dashboard())); const go = url => uni.navigateTo({ url })
+import { warehouseToken } from '@/utils/request'
+function logout() { warehouseToken.clear(); uni.reLaunch({ url: '/pages/warehouse-login/index' }) }
 </script>
 
 <style scoped>

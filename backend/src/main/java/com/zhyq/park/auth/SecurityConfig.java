@@ -56,6 +56,8 @@ public class SecurityConfig {
             .cors(c -> c.configurationSource(corsConfigurationSource()))
             .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
+                .requestMatchers("/mp/v1/auth/password-setup", "/mp/v1/auth/password-status").hasRole("MP")
+                .requestMatchers("/wh/v1/auth/password-setup", "/wh/v1/auth/password-status").hasRole("WH")
                 .requestMatchers(
                         "/auth/login",
                         "/mp/v1/auth/**",

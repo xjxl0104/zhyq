@@ -19,8 +19,6 @@ import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 伙伴小程序登录(PARK-MKT-001 §2.1 / §5.2)。
@@ -46,28 +44,33 @@ public class MpAuthService {
     private final BizSettings bizSettings;
     private final WxSessionClient wxSessionClient;
     private final WxPhoneDecryptor wxPhoneDecryptor;
-    private record SessionKey(String value, long expiresAt) {}
-    private final Map<String, SessionKey> sessionKeys = new ConcurrentHashMap<>();
+    private final WxPhoneBindingGuard phoneBindingGuard;
+    private final WxLoginTickets loginTickets = new WxLoginTickets();
 
-    @Value("${zhyq.mp.mock-login:true}")
+    @Value("${zhyq.mp.mock-login:false}")
     private boolean mockLogin;
     @Value("${zhyq.mp.appid:}")
     private String appId;
     @Value("${zhyq.mp.secret:}")
     private String appSecret;
 
-    public record LoginResult(boolean registered, String token, String openid, MktPromoter promoter) {
+    public record LoginResult(boolean registered, String token, String openid, MktPromoter promoter, String loginTicket) {
+        public LoginResult(boolean registered, String token, String openid, MktPromoter promoter) {
+            this(registered, token, openid, promoter, null);
+        }
     }
 
     /** 微信登录:code2Session → 按 openid 找伙伴;找不到返回 registered=false 让前端走手机号授权。 */
-    public LoginResult wxLogin(String jsCode) {
+    public LoginResult wxLogin(String jsCode) { return wxLogin(jsCode, null); }
+
+    public LoginResult wxLogin(String jsCode, String clientAppId) {
+        verifyClientAppId(clientAppId);
         WxSessionClient.Session session = code2Session(jsCode);
         String openid = session.openid();
-        if (!mockLogin) sessionKeys.put(openid, new SessionKey(session.sessionKey(), System.currentTimeMillis() + 5 * 60_000));
         MktPromoter p = promoterMapper.selectOne(new LambdaQueryWrapper<MktPromoter>()
                 .eq(MktPromoter::getOpenid, openid).last("limit 1"));
         if (p == null) {
-            return new LoginResult(false, null, openid, null);
+            return new LoginResult(false, null, openid, null, mockLogin ? null : loginTickets.issue(session));
         }
         touchLogin(p);
         return new LoginResult(true, issue(p), openid, p);
@@ -78,22 +81,28 @@ public class MpAuthService {
      * 手机号已被后台手工录入过(openid 为空)→ 把 openid 绑上去(后台先录、伙伴后来扫码的场景)。
      */
     public LoginResult bindPhone(String openid, String phone, String inviteCode, String name) {
-        if (!mockLogin) throw new BizException("真实模式必须使用 encryptedData 和 iv");
+        if (!mockLogin) throw new BizException("真实模式必须使用微信手机号授权");
         return bindPhoneInternal(openid, phone, inviteCode, name);
     }
 
-    public LoginResult bindPhoneEncrypted(String openid, String encryptedData, String iv, String inviteCode, String name) {
+    public LoginResult bindPhoneAuthorized(String openid, String loginTicket, String phoneCode,
+                                           String encryptedData, String iv, String inviteCode, String name) {
         if (mockLogin) throw new BizException("mock 模式请使用明文手机号");
-        if (!StringUtils.hasText(encryptedData) || !StringUtils.hasText(iv))
-            throw new BizException("缺少 encryptedData 或 iv");
-        SessionKey stored = sessionKeys.remove(openid);
-        if (stored == null || stored.expiresAt() < System.currentTimeMillis()) throw new BizException("请先完成微信登录");
-        String phone = wxPhoneDecryptor.decryptPhoneNumber(stored.value(), encryptedData, iv);
+        if (!StringUtils.hasText(phoneCode) && (!StringUtils.hasText(encryptedData) || !StringUtils.hasText(iv)))
+            throw new BizException("缺少 phoneCode 或 encryptedData/iv 手机号授权参数");
+        String sessionKey = loginTickets.consume(loginTicket, openid);
+        String phone = StringUtils.hasText(phoneCode)
+                ? wxSessionClient.exchangePhone(appId, appSecret, phoneCode)
+                : wxPhoneDecryptor.decryptPhoneNumber(sessionKey, encryptedData, iv, appId);
         if (!StringUtils.hasText(phone) || !phone.matches("^1\\d{10}$")) throw new BizException("手机号格式不正确");
         return bindPhoneInternal(openid, phone, inviteCode, name);
     }
 
-    /** Encrypted authorization overload used by API callers. */
+    /** Legacy callers must obtain and send the login ticket before binding. */
+    public LoginResult bindPhoneEncrypted(String openid, String encryptedData, String iv, String inviteCode, String name) {
+        return bindPhoneAuthorized(openid, null, null, encryptedData, iv, inviteCode, name);
+    }
+
     public LoginResult bindPhone(String openid, String encryptedData, String iv, String inviteCode, String name) {
         return bindPhoneEncrypted(openid, encryptedData, iv, inviteCode, name);
     }
@@ -108,6 +117,7 @@ public class MpAuthService {
         MktPromoter byPhone = promoterMapper.selectOne(new LambdaQueryWrapper<MktPromoter>()
                 .eq(MktPromoter::getPhone, phone).last("limit 1"));
         if (byPhone != null) {
+            phoneBindingGuard.assertCanBind("mp", byPhone.getId());
             if (StringUtils.hasText(byPhone.getOpenid())) throw new BizException("该手机号已绑定其他微信");
             int updated = promoterMapper.update(null, new LambdaUpdateWrapper<MktPromoter>()
                     .eq(MktPromoter::getId, byPhone.getId()).isNull(MktPromoter::getOpenid)
@@ -163,6 +173,11 @@ public class MpAuthService {
     private void touchLogin(MktPromoter p) {
         promoterMapper.update(null, new LambdaUpdateWrapper<MktPromoter>()
                 .eq(MktPromoter::getId, p.getId()).set(MktPromoter::getLastLogin, LocalDateTime.now()));
+    }
+
+    private void verifyClientAppId(String clientAppId) {
+        if (!mockLogin && StringUtils.hasText(clientAppId) && !clientAppId.equals(appId))
+            throw new BizException("当前小程序 AppID 与园区伙伴服务配置不一致,请联系管理员检查配置");
     }
 
     /** 微信 jscode2session;mock 模式直接把 code 当 openid。 */

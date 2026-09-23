@@ -1,5 +1,7 @@
 server:
   port: 8090
+  # 限速解析器自行校验可信代理链；remoteAddr 必须保留真实 socket 对端。
+  forward-headers-strategy: none
   servlet:
     context-path: /api
 
@@ -23,19 +25,22 @@ spring:
     encoding: UTF-8
 
 zhyq:
+  auth:
+    # 默认不信任代理头。反向代理部署必须显式填写实际代理 IP/CIDR，禁止 0.0.0.0/0。
+    trusted-proxies: ${ZHYQ_AUTH_TRUSTED_PROXIES:}
   vending:
     external-url: ${VENDING_EXTERNAL_URL:https://fanmaiji.top/index?isFrom=login}
   upload:
     path: ${UPLOAD_PATH:./uploads}
     url-prefix: /uploads
   mp:
-    # 伙伴小程序:开发期 mock-login=true 把 js_code 当 openid;拿到主体后填 AppID/Secret 并关掉
-    mock-login: ${WX_MP_MOCK_LOGIN:true}
+    # 真实微信为默认;仅本地调试显式开启 mock-login=true
+    mock-login: ${WX_MP_MOCK_LOGIN:false}
     appid: ${WX_MP_APPID:}
     secret: ${WX_MP_SECRET:}
   wh:
-    # 云仓端小程序:与伙伴端是两个不同的小程序(2026-09-22 拍板),凭据独立,不回落到 mp
-    mock-login: ${WX_WH_MOCK_LOGIN:true}
+    # 云仓端凭据显式配置;与伙伴共用小程序时填同一组 AppID/Secret,不自动回落到 mp
+    mock-login: ${WX_WH_MOCK_LOGIN:false}
     appid: ${WX_WH_APPID:}
     secret: ${WX_WH_SECRET:}
   jwt:
@@ -51,7 +56,8 @@ zhyq:
 mybatis-plus:
   configuration:
     map-underscore-to-camel-case: true
-    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+    # 登录凭据等敏感 SQL 参数不得输出到标准日志。
+    log-impl: org.apache.ibatis.logging.nologging.NoLoggingImpl
   global-config:
     db-config:
       id-type: auto

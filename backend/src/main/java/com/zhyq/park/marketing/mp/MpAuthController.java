@@ -2,7 +2,6 @@ package com.zhyq.park.marketing.mp;
 
 import com.zhyq.park.common.exception.BizException;
 import com.zhyq.park.common.result.Result;
-import com.zhyq.park.marketing.entity.MktPromoter;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
@@ -23,11 +22,11 @@ public class MpAuthController {
     @Operation(summary = "微信登录:js_code → 已注册返 token,未注册返 registered=false + openid")
     @PostMapping("/wx-login")
     public Result<Map<String, Object>> wxLogin(@RequestBody Map<String, String> body) {
-        MpAuthService.LoginResult r = authService.wxLogin(body.get("jsCode"));
+        MpAuthService.LoginResult r = authService.wxLogin(body.get("jsCode"), body.get("appId"));
         return Result.ok(toMap(r));
     }
 
-    @Operation(summary = "手机号授权注册/绑定(阶段 B 用明文手机号;接真微信后改 encryptedData 解密)")
+    @Operation(summary = "微信手机号授权注册/绑定")
     @PostMapping("/bind-phone")
     public Result<Map<String, Object>> bindPhone(@RequestBody Map<String, String> body) {
         MpAuthService.LoginResult r;
@@ -36,10 +35,8 @@ public class MpAuthController {
             if (phone == null || !phone.matches("^1\\d{10}$")) throw new BizException("手机号格式不正确");
             r = authService.bindPhone(body.get("openid"), phone, body.get("inviteCode"), body.get("name"));
         } else {
-            if (body.get("encryptedData") == null || body.get("iv") == null)
-                throw new BizException("缺少 encryptedData 或 iv");
-            r = authService.bindPhoneEncrypted(body.get("openid"), body.get("encryptedData"), body.get("iv"),
-                    body.get("inviteCode"), body.get("name"));
+            r = authService.bindPhoneAuthorized(body.get("openid"), body.get("loginTicket"), body.get("phoneCode"),
+                    body.get("encryptedData"), body.get("iv"), body.get("inviteCode"), body.get("name"));
         }
         return Result.ok(toMap(r));
     }
@@ -51,6 +48,7 @@ public class MpAuthController {
         m.put("registered", r.registered());
         m.put("token", r.token());
         m.put("openid", r.openid());
+        m.put("loginTicket", r.loginTicket());
         if (r.promoter() != null) m.put("me", MpMeController.profile(r.promoter()));
         return m;
     }
