@@ -67,7 +67,7 @@ class PurControllerSecurityTest {
         @Bean WorkflowController workflowController(WorkflowService ws, WfDefinitionMapper d,
                                                     WfNodeMapper n, WfInstanceMapper i,
                                                     WfTaskMapper t) {
-            return new WorkflowController(ws, d, n, i, t);
+            return new WorkflowController(ws, d, n, i, t, mock(com.zhyq.park.workflow.service.WorkflowAccessService.class));
         }
     }
 

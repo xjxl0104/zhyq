@@ -191,6 +191,23 @@ public class MktCustomerController {
         return Result.ok();
     }
 
+    @Operation(summary = "流失客户恢复跟进")
+    @PreAuthorize("hasAuthority('crm:marketing:customer:edit')")
+    @PostMapping("/{id}/restore")
+    @Transactional
+    public Result<Void> restore(@PathVariable Long id, @RequestBody Map<String, String> body) {
+        if (!StringUtils.hasText(body.get("reason"))) throw new BizException("请填写恢复跟进原因");
+        Customer current = customerMapper.selectForUpdate(id);
+        if (current == null) throw new BizException("客户不存在");
+        assignmentService.assertNoActiveContracts(id);
+        int updated = customerMapper.update(null, new LambdaUpdateWrapper<Customer>()
+                .eq(Customer::getId, id).eq(Customer::getStatus, 3)
+                .set(Customer::getStatus, 1).setSql("version = version + 1"));
+        if (updated != 1) throw new BizException("仅已流失客户可恢复跟进，请刷新状态");
+        auditService.log("customer.restore", "customer", id, body.get("reason"));
+        return Result.ok();
+    }
+
     // ---------------- 锁定 ----------------
 
     @Operation(summary = "最新锁定状态（包含成交及释放历史，无记录返回 null）")

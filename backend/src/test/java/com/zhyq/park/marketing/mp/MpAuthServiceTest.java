@@ -100,6 +100,10 @@ class MpAuthServiceTest {
                 .isInstanceOf(BizException.class);
         assertThatThrownBy(() -> service.bindPhoneAuthorized("openid", null, "phone-code", null, null, null, null))
                 .isInstanceOf(BizException.class);
+        org.mockito.Mockito.doAnswer(call -> {
+            com.zhyq.park.marketing.entity.MktPromoter p = call.getArgument(0);
+            p.setId(7L); p.setStatus(1); return p;
+        }).when(promoterService).register(any(), org.mockito.ArgumentMatchers.isNull(), org.mockito.ArgumentMatchers.eq("mp"));
         var result = service.bindPhoneAuthorized("openid", ticket, "phone-code", null, null, null, "伙伴");
         assertThat(result.registered()).isTrue();
         verify(promoterService).register(org.mockito.ArgumentMatchers.argThat(p -> "13800138000".equals(p.getPhone())),
@@ -121,12 +125,24 @@ class MpAuthServiceTest {
                 (a, s, c) -> null, (k, e, i) -> "unused", phoneBindingGuard);
         service.setMockLogin(true);
         var existing = new com.zhyq.park.marketing.entity.MktPromoter();
-        existing.setId(9L); existing.setPhone("13800138000");
+        existing.setId(9L); existing.setStatus(1); existing.setPhone("13800138000");
         when(promoters.selectOne(any())).thenReturn(null, existing);
         doThrow(new BizException("待核验")).when(phoneBindingGuard).assertCanBind("mp", 9L);
         assertThatThrownBy(() -> service.bindPhone("openid", "13800138000", null, null))
                 .isInstanceOf(BizException.class).hasMessageContaining("待核验");
         verify(promoters, never()).update(any(), any());
         verify(promoterService, never()).register(any(), any(), any());
+    }
+
+    @Test void frozenPartnerCannotWechatLoginOrBindPhone() {
+        var p = new com.zhyq.park.marketing.entity.MktPromoter(); p.setId(7L); p.setStatus(2);
+        when(promoters.selectOne(any())).thenReturn(p);
+        MpAuthService service = new MpAuthService(jwt, promoters, promoterService, settings,
+                (a, s, c) -> { throw new AssertionError("mock"); }, (k, e, i) -> "unused", phoneBindingGuard);
+        service.setMockLogin(true);
+        assertThatThrownBy(() -> service.wxLogin("code")).isInstanceOf(BizException.class).hasMessageContaining("冻结");
+        assertThatThrownBy(() -> service.bindPhone("openid", "13800138000", null, null)).isInstanceOf(BizException.class).hasMessageContaining("冻结");
+        org.mockito.Mockito.verifyNoInteractions(jwt);
+        verify(promoters, never()).update(any(), any());
     }
 }

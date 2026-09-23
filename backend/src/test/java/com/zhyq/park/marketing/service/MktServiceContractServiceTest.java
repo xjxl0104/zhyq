@@ -62,6 +62,8 @@ class MktServiceContractServiceTest {
     static void initMp() {
         MapperBuilderAssistant a = new MapperBuilderAssistant(new MybatisConfiguration(), "");
         TableInfoHelper.initTableInfo(a, MktServiceContract.class);
+        TableInfoHelper.initTableInfo(a, Bill.class);
+        TableInfoHelper.initTableInfo(a, com.zhyq.park.marketing.entity.MktServiceContractVersion.class);
     }
 
     @BeforeEach
@@ -292,22 +294,42 @@ class MktServiceContractServiceTest {
     }
 
     @Test
-    void amendSnapshotsCurrentVersion() {
+    void startingAmendmentKeepsCurrentTermsUntilSignedCompletion() {
         MktServiceContract c = contract(1L, MktServiceContractService.ST_PERFORMING, 1);
         when(contractMapper.selectById(1L)).thenReturn(c);
         updated(1);
         service.amend(1L, "换仓");
-        verify(versionMapper).insert(any(com.zhyq.park.marketing.entity.MktServiceContractVersion.class));
+        verify(versionMapper, never()).insert(any(com.zhyq.park.marketing.entity.MktServiceContractVersion.class));
     }
 
     @Test
     void amendDoneBumpsVersion() {
         MktServiceContract c = contract(1L, MktServiceContractService.ST_AMENDING, 1);
         c.setContractVersion(2);
-        when(contractMapper.selectById(1L)).thenReturn(c);
+        when(contractMapper.selectForUpdate(1L)).thenReturn(c);
         updated(1);
-        service.amendDone(1L);
-        verify(auditService).log(eq("contract.amend.done"), any(), eq(1L), eq("版本 3"));
+        service.amendDone(1L, new MktServiceContractService.Amendment("{\"perOrder\":12}", LocalDate.now().plusYears(1), 3, "[12]", "涨价", LocalDate.now()));
+        verify(auditService).log(eq("contract.amend.done"), any(), eq(1L), org.mockito.ArgumentMatchers.contains("版本 3"), any(), any());
+        verify(versionMapper).insert(any(com.zhyq.park.marketing.entity.MktServiceContractVersion.class));
+    }
+
+    @Test void amendmentCannotRewriteAnAlreadyBilledPeriod() {
+        MktServiceContract c = contract(1L, MktServiceContractService.ST_AMENDING, 1);
+        when(contractMapper.selectForUpdate(1L)).thenReturn(c);
+        when(billMapper.selectCount(any(Wrapper.class))).thenReturn(1L);
+        assertThatThrownBy(() -> service.amendDone(1L, new MktServiceContractService.Amendment(
+                "{\"perOrder\":12}", LocalDate.now().plusYears(1), 3, "[12]", "", LocalDate.now())))
+                .isInstanceOf(BizException.class).hasMessageContaining("已生成账单");
+        verify(contractMapper, never()).update(any(), any(Wrapper.class));
+        verify(versionMapper, never()).insert(any(com.zhyq.park.marketing.entity.MktServiceContractVersion.class));
+    }
+
+    @Test void amendmentCannotApplyBackdatedTerms() {
+        when(contractMapper.selectForUpdate(1L)).thenReturn(contract(1L, MktServiceContractService.ST_AMENDING, 1));
+        assertThatThrownBy(() -> service.amendDone(1L, new MktServiceContractService.Amendment(
+                "{\"perOrder\":12}", LocalDate.now().plusYears(1), 3, "[12]", "", LocalDate.now().minusDays(1))))
+                .isInstanceOf(BizException.class).hasMessageContaining("不得早于今天");
+        verify(contractMapper, never()).update(any(), any(Wrapper.class));
     }
 
     @Test

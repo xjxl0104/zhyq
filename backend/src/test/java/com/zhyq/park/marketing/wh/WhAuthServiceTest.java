@@ -36,7 +36,7 @@ class WhAuthServiceTest {
     @Test void mockLoginIssuesWarehouseSubjectAndKeepsUnboundSeparate() {
         MktWarehouse w = warehouse(11L, "mock:wx-11", null, "13800138000");
         when(warehouses.selectOne(any())).thenReturn(w);
-        when(jwt.issue(eq(11L), eq("wh:11"), any())).thenReturn("wh-token");
+        when(jwt.issueForIdentity("wh", 11L)).thenReturn("wh-token");
         WhAuthService service = new WhAuthService(jwt, warehouses, promoters, audit,
                 (a, s, c) -> { throw new AssertionError("mock mode must not call WeChat"); },
                 (key, encrypted, iv) -> "13800138000", contacts, phoneBindingGuard);
@@ -44,7 +44,7 @@ class WhAuthServiceTest {
         WhAuthService.LoginResult r = service.wxLogin("wx-11");
         assertThat(r.registered()).isTrue();
         assertThat(r.token()).isEqualTo("wh-token");
-        verify(jwt).issue(11L, "wh:11", java.util.List.of(WhAuthService.ROLE));
+        verify(jwt).issueForIdentity("wh", 11L);
     }
 
     @Test void realLoginRejectsMissingSessionFields() {
@@ -76,7 +76,7 @@ class WhAuthServiceTest {
         when(contacts.selectOne(any())).thenReturn(c);
         MktWarehouse w = warehouse(11L, null, "mock:wx-A", "13800138000");
         when(warehouses.selectById(11L)).thenReturn(w);
-        when(jwt.issue(eq(11L), eq("wh:11"), any())).thenReturn("wh-token");
+        when(jwt.issueForIdentity("wh", 11L)).thenReturn("wh-token");
         WhAuthService service = new WhAuthService(jwt, warehouses, promoters, audit,
                 (a, s, c2) -> { throw new AssertionError("mock mode must not call WeChat"); },
                 (key, encrypted, iv) -> "13800138000", contacts, phoneBindingGuard);
@@ -123,6 +123,21 @@ class WhAuthServiceTest {
         verify(contacts).insert(argThat((MktWarehouseContact c) -> "openid".equals(c.getOpenid()) && "13800138000".equals(c.getPhone())));
         assertThatThrownBy(() -> service.bindPhoneAuthorized("openid", ticket, "phone-code", null, null))
                 .isInstanceOf(BizException.class);
+    }
+
+
+    @Test void exitedWarehouseCannotWechatLoginOrBindPhone() {
+        MktWarehouse w = warehouse(11L, null, "mock:wx-11", "13800138000");
+        w.setJoinStatus(7);
+        when(warehouses.selectOne(any())).thenReturn(w);
+        WhAuthService service = new WhAuthService(jwt, warehouses, promoters, audit,
+                (a, s, c) -> { throw new AssertionError("mock"); }, (k, e, i) -> "unused", contacts, phoneBindingGuard);
+        service.setMockLogin(true);
+        assertThatThrownBy(() -> service.wxLogin("wx-11")).isInstanceOf(BizException.class).hasMessageContaining("退出");
+        assertThatThrownBy(() -> service.bindPhone("mock:wx-11", "13800138000")).isInstanceOf(BizException.class).hasMessageContaining("退出");
+        verifyNoInteractions(jwt);
+        verify(warehouses, never()).update(any(), any());
+        verify(contacts, never()).insert(any(MktWarehouseContact.class));
     }
 
     private static MktWarehouse warehouse(Long id, String openid, String contactOpenid, String phone) {

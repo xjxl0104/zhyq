@@ -9,5 +9,6 @@ import java.time.LocalDateTime;
 
 @Data @EqualsAndHashCode(callSuper = true) @TableName("crm_direct_sign_payment")
 public class MktDirectSignPayment extends BaseEntity {
+    private java.time.LocalDate periodStart; private java.time.LocalDate periodEnd;
     private Long contractId; private Long warehouseId; private String paymentNo; private String payProof; private BigDecimal amount; private Integer status; private LocalDateTime paidAt; private Long projectId;
 }

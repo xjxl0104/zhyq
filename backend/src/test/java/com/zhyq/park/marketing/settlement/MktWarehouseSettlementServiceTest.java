@@ -51,11 +51,15 @@ class MktWarehouseSettlementServiceTest {
         return new MktWarehouseSettlementService(settlements,lines,bills,payments,orders,warehouses,
                 reconcile,commissions,notices,commissionRows,billLines,contracts,grades,proofs,audit,new ObjectMapper());
     }
-    @Test void computesPayableFromCostRatesNotCustomerRevenue() {
+    @Test void latePaidBillCreatesSupplementWithoutChangingPaidBatch() {
+        var old = settlement(4); when(settlements.selectOne(any())).thenReturn(old);
         var w=new MktWarehouse(); w.setId(11L); w.setJoinStatus(5); w.setOrderMode("manual");
-        w.setFeeModel("{\"perOrder\":2,\"perItem\":0.5}"); when(warehouses.selectById(11L)).thenReturn(w);
+        w.setFeeModel("{\"perOrder\":2,\"perItem\":0.5}"); when(warehouses.selectOne(any())).thenReturn(w);
         var bill=new MktServiceFeeBill();bill.setId(20L);bill.setAmount(new BigDecimal("100.00"));
-        when(bills.selectList(any())).thenReturn(List.of(bill));
+        when(bills.selectList(any())).thenAnswer(inv -> {
+            assertThat(((com.baomidou.mybatisplus.core.conditions.Wrapper<?>) inv.getArgument(0)).getSqlSegment())
+                    .contains("NOT IN", "crm_warehouse_settlement_line", "FOR UPDATE"); return List.of(bill);
+        });
         var line=new MktServiceFeeBillLine();line.setReferralOrderId(30L);
         when(billLines.selectList(any())).thenReturn(List.of(line));
         var order=new MktReferralOrder();order.setWarehouseId(11L);order.setStatus(2);order.setQty(6);order.setPackages(2);order.setPoolAmount(BigDecimal.ONE);
@@ -116,6 +120,21 @@ class MktWarehouseSettlementServiceTest {
         when(payments.selectOne(any())).thenReturn(old);
         assertThat(service().recordPayment(9L,11L,"PAY1",BigDecimal.TEN,"file:1")).isSameAs(old);
         verifyNoInteractions(commissions,proofs);
+    }
+    @Test void expiredDirectSignAcceptsHistoricalPeriodAndPersistsIt() {
+        var c = contract(); c.setStatus(7); c.setStartDate(START); c.setEndDate(END);
+        when(contracts.selectById(9L)).thenReturn(c);
+        var grade = new MktCustomerGrade(); grade.setErpTotalRate(BigDecimal.TEN); when(grades.selectOne(any())).thenReturn(grade);
+        var order = new MktReferralOrder(); order.setId(1L); when(commissions.createAndSplitInTransaction(any())).thenReturn(order);
+        var receipt = service().recordPayment(9L,11L,"TAIL",BigDecimal.TEN,"file:1",START,END);
+        assertThat(receipt.getPeriodStart()).isEqualTo(START); assertThat(receipt.getPeriodEnd()).isEqualTo(END);
+    }
+    @Test void expiredDirectSignRejectsMissingOrOutsidePeriod() {
+        var c = contract(); c.setStatus(7); c.setStartDate(START); c.setEndDate(END); when(contracts.selectById(9L)).thenReturn(c);
+        assertThatThrownBy(() -> service().recordPayment(9L,11L,"TAIL",BigDecimal.TEN,"file:1")).isInstanceOf(BizException.class);
+        assertThatThrownBy(() -> service().recordPayment(9L,11L,"TAIL",BigDecimal.TEN,"file:1",START,END.plusDays(1)))
+                .isInstanceOf(BizException.class).hasMessageContaining("履约期间");
+        verifyNoInteractions(commissions,payments);
     }
     private MktServiceContract contract(){var c=new MktServiceContract();c.setId(9L);c.setWarehouseId(11L);c.setSignMode(2);c.setStatus(4);c.setPartnerId(8L);c.setCustomerId(5L);c.setGrade("A");return c;}
     private MktWarehouseSettlement settlement(int status){var s=new MktWarehouseSettlement();s.setId(40L);s.setWarehouseId(11L);s.setStatus(status);s.setAmount(BigDecimal.TEN);s.setPeriodStart(START);s.setPeriodEnd(END);return s;}

@@ -28,7 +28,7 @@
     <!-- 表格区 -->
     <div class="table-card">
       <div class="toolbar">
-        <el-button type="primary" @click="openDialog()"><el-icon><Plus /></el-icon>新增客户</el-button>
+        <el-button v-if="canAdd" type="primary" @click="openDialog()"><el-icon><Plus /></el-icon>新增客户</el-button>
       </div>
       <el-table :data="list" v-loading="loading" border stripe>
         <el-table-column type="index" label="序号" width="70" />
@@ -51,8 +51,9 @@
         <el-table-column prop="sourceLeadId" label="来源线索ID" width="110" align="center" />
         <el-table-column label="操作" width="200" fixed="right">
           <template #default="{ row }">
-            <el-button link type="primary" @click="openDialog(row)">编辑</el-button>
-            <template v-if="row.status === 1">
+            <el-button v-if="canEdit" link type="primary" @click="openDialog(row)">编辑</el-button>
+            <el-button v-if="isMarketing(row) && canMarketingQuery" link type="primary" @click="router.push('/crm/marketing/customer')">营销客户管理</el-button>
+            <template v-if="canEdit && row.status === 1 && !isMarketing(row)">
               <el-popconfirm title="确认签约?" @confirm="sign(row.id)">
                 <template #reference><el-button link type="success">签约</el-button></template>
               </el-popconfirm>
@@ -60,7 +61,7 @@
                 <template #reference><el-button link type="info">流失</el-button></template>
               </el-popconfirm>
             </template>
-            <el-popconfirm title="确认删除?" @confirm="remove(row.id)">
+            <el-popconfirm v-if="canDelete && !isMarketing(row)" title="确认删除?" @confirm="remove(row.id)">
               <template #reference><el-button link type="danger">删除</el-button></template>
             </el-popconfirm>
           </template>
@@ -88,9 +89,10 @@
         </el-form-item>
         <el-form-item label="负责人"><el-input v-model="form.owner" /></el-form-item>
         <el-form-item label="状态">
-          <el-select v-model="form.status" placeholder="请选择" style="width: 100%">
+          <el-select v-model="form.status" :disabled="marketingCustomer" placeholder="请选择" style="width: 100%">
             <el-option v-for="s in statusOptions" :key="s.value" :label="s.label" :value="s.value" />
           </el-select>
+          <div v-if="marketingCustomer" class="hint">营销客户的流失、恢复与签约状态请在全民营销中办理。</div>
         </el-form-item>
         <el-form-item label="备注"><el-input v-model="form.remark" type="textarea" :rows="2" /></el-form-item>
         <el-form-item label="附件">
@@ -107,10 +109,20 @@
 
 <script setup>
 import { reactive, ref, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { customerApi } from '@/api/crm'
 import { fileApi } from '@/api/file'
 import FileUpload from '@/components/FileUpload.vue'
+import { hasPermission } from '@/utils/permission'
+const router = useRouter()
+const canAdd = hasPermission('crm:customer:add')
+const canEdit = hasPermission('crm:customer:edit')
+const canDelete = hasPermission('crm:customer:delete')
+const canMarketingQuery = hasPermission('crm:marketing:customer:query')
+const marketingCustomer = ref(false)
+const editingProjectId = ref(null)
+const isMarketing = row => row.referrerId != null || row.assignedWarehouseId != null
 
 const statusOptions = [
   { value: 1, label: '跟进中', type: 'primary' },
@@ -162,11 +174,14 @@ const rules = {
 }
 
 async function openDialog(row) {
+  if (row ? !canEdit : !canAdd) return
+  marketingCustomer.value = !!row && isMarketing(row)
+  editingProjectId.value = row?.projectId ?? null
   dialog.visible = true
   dialog.title = row ? '编辑客户' : '新增客户'
   attachFiles.value = []
   if (row) {
-    Object.assign(form, row)
+    Object.assign(form, emptyForm(), Object.fromEntries(Object.entries(row).filter(([key]) => key in emptyForm())))
     try { attachFiles.value = await fileApi.list('customer', row.id) } catch (e) { /* 忽略 */ }
   } else {
     Object.assign(form, emptyForm())
@@ -175,7 +190,7 @@ async function openDialog(row) {
 async function submit() {
   await formRef.value.validate()
   let customerId = form.id
-  if (form.id) await customerApi.update(form)
+  if (form.id) await customerApi.update({ ...form, projectId: editingProjectId.value })
   else customerId = await customerApi.add(form)
   const pendingIds = (attachFiles.value || []).filter(f => f && f.id && !f.bizId).map(f => f.id)
   if (customerId && pendingIds.length) {
@@ -205,5 +220,6 @@ onMounted(load)
 </script>
 
 <style scoped>
+.hint { margin-top: 4px; font-size: 12px; color: var(--el-text-color-secondary); line-height: 1.5; }
 .pager { margin-top: 16px; justify-content: flex-end; }
 </style>

@@ -15,8 +15,6 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
 import java.util.List;
-import java.util.ArrayList;
-import java.util.stream.Collectors;
 
 /**
  * 每请求一次的 JWT 过滤器:解析 Bearer token → 填充 SecurityContext。
@@ -32,7 +30,6 @@ public class JwtAuthFilter extends OncePerRequestFilter {
     }
 
     @Override
-    @SuppressWarnings("unchecked")
     protected void doFilterInternal(@NonNull HttpServletRequest request,
                                     @NonNull HttpServletResponse response,
                                     @NonNull FilterChain chain) throws ServletException, IOException {
@@ -41,30 +38,27 @@ public class JwtAuthFilter extends OncePerRequestFilter {
             String token = header.substring(7);
             try {
                 Claims c = jwtService.parse(token);
-                Object auth = c.get("auth");
-                List<SimpleGrantedAuthority> authorities = (auth instanceof List<?> l)
-                        ? l.stream().map(Object::toString).map(SimpleGrantedAuthority::new).collect(Collectors.toList())
-                        : new ArrayList<>();
-                boolean mpToken = c.getSubject() != null && c.getSubject().startsWith("mp:");
-                boolean whToken = c.getSubject() != null && c.getSubject().startsWith("wh:");
-                boolean mpPath = request.getRequestURI().contains("/mp/v1/");
-                boolean whPath = request.getRequestURI().contains("/wh/v1/");
-                // 三类身份严格按路径互斥。后台 token 没有前缀,也不能进入任一小程序 API。
-                if ((mpToken && !mpPath) || (whToken && !whPath) ||
-                        ((!mpToken && !whToken) && (mpPath || whPath)) ||
-                        (mpPath && whPath)) {
+                JwtAccountService.Account account = jwtService.authenticate(c);
+                String context = request.getContextPath();
+                String path = request.getRequestURI().substring(context == null ? 0 : context.length());
+                boolean mpPath = path.equals("/mp/v1") || path.startsWith("/mp/v1/");
+                boolean whPath = path.equals("/wh/v1") || path.startsWith("/wh/v1/");
+                boolean allowed = switch (account.type()) {
+                    case "mp" -> mpPath;
+                    case "wh" -> whPath;
+                    case "admin" -> !mpPath && !whPath;
+                    default -> false;
+                };
+                if (allowed) {
+                    List<SimpleGrantedAuthority> authorities = account.authorities().stream()
+                            .map(SimpleGrantedAuthority::new).toList();
+                    UsernamePasswordAuthenticationToken authentication =
+                            new UsernamePasswordAuthenticationToken(account.subject(), null, authorities);
+                    authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+                    SecurityContextHolder.getContext().setAuthentication(authentication);
+                } else {
                     SecurityContextHolder.clearContext();
-                    chain.doFilter(request, response);
-                    return;
                 }
-                if (mpToken && authorities.stream().noneMatch(a -> a.getAuthority().equals("ROLE_MP")))
-                    authorities.add(new SimpleGrantedAuthority("ROLE_MP"));
-                if (whToken && authorities.stream().noneMatch(a -> a.getAuthority().equals("ROLE_WH")))
-                    authorities.add(new SimpleGrantedAuthority("ROLE_WH"));
-                UsernamePasswordAuthenticationToken authentication =
-                        new UsernamePasswordAuthenticationToken(c.getSubject(), null, authorities);
-                authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
-                SecurityContextHolder.getContext().setAuthentication(authentication);
             } catch (Exception ignore) {
                 // 无效/过期 token:不设置认证,后续 authorizeHttpRequests 拒绝 → 401
                 SecurityContextHolder.clearContext();

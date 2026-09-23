@@ -9,7 +9,7 @@
         <text class="tag" :class="t.status === 1 ? 'ok' : 'warn'">{{ t.status === 1 ? '正常' : '冻结' }}</text>
       </view>
     </view>
-    <button class="btn" @click="uni.navigateTo({ url: '/pages/me/index' })">查看我的邀请码</button>
+    <button class="btn" @click="uni.switchTab({ url: '/pages/me/index' })">查看我的邀请码</button>
   </view>
 </template>
 

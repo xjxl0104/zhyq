@@ -61,6 +61,16 @@ class UserManagementServiceTest {
     }
 
     @Test
+    void backendUsernamesCannotUseReservedPortalPrefixes() {
+        for (String username : List.of("wh:11", "mp:7", " WH:11 ")) {
+            BizException error = assertThrows(BizException.class, () -> service.create(
+                    request(null, username, "secret88", 1, List.of())));
+            assertTrue(error.getMessage().contains("保留前缀"));
+        }
+        verify(userMapper, never()).insert(any(SysUser.class));
+    }
+
+    @Test
     void createUserHashesPasswordAndBindsMultipleRoles() {
         SysRole finance = role(2L, "finance", "财务人员", 1);
         SysRole property = role(3L, "pm_dispatch", "物业调度", 1);

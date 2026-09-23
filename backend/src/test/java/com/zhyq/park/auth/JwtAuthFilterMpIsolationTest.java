@@ -21,6 +21,7 @@ class JwtAuthFilterMpIsolationTest {
         JwtService jwt = Mockito.mock(JwtService.class);
         Claims claims = claims("mp:7");
         when(jwt.parse("mp-token")).thenReturn(claims);
+        when(jwt.authenticate(claims)).thenReturn(new JwtAccountService.Account("mp",7L,"mp:7",List.of("ROLE_MP"),"test"));
         run(jwt, "mp-token", "/api/marketing/v1/customers");
         assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
     }
@@ -29,6 +30,7 @@ class JwtAuthFilterMpIsolationTest {
         JwtService jwt = Mockito.mock(JwtService.class);
         Claims claims = claims("admin");
         when(jwt.parse("admin-token")).thenReturn(claims);
+        when(jwt.authenticate(claims)).thenReturn(new JwtAccountService.Account("admin",1L,"admin",List.of("ROLE_admin"),"test"));
         run(jwt, "admin-token", "/api/mp/v1/me");
         assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
     }
@@ -43,7 +45,7 @@ class JwtAuthFilterMpIsolationTest {
     private static void run(JwtService jwt, String token, String uri) throws Exception {
         HttpServletRequest req = Mockito.mock(HttpServletRequest.class);
         when(req.getHeader("Authorization")).thenReturn("Bearer " + token);
-        when(req.getRequestURI()).thenReturn(uri);
+        when(req.getRequestURI()).thenReturn(uri); when(req.getContextPath()).thenReturn("/api");
         new ExposedFilter(jwt).doFilter(req, Mockito.mock(HttpServletResponse.class), Mockito.mock(FilterChain.class));
     }
 

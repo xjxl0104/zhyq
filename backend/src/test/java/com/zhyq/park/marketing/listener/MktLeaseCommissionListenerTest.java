@@ -57,6 +57,11 @@ class MktLeaseCommissionListenerTest {
 
     MktLeaseCommissionListener listener;
 
+    @org.junit.jupiter.api.BeforeAll static void metadata() {
+        var a = new org.apache.ibatis.builder.MapperBuilderAssistant(new com.baomidou.mybatisplus.core.MybatisConfiguration(), "");
+        com.baomidou.mybatisplus.core.metadata.TableInfoHelper.initTableInfo(a, com.zhyq.park.finance.entity.Bill.class);
+    }
+
     @BeforeEach
     void setUp() {
         listener = new MktLeaseCommissionListener(contractMapper, billMapper, tenantMapper, customerMapper,
@@ -75,7 +80,7 @@ class MktLeaseCommissionListenerTest {
         listener.onContractApproved(new DomainEvent.ContractApproved(10L, "HT-1", 7L, 1L, LocalDateTime.now()));
 
         ArgumentCaptor<CommissionEvent> cap = ArgumentCaptor.forClass(CommissionEvent.class);
-        verify(commissionService).createAndSplit(cap.capture());
+        verify(commissionService).createAndSplitInTransaction(cap.capture());
         verify(lockService).markDeal(5L, 99L);
         CommissionEvent ev = cap.getValue();
         assertThat(ev.sourceType()).isEqualTo(MktCommissionService.SOURCE_LEASE);
@@ -95,7 +100,7 @@ class MktLeaseCommissionListenerTest {
 
         listener.onContractApproved(new DomainEvent.ContractApproved(10L, "HT-1", 7L, 1L, LocalDateTime.now()));
 
-        verify(commissionService, never()).createAndSplit(any());
+        verify(commissionService, never()).createAndSplitInTransaction(any());
     }
 
     @Test
@@ -108,7 +113,7 @@ class MktLeaseCommissionListenerTest {
 
         listener.onContractApproved(new DomainEvent.ContractApproved(10L, "HT-1", 7L, 1L, LocalDateTime.now()));
 
-        verify(commissionService, never()).createAndSplit(any());
+        verify(commissionService, never()).createAndSplitInTransaction(any());
     }
 
     @Test
@@ -122,7 +127,7 @@ class MktLeaseCommissionListenerTest {
         listener.onContractApproved(new DomainEvent.ContractApproved(10L, "HT-1", 7L, 1L, LocalDateTime.now()));
 
         ArgumentCaptor<CommissionEvent> cap = ArgumentCaptor.forClass(CommissionEvent.class);
-        verify(commissionService).createAndSplit(cap.capture());
+        verify(commissionService).createAndSplitInTransaction(cap.capture());
         assertThat(cap.getValue().grade()).isEqualTo("D");
         assertThat(cap.getValue().poolAmount()).isEqualByComparingTo("500.00"); // 1000 × 0.5
     }
@@ -132,14 +137,16 @@ class MktLeaseCommissionListenerTest {
         MktReferralOrder o1 = new MktReferralOrder(); o1.setId(31L);
         MktReferralOrder o2 = new MktReferralOrder(); o2.setId(32L);
         when(orderMapper.selectList(any(Wrapper.class))).thenReturn(List.of(o1, o2));
-        when(billMapper.selectById(500L)).thenReturn(new com.zhyq.park.finance.entity.Bill());
-        lenient().when(commissionService.unfreezeByOrder(31L)).thenReturn(2);
-        lenient().when(commissionService.unfreezeByOrder(32L)).thenReturn(0);
+        var bill = rentBill(500L, "1000", 5);
+        when(billMapper.selectById(500L)).thenReturn(bill);
+        when(billMapper.selectList(any())).thenReturn(List.of(bill));
+        lenient().when(commissionService.unfreezeByOrderInTransaction(31L)).thenReturn(2);
+        lenient().when(commissionService.unfreezeByOrderInTransaction(32L)).thenReturn(0);
 
         listener.onPaymentReceived(new DomainEvent.PaymentReceived(500L, 10L, LocalDateTime.now()));
 
-        verify(commissionService).unfreezeByOrder(31L);
-        verify(commissionService).unfreezeByOrder(32L);
+        verify(commissionService).unfreezeByOrderInTransaction(31L);
+        verify(commissionService).unfreezeByOrderInTransaction(32L);
     }
 
     @Test
@@ -147,12 +154,12 @@ class MktLeaseCommissionListenerTest {
         MktReferralOrder o = new MktReferralOrder(); o.setId(31L);
         com.zhyq.park.finance.entity.Bill bill = new com.zhyq.park.finance.entity.Bill();
         bill.setSource("mkt_service"); bill.setBillingKey("mkt_service:10:first");
-        bill.setStatus(5); bill.setFeeType("租金");
+        bill.setStatus(5); bill.setFeeType("租金"); bill.setAmount(BigDecimal.TEN); bill.setPaidAmount(BigDecimal.TEN);
         when(billMapper.selectById(500L)).thenReturn(bill);
         when(orderMapper.selectList(any(Wrapper.class))).thenReturn(List.of(o));
-        when(commissionService.unfreezeByOrder(31L)).thenReturn(1);
+        when(commissionService.unfreezeByOrderInTransaction(31L)).thenReturn(1);
         listener.onPaymentReceived(new DomainEvent.PaymentReceived(500L, 10L, LocalDateTime.now()));
-        verify(commissionService).unfreezeByOrder(31L);
+        verify(commissionService).unfreezeByOrderInTransaction(31L);
         verify(serviceContractService).startPerforming(10L);
     }
 
@@ -160,7 +167,7 @@ class MktLeaseCommissionListenerTest {
     void firstAnchoredRentBillUnfreezesBonus() {
         var bill = new com.zhyq.park.finance.entity.Bill();
         bill.setSource("mkt_service"); bill.setBillingKey("mkt_service:10:rent:2026-01-31");
-        bill.setStatus(5); bill.setFeeType("租金");
+        bill.setStatus(5); bill.setFeeType("租金"); bill.setAmount(BigDecimal.TEN); bill.setPaidAmount(BigDecimal.TEN);
         var contract = new com.zhyq.park.marketing.entity.MktServiceContract();
         contract.setStartDate(java.time.LocalDate.of(2026, 1, 31));
         when(serviceContracts.selectById(10L)).thenReturn(contract);
@@ -174,12 +181,12 @@ class MktLeaseCommissionListenerTest {
     void laterServiceBillDoesNotUnfreezeContractBonus() {
         com.zhyq.park.finance.entity.Bill bill = new com.zhyq.park.finance.entity.Bill();
         bill.setSource("mkt_service"); bill.setBillingKey("mkt_service:10:month-2");
-        bill.setStatus(5); bill.setFeeType("租金");
+        bill.setStatus(5); bill.setFeeType("租金"); bill.setAmount(BigDecimal.TEN); bill.setPaidAmount(BigDecimal.TEN);
         when(billMapper.selectById(500L)).thenReturn(bill);
 
         listener.onPaymentReceived(new DomainEvent.PaymentReceived(500L, 10L, LocalDateTime.now()));
 
-        verify(commissionService, never()).unfreezeByOrder(any());
+        verify(commissionService, never()).unfreezeByOrderInTransaction(any());
         verify(serviceContractService, never()).startPerforming(any());
     }
 
@@ -201,7 +208,73 @@ class MktLeaseCommissionListenerTest {
     @Test
     void paymentWithoutContractIsIgnored() {
         listener.onPaymentReceived(new DomainEvent.PaymentReceived(500L, null, LocalDateTime.now()));
-        verify(commissionService, never()).unfreezeByOrder(any());
+        verify(commissionService, never()).unfreezeByOrderInTransaction(any());
+    }
+
+    @Test void propertyPaymentAndPartialRentCannotUnfreezeLease() {
+        var rent = rentBill(500L, "1", 4);
+        var property = rentBill(501L, "1", 4); property.setFeeType("物业费");
+        when(billMapper.selectList(any())).thenReturn(List.of(rent));
+        when(billMapper.selectById(501L)).thenReturn(property);
+        listener.onPaymentReceived(new DomainEvent.PaymentReceived(501L,10L,LocalDateTime.now()));
+        when(billMapper.selectById(500L)).thenReturn(rent);
+        listener.onPaymentReceived(new DomainEvent.PaymentReceived(500L,10L,LocalDateTime.now()));
+        verify(commissionService, never()).unfreezeByOrderInTransaction(any());
+    }
+
+    @Test void writeOffSettledRentAndUnpaidSecondRoomDoNotMeetCashGate() {
+        var first = rentBill(500L, "1000", 5);
+        var room2 = rentBill(501L, "1", 5); // settled through write-off, only one yuan actual receipt
+        when(billMapper.selectById(500L)).thenReturn(first);
+        when(billMapper.selectList(any())).thenReturn(List.of(first, room2));
+        listener.onPaymentReceived(new DomainEvent.PaymentReceived(500L,10L,LocalDateTime.now()));
+        verify(commissionService, never()).unfreezeByOrderInTransaction(any());
+    }
+
+    @Test void laterRentPeriodDoesNotUnfreezeLease() {
+        var first = rentBill(500L, "1", 4); var later = rentBill(501L, "1000", 5);
+        later.setPeriodStart(first.getPeriodStart().plusMonths(1));
+        when(billMapper.selectById(501L)).thenReturn(later); when(billMapper.selectList(any())).thenReturn(List.of(first,later));
+        listener.onPaymentReceived(new DomainEvent.PaymentReceived(501L,10L,LocalDateTime.now()));
+        verify(commissionService, never()).unfreezeByOrderInTransaction(any());
+    }
+
+    @Test void earlyTerminationClawsBackInSameTransactionAndPropagatesFailure() {
+        var c = contract(10L,7L,"10","10","A"); c.setStartDate(java.time.LocalDate.of(2026,1,1)); c.setTerminateDate(c.getStartDate().plusDays(90));
+        when(contractMapper.selectById(10L)).thenReturn(c); when(bizSettings.getInt("marketing","lease_clawback_days",90)).thenReturn(90);
+        listener.onContractTerminated(new DomainEvent.ContractTerminated(10L,"HT-1",7L,1L,LocalDateTime.now()));
+        verify(commissionService).clawbackBySource(eq(1),eq(10L),any());
+        org.mockito.Mockito.doThrow(new com.zhyq.park.common.exception.BizException("rollback")).when(commissionService).clawbackBySource(eq(1),eq(10L),any());
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> listener.onContractTerminated(new DomainEvent.ContractTerminated(10L,"HT-1",7L,1L,LocalDateTime.now())))
+                .hasMessage("rollback");
+    }
+
+    @Test void terminationOutsideWindowDoesNotClawBackSettledCommissions() {
+        var c = contract(10L,7L,"10","10","A"); c.setStartDate(java.time.LocalDate.of(2026,1,1)); c.setTerminateDate(c.getStartDate().plusDays(91));
+        when(contractMapper.selectById(10L)).thenReturn(c); when(bizSettings.getInt("marketing","lease_clawback_days",90)).thenReturn(90);
+        listener.onContractTerminated(new DomainEvent.ContractTerminated(10L,"HT-1",7L,1L,LocalDateTime.now()));
+        verify(commissionService, never()).clawbackBySource(org.mockito.ArgumentMatchers.anyInt(),any(),any());
+        verify(commissionService).voidUnsettledBySource(eq(1),eq(10L),any());
+    }
+
+    @Test void partialReversalBelowFirstRentAmountSuspendsEntitlement() {
+        var bill = rentBill(500L, "999", 4); var order = new MktReferralOrder(); order.setId(31L);
+        when(billMapper.selectById(500L)).thenReturn(bill); when(billMapper.selectList(any())).thenReturn(List.of(bill));
+        when(orderMapper.selectList(any())).thenReturn(List.of(order));
+        listener.onPaymentReversed(new DomainEvent.PaymentReversed(700L,500L,10L,LocalDateTime.now()));
+        verify(commissionService).refreezeByOrder(31L);
+    }
+    @Test void reversalThatStillLeavesFullRentDoesNotSuspend() {
+        var bill = rentBill(500L, "1000", 5);
+        when(billMapper.selectById(500L)).thenReturn(bill); when(billMapper.selectList(any())).thenReturn(List.of(bill));
+        listener.onPaymentReversed(new DomainEvent.PaymentReversed(700L,500L,10L,LocalDateTime.now()));
+        verify(commissionService, never()).refreezeByOrder(any());
+    }
+
+    private static com.zhyq.park.finance.entity.Bill rentBill(Long id, String paid, int status) {
+        var b = new com.zhyq.park.finance.entity.Bill(); b.setId(id); b.setContractId(10L); b.setDirection(1); b.setFeeType("租金");
+        b.setSource("合同计划"); b.setAmount(new BigDecimal("1000")); b.setPaidAmount(new BigDecimal(paid)); b.setStatus(status);
+        b.setPeriodStart(java.time.LocalDate.of(2026,9,1)); return b;
     }
 
     private static Contract contract(Long id, Long tenantRefId, String price, String area, String grade) {

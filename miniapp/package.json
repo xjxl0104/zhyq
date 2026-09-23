@@ -7,7 +7,10 @@
     "dev:mp-weixin": "uni -p mp-weixin",
     "build:mp-weixin": "uni build -p mp-weixin && node scripts/check-wechat-build.mjs",
     "dev:h5": "uni",
-    "build:h5": "uni build"
+    "build:h5": "uni build",
+    "test:network": "node --test scripts/network-error.test.mjs",
+    "test:pagination": "node --test scripts/pagination.test.mjs",
+    "test": "node --test scripts/*.test.mjs"
   },
   "dependencies": {
     "@dcloudio/uni-app": "3.0.0-4020920240930001",

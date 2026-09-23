@@ -15,6 +15,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 
@@ -31,6 +32,7 @@ public class CustomerController {
 
     @Operation(summary = "分页查询意向客户")
     @GetMapping("/page")
+    @PreAuthorize("hasAuthority('crm:customer:query')")
     public Result<PageResult<Customer>> page(@RequestParam(defaultValue = "1") int pageNo,
                                              @RequestParam(defaultValue = "10") int pageSize,
                                              @RequestParam(required = false) String name,
@@ -49,12 +51,14 @@ public class CustomerController {
 
     @Operation(summary = "意向客户详情")
     @GetMapping("/{id}")
+    @PreAuthorize("hasAuthority('crm:customer:query')")
     public Result<Customer> get(@PathVariable Long id) {
         return Result.ok(customerMapper.selectById(id));
     }
 
     @Operation(summary = "新增意向客户")
     @PostMapping
+    @PreAuthorize("hasAuthority('crm:customer:add')")
     public Result<Long> add(@RequestBody Customer customer) {
         if (customer.getReferrerId() != null || customer.getGrade() != null)
             throw new BizException("请先建档，再到全民营销设置推荐伙伴及评级");
@@ -65,6 +69,7 @@ public class CustomerController {
     @Operation(summary = "修改意向客户")
     @PutMapping
     @Transactional
+    @PreAuthorize("hasAuthority('crm:customer:edit')")
     public Result<Void> update(@RequestBody Customer customer) {
         Customer current = requireLocked(customer.getId());
         if ((customer.getReferrerId() != null && !java.util.Objects.equals(customer.getReferrerId(), current.getReferrerId()))
@@ -83,6 +88,7 @@ public class CustomerController {
     @Operation(summary = "删除意向客户")
     @Transactional
     @DeleteMapping("/{id}")
+    @PreAuthorize("hasAuthority('crm:customer:delete')")
     public Result<Void> delete(@PathVariable Long id) {
         Customer current = requireLocked(id);
         assignmentService.assertNoActiveContracts(id);
@@ -95,6 +101,7 @@ public class CustomerController {
     @Operation(summary = "线索转意向客户")
     @Transactional(rollbackFor = Exception.class)
     @PostMapping("/from-lead/{leadId}")
+    @PreAuthorize("hasAuthority('crm:customer:add') and hasAuthority('crm:lead:edit')")
     public Result<Long> fromLead(@PathVariable Long leadId) {
         Lead lead = leadMapper.selectById(leadId);
         if (lead == null) {
@@ -126,6 +133,7 @@ public class CustomerController {
     @Operation(summary = "签约(跟进中->已签约)")
     @Transactional
     @PostMapping("/{id}/sign")
+    @PreAuthorize("hasAuthority('crm:customer:edit')")
     public Result<Void> sign(@PathVariable Long id) {
         if (isMarketing(requireLocked(id))) throw new BizException("营销客户请通过真实合同签署生效，不支持直接改为已签约");
         LambdaUpdateWrapper<Customer> uw = new LambdaUpdateWrapper<>();
@@ -139,6 +147,7 @@ public class CustomerController {
     @Operation(summary = "流失(跟进中->已流失)")
     @Transactional
     @PostMapping("/{id}/lose")
+    @PreAuthorize("hasAuthority('crm:customer:edit')")
     public Result<Void> lose(@PathVariable Long id) {
         if (isMarketing(requireLocked(id))) throw new BizException("请在全民营销中标记流失并填写原因");
         assignmentService.assertNoActiveContracts(id);

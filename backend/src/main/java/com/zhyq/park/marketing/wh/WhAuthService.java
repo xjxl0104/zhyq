@@ -3,6 +3,7 @@ package com.zhyq.park.marketing.wh;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.zhyq.park.auth.JwtService;
+import com.zhyq.park.auth.JwtAccountService;
 import com.zhyq.park.common.exception.BizException;
 import com.zhyq.park.marketing.entity.MktPromoter;
 import com.zhyq.park.marketing.entity.MktWarehouse;
@@ -21,7 +22,6 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
-import java.util.List;
 
 /** 微信身份 for warehouse portal. One contact_openid owns one warehouse in this phase. */
 @Slf4j
@@ -71,6 +71,7 @@ public class WhAuthService {
         WxSessionClient.Session session = code2Session(jsCode);
         MktWarehouse w = resolveWarehouseByOpenid(session.openid(), requestedWarehouseId);
         if (w == null) return new LoginResult(false, null, session.openid(), null, mockLogin ? null : loginTickets.issue(session));
+        JwtAccountService.assertWarehouseActive(w);
         touchLogin(w);
         return new LoginResult(true, issue(w), session.openid(), w);
     }
@@ -116,6 +117,7 @@ public class WhAuthService {
         if (partner != null) throw new BizException(409, "该手机号已绑定伙伴身份,请使用身份选择");
         MktWarehouse w = warehouseMapper.selectOne(new LambdaQueryWrapper<MktWarehouse>().eq(MktWarehouse::getPhone, phone).last("limit 1"));
         if (w == null) return new LoginResult(false, null, openid, null);
+        JwtAccountService.assertWarehouseActive(w);
         phoneBindingGuard.assertCanBind("wh", w.getId());
 
         // 该 openid 已作为某云仓联系人 → 幂等返回;已被别的 openid 认领联系人则冲突
@@ -148,7 +150,7 @@ public class WhAuthService {
 
     private void touchLogin(MktWarehouse w) { /* contact_openid is the only persisted identity marker in this schema */ }
 
-    private String issue(MktWarehouse w) { return jwtService.issue(w.getId(), SUBJECT_PREFIX + w.getId(), List.of(ROLE)); }
+    private String issue(MktWarehouse w) { JwtAccountService.assertWarehouseActive(w); return jwtService.issueForIdentity("wh", w.getId()); }
 
     WxSessionClient.Session code2Session(String jsCode) {
         if (!StringUtils.hasText(jsCode)) throw new BizException("缺少 js_code");

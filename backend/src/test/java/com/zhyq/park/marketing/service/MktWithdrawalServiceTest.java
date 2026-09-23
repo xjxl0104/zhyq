@@ -81,6 +81,7 @@ class MktWithdrawalServiceTest {
     @Test void newlyFrozenPartnerCannotReceivePendingPayout() {
         var w=new MktWithdrawal();w.setId(9L);w.setPromoterId(1L);w.setStatus(2);
         when(withdrawalMapper.selectById(9L)).thenReturn(w);
+        when(withdrawalMapper.selectOne(any())).thenAnswer(inv -> ((Wrapper<?>) inv.getArgument(0)).getSqlSegment().contains("FOR UPDATE") ? w : null);
         var p=promoter();p.setStatus(2);when(promoterMapper.selectForUpdate(1L)).thenReturn(p);
         assertThatThrownBy(()->service.pay(9L,"PAY-FROZEN","file:10","ops"))
                 .isInstanceOf(BizException.class).hasMessageContaining("冻结或退出");
@@ -91,6 +92,7 @@ class MktWithdrawalServiceTest {
     @Test void payRejectsWhenLinkedRowsDoNotEqualWithdrawalAmount() {
         MktWithdrawal w = new MktWithdrawal(); w.setId(9L); w.setPromoterId(1L);w.setStatus(2);w.setAccountNoEnc("encrypted");w.setAccountVerifiedAt(java.time.LocalDateTime.now()); w.setAmount(new BigDecimal("100"));
         when(withdrawalMapper.selectById(9L)).thenReturn(w);
+        when(withdrawalMapper.selectOne(any())).thenAnswer(inv -> ((Wrapper<?>) inv.getArgument(0)).getSqlSegment().contains("FOR UPDATE") ? w : null);
         when(commissionMapper.selectList(any(Wrapper.class))).thenReturn(List.of(row(1L, "90")));
         assertThatThrownBy(() -> service.pay(9L, "PAY-1", "file:10", "ops"))
                 .isInstanceOf(BizException.class).hasMessageContaining("金额不一致");
@@ -113,7 +115,7 @@ class MktWithdrawalServiceTest {
     @Test void reusedPaymentNumberCannotAcknowledgeAnotherWithdrawal() {
         MktWithdrawal requested=new MktWithdrawal();requested.setId(9L);requested.setPromoterId(1L);
         MktWithdrawal other=new MktWithdrawal();other.setId(10L);other.setStatus(3);other.setPayProof("file:10");
-        when(withdrawalMapper.selectById(9L)).thenReturn(requested);when(withdrawalMapper.selectOne(any())).thenReturn(other);
+        when(withdrawalMapper.selectById(9L)).thenReturn(requested);when(withdrawalMapper.selectOne(any())).thenAnswer(inv -> ((Wrapper<?>) inv.getArgument(0)).getSqlSegment().contains("FOR UPDATE") ? requested : other);
         assertThatThrownBy(()->service.pay(9L,"DUP","file:10","finance")).isInstanceOf(BizException.class).hasMessageContaining("其他提现");
         verify(withdrawalMapper,never()).update(any(),any());
     }

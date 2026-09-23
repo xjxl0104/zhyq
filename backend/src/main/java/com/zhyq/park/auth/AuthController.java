@@ -14,14 +14,13 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
 /**
  * 认证:BCrypt 校验密码 + 签发 JWT(无状态)。
- * 角色编码以 ROLE_ 前缀、权限标识原样写入 JWT 的 auth claim。
+ * 签名令牌包含显式主体类型；每次请求重新校验当前账号状态及权限。
  */
 @Tag(name = "认证")
 @RestController
@@ -42,6 +41,7 @@ public class AuthController {
         if (username == null || username.isBlank() || password == null || password.isBlank()) {
             throw new BizException(401, "请输入账号密码");
         }
+        if (JwtAccountService.reservedUsername(username)) throw new BizException(401, "账号或密码错误");
         SysUser user = userMapper.selectOne(new LambdaQueryWrapper<SysUser>()
                 .eq(SysUser::getUsername, username).last("limit 1"));
         if (user == null || user.getStatus() == null || user.getStatus() != 1) {
@@ -51,14 +51,7 @@ public class AuthController {
             throw new BizException(401, "账号或密码错误");
         }
 
-        // 载入角色编码(ROLE_ 前缀)+ 权限标识,写入 JWT
-        List<String> authorities = new ArrayList<>();
-        for (String code : authQueryMapper.selectRoleCodesByUserId(user.getId())) {
-            if (code != null && !code.isBlank()) authorities.add("ROLE_" + code);
-        }
-        authorities.addAll(authQueryMapper.selectPermsByUserId(user.getId()));
-
-        String token = jwtService.issue(user.getId(), user.getUsername(), authorities);
+        String token = jwtService.issueForIdentity("admin", user.getId());
         Map<String, Object> data = new HashMap<>();
         data.put("token", token);
         data.put("username", user.getUsername());

@@ -26,24 +26,14 @@ import com.zhyq.park.tenant.mapper.BizTenantMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.event.TransactionPhase;
-import org.springframework.transaction.event.TransactionalEventListener;
+import org.springframework.context.event.EventListener;
 import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 
-/**
- * 租赁线的计佣(PARK-MKT-001 §2.7a 园区入驻):
- * <ul>
- *   <li>{@code contract.approved} → 找到该租客对应的 crm_customer 推荐伙伴 → 佣金池 = 单价 × 面积 × 评级佣金月数 → 一次性佣金(冻结);
- *       老渠道佣金(crm_commission)已有该合同且互斥开关开 → 跳过并写日志;</li>
- *   <li>{@code payment.received} → 该合同的租赁计佣订单解冻(首期租金/保证金任一到账即算,§2.4);
- *       同时服务合同的签约奖(source_type=4)也在这里解冻 —— 服务合同的账单 contract_id 指向 crm_service_contract。</li>
- * </ul>
- * 用 AFTER_COMMIT:合同审批 / 收款事务失败时不会误计佣;fallbackExecution 让无事务上下文的调用(如测试)也能触发。
- */
+/** Lease commission changes commit atomically with contract approval / receipt / termination. */
 @Slf4j
 @Component
 @RequiredArgsConstructor
@@ -67,35 +57,30 @@ public class MktLeaseCommissionListener {
     private final BizSettings bizSettings;
     private final com.zhyq.park.marketing.mapper.MktServiceContractMapper serviceContracts;
 
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    @EventListener
     public void onContractApproved(DomainEvent.ContractApproved e) {
-        try {
-            createLeaseCommission(e.contractId(), e.projectId());
-        } catch (Exception ex) {
-            log.error("[mkt] 租赁计佣失败 contractId={}", e.contractId(), ex);
-        }
+        createLeaseCommission(e.contractId(), e.projectId());
     }
 
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    @EventListener
     public void onPaymentReceived(DomainEvent.PaymentReceived e) {
-        if (e.contractId() == null) {
-            return;
-        }
-        try {
-            unfreezeForContract(e.contractId(), e.billId());
-        } catch (Exception ex) {
-            log.error("[mkt] 到账解冻失败 contractId={}", e.contractId(), ex);
-        }
+        if (e.contractId() != null) unfreezeForContract(e.contractId(), e.billId());
     }
 
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    @EventListener
     public void onPaymentReversed(DomainEvent.PaymentReversed e) {
-        if (e.contractId() == null) return;
-        try {
-            refreezeForContract(e.contractId(), e.billId());
-        } catch (Exception ex) {
-            log.error("[mkt] 收款红冲回冻失败 contractId={}", e.contractId(), ex);
-        }
+        if (e.contractId() != null) refreezeForContract(e.contractId(), e.billId());
+    }
+
+    @EventListener
+    public void onContractTerminated(DomainEvent.ContractTerminated e) {
+        Contract c = contractMapper.selectById(e.contractId());
+        if (c == null || c.getStartDate() == null) return;
+        int days = Math.max(0, bizSettings.getInt(MODULE, "lease_clawback_days", 90));
+        java.time.LocalDate ended = c.getTerminateDate() != null ? c.getTerminateDate() : e.occurredAt().toLocalDate();
+        if (!ended.isAfter(c.getStartDate().plusDays(days)))
+            commissionService.clawbackBySource(MktCommissionService.SOURCE_LEASE, c.getId(), "租赁合同在 " + days + " 天内退租");
+        else commissionService.voidUnsettledBySource(MktCommissionService.SOURCE_LEASE, c.getId(), "租赁合同退租,未结算佣金作废");
     }
 
     void createLeaseCommission(Long contractId, Long projectId) {
@@ -123,7 +108,7 @@ public class MktLeaseCommissionListener {
         BigDecimal monthlyRent = c.getRentPrice().multiply(c.getRentArea());
         BigDecimal pool = PoolCalculator.leasePool(c.getRentPrice(), c.getRentArea(), months);
 
-        commissionService.createAndSplit(new CommissionEvent(
+        commissionService.createAndSplitInTransaction(new CommissionEvent(
                 MktCommissionService.SOURCE_LEASE, LEASE_NO_PREFIX + contractId, contractId,
                 customer.getId(), customer.getReferrerId(), gradeCode, months, monthlyRent, pool,
                 LocalDateTime.now(), null, projectId, null));
@@ -133,20 +118,29 @@ public class MktLeaseCommissionListener {
     void unfreezeForContract(Long contractId, Long billId) {
         // fin_bill.contract_id 来自两张合同表，必须先按 source 分流，避免自增 id 撞号。
         Bill bill = billMapper.selectById(billId);
-        if (isFirstServiceBill(bill, contractId) && Integer.valueOf(BillMetrics.STATUS_SETTLED).equals(bill.getStatus())) {
+        if (isFirstServiceBill(bill, contractId) && fullyReceived(bill)) {
             unfreezeOrders(contractId, MktCommissionService.SOURCE_CONTRACT_BONUS);
             serviceContractService.startPerforming(contractId);
             return;
         }
         if (bill != null && SERVICE_BILL_SOURCE.equals(bill.getSource())) return;
-        unfreezeOrders(contractId, MktCommissionService.SOURCE_LEASE);
+        List<Bill> first = firstLeaseRentBills(contractId);
+        if (bill != null && first.stream().anyMatch(b -> java.util.Objects.equals(b.getId(), billId))
+                && !first.isEmpty() && first.stream().allMatch(MktLeaseCommissionListener::fullyReceived))
+            unfreezeOrders(contractId, MktCommissionService.SOURCE_LEASE);
     }
 
     void refreezeForContract(Long contractId, Long billId) {
         Bill bill = billMapper.selectById(billId);
-        if (bill == null || (bill.getPaidAmount() != null && bill.getPaidAmount().signum() > 0)) return;
+        if (bill == null) return;
         boolean serviceFirst = isFirstServiceBill(bill, contractId);
         if (SERVICE_BILL_SOURCE.equals(bill.getSource()) && !serviceFirst) return;
+        if (serviceFirst && fullyReceived(bill)) return;
+        if (!serviceFirst) {
+            List<Bill> first = firstLeaseRentBills(contractId);
+            if (first.stream().noneMatch(b -> java.util.Objects.equals(b.getId(), billId))
+                    || first.stream().allMatch(MktLeaseCommissionListener::fullyReceived)) return;
+        }
         int sourceType = serviceFirst ? MktCommissionService.SOURCE_CONTRACT_BONUS : MktCommissionService.SOURCE_LEASE;
         List<MktReferralOrder> orders = orderMapper.selectList(new LambdaQueryWrapper<MktReferralOrder>()
                 .eq(MktReferralOrder::getSourceId, contractId)
@@ -154,9 +148,26 @@ public class MktLeaseCommissionListener {
         for (MktReferralOrder o : orders) commissionService.refreezeByOrder(o.getId());
     }
 
+    /** The first positive rent period may have several room bills; every one must be paid in cash. */
+    private List<Bill> firstLeaseRentBills(Long contractId) {
+        List<Bill> rent = billMapper.selectList(new LambdaQueryWrapper<Bill>()
+                .eq(Bill::getContractId, contractId).eq(Bill::getDirection, 1).eq(Bill::getFeeType, "租金")
+                .ne(Bill::getStatus, 8).gt(Bill::getAmount, BigDecimal.ZERO)
+                .and(q -> q.isNull(Bill::getSource).or().ne(Bill::getSource, SERVICE_BILL_SOURCE))
+                .isNotNull(Bill::getPeriodStart).orderByAsc(Bill::getPeriodStart).orderByAsc(Bill::getId).last("FOR UPDATE"));
+        if (rent.isEmpty()) return List.of();
+        var first = rent.get(0).getPeriodStart();
+        return rent.stream().filter(b -> java.util.Objects.equals(first, b.getPeriodStart())).toList();
+    }
+
+    private static boolean fullyReceived(Bill bill) {
+        return Integer.valueOf(BillMetrics.STATUS_SETTLED).equals(bill.getStatus()) && bill.getAmount() != null
+                && bill.getAmount().signum() > 0 && bill.getPaidAmount() != null
+                && bill.getPaidAmount().compareTo(bill.getAmount()) >= 0;
+    }
+
     private boolean isFirstServiceBill(Bill bill, Long contractId) {
-        if (bill == null || !SERVICE_BILL_SOURCE.equals(bill.getSource())
-) {
+        if (bill == null || !SERVICE_BILL_SOURCE.equals(bill.getSource())) {
             return false;
         }
         boolean feeEligible = "租金".equals(bill.getFeeType())
@@ -173,7 +184,7 @@ public class MktLeaseCommissionListener {
                 .eq(MktReferralOrder::getSourceId, contractId)
                 .eq(MktReferralOrder::getSourceType, sourceType));
         for (MktReferralOrder o : orders) {
-            int n = commissionService.unfreezeByOrder(o.getId());
+            int n = commissionService.unfreezeByOrderInTransaction(o.getId());
             if (n > 0) {
                 log.info("[mkt] 合同 {} 到账,订单 {} 解冻 {} 行", contractId, o.getId(), n);
             }

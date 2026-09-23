@@ -79,7 +79,8 @@ public class MktServiceContractService {
     private final MktAuditService auditService;
     private final ApplicationEventPublisher eventPublisher;
     private final MktCustomerAssignmentService assignmentService;
-    private static final ObjectMapper JSON = new ObjectMapper();
+    private static final ObjectMapper JSON = new ObjectMapper().findAndRegisterModules()
+            .disable(com.fasterxml.jackson.databind.SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
     private static final Set<String> PRICE_KEYS = Set.of("perOrder", "perItem", "storage", "monthly");
 
     /** 新建草稿:自动编号 CS-yyyyMM-xxxx,sign_mode 取客户设置(空则园区签),评级/推荐人从客户快照。 */
@@ -93,6 +94,7 @@ public class MktServiceContractService {
                 + UUID.randomUUID().toString().replace("-", "").substring(0, 6).toUpperCase());
         draft.setStatus(ST_DRAFT);
         draft.setContractVersion(1);
+        draft.setTermsEffectiveFrom(null);
         if (draft.getSignMode() == null) {
             draft.setSignMode(customer.getSignMode() == null ? SIGN_MODE_PARK : customer.getSignMode());
         }
@@ -220,27 +222,71 @@ public class MktServiceContractService {
     /** 首期款到账 → 履约中(由 PaymentReceived 监听或运营手动触发)。 */
     @Transactional
     public void startPerforming(Long id) {
+        MktServiceContract current = require(id);
+        // 结清历史欠款不得复活到期/终止合同，重复到账也不应回滚真实收款。
+        if (current.getStatus() != null && Set.of(ST_PERFORMING, ST_AMENDING, ST_EXPIRED, ST_TERMINATED, ST_VOID).contains(current.getStatus())) return;
         transition(id, ST_PERFORMING, "contract.perform", null, ST_EFFECTIVE);
     }
 
     @Transactional
     public void amend(Long id, String changeNote) {
         MktServiceContract c = require(id);
+        if (!StringUtils.hasText(changeNote)) throw new BizException("请填写合同变更原因");
+        if (c.getTermsEffectiveFrom() != null && c.getTermsEffectiveFrom().isAfter(LocalDate.now()))
+            throw new BizException("上一份变更条款尚未生效，请在生效后再变更");
         transition(id, ST_AMENDING, "contract.amend", changeNote, ST_PERFORMING);
-        snapshot(c, changeNote);
     }
 
     /** 变更完成:新版本生效,回到履约中。 */
     @Transactional
-    public void amendDone(Long id) {
-        MktServiceContract c = require(id);
+    public void amendDone(Long id) { throw new BizException("请填写变更条款、生效日期并上传签署件"); }
+
+    public record Amendment(String priceTable, LocalDate endDate, Integer payCycle, String files,
+                            String remark, LocalDate effectiveDate) {}
+
+    @Transactional
+    public void amendDone(Long id, Amendment amendment) {
+        // 与固定月费出账共享合同锁，防止校验后另一个事务按旧条款生成新账单。
+        MktServiceContract c = contractMapper.selectForUpdate(id);
+        if (c == null) throw new BizException("合同不存在");
+        if (!Integer.valueOf(ST_AMENDING).equals(c.getStatus())) throw new BizException("仅变更中的合同可完成条款变更");
+        if (amendment == null || amendment.effectiveDate() == null || amendment.effectiveDate().isBefore(LocalDate.now()))
+            throw new BizException("变更生效日期不得早于今天");
+        if (amendment.effectiveDate().isBefore(c.getStartDate()) || amendment.endDate() == null
+                || amendment.endDate().isBefore(amendment.effectiveDate())) throw new BizException("生效日期须位于新的合同期限内");
+        MktServiceContract next = new MktServiceContract();
+        org.springframework.beans.BeanUtils.copyProperties(c, next);
+        next.setPriceTable(amendment.priceTable()); next.setEndDate(amendment.endDate());
+        next.setPayCycle(amendment.payCycle()); next.setFiles(amendment.files()); next.setRemark(amendment.remark());
+        next.setTermsEffectiveFrom(amendment.effectiveDate());
+        validateTerms(next); validateEconomics(next); validateFiles(next.getFiles(), true);
+        if (Integer.valueOf(1).equals(c.getSignMode()) && (Integer.valueOf(1).equals(c.getFeeModel()) || Integer.valueOf(4).equals(c.getFeeModel()))) {
+            long months = java.time.temporal.ChronoUnit.MONTHS.between(java.time.YearMonth.from(c.getStartDate()), java.time.YearMonth.from(amendment.effectiveDate()));
+            if (months < 0 || !c.getStartDate().plusMonths(months).equals(amendment.effectiveDate()))
+                throw new BizException("固定月费变更须从合同起始日对应的月计费周期开始生效");
+        }
+        if (billMapper.selectCount(new LambdaQueryWrapper<Bill>().eq(Bill::getContractId, id).eq(Bill::getSource, BILL_SOURCE)
+                .and(q -> q.ge(Bill::getPeriodEnd, amendment.effectiveDate()).or().gt(Bill::getPeriodEnd, next.getEndDate()))) > 0)
+            throw new BizException("生效日期或新期限涉及已生成账单，请选择下一个未出账周期");
         int updated = contractMapper.update(null, new LambdaUpdateWrapper<MktServiceContract>()
                 .eq(MktServiceContract::getId, id)
                 .eq(MktServiceContract::getStatus, ST_AMENDING)
+                .eq(MktServiceContract::getContractVersion, c.getContractVersion())
                 .set(MktServiceContract::getStatus, ST_PERFORMING)
+                .set(MktServiceContract::getPriceTable, next.getPriceTable()).set(MktServiceContract::getEndDate, next.getEndDate())
+                .set(MktServiceContract::getPayCycle, next.getPayCycle()).set(MktServiceContract::getFiles, next.getFiles())
+                .set(MktServiceContract::getRemark, next.getRemark()).set(MktServiceContract::getTermsEffectiveFrom, next.getTermsEffectiveFrom())
                 .set(MktServiceContract::getContractVersion, c.getContractVersion() + 1));
         requireUpdated(updated, id);
-        auditService.log("contract.amend.done", BIZ_TYPE, id, "版本 " + (c.getContractVersion() + 1));
+        snapshot(c, "条款变更，生效日 " + amendment.effectiveDate());
+        auditService.log("contract.amend.done", BIZ_TYPE, id, "版本 " + (c.getContractVersion() + 1)
+                + "，生效日 " + amendment.effectiveDate(), toJson(c), toJson(next));
+    }
+
+    @Transactional
+    public void cancelAmend(Long id, String reason) {
+        if (!StringUtils.hasText(reason)) throw new BizException("请填写取消变更原因");
+        transition(id, ST_PERFORMING, "contract.amend.cancel", reason, ST_AMENDING);
     }
 
     @Transactional
@@ -268,6 +314,7 @@ public class MktServiceContractService {
                 .eq(MktServiceContract::getStatus, ST_EXPIRED)
                 .set(MktServiceContract::getStatus, ST_PERFORMING)
                 .set(MktServiceContract::getStartDate, newStart)
+                .set(MktServiceContract::getTermsEffectiveFrom, newStart)
                 .set(MktServiceContract::getEndDate, newEnd)
                 .set(MktServiceContract::getContractVersion, c.getContractVersion() + 1));
         requireUpdated(updated, id);
@@ -490,6 +537,9 @@ public class MktServiceContractService {
     }
 
     private void snapshot(MktServiceContract c, String note) {
+        // 兼容旧版已在“发起变更”时保存的同一版本，历史签署快照不可覆盖。
+        if (versionMapper.selectCount(new LambdaQueryWrapper<MktServiceContractVersion>()
+                .eq(MktServiceContractVersion::getContractId, c.getId()).eq(MktServiceContractVersion::getVerNo, c.getContractVersion())) > 0) return;
         MktServiceContractVersion v = new MktServiceContractVersion();
         v.setContractId(c.getId());
         v.setVerNo(c.getContractVersion());
@@ -501,10 +551,7 @@ public class MktServiceContractService {
     }
 
     private static String toJson(MktServiceContract c) {
-        // 版本快照只需要人能看懂的关键字段,不引 ObjectMapper 以免与审计服务重复依赖
-        return "{\"contractNo\":\"" + c.getContractNo() + "\",\"version\":" + c.getContractVersion()
-                + ",\"startDate\":\"" + c.getStartDate() + "\",\"endDate\":\"" + c.getEndDate()
-                + "\",\"priceTable\":" + (c.getPriceTable() == null ? "null" : c.getPriceTable())
-                + ",\"deposit\":" + c.getDeposit() + ",\"warehouseId\":" + c.getWarehouseId() + "}";
+        try { return JSON.writeValueAsString(c); }
+        catch (java.io.IOException error) { throw new BizException("合同版本快照生成失败"); }
     }
 }

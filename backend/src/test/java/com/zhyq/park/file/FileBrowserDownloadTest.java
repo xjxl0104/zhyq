@@ -35,19 +35,20 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @ContextConfiguration(classes = FileController.class)
 @Import({SecurityConfig.class, JwtAuthFilter.class, JwtService.class,
     RestAuthEntryPoint.class, RestAccessDeniedHandler.class, AccessLogFilter.class,
-    FileDownloadTicketService.class, GlobalExceptionHandler.class})
+    FileDownloadTicketService.class, GlobalExceptionHandler.class, com.zhyq.park.marketing.service.MktDocumentAccessService.class})
 class FileBrowserDownloadTest {
     @Autowired MockMvc mvc;
     @Autowired ObjectMapper json;
     @Autowired JwtService jwt;
     @MockBean com.zhyq.park.marketing.service.MktDocumentRetentionService retention;
-    @MockBean com.zhyq.park.marketing.service.MktDocumentAccessService marketingAccess;
+    @MockBean com.zhyq.park.file.mapper.FileBusinessAccessMapper businessAccess;
     @MockBean SysFileMapper files;
     @MockBean FileStorageService storage;
     @MockBean AccessLogWriter logWriter;
     @MockBean ExcludeListHolder excludes;
     @MockBean RouteModuleHolder routes;
     @MockBean SysUserMapper users;
+    @MockBean JwtAccountService accounts;
     @TempDir Path directory;
     private final byte[] content = "%PDF-1.7\ncomplete contract\n%%EOF".getBytes();
     private String bearer;
@@ -58,13 +59,15 @@ class FileBrowserDownloadTest {
         Files.write(pdf, content);
         SysFile file = new SysFile();
         file.setId(35L);
+        file.setCreateBy("reader");
         file.setOriginalName("合同.pdf");
         file.setStorePath("2026/09/contract.pdf");
         file.setContentType("application/pdf");
         file.setFileSize((long) content.length);
         when(files.selectById(35L)).thenReturn(file);
         when(storage.resolveExisting(file.getStorePath())).thenReturn(pdf);
-        bearer = "Bearer " + jwt.issue(1L, "reader", List.of());
+        when(accounts.load("admin", 1L)).thenReturn(new JwtAccountService.Account("admin", 1L, "reader", List.of(), "test-version"));
+        bearer = "Bearer " + jwt.issueForIdentity("admin", 1L);
     }
 
     private String issue() throws Exception {
@@ -129,5 +132,17 @@ class FileBrowserDownloadTest {
         mvc.perform(post("/file/download-ticket/35").header("Authorization", bearer))
             .andExpect(jsonPath("$.message").value("附件文件不存在或已被清理"))
             .andExpect(jsonPath("$.data.ticket").doesNotExist());
+    }
+
+    @Test
+    void unprivilegedAccountCannotListDownloadOrMintTicketForAnotherBusinessDocument() throws Exception {
+        SysFile file = new SysFile(); file.setId(35L); file.setBizType("contract"); file.setBizId(8L); file.setCreateBy("other");
+        when(files.selectById(35L)).thenReturn(file);
+        for (String path : List.of("/file/download/35", "/file/list?bizType=contract&bizId=8")) {
+            mvc.perform(get(path).header("Authorization", bearer)).andExpect(jsonPath("$.code").value(403));
+        }
+        mvc.perform(post("/file/download-ticket/35").header("Authorization", bearer)).andExpect(jsonPath("$.code").value(403));
+        verify(storage, never()).resolveExisting(file.getStorePath());
+        verify(files, never()).selectList(any());
     }
 }

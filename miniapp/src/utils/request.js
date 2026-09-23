@@ -1,4 +1,5 @@
 // 统一请求:带 token、解 Result 包、401 跳登录。伙伴端 /api/mp/v1/**，云仓端 /api/wh/v1/**。
+import { createNetworkError } from './network-error.mjs'
 const injectedBase = typeof __ZHYQ_MP_API_BASE__ === 'string' ? __ZHYQ_MP_API_BASE__ : ''
 const injectedWhBase = typeof __ZHYQ_WH_API_BASE__ === 'string' ? __ZHYQ_WH_API_BASE__ : ''
 const BASE = injectedBase || import.meta.env.VITE_API_BASE || '/api/mp/v1'
@@ -36,8 +37,9 @@ function requestWith(base, auth, loginPath, method, url, data = {}) {
         reject(new Error(msg))
       },
       fail: (e) => {
-        uni.showToast({ title: '网络异常', icon: 'none' })
-        reject(new Error('网络连接失败，请检查网络后重试'))
+        const error = createNetworkError(e)
+        uni.showToast({ title: error.message, icon: 'none', duration: 2500 })
+        reject(error)
       }
     })
   })
@@ -67,14 +69,14 @@ export function uploadWarehouseFile(filePath, name) {
         const message = body?.message || '文件上传失败，请重试'
         uni.showToast({ title: message, icon: 'none' }); reject(new Error(message))
       },
-      fail: () => reject(new Error('文件上传失败，请检查网络后重试'))
+      fail: e => reject(createNetworkError(e))
     })
   })
 }
 
 export async function openWarehouseFile(id, name = '附件') {
   // #ifdef H5
-  const response = await fetch(WH_BASE + '/files/' + id, { headers: { Authorization: 'Bearer ' + warehouseToken.get() } })
+  const response = await fetch(WH_BASE + '/files/' + id, { headers: { Authorization: 'Bearer ' + warehouseToken.get() } }).catch(e => { throw createNetworkError(e) })
   if (!response.ok || response.headers.get('content-type')?.includes('application/json')) throw new Error('附件读取失败或无权访问')
   const url = URL.createObjectURL(await response.blob())
   const link = document.createElement('a'); link.href = url; link.download = name; link.click()
@@ -86,7 +88,7 @@ export async function openWarehouseFile(id, name = '附件') {
     url: WH_BASE + '/files/' + id,
     header: { Authorization: 'Bearer ' + warehouseToken.get() },
     success: r => r.statusCode === 200 ? resolve(r) : reject(new Error('附件读取失败或无权访问')),
-    fail: () => reject(new Error('附件下载失败，请检查网络'))
+    fail: e => reject(createNetworkError(e))
   }))
   const ext = name.split('.').pop().toLowerCase()
   if (['jpg', 'jpeg', 'png'].includes(ext)) {
@@ -99,7 +101,7 @@ export async function openWarehouseFile(id, name = '附件') {
 
 export async function downloadInvitationCode(env = 'release') {
   // #ifdef H5
-  const res = await fetch(BASE + '/poster/code?env=' + env, { headers: { Authorization: 'Bearer ' + token.get() } })
+  const res = await fetch(BASE + '/poster/code?env=' + env, { headers: { Authorization: 'Bearer ' + token.get() } }).catch(e => { throw createNetworkError(e) })
   if (!res.ok || !res.headers.get('content-type')?.startsWith('image/')) {
     let body; try { body = await res.json() } catch (_) { /* use fallback */ }
     throw new Error(body?.message || '小程序码生成失败，可先复制邀请码')
@@ -112,7 +114,7 @@ export async function downloadInvitationCode(env = 'release') {
     success: r => {
       if (r.statusCode !== 200) return reject(new Error('小程序码生成失败，可先分享卡片或复制邀请码'))
       uni.getImageInfo({src:r.tempFilePath,success:()=>resolve(r.tempFilePath),fail:()=>reject(new Error('小程序码尚不可用，请检查小程序发布状态；可先复制邀请码'))})
-    }, fail: () => reject(new Error('网络异常，请重试'))
+    }, fail: e => reject(createNetworkError(e))
   }))
   // #endif
 }

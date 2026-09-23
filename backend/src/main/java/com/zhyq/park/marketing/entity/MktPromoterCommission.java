@@ -30,6 +30,12 @@ public class MktPromoterCommission extends BaseEntity {
     private BigDecimal amount;
     /** 1正向 -1扣回 */
     private Integer sign;
+    /** 0 = original commission/permanent clawback; >0 = paired receipt reversal/restoration cycle. */
+    private Integer adjustmentSequence;
+    /** On the original positive row only: last issued receipt adjustment cycle. */
+    private Integer receiptRevision;
+    /** On the original positive row only: 0 eligible, 1 temporarily suspended, 2 permanently revoked. */
+    private Integer receiptSuspended;
     /** 1冻结 2可结算 3已结算 4已提现 5作废 */
     private Integer status;
     /** 路径 B 自动解冻时间;路径 A 为空,靠到账事件 */

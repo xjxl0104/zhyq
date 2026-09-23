@@ -103,7 +103,7 @@ class MktTransitionGuardTest {
     static void initMp() {
         MapperBuilderAssistant a = new MapperBuilderAssistant(new MybatisConfiguration(), "");
         for (Class<?> c : List.of(Customer.class, MktServiceContract.class, MktCustomerLock.class, MktWarehouse.class,
-                MktWarehouseOnboarding.class, MktPromoterCommission.class, MktWithdrawal.class)) {
+                MktWarehouseOnboarding.class, MktPromoterCommission.class, MktWithdrawal.class, com.zhyq.park.finance.entity.Bill.class, com.zhyq.park.marketing.entity.MktServiceContractVersion.class)) {
             TableInfoHelper.initTableInfo(a, c);
         }
     }
@@ -166,7 +166,12 @@ class MktTransitionGuardTest {
         void amend() { service.amend(1L, "换仓"); last().isStatusTransition("status", ST_AMENDING, ST_PERFORMING); }
 
         @Test @DisplayName("变更中 → 履约中(新版本生效)")
-        void amendDone() { service.amendDone(1L); last().isStatusTransition("status", ST_PERFORMING, ST_AMENDING); }
+        void amendDone() {
+            var c = contractMapper.selectById(1L); c.setStatus(ST_AMENDING);
+            when(contractMapper.selectForUpdate(1L)).thenReturn(c);
+            service.amendDone(1L, new MktServiceContractService.Amendment("{\"perOrder\":12}", LocalDate.now().plusYears(1), 3, "[12]", "新条款", LocalDate.now()));
+            last().isStatusTransition("status", ST_PERFORMING, ST_AMENDING);
+        }
 
         @Test @DisplayName("履约中 → 到期")
         void expire() { service.expire(1L); last().isStatusTransition("status", ST_EXPIRED, ST_EFFECTIVE, ST_PERFORMING, ST_AMENDING); }
@@ -328,7 +333,7 @@ class MktTransitionGuardTest {
         @BeforeEach
         void setUp() {
             service = new MktCommissionService(orderMapper, commissionMapper, batchMapper, promoterMapper,
-                    ladderResolver, auditService, eventPublisher);
+                    ladderResolver, auditService, eventPublisher, org.mockito.Mockito.mock(MktWithdrawalMapper.class));
             captor = ArgumentCaptor.forClass(Wrapper.class);
             when(commissionMapper.update(isNull(), captor.capture())).thenReturn(1);
             MktPromoterCommission c = new MktPromoterCommission();
@@ -343,7 +348,7 @@ class MktTransitionGuardTest {
 
         @Test @DisplayName("冻结 → 可结算(按订单解冻)")
         void unfreeze() {
-            MktPromoterCommission frozen = new MktPromoterCommission(); frozen.setId(11L); frozen.setStatus(C_FROZEN);
+            MktPromoterCommission frozen = new MktPromoterCommission(); frozen.setId(11L); frozen.setStatus(C_FROZEN); frozen.setSign(1);
             when(commissionMapper.selectList(any())).thenReturn(List.of(frozen));
             service.unfreezeByOrder(100L);
             last().isStatusTransition("status", C_SETTLEABLE, C_FROZEN).hasWhereId(11L);
@@ -381,7 +386,10 @@ class MktTransitionGuardTest {
             MktWithdrawal w = new MktWithdrawal(); w.setId(21L); w.setPromoterId(9L); w.setStatus(WS_APPROVED);
             w.setAmount(new BigDecimal("500.00"));w.setAccountNoEnc("encrypted");w.setAccountVerifiedAt(LocalDateTime.now());
             when(withdrawalMapper.selectById(anyLong())).thenReturn(w);
-            when(withdrawalMapper.selectOne(any())).thenReturn(null);
+            when(withdrawalMapper.selectOne(any())).thenAnswer(inv -> {
+                var q = (Wrapper<?>) inv.getArgument(0);
+                return q.getSqlSegment().contains("FOR UPDATE") ? w : null;
+            });
         }
 
         private WrapperAssert first() {

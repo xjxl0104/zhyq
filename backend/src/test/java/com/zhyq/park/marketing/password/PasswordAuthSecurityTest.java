@@ -43,7 +43,8 @@ class PasswordAuthSecurityTest {
         @Bean PasswordAuthController controller(PasswordAuthService service) {
             return new PasswordAuthController(service, new ClientAddressResolver("172.24.0.5/32,172.24.0.2/32"));
         }
-        @Bean JwtService jwtService() { return new JwtService("test-secret-for-password-security-tests-long", 3600); }
+        @Bean JwtAccountService accounts() { return mock(JwtAccountService.class); }
+        @Bean JwtService jwtService(JwtAccountService accounts) { return new JwtService("test-secret-for-password-security-tests-long", 3600, accounts); }
         @Bean JwtAuthFilter jwtFilter(JwtService jwt) { return new JwtAuthFilter(jwt); }
         @Bean RestAuthEntryPoint entryPoint() { return new RestAuthEntryPoint(); }
         @Bean RestAccessDeniedHandler accessDeniedHandler() { return new RestAccessDeniedHandler(); }
@@ -55,10 +56,14 @@ class PasswordAuthSecurityTest {
     @Autowired WebApplicationContext context;
     @Autowired PasswordAuthService service;
     @Autowired JwtService jwt;
+    @Autowired JwtAccountService accounts;
     MockMvc mvc;
 
     @BeforeEach void setup() {
-        reset(service);
+        reset(service, accounts);
+        when(accounts.load("mp", 9L)).thenReturn(new JwtAccountService.Account("mp", 9L, "mp:9", List.of("ROLE_MP"), "v1"));
+        when(accounts.load("wh", 8L)).thenReturn(new JwtAccountService.Account("wh", 8L, "wh:8", List.of("ROLE_WH"), "v1"));
+        when(accounts.load("admin", 1L)).thenReturn(new JwtAccountService.Account("admin", 1L, "admin", List.of("ROLE_admin"), "v1"));
         mvc = MockMvcBuilders.webAppContextSetup(context).apply(springSecurity()).build();
     }
 
@@ -72,9 +77,9 @@ class PasswordAuthSecurityTest {
     }
 
     @Test void otherPortalAndAdministratorTokensCannotSetPassword() throws Exception {
-        String warehouse = jwt.issue(8L, "wh:8", List.of("ROLE_WH"));
-        String admin = jwt.issue(1L, "admin", List.of("ROLE_ADMIN"));
-        String partner = jwt.issue(9L, "mp:9", List.of("ROLE_MP"));
+        String warehouse = jwt.issueForIdentity("wh", 8L);
+        String admin = jwt.issueForIdentity("admin", 1L);
+        String partner = jwt.issueForIdentity("mp", 9L);
         for (String token : List.of(warehouse, admin)) {
             mvc.perform(post("/mp/v1/auth/password-setup").header("Authorization", "Bearer " + token)
                     .contentType(MediaType.APPLICATION_JSON).content("{\"username\":\"demo_user\",\"password\":\"Passw0rd123\"}"))
@@ -87,7 +92,7 @@ class PasswordAuthSecurityTest {
     }
 
     @Test void authenticatedSamePortalCanConfigurePassword() throws Exception {
-        String partner = jwt.issue(9L, "mp:9", List.of("ROLE_MP"));
+        String partner = jwt.issueForIdentity("mp", 9L);
         mvc.perform(post("/mp/v1/auth/password-setup").header("Authorization", "Bearer " + partner)
                 .contentType(MediaType.APPLICATION_JSON).content("{\"username\":\"demo_user\",\"password\":\"Passw0rd123\"}"))
                 .andExpect(status().isOk()).andExpect(jsonPath("code").value(0));

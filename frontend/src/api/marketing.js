@@ -61,6 +61,7 @@ export const mktCustomerApi = {
   signMode: (id, data) => request.post(`${BASE}/customer/${id}/sign-mode`, data),
   referrer: (id, data) => request.post(`${BASE}/customer/${id}/referrer`, data),
   lose: (id, data) => request.post(`${BASE}/customer/${id}/lose`, data),
+  restore: (id, data) => request.post(`${BASE}/customer/${id}/restore`, data),
   // 锁定
   lock: (id) => request.get(`${BASE}/customer/${id}/lock`),
   prelock: (id, data) => request.post(`${BASE}/customer/${id}/lock/prelock`, data),
@@ -83,7 +84,8 @@ export const mktContractApi = {
   effectDirect: (id) => request.post(`${BASE}/contract/${id}/effect-direct`),
   perform: (id) => request.post(`${BASE}/contract/${id}/perform`),
   amend: (id, data) => request.post(`${BASE}/contract/${id}/amend`, data),
-  amendDone: (id) => request.post(`${BASE}/contract/${id}/amend-done`),
+  amendDone: (id, data) => request.post(`${BASE}/contract/${id}/amend-done`, data),
+  amendCancel: (id, data) => request.post(`${BASE}/contract/${id}/amend-cancel`, data),
   renew: (id, data) => request.post(`${BASE}/contract/${id}/renew`, data),
   terminate: (id, data) => request.post(`${BASE}/contract/${id}/terminate`, data),
   void: (id, data) => request.post(`${BASE}/contract/${id}/void`, data)

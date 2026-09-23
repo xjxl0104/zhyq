@@ -37,7 +37,7 @@ import java.time.OffsetDateTime;
  *   <li>归属只认 customer_code → crm_customer_erp_map → 客户 → 推荐伙伴;未映射 = 云仓自有客户,记日志不计佣(attributed=false);</li>
  *   <li>order.shipped → 复用文件导入同一条路径(服务费按合同单价表园区自算)→ 计佣(冻结,freeze_days 后解冻);</li>
  *   <li>order.created / paid → 只登记;order.refunded / cancelled → 扣回或作废;order.returned → 基数为服务费时不扣;</li>
- *   <li>去重键 (source_type=2, order_no);乱序:refunded 先到则记 tombstone,shipped 到达时直接作废。</li>
+ *   <li>去重键 (source_type=2, warehouse_id, order_no);乱序:refunded 先到则记 tombstone,shipped 到达时直接作废。</li>
  * </ul>
  */
 @Slf4j
@@ -83,7 +83,10 @@ public class ErpOrderIngestService {
                     .eq(MktErpEventInbox::getAppId, cred.getAppId())
                     .eq(MktErpEventInbox::getEventId, contract.eventId()).last("limit 1"));
             if (inbox != null && "PROCESSED".equals(inbox.getStatus())) {
-                return IngestResult.ok(existingId(orderNo), true);
+                if (!java.util.Objects.equals(inbox.getPayloadDigest(), digest))
+                    return fail(logRow, 400, "EVENT_CONFLICT", "相同 event_id 不允许更换事件内容");
+                Long id = existingId(cred.getWarehouseId(), orderNo);
+                return IngestResult.ok(id, id != null);
             }
             if (inbox == null) {
                 inbox = new MktErpEventInbox();
@@ -95,9 +98,9 @@ public class ErpOrderIngestService {
             touch(cred);
             IngestResult r = switch (event) {
                 case "order.shipped" -> shipped(wh, orderNo, customerCode, ev);
-                case "order.refunded" -> clawback(orderNo, MktCommissionService.ORDER_REFUNDED, "ERP 退款");
-                case "order.cancelled" -> clawback(orderNo, MktCommissionService.ORDER_CANCELLED, "ERP 取消");
-                case "order.created", "order.paid", "order.returned" -> IngestResult.ok(existingId(orderNo), existingId(orderNo) != null);
+                case "order.refunded" -> clawback(cred.getWarehouseId(), orderNo, MktCommissionService.ORDER_REFUNDED, "ERP 退款");
+                case "order.cancelled" -> clawback(cred.getWarehouseId(), orderNo, MktCommissionService.ORDER_CANCELLED, "ERP 取消");
+                case "order.created", "order.paid", "order.returned" -> IngestResult.ok(existingId(cred.getWarehouseId(), orderNo), existingId(cred.getWarehouseId(), orderNo) != null);
                 default -> IngestResult.fail("BAD_PAYLOAD", "未知事件 " + event);
             };
             if (!r.ok()) {
@@ -120,6 +123,9 @@ public class ErpOrderIngestService {
             logMapper.insert(logRow);
             return r;
         } catch (BizException e) {
+            // A failed downstream commission mutation must roll back the order and inbox as well.
+            if (org.springframework.transaction.support.TransactionSynchronizationManager.isActualTransactionActive())
+                org.springframework.transaction.interceptor.TransactionAspectSupport.currentTransactionStatus().setRollbackOnly();
             String message = e.getMessage() == null ? "业务校验失败" : e.getMessage();
             String code = message.startsWith("BAD_PAYLOAD") ? "BAD_PAYLOAD" : "BIZ";
             return fail(logRow, 400, code, message);
@@ -127,7 +133,7 @@ public class ErpOrderIngestService {
     }
 
     private IngestResult shipped(MktWarehouse wh, String orderNo, String customerCode, JsonNode ev) {
-        Long existing = existingId(orderNo);
+        Long existing = existingId(wh.getId(), orderNo);
         if (existing != null) {
             return IngestResult.ok(existing, true);
         }
@@ -151,11 +157,11 @@ public class ErpOrderIngestService {
         BigDecimal goods = ev.hasNonNull("goods_amount") ? ev.get("goods_amount").decimalValue() : null;
         OutboundRow row = new OutboundRow(orderNo, phone, qty, packages, shippedAt,
                 text(ev.path("logistics"), "tracking_no"), wh.getCode(), goods);
-        MktReferralOrder order = commissionService.createAndSplit(
+        MktReferralOrder order = commissionService.createAndSplitInTransaction(
                 importService.toEvent(row, wh.getProjectId(), bizSettings.getInt(MODULE, "freeze_days", 7)));
         orderMapper.update(null, new LambdaUpdateWrapper<MktReferralOrder>()
                 .eq(MktReferralOrder::getId, order.getId())
-                .set(MktReferralOrder::getWarehouseId, wh.getId())
+                .eq(MktReferralOrder::getWarehouseId, wh.getId())
                 .set(MktReferralOrder::getCustomerCode, customerCode)
                 .set(MktReferralOrder::getQty, qty)
                 .set(MktReferralOrder::getPackages, packages)
@@ -167,15 +173,15 @@ public class ErpOrderIngestService {
     }
 
     /** 退款/取消:订单存在则改状态并扣回;不存在则不建 tombstone(shipped 再到时按正常入账,由业务判断)。 */
-    private IngestResult clawback(String orderNo, int toStatus, String reason) {
+    private IngestResult clawback(Long warehouseId, String orderNo, int toStatus, String reason) {
         MktReferralOrder o = orderMapper.selectOne(new LambdaQueryWrapper<MktReferralOrder>()
                 .eq(MktReferralOrder::getSourceType, MktCommissionService.SOURCE_OUTBOUND)
-                .eq(MktReferralOrder::getSourceNo, orderNo).last("limit 1"));
+                .eq(MktReferralOrder::getSourceNo, orderNo).eq(MktReferralOrder::getWarehouseId, warehouseId).last("limit 1 FOR UPDATE"));
         if (o == null) {
             return IngestResult.ok(null, false);
         }
         int updated = orderMapper.update(null, new LambdaUpdateWrapper<MktReferralOrder>()
-                .eq(MktReferralOrder::getId, o.getId())
+                .eq(MktReferralOrder::getId, o.getId()).eq(MktReferralOrder::getWarehouseId, warehouseId)
                 .eq(MktReferralOrder::getStatus, MktCommissionService.ORDER_CONFIRMED)
                 .set(MktReferralOrder::getStatus, toStatus)
                 .set(MktReferralOrder::getRemark, reason));
@@ -185,10 +191,10 @@ public class ErpOrderIngestService {
         return IngestResult.ok(o.getId(), true);
     }
 
-    private Long existingId(String orderNo) {
+    private Long existingId(Long warehouseId, String orderNo) {
         MktReferralOrder o = orderMapper.selectOne(new LambdaQueryWrapper<MktReferralOrder>()
                 .eq(MktReferralOrder::getSourceType, MktCommissionService.SOURCE_OUTBOUND)
-                .eq(MktReferralOrder::getSourceNo, orderNo).select(MktReferralOrder::getId).last("limit 1"));
+                .eq(MktReferralOrder::getSourceNo, orderNo).eq(MktReferralOrder::getWarehouseId, warehouseId).select(MktReferralOrder::getId).last("limit 1 FOR UPDATE"));
         return o == null ? null : o.getId();
     }
 

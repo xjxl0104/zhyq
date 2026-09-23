@@ -3,6 +3,7 @@ package com.zhyq.park.marketing.mp;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.zhyq.park.auth.JwtService;
+import com.zhyq.park.auth.JwtAccountService;
 import com.zhyq.park.common.exception.BizException;
 import com.zhyq.park.common.setting.BizSettings;
 import com.zhyq.park.marketing.entity.MktPromoter;
@@ -18,13 +19,12 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
-import java.util.List;
 
 /**
  * 伙伴小程序登录(PARK-MKT-001 §2.1 / §5.2)。
  *
- * <p>与后台共用 {@link JwtService}(同一密钥),但小程序 token 的 subject = "mp:{promoterId}"、权限只有 ROLE_MP,
- * 所以拿小程序 token 调不了后台接口,后台 token 也过不了 /mp/v1 的 hasRole('MP')。</p>
+ * <p>与后台共用 {@link JwtService}，签名主体类型固定为 mp；过滤器按显式类型隔离接口，
+ * 并重新校验伙伴及凭据状态，不能从用户名或旧权限快照推导身份。</p>
  *
  * <p>开发期开关 {@code zhyq.mp.mock-login=true}:js_code 直接当 openid 用("mock:" 前缀),不调微信;
  * 拿到 AppID/AppSecret 后填环境变量 {@code WX_MP_APPID / WX_MP_SECRET} 并关掉开关即切真。</p>
@@ -72,6 +72,7 @@ public class MpAuthService {
         if (p == null) {
             return new LoginResult(false, null, openid, null, mockLogin ? null : loginTickets.issue(session));
         }
+        JwtAccountService.assertPromoterActive(p);
         touchLogin(p);
         return new LoginResult(true, issue(p), openid, p);
     }
@@ -117,6 +118,7 @@ public class MpAuthService {
         MktPromoter byPhone = promoterMapper.selectOne(new LambdaQueryWrapper<MktPromoter>()
                 .eq(MktPromoter::getPhone, phone).last("limit 1"));
         if (byPhone != null) {
+            JwtAccountService.assertPromoterActive(byPhone);
             phoneBindingGuard.assertCanBind("mp", byPhone.getId());
             if (StringUtils.hasText(byPhone.getOpenid())) throw new BizException("该手机号已绑定其他微信");
             int updated = promoterMapper.update(null, new LambdaUpdateWrapper<MktPromoter>()
@@ -167,7 +169,8 @@ public class MpAuthService {
     }
 
     private String issue(MktPromoter p) {
-        return jwtService.issue(p.getId(), SUBJECT_PREFIX + p.getId(), List.of(ROLE));
+        JwtAccountService.assertPromoterActive(p);
+        return jwtService.issueForIdentity("mp", p.getId());
     }
 
     private void touchLogin(MktPromoter p) {

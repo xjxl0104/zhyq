@@ -21,10 +21,13 @@ import java.time.temporal.ChronoUnit;
 public class MktFixedFeeBillingService {
     private final MktServiceContractMapper contracts;
     private final BillMapper bills;
+    private final com.zhyq.park.marketing.service.MktContractTermsService terms;
+    @org.springframework.transaction.annotation.Transactional
     public int generateDue(LocalDate today) {
         int count=0;
         var active=contracts.selectList(new LambdaQueryWrapper<MktServiceContract>().eq(MktServiceContract::getSignMode,1)
-                .in(MktServiceContract::getStatus,4,5,6).in(MktServiceContract::getFeeModel,1,4).le(MktServiceContract::getStartDate,today));
+                .in(MktServiceContract::getStatus,4,5,6).in(MktServiceContract::getFeeModel,1,4).le(MktServiceContract::getStartDate,today)
+                .orderByAsc(MktServiceContract::getId).last("FOR UPDATE"));
         for(var c:active) {
             try {
                 if(c.getStartDate()==null||c.getEndDate()==null)continue;
@@ -33,11 +36,13 @@ public class MktFixedFeeBillingService {
                     if(start.isAfter(today)||start.isAfter(c.getEndDate()))break;
                     String key="mkt_service:"+c.getId()+":rent:"+start;
                     if(bills.selectCount(new LambdaQueryWrapper<Bill>().eq(Bill::getBillingKey,key))>0)continue;
-                    BigDecimal amount=fixedAmount(c,start,next);
+                    var applicable=terms.atDate(c,start);
+                    if(applicable.getEndDate()!=null && start.isAfter(applicable.getEndDate()))continue;
+                    BigDecimal amount=fixedAmount(applicable,start,next);
                     if(amount.signum()<=0)throw new BizException("固定月费须为正数");
                     Bill b=new Bill();b.setCode("MR-"+c.getId()+"-"+start);b.setBillingKey(key);b.setContractId(c.getId());b.setProjectId(c.getProjectId());
                     b.setSource("mkt_service");b.setDirection(1);b.setFeeType("租金");b.setStatus(3);b.setAmount(amount);
-                    b.setPaidAmount(BigDecimal.ZERO);b.setLateFee(BigDecimal.ZERO);b.setPeriodStart(start);b.setPeriodEnd(periodEnd(c,next));b.setDueDate(start);
+                    b.setPaidAmount(BigDecimal.ZERO);b.setLateFee(BigDecimal.ZERO);b.setPeriodStart(start);b.setPeriodEnd(periodEnd(applicable,next));b.setDueDate(start);
                     b.setRemark("云仓服务合同固定月费("+c.getContractNo()+")，不足完整周期按日折算");
                     try{bills.insert(b);count++;}catch(DuplicateKeyException ignored){/* another scheduler already created this exact period */}
                 }

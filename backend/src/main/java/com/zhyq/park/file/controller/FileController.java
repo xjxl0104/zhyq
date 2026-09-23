@@ -1,6 +1,7 @@
 package com.zhyq.park.file.controller;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.zhyq.park.common.config.MyMetaObjectHandler;
 import com.zhyq.park.common.exception.BizException;
 import com.zhyq.park.common.result.Result;
@@ -81,6 +82,7 @@ public class FileController {
             if (!FileAccessRule.canDelete(f, MyMetaObjectHandler.currentOperator(), isAdmin())) {
                 throw new BizException(403, "仅上传者本人或管理员可删除该附件");
             }
+            marketingAccess.write(f.getBizType());
             marketingRetention.assertDeletable(f);
             fileMapper.deleteById(id);          // 逻辑删除
             storageService.deletePhysical(f.getStorePath());
@@ -166,11 +168,10 @@ public class FileController {
             if (f == null || !FileAttachRule.canAttach(f)) {
                 continue;                    // 不存在或已关联 → 跳过,防越权覆盖
             }
-            marketingAccess.read(f);
-            f.setBizType(req.getBizType());
-            f.setBizId(req.getBizId());
-            fileMapper.updateById(f);
-            attached++;
+            marketingAccess.attach(f, req.getBizType());
+            attached += fileMapper.update(null, new LambdaUpdateWrapper<SysFile>()
+                    .eq(SysFile::getId, f.getId()).isNull(SysFile::getBizId)
+                    .set(SysFile::getBizType, req.getBizType()).set(SysFile::getBizId, req.getBizId()));
         }
         return Result.ok(attached);
     }
@@ -190,6 +191,8 @@ public class FileController {
     }
 
     private SysFile save(MultipartFile file, String bizType, Long bizId) {
+        if ((bizType == null || bizType.isBlank()) && bizId != null)
+            throw new BizException("未指定业务类型的附件不能关联业务对象");
         marketingAccess.write(bizType);
         FileStorageService.StoredResult r = storageService.store(file);
         SysFile sf = new SysFile();

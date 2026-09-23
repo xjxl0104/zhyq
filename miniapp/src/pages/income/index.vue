@@ -3,7 +3,7 @@
     <view class="card" style="display:flex;gap:16rpx;flex-wrap:wrap">
       <text v-for="(t, v) in FILTERS" :key="v" class="tag" :class="{ ok: status === v }" @click="status = v; load()">{{ t }}</text>
     </view>
-    <view v-if="error" class="card"><view class="muted">{{error}}</view><button class="btn" @click="load()">重试</button></view><view class="card" v-if="loading && !list.length"><view class="muted">正在加载佣金…</view></view><view class="card" v-else-if="!list.length && !error"><view class="muted">暂无佣金。客户完成合同履约或产生有效出库订单后，佣金会按约定生成。</view></view>
+    <view v-if="state.error" class="card"><view class="muted">{{state.error}}</view><button class="btn" :disabled="state.loading" @click="pager.retry()">重试</button></view><view class="card" v-if="state.loading && !list.length"><view class="muted">正在加载佣金…</view></view><view class="card" v-else-if="!list.length && state.loaded && !state.error"><view class="muted">暂无佣金。客户完成合同履约或产生有效出库订单后，佣金会按约定生成。</view></view>
     <view class="card" v-for="c in list" :key="c.id">
       <view class="row">
         <view>
@@ -17,18 +17,23 @@
         </view>
       </view>
     </view>
+    <view v-if="list.length" class="card"><button v-if="list.length < state.total" class="btn ghost" :loading="state.loading" :disabled="state.loading" @click="pager.load(false)">加载更多收益</button><view v-else class="muted">共 {{ state.total }} 条，已全部显示</view></view>
   </view>
 </template>
 
 <script setup>
-import { ref } from 'vue'
-import { onShow } from '@dcloudio/uni-app'
+import { ref, reactive, computed, onUnmounted } from 'vue'
+import { onShow, onReachBottom } from '@dcloudio/uni-app'
 import { bizApi } from '@/api'
+import { createPager } from '@/utils/pagination.mjs'
 const FILTERS = { '': '全部', 1: '冻结', 2: '可结算', 3: '已结算', 4: '已提现' }
 const STATUS = { 1: '冻结', 2: '可结算', 3: '已结算', 4: '已提现', 5: '作废' }
 const SRC = { 1: '园区入驻', 2: '出库单', 3: '平台费', 4: '签约奖' }
-const loading=ref(false),error=ref('')
-const list = ref([]); const status = ref('')
-async function load() { loading.value=true;error.value='';try{list.value=(await bizApi.commissions({pageNo:1,pageSize:100,status:status.value||undefined})).records||[]}catch(e){error.value=e.message||'佣金加载失败，请重试'}finally{loading.value=false} }
+const state=reactive({}), status=ref('')
+const pager=createPager(bizApi.commissions,state)
+const list=computed(()=>state.records)
+function load(){return pager.load(true,{status:status.value||undefined})}
 onShow(load)
+onReachBottom(()=>pager.load(false))
+onUnmounted(pager.invalidate)
 </script>

@@ -58,7 +58,7 @@ public class MktWithdrawalService {
                 .eq(MktPromoterCommission::getPromoterId, promoterId)
                 .isNull(MktPromoterCommission::getWithdrawalId)
                 .and(w -> w.eq(MktPromoterCommission::getStatus, MktCommissionService.C_SETTLED).eq(MktPromoterCommission::getSign, 1)
-                        .or().eq(MktPromoterCommission::getStatus, MktCommissionService.C_SETTLEABLE).eq(MktPromoterCommission::getSign, -1)));
+                        .or().in(MktPromoterCommission::getStatus, MktCommissionService.C_SETTLEABLE, MktCommissionService.C_SETTLED).eq(MktPromoterCommission::getSign, -1)));
         return rows.stream().map(MktPromoterCommission::getAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 
@@ -108,7 +108,7 @@ public class MktWithdrawalService {
                 .eq(MktPromoterCommission::getPromoterId, promoterId)
                 .isNull(MktPromoterCommission::getWithdrawalId)
                 .and(q -> q.eq(MktPromoterCommission::getStatus, MktCommissionService.C_SETTLED).eq(MktPromoterCommission::getSign, 1)
-                        .or().eq(MktPromoterCommission::getStatus, MktCommissionService.C_SETTLEABLE).eq(MktPromoterCommission::getSign, -1))
+                        .or().in(MktPromoterCommission::getStatus, MktCommissionService.C_SETTLEABLE, MktCommissionService.C_SETTLED).eq(MktPromoterCommission::getSign, -1))
                 .orderByAsc(MktPromoterCommission::getId));
         List<MktPromoterCommission> selected = new java.util.ArrayList<>();
         BigDecimal selectedAmount = BigDecimal.ZERO;
@@ -159,6 +159,9 @@ public class MktWithdrawalService {
     @Transactional
     public void reject(Long id, String reason, String operator) {
         if (!StringUtils.hasText(reason)) throw new BizException("驳回必须填写原因");
+        var current = withdrawalMapper.selectById(id);
+        if (current == null) throw new BizException("提现单不存在");
+        promoterMapper.selectForUpdate(current.getPromoterId());
         int updated = withdrawalMapper.update(null, new LambdaUpdateWrapper<MktWithdrawal>()
                 .eq(MktWithdrawal::getId, id).in(MktWithdrawal::getStatus, WS_PENDING, WS_APPROVED)
                 .set(MktWithdrawal::getStatus, WS_REJECTED)
@@ -183,6 +186,10 @@ public class MktWithdrawalService {
         MktWithdrawal current = withdrawalMapper.selectById(id);
         if (current == null) throw new BizException("提现单不存在");
         var promoter = promoterMapper.selectForUpdate(current.getPromoterId());
+        current = withdrawalMapper.selectOne(new LambdaQueryWrapper<MktWithdrawal>()
+                .eq(MktWithdrawal::getId, id).last("FOR UPDATE"));
+        if (current == null) throw new BizException("提现单不存在");
+        final MktWithdrawal lockedCurrent = current;
         MktWithdrawal existing = withdrawalMapper.selectOne(new LambdaQueryWrapper<MktWithdrawal>()
                 .eq(MktWithdrawal::getPayNo, payNo).last("limit 1"));
         if (existing != null) return samePayment(existing, id, payProof);
@@ -193,12 +200,12 @@ public class MktWithdrawalService {
             throw new BizException("提现单缺少已审核账户快照");
         proofService.require(payProof, "mkt_withdrawal", id);
         List<MktPromoterCommission> linked = commissionMapper.selectList(new LambdaQueryWrapper<MktPromoterCommission>()
-                .eq(MktPromoterCommission::getWithdrawalId, id));
+                .eq(MktPromoterCommission::getWithdrawalId, id).last("FOR UPDATE"));
         BigDecimal linkedAmount = linked.stream().map(MktPromoterCommission::getAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
         if (linked.isEmpty() || linkedAmount.compareTo(current.getAmount()) != 0
-                || linked.stream().anyMatch(c -> !current.getPromoterId().equals(c.getPromoterId())
+                || linked.stream().anyMatch(c -> !lockedCurrent.getPromoterId().equals(c.getPromoterId())
                 || !((Integer.valueOf(1).equals(c.getSign()) && Integer.valueOf(MktCommissionService.C_SETTLED).equals(c.getStatus()))
-                || (Integer.valueOf(-1).equals(c.getSign()) && Integer.valueOf(MktCommissionService.C_SETTLEABLE).equals(c.getStatus())))))
+                || (Integer.valueOf(-1).equals(c.getSign()) && (Integer.valueOf(MktCommissionService.C_SETTLEABLE).equals(c.getStatus()) || Integer.valueOf(MktCommissionService.C_SETTLED).equals(c.getStatus()))))))
             throw new BizException("提现流水金额不一致或状态已变化,请刷新后重试");
         int updated;
         try {

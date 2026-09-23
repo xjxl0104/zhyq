@@ -18,8 +18,8 @@
       </template>
       <view v-if="error" class="error" role="alert">{{ error }}</view>
       <button v-if="ready" class="btn" :loading="busy" :disabled="busy || loading" @click="save">保存账号密码</button>
-      <button v-else-if="!loading" class="btn" @click="load">重新读取</button>
-      <view v-if="saved" class="success" role="status">已保存，下次可使用此账号密码登录。</view>
+      <button v-else-if="!loading && !saved" class="btn" @click="load">重新读取</button>
+      <view v-if="saved" class="success" role="status">账号已更新，请使用新账号密码重新登录。</view>
     </view>
   </view>
 </template>
@@ -28,6 +28,7 @@ import { reactive, ref } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
 import { authApi } from '@/api'
 import { warehouseAuthApi } from '@/api/warehouse'
+import { token, warehouseToken } from '@/utils/request'
 const warehouse = ref(false); const configured = ref(false); const loading = ref(true); const ready = ref(false)
 const busy = ref(false); const error = ref(''); const saved = ref(false); const confirmation = ref('')
 const form = reactive({ username: '', password: '', currentPassword: '' })
@@ -51,7 +52,10 @@ async function save() {
   busy.value = true
   try {
     await api().passwordSetup({ ...form, username: form.username.trim() })
-    configured.value = true; saved.value = true; form.password = ''; form.currentPassword = ''; confirmation.value = ''
+    configured.value = true; saved.value = true; ready.value = false; form.password = ''; form.currentPassword = ''; confirmation.value = ''
+    ;(warehouse.value ? warehouseToken : token).clear()
+    uni.showModal({ title: '账号已更新', content: '请使用新账号密码重新登录，原登录会话已失效。', showCancel: false,
+      complete: () => uni.reLaunch({ url: warehouse.value ? '/pages/warehouse-login/index' : '/pages/login/index' }) })
   } catch (e) { error.value = e.message || '保存失败，请稍后重试' }
   finally { busy.value = false }
 }

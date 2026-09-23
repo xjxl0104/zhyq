@@ -7,7 +7,7 @@
   "vueVersion": "3",
   "mp-weixin": {
     "appid": "wx156df8d81fd39ef5",
-    "setting": { "urlCheck": false, "es6": true, "minified": true },
+    "setting": { "urlCheck": true, "es6": true, "minified": true },
     "usingComponents": true,
     "permission": {},
     "requiredPrivateInfos": []

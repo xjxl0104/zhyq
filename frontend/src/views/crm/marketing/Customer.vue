@@ -49,7 +49,7 @@
             <el-button link type="primary" @click="openLock(row)">锁定</el-button>
             <el-dropdown trigger="click" @command="handleMore($event, row)">
               <el-button link type="primary" class="more-action">更多</el-button>
-              <template #dropdown><el-dropdown-menu><el-dropdown-item command="grade">客户评级</el-dropdown-item><el-dropdown-item command="referrer">设置推荐人</el-dropdown-item><el-dropdown-item command="sign">签约方式</el-dropdown-item></el-dropdown-menu></template>
+              <template #dropdown><el-dropdown-menu><el-dropdown-item command="grade">客户评级</el-dropdown-item><el-dropdown-item command="referrer">设置推荐人</el-dropdown-item><el-dropdown-item command="sign">签约方式</el-dropdown-item><el-dropdown-item v-if="canEdit && row.status === 1" command="lose" divided>标记流失</el-dropdown-item><el-dropdown-item v-if="canEdit && row.status === 3" command="restore" divided>恢复跟进</el-dropdown-item></el-dropdown-menu></template>
             </el-dropdown>
           </template>
         </el-table-column>
@@ -136,6 +136,9 @@
 </template>
 
 <script setup>
+import { hasPermission } from '@/utils/permission'
+const canEdit=hasPermission('crm:marketing:customer:edit')
+
 import { reactive, ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { mktCustomerApi, mktWarehouseApi } from '@/api/marketing'
@@ -191,6 +194,16 @@ function handleMore(action, row) {
   if (action === 'grade') return openGrade(row)
   if (action === 'referrer') return openReferrer(row)
   if (action === 'sign') return openSignMode(row)
+  if (action === 'lose' || action === 'restore') return changeCustomerStatus(row, action)
+}
+async function changeCustomerStatus(row, action) {
+  const title = action === 'lose' ? '标记流失' : '恢复跟进'
+  try {
+    const { value } = await ElMessageBox.prompt('请填写原因，将保存到操作记录', title, { inputPattern: /\S+/, inputErrorMessage: '请填写原因' })
+    await mktCustomerApi[action](row.id, { reason: value.trim() })
+    ElMessage.success(action === 'lose' ? '已标记流失' : '已恢复跟进，请按需重新分派云仓')
+    await load()
+  } catch (error) { if (error !== 'cancel' && error !== 'close') throw error }
 }
 
 // 评级

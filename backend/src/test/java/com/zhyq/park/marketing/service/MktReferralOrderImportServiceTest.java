@@ -68,7 +68,7 @@ class MktReferralOrderImportServiceTest {
     @BeforeEach
     void setUp() {
         service = new MktReferralOrderImportService(customerMapper, contractMapper, gradeMapper, orderMapper,
-                commissionService, bizSettings, new ObjectMapper(), warehouseMapper);
+                commissionService, bizSettings, new ObjectMapper(), warehouseMapper, new MktContractTermsService(org.mockito.Mockito.mock(com.zhyq.park.marketing.mapper.MktServiceContractVersionMapper.class)));
         var warehouse = new com.zhyq.park.marketing.entity.MktWarehouse(); warehouse.setId(7L); warehouse.setJoinStatus(5); warehouse.setFeeModel("{\"perOrder\":1,\"perItem\":0}");
         lenient().when(warehouseMapper.selectById(7L)).thenReturn(warehouse);
     }
@@ -138,9 +138,9 @@ class MktReferralOrderImportServiceTest {
     @Test
     void importRowsSkipsDuplicatesAndCollectsErrorsWithoutAborting() {
         when(bizSettings.getInt(eq("marketing"), eq("freeze_days"), anyInt())).thenReturn(7);
-        when(orderMapper.selectCount(any(Wrapper.class))).thenReturn(1L, 0L, 0L);
+        when(orderMapper.selectOne(any(Wrapper.class))).thenReturn(existingOrder(), null);
         // 第 2 行客户不存在 → 错误;第 3 行正常
-        when(customerMapper.selectOne(any(Wrapper.class))).thenReturn(null, customer(5L, 99L, "A"));
+        when(customerMapper.selectOne(any(Wrapper.class))).thenReturn(customer(5L, 99L, "A"), null, customer(5L, 99L, "A"));
         MktServiceContract k = new MktServiceContract(); k.setId(20L); k.setSignMode(1); k.setWarehouseId(7L); k.setGrade("A"); k.setPriceTable("{\"perOrder\":10}");
         lenient().when(contractMapper.selectOne(any(Wrapper.class))).thenReturn(k);
         MktCustomerGrade g = new MktCustomerGrade(); g.setCode("A"); g.setErpTotalRate(new BigDecimal("8"));
@@ -232,7 +232,7 @@ class MktReferralOrderImportServiceTest {
         MktServiceContract contract = directContract(); contract.setStartDate(java.time.LocalDate.now().plusDays(1));
         when(contractMapper.selectOne(any())).thenReturn(contract);
         ImportResult dates = service.importRows(List.of(row("BEFORE-CONTRACT")), null);
-        assertThat(dates.errors()).singleElement().asString().contains("合同有效期");
+        assertThat(dates.errors()).singleElement().asString().contains("生效日期");
         contract.setStartDate(null);
         var suspended = new com.zhyq.park.marketing.entity.MktWarehouse(); suspended.setJoinStatus(6);
         when(warehouseMapper.selectById(7L)).thenReturn(suspended);
@@ -254,7 +254,7 @@ class MktReferralOrderImportServiceTest {
     }
 
     @Test void concurrentDirectDuplicateIsSkippedWithoutCommission() {
-        when(orderMapper.selectCount(any())).thenReturn(0L,1L);
+        when(orderMapper.selectOne(any())).thenReturn(null,existingOrder());
         when(customerMapper.selectOne(any())).thenReturn(customer(5L,null,null));
         when(contractMapper.selectOne(any())).thenReturn(directContract());
         when(orderMapper.insert(any(MktReferralOrder.class))).thenThrow(new org.springframework.dao.DuplicateKeyException("uk_referral_order_source"));
@@ -281,6 +281,25 @@ class MktReferralOrderImportServiceTest {
 
     private static MktServiceContract directContract() {
         MktServiceContract c = new MktServiceContract(); c.setId(20L); c.setWarehouseId(7L); c.setCustomerId(5L); c.setStatus(4); c.setSignMode(2); return c;
+    }
+
+    @Test void duplicateLookupIsScopedToWarehouseAndRejectsConflictingOwnership() {
+        when(customerMapper.selectOne(any())).thenReturn(customer(5L,null,null));
+        when(contractMapper.selectOne(any())).thenReturn(directContract());
+        MktReferralOrder conflicting = existingOrder(); conflicting.setCustomerId(9L);
+        when(orderMapper.selectOne(any())).thenReturn(conflicting);
+        ImportResult result = service.importRows(List.of(row("SAME-NUMBER")),null);
+        assertThat(result.imported()).isZero(); assertThat(result.skipped()).isZero();
+        assertThat(result.errors()).singleElement().asString().contains("其他客户或合同");
+        ArgumentCaptor<com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<MktReferralOrder>> query = ArgumentCaptor.forClass(com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper.class);
+        verify(orderMapper).selectOne(query.capture());
+        assertThat(query.getValue().getSqlSegment()).contains("warehouse_id");
+        assertThat(query.getValue().getParamNameValuePairs()).containsValue(7L);
+        verify(orderMapper,never()).insert(any(MktReferralOrder.class));
+    }
+
+    private static MktReferralOrder existingOrder() {
+        var order = new MktReferralOrder(); order.setId(55L); order.setWarehouseId(7L); order.setCustomerId(5L); order.setSourceId(20L); return order;
     }
 
     private static OutboundRow row(String no) {

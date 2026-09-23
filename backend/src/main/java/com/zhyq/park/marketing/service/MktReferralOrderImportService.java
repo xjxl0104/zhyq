@@ -37,6 +37,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 /**
@@ -45,7 +46,7 @@ import java.util.Set;
  * 云仓直签：只保存真实运营出库记录，所有园区金额为零，不调用计佣服务；平台费实收另行登记。
  *
  * <p>模板列(按表头文字认列,不看顺序):出库单号 · 客户手机号 · 件数 · 包裹数 · 发货时间 · 物流单号 · 云仓编码(可选) · 货值(可选)。
- * 同一出库单号重复导入跳过(唯一键 uk_referral_order_source 兜底)。单行失败不拖垮整批,按行号回报。</p>
+ * 同一云仓内的出库单号重复导入跳过(唯一键 uk_referral_order_source 兜底)。单行失败不拖垮整批,按行号回报。</p>
  *
  * <p>服务费口径(§2.6 v6 修正):园区**自己算**,不信任文件里的金额:
  * {@code service_fee = price_table.perOrder × packages + price_table.perItem × qty}。</p>
@@ -78,6 +79,7 @@ public class MktReferralOrderImportService {
     private final BizSettings bizSettings;
     private final ObjectMapper objectMapper;
     private final com.zhyq.park.marketing.mapper.MktWarehouseMapper warehouseMapper;
+    private final MktContractTermsService termsService;
 
     public record ImportResult(int imported, int skipped, List<String> errors) {
     }
@@ -159,11 +161,11 @@ public class MktReferralOrderImportService {
         for (int i = 0; i < rows.size(); i++) {
             OutboundRow row = rows.get(i);
             try {
-                if (orderExists(row.orderNo())) {
+                ResolvedOutbound resolved = resolve(row, projectId);
+                if (orderExists(row.orderNo(), resolved)) {
                     skipped++;
                     continue;
                 }
-                ResolvedOutbound resolved = resolve(row, projectId);
                 if (Integer.valueOf(2).equals(resolved.contract().getSignMode())) {
                     if (saveDirectOutbound(row, resolved, projectId)) imported++;
                     else skipped++;
@@ -216,12 +218,13 @@ public class MktReferralOrderImportService {
                 .eq(projectId != null, MktServiceContract::getProjectId, projectId)
                 .in(MktServiceContract::getStatus,
                         MktServiceContractService.ST_EFFECTIVE, MktServiceContractService.ST_PERFORMING,
-                        MktServiceContractService.ST_AMENDING)
+                        MktServiceContractService.ST_AMENDING, MktServiceContractService.ST_EXPIRED)
                 .orderByDesc(MktServiceContract::getId).last("limit 1"));
         if (contract == null) {
             throw new BizException("客户 " + customer.getName() + " 没有生效中的服务合同");
         }
         if (contract.getWarehouseId() == null) throw new BizException("合同尚未指定承接云仓");
+        contract = termsService.atDate(contract, row.shippedAt().toLocalDate());
         if ((contract.getStartDate() != null && row.shippedAt().toLocalDate().isBefore(contract.getStartDate()))
                 || (contract.getEndDate() != null && row.shippedAt().toLocalDate().isAfter(contract.getEndDate())))
             throw new BizException("发货时间不在合同有效期内");
@@ -281,7 +284,7 @@ public class MktReferralOrderImportService {
         order.setRemark("云仓直签运营出库记录，不计佣、不产生园区应收或云仓应付；平台费实际到账另行登记");
         try { orderMapper.insert(order); return true; }
         catch (DuplicateKeyException concurrentImport) {
-            if (orderExists(row.orderNo())) return false;
+            if (orderExists(row.orderNo(), resolved)) return false;
             throw concurrentImport;
         }
     }
@@ -315,10 +318,17 @@ public class MktReferralOrderImportService {
                 .setScale(2, java.math.RoundingMode.HALF_UP);
     }
 
-    private boolean orderExists(String orderNo) {
-        return orderMapper.selectCount(new LambdaQueryWrapper<MktReferralOrder>()
+    private boolean orderExists(String orderNo, ResolvedOutbound resolved) {
+        MktReferralOrder existing = orderMapper.selectOne(new LambdaQueryWrapper<MktReferralOrder>()
                 .eq(MktReferralOrder::getSourceType, MktCommissionService.SOURCE_OUTBOUND)
-                .eq(MktReferralOrder::getSourceNo, orderNo)) > 0;
+                .eq(MktReferralOrder::getWarehouseId, resolved.warehouse().getId())
+                .eq(MktReferralOrder::getSourceNo, orderNo).last("limit 1"));
+        if (existing == null) return false;
+        if (!Objects.equals(existing.getWarehouseId(), resolved.warehouse().getId())
+                || !Objects.equals(existing.getCustomerId(), resolved.customer().getId())
+                || !Objects.equals(existing.getSourceId(), resolved.contract().getId()))
+            throw new BizException("该云仓出库单号已关联其他客户或合同，请核对原始单号");
+        return true;
     }
 
     // ---------------- POI 工具(与 LeadImportService 同款) ----------------

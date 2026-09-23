@@ -26,22 +26,44 @@ class MktServiceFeeBillServiceTest {
     MktServiceFeeBillService service(){return new MktServiceFeeBillService(bills,lines,contracts,orders,notices,commissions,proofs,audit);}
     MktServiceContract contract(){var c=new MktServiceContract();c.setId(9L);c.setWarehouseId(11L);c.setCustomerId(1L);c.setStatus(5);c.setSignMode(1);return c;}
     @Test void billSnapshotsOnlyExactContractAndCustomerOrders(){
-        when(contracts.selectById(9L)).thenReturn(contract());
+        when(contracts.selectOne(any())).thenReturn(contract());
         var o=new MktReferralOrder();o.setId(21L);o.setServiceFee(new BigDecimal("12.50"));o.setSourceType(2);o.setSourceNo("OUT-1");
         when(orders.selectList(any())).thenAnswer(inv->{String sql=((com.baomidou.mybatisplus.core.conditions.Wrapper<?>)inv.getArgument(0)).getSqlSegment();assertThat(sql).contains("source_id","customer_id","warehouse_id");return List.of(o);});
         doAnswer(i->{((MktServiceFeeBill)i.getArgument(0)).setId(31L);return 1;}).when(bills).insert(any(MktServiceFeeBill.class));
         var b=service().generate(9L,LocalDate.of(2026,9,1),LocalDate.of(2026,9,30));
         assertThat(b.getAmount()).isEqualByComparingTo("12.50");verify(lines).insert(any(MktServiceFeeBillLine.class));
     }
-    @Test void overlappingPeriodCannotBeBilledAgain(){when(contracts.selectById(9L)).thenReturn(contract());when(bills.selectCount(any())).thenReturn(1L);
+    @Test void overlappingPeriodCannotBeBilledAgain(){when(contracts.selectOne(any())).thenReturn(contract());when(bills.selectCount(any())).thenReturn(1L);
         assertThatThrownBy(()->service().generate(9L,LocalDate.of(2026,9,1),LocalDate.of(2026,9,30))).isInstanceOf(BizException.class).hasMessageContaining("重叠");verify(bills,never()).insert(any(MktServiceFeeBill.class));}
     @Test void directSignOperatingShipmentsCannotBecomeParkReceivables() {
         var direct = contract(); direct.setSignMode(2);
-        when(contracts.selectById(9L)).thenReturn(direct);
+        when(contracts.selectOne(any())).thenReturn(direct);
         assertThatThrownBy(() -> service().generate(9L,LocalDate.of(2026,9,1),LocalDate.of(2026,9,30)))
                 .isInstanceOf(BizException.class).hasMessageContaining("仅用于园区签");
         verify(bills,never()).insert(any(MktServiceFeeBill.class));
         verifyNoInteractions(orders,lines,commissions,notices);
+    }
+    @Test void lateOrdersCreateSupplementWithoutChangingOriginalBill() {
+        when(contracts.selectOne(any())).thenReturn(contract());
+        var old = new MktServiceFeeBill(); old.setId(1L); old.setAmount(new BigDecimal("100"));
+        when(bills.selectOne(any())).thenReturn(old);
+        var late = new MktReferralOrder(); late.setId(22L); late.setServiceFee(new BigDecimal("20"));
+        when(orders.selectList(any())).thenAnswer(inv -> {
+            String sql = ((com.baomidou.mybatisplus.core.conditions.Wrapper<?>) inv.getArgument(0)).getSqlSegment();
+            assertThat(sql).contains("NOT IN", "crm_service_fee_bill_line", "FOR UPDATE"); return List.of(late);
+        });
+        var supplement = service().generate(9L, LocalDate.of(2026,9,1), LocalDate.of(2026,9,30));
+        assertThat(supplement.getAmount()).isEqualByComparingTo("20");
+        assertThat(supplement.getBillingKey()).endsWith(":supplement:22");
+        assertThat(old.getAmount()).isEqualByComparingTo("100");
+        verify(bills, never()).updateById(any(MktServiceFeeBill.class));
+    }
+    @Test void noNewOrdersReplaysExistingBill() {
+        when(contracts.selectOne(any())).thenReturn(contract());
+        var old = new MktServiceFeeBill(); old.setId(1L); when(bills.selectOne(any())).thenReturn(old);
+        when(orders.selectList(any())).thenReturn(List.of());
+        assertThat(service().generate(9L,LocalDate.of(2026,9,1),LocalDate.of(2026,9,30))).isSameAs(old);
+        verify(bills, never()).insert(any(MktServiceFeeBill.class));
     }
     @Test void wrongWarehouseCannotConfirmBill(){var b=new MktServiceFeeBill();b.setWarehouseId(11L);when(bills.selectById(1L)).thenReturn(b);assertThatThrownBy(()->service().confirm(1L,22L)).isInstanceOf(BizException.class);verify(bills,never()).update(any(),any());}
     @Test void receiveRequiresExactAmountAndDoesNotUnfreezeOnMismatch(){var b=new MktServiceFeeBill();b.setId(1L);b.setWarehouseId(11L);b.setAmount(new BigDecimal("100"));b.setStatus(3);when(bills.selectById(1L)).thenReturn(b);

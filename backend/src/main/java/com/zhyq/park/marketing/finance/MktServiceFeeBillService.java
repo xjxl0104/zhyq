@@ -32,26 +32,32 @@ public class MktServiceFeeBillService {
     public MktServiceFeeBill generate(Long contractId, LocalDate start, LocalDate end) {
         validatePeriod(start, end);
         if (contractId == null) throw new BizException("请选择服务合同");
+        // Serialize billing for one contract; a replay may append only orders not yet billed.
+        MktServiceContract contract = contractMapper.selectOne(new LambdaQueryWrapper<MktServiceContract>()
+                .eq(MktServiceContract::getId, contractId).last("FOR UPDATE"));
         String key = "contract:" + contractId + ":service:" + start;
-        MktServiceFeeBill existing = billMapper.selectOne(new LambdaQueryWrapper<MktServiceFeeBill>().eq(MktServiceFeeBill::getBillingKey, key).last("limit 1"));
-        if (existing != null) {
-            if (!end.equals(existing.getPeriodEnd())) throw new BizException("该起始账期已生成其他截止日期的账单");
-            return existing;
-        }
-        MktServiceContract contract = contractMapper.selectById(contractId);
+        MktServiceFeeBill existing = billMapper.selectOne(new LambdaQueryWrapper<MktServiceFeeBill>()
+                .eq(MktServiceFeeBill::getContractId, contractId).eq(MktServiceFeeBill::getPeriodStart, start)
+                .eq(MktServiceFeeBill::getPeriodEnd, end).orderByDesc(MktServiceFeeBill::getId).last("limit 1 FOR UPDATE"));
         if (contract == null || contract.getWarehouseId() == null || contract.getStatus() == null || !List.of(4, 5, 6, 7).contains(contract.getStatus()))
             throw new BizException("仅生效/履约或正常到期的合同可生成账单");
         if (!Integer.valueOf(1).equals(contract.getSignMode())) throw new BizException("此入口仅用于园区签服务合同,直签请登记平台费到账");
         if (billMapper.selectCount(new LambdaQueryWrapper<MktServiceFeeBill>().eq(MktServiceFeeBill::getContractId, contractId)
-                .le(MktServiceFeeBill::getPeriodStart, end).ge(MktServiceFeeBill::getPeriodEnd, start)) > 0)
+                .le(MktServiceFeeBill::getPeriodStart, end).ge(MktServiceFeeBill::getPeriodEnd, start)
+                .and(q -> q.ne(MktServiceFeeBill::getPeriodStart, start).or().ne(MktServiceFeeBill::getPeriodEnd, end))) > 0)
             throw new BizException("账期与已有账单重叠,请查看原账单");
         List<MktReferralOrder> orders = orderMapper.selectList(new LambdaQueryWrapper<MktReferralOrder>()
                 .eq(MktReferralOrder::getSourceId, contractId).eq(MktReferralOrder::getCustomerId, contract.getCustomerId())
                 .eq(MktReferralOrder::getWarehouseId, contract.getWarehouseId()).eq(MktReferralOrder::getSourceType, 2)
                 .eq(MktReferralOrder::getStatus, 2).ge(MktReferralOrder::getEventTime, start.atStartOfDay())
                 .lt(MktReferralOrder::getEventTime, end.plusDays(1).atStartOfDay())
+                .notInSql(MktReferralOrder::getId, "SELECT referral_order_id FROM crm_service_fee_bill_line WHERE deleted=0 AND referral_order_id IS NOT NULL")
                 .orderByAsc(MktReferralOrder::getId).last("FOR UPDATE"));
-        if (orders.isEmpty()) throw new BizException("该合同账期内没有可计费的已确认出库单");
+        if (orders.isEmpty()) {
+            if (existing != null) return existing;
+            throw new BizException("该合同账期内没有可计费的已确认出库单");
+        }
+        if (existing != null) key += ":supplement:" + orders.get(0).getId();
         if (orders.stream().anyMatch(o -> o.getServiceFee() == null || o.getServiceFee().signum() <= 0))
             throw new BizException("存在未计费订单,请先核实订单服务费");
         BigDecimal total = orders.stream().map(MktReferralOrder::getServiceFee).reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2);

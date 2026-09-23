@@ -62,7 +62,10 @@
               <el-button link type="primary" @click="reasonAct(row, 'amend', '发起变更')">变更</el-button>
               <el-button link type="danger" @click="reasonAct(row, 'terminate', '终止合同')">终止</el-button>
             </template>
-            <el-button v-else-if="row.status === 6" link type="success" @click="act(row, 'amendDone', '变更完成')">变更完成</el-button>
+            <template v-else-if="row.status === 6">
+              <el-button link type="primary" @click="openAmend(row)">填写变更条款</el-button>
+              <el-button link type="warning" @click="reasonAct(row, 'amendCancel', '取消变更')">取消变更</el-button>
+            </template>
             <el-button v-else-if="row.status === 7" link type="success" @click="renew(row)">续签</el-button>
           </template>
         </el-table-column>
@@ -73,7 +76,8 @@
     </div>
 
     <!-- 起草 / 编辑 -->
-    <el-dialog v-model="dialog.visible" :title="dialog.title" width="680px">
+    <el-dialog v-model="dialog.visible" :title="dialog.title" width="680px" :close-on-click-modal="!saving" :close-on-press-escape="!saving" :show-close="!saving">
+      <el-alert v-if="dialog.amending" title="提交已签署的变更条款后，系统按生效日期记录新版本。原签约主体、计费模式、起始日和保证金保持不变。" type="info" :closable="false" show-icon class="amend-notice" />
       <el-form ref="formRef" :model="form" :rules="rules" label-width="110px">
         <el-row :gutter="12">
           <el-col :span="12"><el-form-item label="客户" prop="customerId"><el-select v-model="form.customerId" filterable remote :remote-method="searchCustomers" :loading="customersLoading" :disabled="!!form.id" placeholder="搜索已由云仓承接的客户" @change="selectCustomer"><el-option v-for="c in customers" :key="c.id" :value="c.id" :label="c.name" /></el-select></el-form-item></el-col>
@@ -86,29 +90,30 @@
             </el-select>
           </el-form-item></el-col>
           <el-col :span="12"><el-form-item label="服务类型">
-            <el-select v-model="form.serviceType" style="width: 100%"><el-option v-for="(t, v) in SVC" :key="v" :label="t" :value="Number(v)" /></el-select>
+            <el-select v-model="form.serviceType" :disabled="dialog.amending" style="width: 100%"><el-option v-for="(t, v) in SVC" :key="v" :label="t" :value="Number(v)" /></el-select>
           </el-form-item></el-col>
           <el-col :span="12"><el-form-item label="计费模式">
-            <el-select v-model="form.feeModel" style="width: 100%"><el-option v-for="(t, v) in FEE" :key="v" :label="t" :value="Number(v)" /></el-select>
+            <el-select v-model="form.feeModel" :disabled="dialog.amending" style="width: 100%"><el-option v-for="(t, v) in FEE" :key="v" :label="t" :value="Number(v)" /></el-select>
           </el-form-item></el-col>
           <el-col :span="12"><el-form-item label="模板">
-            <el-select v-model="form.templateId" style="width: 100%" clearable><el-option v-for="t in templates" :key="t.id" :label="`${t.name} v${t.tplVersion}`" :value="t.id" /></el-select>
+            <el-select v-model="form.templateId" :disabled="dialog.amending" style="width: 100%" clearable><el-option v-for="t in templates" :key="t.id" :label="`${t.name} v${t.tplVersion}`" :value="t.id" /></el-select>
           </el-form-item></el-col>
-          <el-col :span="12"><el-form-item label="起始日"><el-date-picker v-model="form.startDate" type="date" value-format="YYYY-MM-DD" style="width: 100%" /></el-form-item></el-col>
+          <el-col :span="12"><el-form-item label="起始日"><el-date-picker v-model="form.startDate" :disabled="dialog.amending" type="date" value-format="YYYY-MM-DD" style="width: 100%" /></el-form-item></el-col>
           <el-col :span="12"><el-form-item label="结束日"><el-date-picker v-model="form.endDate" type="date" value-format="YYYY-MM-DD" style="width: 100%" /></el-form-item></el-col>
-          <el-col :span="12"><el-form-item label="保证金"><el-input-number v-model="form.deposit" :min="0" :precision="2" style="width: 100%" /></el-form-item></el-col>
+          <el-col :span="12"><el-form-item label="保证金"><el-input-number v-model="form.deposit" :disabled="dialog.amending" :min="0" :precision="2" style="width: 100%" /></el-form-item></el-col>
           <el-col :span="12"><el-form-item label="付款周期">
             <el-select v-model="form.payCycle" style="width: 100%"><el-option label="周" :value="1" /><el-option label="半月" :value="2" /><el-option label="月" :value="3" /></el-select>
           </el-form-item></el-col>
+          <el-col v-if="dialog.amending" :span="24"><el-form-item label="变更生效日" required><div><el-date-picker v-model="effectiveDate" type="date" value-format="YYYY-MM-DD" placeholder="选择变更生效日期" /><div class="hint">不得早于今天。仓租或包月须选择按原合同起始日计算的下一个未出账月周期起日，以后台校验为准。</div></div></el-form-item></el-col>
           <el-col :span="24"><el-form-item label="单价表">
             <div><div v-for="(label,key) in PRICE" :key="key" class="price-row"><span>{{ label }}（元）</span><el-input-number v-model="prices[key]" :min="0" :max="99999999" :precision="2" placeholder="未约定" /></div><div class="hint">填写客户实际合同单价，至少一项大于零。请勿将云仓成本费率填入此处。</div></div>
           </el-form-item></el-col>
-          <el-col :span="24"><el-form-item label="签署附件"><WarehouseAttachments v-model="attachments" :warehouse-id="form.warehouseId" @busy="uploading=$event" /></el-form-item></el-col><el-col :span="24"><el-form-item label="备注"><el-input v-model="form.remark" type="textarea" maxlength="500" show-word-limit /></el-form-item></el-col>
+          <el-col :span="24"><el-form-item :label="dialog.amending ? '变更签署件' : '签署附件'" :required="dialog.amending"><WarehouseAttachments v-model="attachments" :warehouse-id="form.warehouseId" @busy="uploading=$event" /></el-form-item></el-col><el-col :span="24"><el-form-item label="备注"><el-input v-model="form.remark" type="textarea" maxlength="500" show-word-limit /></el-form-item></el-col>
         </el-row>
       </el-form>
       <template #footer>
-        <el-button @click="dialog.visible = false">取消</el-button>
-        <el-button type="primary" :loading="saving" :disabled="uploading" @click="submit">保存</el-button>
+        <el-button :disabled="saving" @click="dialog.visible = false">取消</el-button>
+        <el-button type="primary" :loading="saving" :disabled="uploading" @click="submit">{{ dialog.amending ? '提交变更' : '保存' }}</el-button>
       </template>
     </el-dialog>
 
@@ -183,7 +188,9 @@ function search() { query.pageNo = 1; load() }
 function reset() { Object.assign(query, { pageNo: 1, keyword: '', status: null, signMode: null }); load() }
 
 const formRef = ref()
-const dialog = reactive({ visible: false, title: '' })
+const dialog = reactive({ visible: false, title: '', amending: false })
+const effectiveDate = ref('')
+function today() { const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}` }
 const emptyForm = () => ({ id: null, customerId: null, signMode: null, warehouseId: null, serviceType: 2, feeModel: 2, templateId: null, startDate: null, endDate: null, deposit: 0, payCycle: 3, priceTable: '{}', files:'[]', remark: '' })
 const form = reactive(emptyForm())
 // 行数据里还带 customerName/status 等只读字段,只拷表单里有的键,避免它们跟着 PUT 回去
@@ -193,6 +200,8 @@ const rules = {
   warehouseId: [{ required: true, message: '请选择承接云仓', trigger: 'change' }]
 }
 async function openDialog(row) {
+  if (row && row.status !== 1) return ElMessage.warning('仅草稿可以编辑，请使用合同变更流程')
+  dialog.amending = false
   if (!warehouses.value.length) warehouses.value = await mktWarehouseApi.online()
   if (!templates.value.length) { try { templates.value = await mktTemplateApi.list() } catch (e) { /* 可为空 */ } }
   dialog.visible = true
@@ -202,20 +211,44 @@ async function openDialog(row) {
   Object.keys(prices).forEach(k=>prices[k]=p[k])
   await searchCustomers();if(row&&!customers.value.some(c=>c.id===row.customerId))customers.value.push({id:row.customerId,name:row.customerName})
 }
+async function openAmend(row) {
+  if (saving.value || row.status !== 6) return
+  const current = await mktContractApi.get(row.id)
+  if (current.status !== 6) return ElMessage.warning('合同状态已变化，请刷新后重试')
+  Object.assign(form, emptyForm(), pickForm(current))
+  if (!customers.value.some(c => c.id === current.customerId)) customers.value.push({id:current.customerId,name:current.customerName || `客户 #${current.customerId}`})
+  if (!warehouses.value.some(w => w.id === current.warehouseId)) warehouses.value.push({id:current.warehouseId,code:'',name:current.warehouseName || `云仓 #${current.warehouseId}`})
+  let p={};try { p=JSON.parse(current.priceTable || '{}') } catch {}
+  Object.keys(prices).forEach(k => prices[k]=p[k])
+  attachments.value=[]
+  effectiveDate.value=[1,4].includes(current.feeModel) ? '' : today()
+  dialog.amending=true;dialog.title=`变更 ${current.contractNo}`;dialog.visible=true
+}
 async function submit() {
   if(saving.value||uploading.value)return
   if(!await formRef.value.validate().catch(()=>false))return
   if(!form.startDate||!form.endDate||form.endDate<=form.startDate)return ElMessage.error('请填写正确的合同起止日期')
   const terms=Object.fromEntries(Object.entries(prices).filter(([,v])=>v!=null));if(!Object.values(terms).some(v=>v>0))return ElMessage.error('请填写至少一项真实正单价')
+  if(dialog.amending) {
+    if(!effectiveDate.value || effectiveDate.value<today() || effectiveDate.value>form.endDate) return ElMessage.error('变更生效日须在今天及以后，且不晚于合同结束日')
+    if(!attachments.value.length) return ElMessage.error('请上传已签署的变更附件')
+  }
   form.priceTable=JSON.stringify(terms);form.files=JSON.stringify(attachments.value)
   saving.value=true
-  try { if(form.id)await mktContractApi.update(form);else await mktContractApi.create(form);ElMessage.success('已保存');dialog.visible=false;await load() } finally { saving.value=false }
+  try {
+    if(dialog.amending) await mktContractApi.amendDone(form.id,{priceTable:form.priceTable,endDate:form.endDate,payCycle:form.payCycle,files:form.files,remark:form.remark,effectiveDate:effectiveDate.value})
+    else if(form.id) await mktContractApi.update(form)
+    else await mktContractApi.create(form)
+    ElMessage.success(dialog.amending ? '变更已提交，新条款按生效日期执行' : '已保存');dialog.visible=false;await load()
+  } finally { saving.value=false }
 }
 
 async function act(row, fn, okMsg) { await mktContractApi[fn](row.id); ElMessage.success(okMsg); load() }
 async function reasonAct(row, fn, title) {
-  const { value } = await ElMessageBox.prompt('请填写原因(写入审计)', title, { inputPattern: /\S+/, inputErrorMessage: '原因必填' })
-  await mktContractApi[fn](row.id, { reason: value, changeNote: value }); ElMessage.success('已处理'); load()
+  try {
+    const { value } = await ElMessageBox.prompt('请填写原因(写入审计)', title, { inputPattern: /\S+/, inputErrorMessage: '原因必填' })
+    await mktContractApi[fn](row.id, { reason: value.trim(), changeNote: value.trim() }); ElMessage.success('已处理'); load()
+  } catch(e) { if(e !== 'cancel' && e !== 'close') throw e }
 }
 async function auditPass(row) { await mktContractApi.audit(row.id, { pass: true }); ElMessage.success('已通过,待客户签'); load() }
 async function auditReject(row) {
@@ -243,6 +276,7 @@ onMounted(load)
 </script>
 
 <style scoped>
+.amend-notice{margin-bottom:16px}
 .price-row{display:flex;align-items:center;gap:16px;margin-bottom:8px}.price-row span{min-width:90px}
 .pager { margin-top: 16px; justify-content: flex-end; }
 .hint { color: var(--el-text-color-secondary); font-size: 12px; line-height: 1.4; margin-top: 4px; }

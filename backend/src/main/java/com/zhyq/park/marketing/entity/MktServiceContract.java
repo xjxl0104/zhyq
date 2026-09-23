@@ -34,6 +34,8 @@ public class MktServiceContract extends BaseEntity {
     private BigDecimal deposit;
     private LocalDate startDate;
     private LocalDate endDate;
+    /** 当前条款版本生效日；为空时使用合同起始日。 */
+    private LocalDate termsEffectiveFrom;
     private Integer autoRenew;
     /** 1周 2半月 3月 */
     private Integer payCycle;

@@ -184,7 +184,19 @@ public class MktServiceContractController {
     }
 
     @Operation(summary = "变更完成") @PreAuthorize("hasAuthority('crm:marketing:contract:edit')") @PostMapping("/{id}/amend-done")
-    public Result<Void> amendDone(@PathVariable Long id) { contractService.amendDone(id); return Result.ok(); }
+    public Result<Void> amendDone(@PathVariable Long id, @RequestBody MktServiceContractService.Amendment body) {
+        MktServiceContract c = contractMapper.selectById(id);
+        if (c == null) throw new BizException("合同不存在");
+        String references = files.validateReferences(body.files(), c.getWarehouseId());
+        contractService.amendDone(id, new MktServiceContractService.Amendment(body.priceTable(), body.endDate(),
+                body.payCycle(), references, body.remark(), body.effectiveDate()));
+        return Result.ok();
+    }
+
+    @Operation(summary = "取消条款变更") @PreAuthorize("hasAuthority('crm:marketing:contract:edit')") @PostMapping("/{id}/amend-cancel")
+    public Result<Void> cancelAmend(@PathVariable Long id, @RequestBody Map<String, String> body) {
+        contractService.cancelAmend(id, body.get("reason")); return Result.ok();
+    }
 
     @Operation(summary = "续签") @PreAuthorize("hasAuthority('crm:marketing:contract:edit')") @PostMapping("/{id}/renew")
     public Result<Void> renew(@PathVariable Long id, @RequestBody Map<String, String> body) {
@@ -208,6 +220,7 @@ public class MktServiceContractController {
         m.put("grade", c.getGrade()); m.put("serviceType", c.getServiceType()); m.put("feeModel", c.getFeeModel());
         m.put("priceTable", c.getPriceTable()); m.put("deposit", c.getDeposit()); m.put("startDate", c.getStartDate());
         m.put("endDate", c.getEndDate()); m.put("payCycle", c.getPayCycle()); m.put("status", c.getStatus());
+        m.put("termsEffectiveFrom", c.getTermsEffectiveFrom());
         m.put("signedAt", c.getSignedAt()); m.put("effectiveAt", c.getEffectiveAt()); m.put("contractVersion", c.getContractVersion());
         m.put("templateId", c.getTemplateId()); m.put("files", c.getFiles()); m.put("auditReason", c.getAuditReason());
         m.put("terminateReason", c.getTerminateReason()); m.put("remark", c.getRemark()); m.put("createTime", c.getCreateTime());

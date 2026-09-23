@@ -3,7 +3,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import request from '@/utils/request'
 import { useProjectStore } from '@/stores/project'
-import { mktCommissionApi, mktOrderApi } from '../marketing'
+import { mktCommissionApi, mktOrderApi, mktContractApi, mktCustomerApi } from '../marketing'
 
 let server
 let received
@@ -62,4 +62,18 @@ it('template download goes through axios with the login token and returns a blob
   expect(received.authorization).toBe('Bearer mkt-test-token')
   expect(received.url).toBe('/api/crm/marketing/order/import-template?projectId=7')
   expect(res.data).toBeInstanceOf(Blob)
+})
+
+
+it('marketing restore and amendment send the actual business request bodies', async () => {
+  await mktCustomerApi.restore(42, { reason: '重新沟通' })
+  expect(received.url).toBe('/api/crm/marketing/customer/42/restore')
+  expect(JSON.parse(received.body)).toMatchObject({ reason: '重新沟通' })
+  const terms = { priceTable: '{"perOrder":3}', endDate: '2027-12-31', payCycle: 3, files: '[{"id":18}]', remark: '新约定', effectiveDate: '2026-10-01' }
+  await mktContractApi.amendDone(77, terms)
+  expect(received.url).toBe('/api/crm/marketing/contract/77/amend-done')
+  expect(JSON.parse(received.body)).toMatchObject(terms)
+  await mktContractApi.amendCancel(77, { reason: '暂缓变更' })
+  expect(received.url).toBe('/api/crm/marketing/contract/77/amend-cancel')
+  expect(JSON.parse(received.body)).toMatchObject({ reason: '暂缓变更' })
 })

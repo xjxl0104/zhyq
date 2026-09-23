@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.zhyq.park.auth.JwtService;
+import com.zhyq.park.auth.JwtAccountService;
 import com.zhyq.park.common.exception.BizException;
 import com.zhyq.park.common.setting.BizSettings;
 import com.zhyq.park.marketing.entity.MktCredential;
@@ -29,7 +30,6 @@ import org.springframework.util.StringUtils;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
@@ -206,7 +206,7 @@ public class PasswordAuthService {
         Object business = requireActiveIdentity(identity, identityId);
         Map<String, Object> result = new HashMap<>();
         result.put("registered", true);
-        result.put("token", jwt.issue(identityId, identity.code + ":" + identityId, List.of(identity.role)));
+        result.put("token", jwt.issueForIdentity(identity.code, identityId));
         result.put("openid", null);
         Map<String, Object> profile = new HashMap<>();
         profile.put("id", identityId);
@@ -230,16 +230,11 @@ public class PasswordAuthService {
     private Object requireActiveIdentity(Identity identity, Long identityId) {
         if (identity == Identity.MP) {
             MktPromoter promoter = promoters.selectById(identityId);
-            if (promoter == null || Integer.valueOf(MktPromoterService.ST_EXITED).equals(promoter.getStatus())) {
-                throw new BizException(403, "伙伴档案不存在或已退出，请联系园区运营");
-            }
-            if (Integer.valueOf(MktPromoterService.ST_FROZEN).equals(promoter.getStatus())) throw new BizException(403, "伙伴账号已冻结，请联系园区运营");
+            JwtAccountService.assertPromoterActive(promoter);
             return promoter;
         }
         MktWarehouse warehouse = warehouses.selectById(identityId);
-        if (warehouse == null || Integer.valueOf(MktWarehouseOnboardingService.JS_EXITED).equals(warehouse.getJoinStatus())) {
-            throw new BizException(403, "云仓档案不存在或已退出，请联系园区运营");
-        }
+        JwtAccountService.assertWarehouseActive(warehouse);
         return warehouse;
     }
 

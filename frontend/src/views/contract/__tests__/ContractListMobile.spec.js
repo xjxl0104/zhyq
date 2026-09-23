@@ -4,7 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import ContractList from '../ContractList.vue'
 import { contractApi } from '@/api/contract'
 
-vi.mock('vue-router', () => ({ useRouter: () => ({ push: vi.fn() }) }))
+const { push }=vi.hoisted(()=>({push:vi.fn()}))
+vi.mock('vue-router', () => ({ useRouter: () => ({ push }) }))
 vi.mock('@/api/contract', () => ({ contractApi: { page: vi.fn() } }))
 vi.mock('@/api/tenant', () => ({ tenantApi: { list: vi.fn().mockResolvedValue([{ id: 3, name: '测试租客' }]) } }))
 vi.mock('@/api/building', () => ({ projectApi: { list: vi.fn().mockResolvedValue([{ id: 4, name: '测试园区' }]) } }))
@@ -71,12 +72,17 @@ describe('合同手机版保留主线台账能力', () => {
     for (let status = 1; status <= 10; status++) {
       const card = wrapper.get(`[data-record-key="${status}"]`)
       expect(card.find(`[aria-label="提交合同 C-${status} 审批"]`).exists()).toBe(status === 1)
-      expect(card.find(`[aria-label="审批通过合同 C-${status}"]`).exists()).toBe(status === 2)
-      expect(card.find(`[aria-label="办理合同 C-${status} 退租"]`).exists()).toBe(status === 5)
+      expect(card.find(`[aria-label="办理合同 C-${status} 审批"]`).exists()).toBe(status === 2)
+      expect(card.find(`[aria-label="办理合同 C-${status} 退租"]`).exists()).toBe([5, 8].includes(status))
       expect(card.find(`[aria-label="查看合同 C-${status} 详情"]`).exists()).toBe(true)
-      expect(card.find(`[aria-label="编辑合同 C-${status}"]`).exists()).toBe(true)
-      expect(card.find(`[aria-label="删除合同 C-${status}"]`).exists()).toBe(true)
+      expect(card.find(`[aria-label="编辑合同 C-${status}"]`).exists()).toBe(status === 1)
+      expect(card.find(`[aria-label="删除合同 C-${status}"]`).exists()).toBe(status === 1)
     }
+  })
+
+  it('待审合同进入业务过滤的我的待办，不直接审批合同', async () => {
+    const wrapper=mountPage();await flushPromises();await wrapper.vm.openApproval(17)
+    expect(push).toHaveBeenCalledWith({path:'/oa/approval',query:{bizType:'contract',bizId:'17'}})
   })
 
   it('桌面仍使用带本页合计的原表格', async () => {

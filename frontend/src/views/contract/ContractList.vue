@@ -73,17 +73,15 @@
         </template>
         <template #actions="{ row }">
           <el-button :aria-label="`查看合同 ${row.code} 详情`" link type="primary" @click="showDetail(row)">详情</el-button>
-          <el-button :aria-label="`编辑合同 ${row.code}`" link type="primary" @click="openDialog(row)">编辑</el-button>
+          <el-button v-if="row.status === 1" :aria-label="`编辑合同 ${row.code}`" link type="primary" @click="openDialog(row)">编辑</el-button>
           <el-popconfirm v-if="row.status === 1" title="确认提交审批?" @confirm="submit(row.id)">
             <template #reference><el-button :aria-label="`提交合同 ${row.code} 审批`" link type="warning">提交审批</el-button></template>
           </el-popconfirm>
-          <el-popconfirm v-if="row.status === 2" title="确认审批通过?通过后将生成账单计划" @confirm="approve(row.id)">
-            <template #reference><el-button :aria-label="`审批通过合同 ${row.code}`" link type="success">审批通过</el-button></template>
-          </el-popconfirm>
-          <el-popconfirm v-if="row.status === 5" title="确认退租?房源将被释放" @confirm="terminate(row.id)">
+          <el-button v-if="row.status === 2" :aria-label="`办理合同 ${row.code} 审批`" link type="success" @click="openApproval(row.id)">办理审批</el-button>
+          <el-popconfirm v-if="[5, 8].includes(row.status)" title="确认退租?房源将被释放" @confirm="terminate(row.id)">
             <template #reference><el-button :aria-label="`办理合同 ${row.code} 退租`" link type="danger">退租</el-button></template>
           </el-popconfirm>
-          <el-popconfirm title="确认删除?" @confirm="remove(row.id)">
+          <el-popconfirm v-if="row.status === 1" title="确认删除?" @confirm="remove(row.id)">
             <template #reference><el-button :aria-label="`删除合同 ${row.code}`" link type="danger">删除</el-button></template>
           </el-popconfirm>
         </template>
@@ -118,20 +116,18 @@
         <el-table-column label="操作" width="280" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click="showDetail(row)">详情</el-button>
-            <el-button link type="primary" @click="openDialog(row)">编辑</el-button>
+            <el-button v-if="row.status === 1" link type="primary" @click="openDialog(row)">编辑</el-button>
             <!-- 草稿:提交审批 -->
             <el-popconfirm v-if="row.status === 1" title="确认提交审批?" @confirm="submit(row.id)">
               <template #reference><el-button link type="warning">提交审批</el-button></template>
             </el-popconfirm>
-            <!-- 待审核:审批通过 -->
-            <el-popconfirm v-if="row.status === 2" title="确认审批通过?通过后将生成账单计划" @confirm="approve(row.id)">
-              <template #reference><el-button link type="success">审批通过</el-button></template>
-            </el-popconfirm>
+            <!-- 待审核:进入实际指派的审批任务 -->
+            <el-button v-if="row.status === 2" link type="success" @click="openApproval(row.id)">办理审批</el-button>
             <!-- 执行中:退租 -->
-            <el-popconfirm v-if="row.status === 5" title="确认退租?房源将被释放" @confirm="terminate(row.id)">
+            <el-popconfirm v-if="[5, 8].includes(row.status)" title="确认退租?房源将被释放" @confirm="terminate(row.id)">
               <template #reference><el-button link type="danger">退租</el-button></template>
             </el-popconfirm>
-            <el-popconfirm title="确认删除?" @confirm="remove(row.id)">
+            <el-popconfirm v-if="row.status === 1" title="确认删除?" @confirm="remove(row.id)">
               <template #reference><el-button link type="danger">删除</el-button></template>
             </el-popconfirm>
           </template>
@@ -484,6 +480,7 @@ const rules = {
 const settingDefaults = reactive({ termYears: null, depositMonths: null })
 
 async function openDialog(row) {
+  if (row && row.status !== 1) return ElMessage.warning('仅草稿合同可编辑，已提交合同请使用对应业务流程')
   dialog.visible = true
   dialog.title = row ? '编辑合同' : '新增合同'
   attachFiles.value = []
@@ -549,11 +546,7 @@ async function submit(id) {
   ElMessage.success('已提交审批')
   load()
 }
-async function approve(id) {
-  await contractApi.approve(id)
-  ElMessage.success('审批通过,已生成账单计划')
-  load()
-}
+function openApproval(id) { router.push({ path: '/oa/approval', query: { bizType: 'contract', bizId: String(id) } }) }
 async function terminate(id) {
   await contractApi.terminate(id)
   ElMessage.success('已退租')

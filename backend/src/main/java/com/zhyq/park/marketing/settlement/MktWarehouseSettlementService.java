@@ -42,14 +42,15 @@ public class MktWarehouseSettlementService {
     @Transactional
     public MktWarehouseSettlement generate(Long warehouseId, LocalDate start, LocalDate end) {
         MktServiceFeeBillService.validatePeriod(start, end);
-        MktWarehouse w = warehouseMapper.selectById(warehouseId);
+        MktWarehouse w = warehouseMapper.selectOne(new LambdaQueryWrapper<MktWarehouse>()
+                .eq(MktWarehouse::getId, warehouseId).last("FOR UPDATE"));
         if (w == null || !Integer.valueOf(5).equals(w.getJoinStatus())) throw new BizException("云仓须完成审核并上线后才能结算");
         MktWarehouseSettlement old = settlementMapper.selectOne(new LambdaQueryWrapper<MktWarehouseSettlement>()
                 .eq(MktWarehouseSettlement::getWarehouseId, warehouseId).eq(MktWarehouseSettlement::getPeriodStart, start)
-                .eq(MktWarehouseSettlement::getPeriodEnd, end).last("limit 1"));
-        if (old != null) return old;
+                .eq(MktWarehouseSettlement::getPeriodEnd, end).orderByDesc(MktWarehouseSettlement::getId).last("limit 1 FOR UPDATE"));
         if (settlementMapper.selectCount(new LambdaQueryWrapper<MktWarehouseSettlement>().eq(MktWarehouseSettlement::getWarehouseId, warehouseId)
-                .le(MktWarehouseSettlement::getPeriodStart, end).ge(MktWarehouseSettlement::getPeriodEnd, start)) > 0)
+                .le(MktWarehouseSettlement::getPeriodStart, end).ge(MktWarehouseSettlement::getPeriodEnd, start)
+                .and(q -> q.ne(MktWarehouseSettlement::getPeriodStart, start).or().ne(MktWarehouseSettlement::getPeriodEnd, end))) > 0)
             throw new BizException("结算期间与已有批次重叠");
         var snapshot = snapshot(warehouseId, start, end);
         if (!"manual".equals(w.getOrderMode()) && snapshot == null) throw new BizException("ERP订单尚无对账结果,请先完成对账");
@@ -58,8 +59,11 @@ public class MktWarehouseSettlementService {
         List<MktServiceFeeBill> bills = billMapper.selectList(new LambdaQueryWrapper<MktServiceFeeBill>()
                 .eq(MktServiceFeeBill::getWarehouseId, warehouseId).eq(MktServiceFeeBill::getStatus, MktServiceFeeBillService.SETTLED)
                 .ge(MktServiceFeeBill::getPeriodStart, start).le(MktServiceFeeBill::getPeriodEnd, end)
-                .notInSql(MktServiceFeeBill::getId, "SELECT bill_id FROM crm_warehouse_settlement_line WHERE deleted=0 AND bill_id IS NOT NULL"));
-        if (bills.isEmpty()) throw new BizException("该期间没有已收款且尚未结算的服务费账单");
+                .notInSql(MktServiceFeeBill::getId, "SELECT bill_id FROM crm_warehouse_settlement_line WHERE deleted=0 AND bill_id IS NOT NULL").orderByAsc(MktServiceFeeBill::getId).last("FOR UPDATE"));
+        if (bills.isEmpty()) {
+            if (old != null) return old;
+            throw new BizException("该期间没有已收款且尚未结算的服务费账单");
+        }
         List<MktWarehouseSettlementLine> lines = new ArrayList<>();
         BigDecimal total = BigDecimal.ZERO;
         for (MktServiceFeeBill bill : bills) {
@@ -146,18 +150,24 @@ public class MktWarehouseSettlementService {
     }
 
     /** Finance records a real platform-fee receipt; direct-sign customer turnover is never treated as park income. */
-    @Transactional public MktDirectSignPayment recordPayment(Long contractId, Long warehouseId, String paymentNo, BigDecimal amount, String proof) {
+    @Transactional public MktDirectSignPayment recordPayment(Long contractId, Long warehouseId, String paymentNo, BigDecimal amount, String proof, LocalDate periodStart, LocalDate periodEnd) {
         if (contractId == null || warehouseId == null || paymentNo == null || paymentNo.isBlank() || paymentNo.length() > 64)
             throw new BizException("直签到账参数不完整");
         if (amount == null || amount.signum() <= 0 || amount.stripTrailingZeros().scale() > 2) throw new BizException("到账金额须为正数且最多两位小数");
         var c = contractMapper.selectById(contractId);
         if (c == null || !Objects.equals(c.getWarehouseId(), warehouseId) || !Integer.valueOf(2).equals(c.getSignMode())
-                || c.getStatus() == null || !Set.of(4, 5, 6).contains(c.getStatus()) || c.getPartnerId() == null)
-            throw new BizException("仅生效且有成交伙伴的本云仓直签合同可登记平台费");
+                || c.getStatus() == null || !Set.of(4, 5, 6, 7).contains(c.getStatus()) || c.getPartnerId() == null)
+            throw new BizException("仅生效或正常到期且有成交伙伴的本云仓直签合同可登记平台费");
+        if (periodStart != null || periodEnd != null || Integer.valueOf(7).equals(c.getStatus())) {
+            MktServiceFeeBillService.validatePeriod(periodStart, periodEnd);
+            if (c.getStartDate() == null || c.getEndDate() == null || periodStart.isBefore(c.getStartDate()) || periodEnd.isAfter(c.getEndDate()))
+                throw new BizException("费用所属期间必须位于合同履约期间内");
+        }
         MktDirectSignPayment old = paymentMapper.selectOne(new LambdaQueryWrapper<MktDirectSignPayment>().eq(MktDirectSignPayment::getPaymentNo, paymentNo).last("limit 1"));
         if (old != null) {
             if (!Objects.equals(old.getContractId(), contractId) || !Objects.equals(old.getWarehouseId(), warehouseId)
-                    || old.getAmount().compareTo(amount) != 0 || !Objects.equals(old.getPayProof(), proof)) throw new BizException("该流水号已用于其他到账记录");
+                    || old.getAmount().compareTo(amount) != 0 || !Objects.equals(old.getPayProof(), proof)
+                    || !Objects.equals(old.getPeriodStart(), periodStart) || !Objects.equals(old.getPeriodEnd(), periodEnd)) throw new BizException("该流水号已用于其他到账记录");
             return old;
         }
         proofs.require(proof, "mkt_direct_payment", contractId);
@@ -165,6 +175,7 @@ public class MktWarehouseSettlementService {
         if (grade == null || grade.getErpTotalRate() == null || grade.getErpTotalRate().signum() < 0 || grade.getErpTotalRate().compareTo(new BigDecimal("100")) > 0)
             throw new BizException("合同评级佣金比例未配置");
         MktDirectSignPayment p = new MktDirectSignPayment(); p.setContractId(contractId); p.setWarehouseId(warehouseId); p.setPaymentNo(paymentNo);
+        p.setPeriodStart(periodStart); p.setPeriodEnd(periodEnd);
         p.setAmount(amount); p.setStatus(1); p.setPaidAt(LocalDateTime.now()); p.setProjectId(c.getProjectId()); p.setPayProof(proof);
         try { paymentMapper.insert(p); } catch (DuplicateKeyException e) { throw new BizException("到账流水号已存在,请刷新核对"); }
         var order = commissionService.createAndSplitInTransaction(new MktCommissionService.CommissionEvent(
@@ -181,6 +192,9 @@ public class MktWarehouseSettlementService {
         if (started > 0) audit.log("contract.perform", "service_contract", contractId, "首笔直签平台费实际到账");
         audit.log("warehouse.platform.receive", "service_contract", contractId, "平台费到账 " + paymentNo + " 金额 " + amount);
         return p;
+    }
+    @Transactional public MktDirectSignPayment recordPayment(Long contractId, Long warehouseId, String paymentNo, BigDecimal amount, String proof) {
+        return recordPayment(contractId, warehouseId, paymentNo, amount, proof, null, null);
     }
     public MktDirectSignPayment recordPayment(Long contractId, Long warehouseId, String paymentNo, BigDecimal amount) { throw new BizException("请上传平台费到账凭证"); }
 

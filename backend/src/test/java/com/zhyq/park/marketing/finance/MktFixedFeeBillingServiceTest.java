@@ -27,7 +27,7 @@ class MktFixedFeeBillingServiceTest {
     @BeforeAll static void tables(){var a=new MapperBuilderAssistant(new MybatisConfiguration(),"");TableInfoHelper.initTableInfo(a,Bill.class);TableInfoHelper.initTableInfo(a,MktServiceContract.class);}
     @Test void anchorsToOriginalDayAcrossShortMonthAndNeverBillsFutureCycle() {
         var c=contract("2026-01-31","2026-04-30");when(contracts.selectList(any())).thenReturn(List.of(c));
-        int count=new MktFixedFeeBillingService(contracts,bills).generateDue(LocalDate.parse("2026-03-30"));
+        int count=new MktFixedFeeBillingService(contracts,bills,new com.zhyq.park.marketing.service.MktContractTermsService(mock(com.zhyq.park.marketing.mapper.MktServiceContractVersionMapper.class))).generateDue(LocalDate.parse("2026-03-30"));
         assertThat(count).isEqualTo(2);
         ArgumentCaptor<Bill> capture=ArgumentCaptor.forClass(Bill.class);verify(bills,times(2)).insert(capture.capture());
         assertThat(capture.getAllValues()).extracting(Bill::getPeriodStart).containsExactly(LocalDate.parse("2026-01-31"),LocalDate.parse("2026-02-28"));
@@ -41,7 +41,7 @@ class MktFixedFeeBillingServiceTest {
     }
     @Test void existingFirstRentKeyIsNotRecreated() {
         var c=contract("2026-09-01","2026-12-31");when(contracts.selectList(any())).thenReturn(List.of(c));when(bills.selectCount(any())).thenReturn(1L);
-        assertThat(new MktFixedFeeBillingService(contracts,bills).generateDue(LocalDate.parse("2026-09-23"))).isZero();verify(bills,never()).insert(any(Bill.class));
+        assertThat(new MktFixedFeeBillingService(contracts,bills,new com.zhyq.park.marketing.service.MktContractTermsService(mock(com.zhyq.park.marketing.mapper.MktServiceContractVersionMapper.class))).generateDue(LocalDate.parse("2026-09-23"))).isZero();verify(bills,never()).insert(any(Bill.class));
     }
     @Test void noImplicitMonthlyPriceOrStringAmount() {
         var c=contract("2026-09-01","2026-12-31");c.setPriceTable("{\"perOrder\":10}");

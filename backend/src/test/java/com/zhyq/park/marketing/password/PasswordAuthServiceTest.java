@@ -48,10 +48,13 @@ class PasswordAuthServiceTest {
     @Mock MktAuditService auditService;
     @Mock BizSettings settings;
     private final BCryptPasswordEncoder encoder = new BCryptPasswordEncoder(4);
-    private final JwtService jwt = new JwtService("test-secret-for-password-tests-32-bytes-long", 3600);
+    private JwtService jwt;
     private PasswordAuthService service;
 
     @BeforeEach void setup() {
+        jwt = new JwtService("test-secret-for-password-tests-32-bytes-long", 3600,
+                new com.zhyq.park.auth.JwtAccountService(mock(com.zhyq.park.system.mapper.SysUserMapper.class),
+                        mock(com.zhyq.park.auth.mapper.AuthQueryMapper.class), promoters, warehouses, credentials));
         service = new PasswordAuthService(credentials, promoters, warehouses, contacts, promoterService,
                 warehouseService, auditService, settings, encoder, jwt, new PasswordAttemptLimiter());
         TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new MybatisConfiguration(), "test"), MktCredential.class);
@@ -128,7 +131,8 @@ class PasswordAuthServiceTest {
         when(credentials.selectOne(any())).thenAnswer(invocation -> {
             LambdaQueryWrapper<MktCredential> q = invocation.getArgument(0);
             q.getSqlSegment();
-            assertThat(q.getParamNameValuePairs().values()).contains("wh", "demo_user");
+            assertThat(q.getParamNameValuePairs().values()).contains("wh");
+            assertThat(q.getParamNameValuePairs().values()).containsAnyOf("demo_user", 31L);
             return credential;
         });
         MktWarehouse warehouse = new MktWarehouse(); warehouse.setId(31L); warehouse.setJoinStatus(2);

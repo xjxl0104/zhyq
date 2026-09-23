@@ -10,7 +10,7 @@
     </view>
     <view class="card" v-if="!b.idVerified">
       <view class="muted">提现前请先提交收款资料，并等待园区人工审核通过</view>
-      <button class="btn" @click="uni.navigateTo({ url: '/pages/me/index' })">查看收款资料</button>
+      <button class="btn" @click="uni.switchTab({ url: '/pages/me/index' })">查看收款资料</button>
     </view>
     <view class="card" v-else>
       <input class="input" v-model="amount" type="digit" placeholder="提现金额（最多两位小数）" />
@@ -21,31 +21,39 @@
     </view>
     <view class="card">
       <view style="font-weight:600;margin-bottom:12rpx">提现记录</view>
-      <view v-if="!list.length" class="muted">还没有提现记录，已结算的佣金达到最低金额后可申请。</view>
+      <view v-if="history.error" class="muted">{{ history.error }}<button class="btn ghost" :disabled="history.loading" @click="pager.retry()">重新读取记录</button></view>
+      <view v-if="history.loading && !list.length" class="muted">正在读取提现记录…</view>
+      <view v-else-if="!list.length && history.loaded && !history.error" class="muted">还没有提现记录，已结算的佣金达到最低金额后可申请。</view>
       <view class="row" v-for="w in list" :key="w.id">
         <view><view>{{ w.withdrawalNo }}</view><view class="muted">{{ w.createTime?.slice(0, 16) }}</view><view v-if="w.rejectReason" class="muted">驳回原因：{{w.rejectReason}}</view><view v-if="w.payNo" class="muted">付款流水：{{w.payNo}}</view></view>
         <view style="text-align:right"><view class="money">{{ Number(w.netAmount).toFixed(2) }}</view><text class="tag" :class="w.status === 3 ? 'ok' : w.status === 4 ? 'warn' : ''">{{ STATUS[w.status] }}</text></view>
       </view>
+      <button v-if="list.length < history.total" class="btn ghost" :loading="history.loading" :disabled="history.loading" @click="pager.load(false)">加载更多提现记录</button><view v-else-if="list.length" class="muted">共 {{ history.total }} 笔，已全部显示</view>
     </view>
     </template>
   </view>
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
-import { onShow } from '@dcloudio/uni-app'
+import { ref, computed, reactive, onUnmounted } from 'vue'
+import { onShow, onReachBottom } from '@dcloudio/uni-app'
 import { bizApi } from '@/api'
+import { createPager } from '@/utils/pagination.mjs'
 const STATUS = { 1: '待审核', 2: '已审核', 3: '已打款', 4: '已驳回' }
 const error=ref('')
-const b = ref(null); const list = ref([]); const amount = ref(''); const loading = ref(false)
+const b = ref(null); const amount = ref(''); const loading = ref(false)
+const history=reactive({}),pager=createPager(bizApi.withdrawals,history),list=computed(()=>history.records)
 const tax = computed(() => (Number(amount.value || 0) * (b.value?.taxMode === 1 ? Number(b.value.taxRate) : 0)).toFixed(2))
 const net = computed(() => (Number(amount.value || 0) - Number(tax.value)).toFixed(2))
 const validAmount=computed(()=>/^\d+(\.\d{1,2})?$/.test(amount.value)&&Number(amount.value)>=Number(b.value?.minWithdraw||0)&&Number(amount.value)>0&&Number(amount.value)<=Number(b.value?.balance||0))
-async function load() { error.value='';try{;[b.value,list.value]=await Promise.all([bizApi.balance(),bizApi.withdrawals({pageNo:1,pageSize:100}).then(r=>r.records||[])])}catch(e){error.value=e.message||'余额加载失败，请重试'} }
+let balanceRequest=0
+async function load() { const request=++balanceRequest;error.value='';const records=pager.load();try{const balance=await bizApi.balance();if(request===balanceRequest)b.value=balance}catch(e){if(request===balanceRequest)error.value=e.message||'余额加载失败，请重试'}await records }
 async function submit() {
   if(loading.value || !validAmount.value)return
   loading.value = true
   try { await bizApi.withdraw(amount.value); uni.showToast({ title: '已提交,等待审核' }); amount.value = ''; await load() } finally { loading.value = false }
 }
 onShow(load)
+onReachBottom(()=>pager.load(false))
+onUnmounted(()=>{balanceRequest++;pager.invalidate()})
 </script>

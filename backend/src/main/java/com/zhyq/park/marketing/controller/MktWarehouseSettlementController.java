@@ -22,7 +22,7 @@ public class MktWarehouseSettlementController {
     private final MktWarehouseSettlementService service;
     public record Generate(Long warehouseId, LocalDate periodStart, LocalDate periodEnd) {}
     public record Pay(String payNo,String payProof,BigDecimal amount) {}
-    public record DirectPayment(Long contractId,Long warehouseId,String paymentNo,BigDecimal amount,String payProof) {}
+    public record DirectPayment(Long contractId,Long warehouseId,String paymentNo,BigDecimal amount,String payProof,LocalDate periodStart,LocalDate periodEnd) {}
     public record Reason(String reason) {}
     @GetMapping("/page") @PreAuthorize("hasAuthority('crm:marketing:settlement:query')")
     public Result<PageResult<MktWarehouseSettlement>> page(@RequestParam(defaultValue="1") int pageNo,@RequestParam(defaultValue="20") int pageSize,
@@ -40,7 +40,7 @@ public class MktWarehouseSettlementController {
     @PostMapping("/{id}/pay") @PreAuthorize("hasAuthority('crm:marketing:settlement:pay')")
     public Result<Void> pay(@PathVariable Long id,@RequestBody Pay body) { service.pay(id,body.payNo(),body.payProof(),body.amount(),MktAuditService.currentOperator());return Result.ok(); }
     @PostMapping("/direct-payment") @PreAuthorize("hasAuthority('crm:marketing:bill:pay')")
-    public Result<MktDirectSignPayment> directPayment(@RequestBody DirectPayment body) { return Result.ok(service.recordPayment(body.contractId(),body.warehouseId(),body.paymentNo(),body.amount(),body.payProof())); }
+    public Result<MktDirectSignPayment> directPayment(@RequestBody DirectPayment body) { return Result.ok(service.recordPayment(body.contractId(),body.warehouseId(),body.paymentNo(),body.amount(),body.payProof(),body.periodStart(),body.periodEnd())); }
     @GetMapping("/direct-payment/page") @PreAuthorize("hasAuthority('crm:marketing:bill:query')")
     public Result<PageResult<MktDirectSignPayment>> directPayments(@RequestParam(defaultValue="1") int pageNo,@RequestParam(defaultValue="20") int pageSize) {
         var p=directPayments.selectPage(new Page<>(Math.max(1,pageNo),Math.min(100,Math.max(1,pageSize))),new LambdaQueryWrapper<MktDirectSignPayment>().orderByDesc(MktDirectSignPayment::getId));

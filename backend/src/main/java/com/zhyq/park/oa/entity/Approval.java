@@ -33,4 +33,7 @@ public class Approval extends BaseEntity {
     private LocalDateTime approveTime;
     /** 审批意见 */
     private String opinion;
+    /** 仅用于当前操作者的页面动作提示；写入接口仍重新校验权限与审批链。 */
+    @com.baomidou.mybatisplus.annotation.TableField(exist = false)
+    private Boolean canDirectApprove;
 }

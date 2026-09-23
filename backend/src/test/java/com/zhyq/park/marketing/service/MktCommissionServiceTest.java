@@ -54,6 +54,7 @@ class MktCommissionServiceTest {
     @Mock LadderResolver ladderResolver;
     @Mock MktAuditService auditService;
     @Mock ApplicationEventPublisher eventPublisher;
+    @Mock com.zhyq.park.marketing.mapper.MktWithdrawalMapper withdrawalMapper;
 
     MktCommissionService service;
 
@@ -62,12 +63,13 @@ class MktCommissionServiceTest {
         MapperBuilderAssistant assistant = new MapperBuilderAssistant(new MybatisConfiguration(), "");
         TableInfoHelper.initTableInfo(assistant, MktPromoterCommission.class);
         TableInfoHelper.initTableInfo(assistant, MktReferralOrder.class);
+        TableInfoHelper.initTableInfo(assistant, com.zhyq.park.marketing.entity.MktWithdrawal.class);
     }
 
     @BeforeEach
     void setUp() {
         service = new MktCommissionService(orderMapper, commissionMapper, batchMapper, promoterMapper,
-                ladderResolver, auditService, eventPublisher);
+                ladderResolver, auditService, eventPublisher, withdrawalMapper);
     }
 
     @Test
@@ -171,10 +173,13 @@ class MktCommissionServiceTest {
         var stale = commission(11L, MktCommissionService.C_SETTLED, "100"); stale.setPromoterId(7L);
         var locked = commission(11L, MktCommissionService.C_SETTLED, "100"); locked.setPromoterId(7L); locked.setWithdrawalId(99L);
         when(commissionMapper.selectList(any())).thenReturn(List.of(stale), List.of(locked));
-        assertThatThrownBy(() -> service.clawback(100L, "退款")).isInstanceOf(BizException.class).hasMessageContaining("先驳回提现");
+        when(withdrawalMapper.update(isNull(), any())).thenReturn(1);
+        when(commissionMapper.update(isNull(), any())).thenReturn(1);
+        service.clawback(100L, "退款");
+        verify(withdrawalMapper).update(isNull(), any());
         var order = org.mockito.Mockito.inOrder(commissionMapper, promoterMapper);
         order.verify(commissionMapper).selectList(any()); order.verify(promoterMapper).selectForUpdate(7L); order.verify(commissionMapper).selectList(any());
-        verify(commissionMapper, never()).insert(any(MktPromoterCommission.class));
+        verify(commissionMapper).insert(any(MktPromoterCommission.class));
     }
 
     @Test
@@ -193,7 +198,7 @@ class MktCommissionServiceTest {
         assertThat(back.getSign()).isEqualTo(-1);
         assertThat(back.getAmount()).isEqualByComparingTo("-60");
         assertThat(back.getStatus()).isEqualTo(MktCommissionService.C_SETTLEABLE);
-        verify(commissionMapper, times(1)).update(isNull(), any(Wrapper.class));
+        verify(commissionMapper, times(2)).update(isNull(), any(Wrapper.class));
     }
 
     @Test
@@ -237,6 +242,103 @@ class MktCommissionServiceTest {
                 .isInstanceOf(BizException.class).hasMessageContaining("扣回");
     }
 
+    @Test void reversalOffsetsSettledAndWithdrawnWithoutRewritingPositiveHistory() {
+        var settled = commission(11L, MktCommissionService.C_SETTLED, "100"); settled.setSign(1);
+        var paid = commission(12L, MktCommissionService.C_WITHDRAWN, "60"); paid.setSign(1); paid.setWithdrawalId(8L);
+        when(commissionMapper.selectList(any())).thenReturn(List.of(settled, paid));
+        when(commissionMapper.update(isNull(), any())).thenReturn(1);
+        service.refreezeByOrder(100L);
+        var cap = ArgumentCaptor.forClass(MktPromoterCommission.class);
+        verify(commissionMapper, times(2)).insert(cap.capture());
+        assertThat(cap.getAllValues()).extracting(MktPromoterCommission::getAmount)
+                .containsExactly(new BigDecimal("-100"), new BigDecimal("-60"));
+        verify(commissionMapper, times(2)).update(isNull(), org.mockito.ArgumentMatchers.argThat(q -> {
+            var update = (com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<?>) q;
+            return !update.getSqlSet().contains("amount") && !update.getSqlSet().contains("status");
+        }));
+        verify(withdrawalMapper, never()).update(isNull(), any());
+    }
+
+    @Test void repeatedClawbackUsesTheExistingUniqueDebit() {
+        var settled = commission(11L, MktCommissionService.C_SETTLED, "100"); settled.setSign(1);
+        when(commissionMapper.selectList(any())).thenReturn(List.of(settled));
+        when(commissionMapper.insert(any(MktPromoterCommission.class))).thenThrow(new org.springframework.dao.DuplicateKeyException("existing debit"));
+        when(commissionMapper.update(isNull(), any())).thenReturn(1);
+        service.clawback(100L, "退款");
+        assertThat(settled.getReceiptSuspended()).isEqualTo(2);
+    }
+
+    @Test void outboundReplayCannotChangeCustomerOrWarehouse() {
+        var old = new MktReferralOrder(); old.setId(9L); old.setWarehouseId(2L); old.setCustomerId(5L); old.setSourceId(10L);
+        when(orderMapper.selectOne(any())).thenReturn(old);
+        var ev = new CommissionEvent(2, "OUT-1", 10L, 5L, 1L, "A", BigDecimal.ONE,
+                BigDecimal.TEN, BigDecimal.ONE, LocalDateTime.now(), null, 1L, 1L);
+        assertThatThrownBy(() -> service.createAndSplit(ev)).isInstanceOf(BizException.class).hasMessageContaining("禁止覆盖");
+        verify(orderMapper, never()).insert(any(MktReferralOrder.class));
+    }
+
+    @Test void twoReversalAndReceiptCyclesPreservePaidHistoryAndRestoreExactEntitlement() {
+        var original = commission(11L, MktCommissionService.C_WITHDRAWN, "100"); original.setWithdrawalId(88L);
+        var ledger = new java.util.ArrayList<MktPromoterCommission>(); ledger.add(original);
+        when(commissionMapper.selectList(any())).thenAnswer(i -> new java.util.ArrayList<>(ledger));
+        when(commissionMapper.update(isNull(),any())).thenReturn(1);
+        when(commissionMapper.insert(any(MktPromoterCommission.class))).thenAnswer(i -> {
+            var row = i.getArgument(0,MktPromoterCommission.class); row.setId(100L + ledger.size()); ledger.add(row); return 1;
+        });
+        for (int cycle = 1; cycle <= 2; cycle++) {
+            assertThat(service.refreezeByOrder(100L)).isEqualTo(1);
+            assertThat(service.refreezeByOrder(100L)).isZero(); // duplicate red reversal
+            var debit = ledger.get(ledger.size()-1);
+            assertThat(debit.getAmount()).isEqualByComparingTo("-100");
+            assertThat(debit.getAdjustmentSequence()).isEqualTo(cycle);
+            assertThat(debit.getPromoterId()).isEqualTo(original.getPromoterId());
+            assertThat(debit.getReferralOrderId()).isEqualTo(original.getReferralOrderId());
+            // The first debit has already been deducted in a paid withdrawal; restoration must still work.
+            if (cycle == 1) { debit.setStatus(MktCommissionService.C_WITHDRAWN); debit.setWithdrawalId(89L); }
+            else debit.setStatus(MktCommissionService.C_SETTLED); // legacy settled debit remains in the ledger
+            assertThat(service.unfreezeByOrderInTransaction(100L)).isEqualTo(1);
+            assertThat(service.unfreezeByOrderInTransaction(100L)).isZero(); // duplicate collection callback
+            var credit = ledger.get(ledger.size()-1);
+            assertThat(credit.getAmount()).isEqualByComparingTo("100");
+            assertThat(credit.getStatus()).isEqualTo(MktCommissionService.C_SETTLED);
+            assertThat(credit.getAdjustmentSequence()).isEqualTo(cycle);
+            assertThat(ledger.stream().map(MktPromoterCommission::getAmount).reduce(BigDecimal.ZERO,BigDecimal::add)).isEqualByComparingTo("100");
+        }
+        assertThat(ledger).hasSize(5);
+        assertThat(original.getStatus()).isEqualTo(MktCommissionService.C_WITHDRAWN);
+        assertThat(original.getWithdrawalId()).isEqualTo(88L);
+        assertThat(original.getAmount()).isEqualByComparingTo("100");
+        assertThat(original.getReceiptRevision()).isEqualTo(2);
+    }
+
+    @Test void permanentTerminationWhileSuspendedDoesNotDeductTwiceOrRestoreOnLatePayment() {
+        var original = commission(11L,MktCommissionService.C_SETTLED,"100");
+        var ledger = new java.util.ArrayList<MktPromoterCommission>(); ledger.add(original);
+        when(commissionMapper.selectList(any())).thenAnswer(i -> new java.util.ArrayList<>(ledger));
+        when(commissionMapper.update(isNull(),any())).thenReturn(1);
+        when(commissionMapper.insert(any(MktPromoterCommission.class))).thenAnswer(i -> { ledger.add(i.getArgument(0)); return 1; });
+        service.refreezeByOrder(100L);
+        service.clawback(100L,"90天内退租");
+        service.clawback(100L,"重复退租事件");
+        assertThat(service.unfreezeByOrderInTransaction(100L)).isZero();
+        assertThat(ledger).hasSize(2);
+        assertThat(original.getReceiptSuspended()).isEqualTo(2);
+        assertThat(ledger.stream().map(MktPromoterCommission::getAmount).reduce(BigDecimal.ZERO,BigDecimal::add)).isZero();
+    }
+
+    @Test void reversalCancelsPendingWithdrawalThatContainsRestorationCredit() {
+        var original = commission(11L,MktCommissionService.C_WITHDRAWN,"100"); original.setWithdrawalId(88L); original.setReceiptRevision(1);
+        var credit = commission(12L,MktCommissionService.C_SETTLED,"100"); credit.setAdjustmentSequence(1); credit.setWithdrawalId(99L);
+        when(commissionMapper.selectList(any())).thenReturn(List.of(original,credit));
+        when(commissionMapper.update(isNull(),any())).thenReturn(1); when(withdrawalMapper.update(isNull(),any())).thenReturn(1);
+        service.refreezeByOrder(100L);
+        verify(withdrawalMapper).update(isNull(),any());
+        var cap = ArgumentCaptor.forClass(MktPromoterCommission.class); verify(commissionMapper).insert(cap.capture());
+        assertThat(cap.getValue().getAmount()).isEqualByComparingTo("-100");
+        assertThat(cap.getValue().getAdjustmentSequence()).isEqualTo(2);
+        assertThat(credit.getWithdrawalId()).isNull();
+    }
+
     private static CommissionEvent leaseEvent(String pool) {
         return new CommissionEvent(MktCommissionService.SOURCE_LEASE, "LEASE-10", 10L, 5L, 1L, "A",
                 new BigDecimal("1.00"), new BigDecimal(pool), new BigDecimal(pool),
@@ -250,7 +352,7 @@ class MktCommissionServiceTest {
 
     private static MktPromoterCommission commission(Long id, int status, String amount) {
         MktPromoterCommission c = new MktPromoterCommission();
-        c.setId(id); c.setStatus(status); c.setAmount(new BigDecimal(amount)); c.setPromoterId(1L);
+        c.setId(id); c.setStatus(status); c.setSign(1); c.setAdjustmentSequence(0); c.setReceiptRevision(0); c.setReceiptSuspended(0); c.setAmount(new BigDecimal(amount)); c.setPromoterId(1L);
         c.setPositionCode("P1"); c.setSharePct(50); c.setDiffPct(50); c.setRate(new BigDecimal("0.5"));
         c.setBaseAmount(BigDecimal.TEN); c.setReferralOrderId(100L);
         return c;
