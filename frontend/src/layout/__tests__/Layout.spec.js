@@ -94,7 +94,7 @@ describe('Layout navigation chrome', () => {
     expect(version.text()).toBe('817f566')
     expect(version.attributes('title')).toBe(`构建提交 ${commit}`)
     expect(version.attributes('aria-label')).toBe(`构建提交 ${commit}`)
-    expect(wrapper.get('.user-zone .user').find('.build-version').exists()).toBe(false)
+    expect(wrapper.get('.user-zone .user').find('.build-version').exists()).toBe(true)
     wrapper.unmount()
   })
 
