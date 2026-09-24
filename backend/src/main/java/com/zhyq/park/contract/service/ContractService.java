@@ -49,11 +49,45 @@ public class ContractService {
     private static final int ST_DRAFT = 1;      // 草稿
     private static final int ST_AUDITING = 2;   // 待审核
     private static final int ST_RUNNING = 5;    // 执行中
+    private static final int ST_EXPIRED = 8;    // 到期仍需实际办理退租
     private static final int ST_TERMINATED = 9; // 已终止
 
     // 房源状态
     private static final int ROOM_RENTABLE = 1; // 可租
     private static final int ROOM_RENTED = 5;   // 在租
+
+    /** 普通编辑只能修改草稿条款，生命周期必须经过领域动作。 */
+    @Transactional(rollbackFor = Exception.class)
+    public void updateDraft(Contract request) {
+        Contract current = contractMapper.selectById(request.getId());
+        if (current == null) throw new BizException("合同不存在");
+        if (!Integer.valueOf(ST_DRAFT).equals(current.getStatus())) throw new BizException("仅草稿合同可编辑");
+        if (request.getStatus() != null && !Integer.valueOf(ST_DRAFT).equals(request.getStatus()))
+            throw new BizException("合同状态须通过提交、审批或退租流程修改");
+        if (request.getVersion() != null && !request.getVersion().equals(current.getVersion()))
+            throw new BizException("合同已变化，请刷新后重试");
+        LambdaUpdateWrapper<Contract> update = new LambdaUpdateWrapper<Contract>()
+                .eq(Contract::getId, current.getId()).eq(Contract::getStatus, ST_DRAFT)
+                .eq(Contract::getVersion, current.getVersion()).setSql("version = version + 1")
+                .set(request.getCode() != null, Contract::getCode, request.getCode())
+                .set(request.getTenantRefId() != null, Contract::getTenantRefId, request.getTenantRefId())
+                .set(request.getProjectId() != null, Contract::getProjectId, request.getProjectId())
+                .set(request.getContractType() != null, Contract::getContractType, request.getContractType())
+                .set(request.getStartDate() != null, Contract::getStartDate, request.getStartDate())
+                .set(request.getEndDate() != null, Contract::getEndDate, request.getEndDate())
+                .set(request.getSignDate() != null, Contract::getSignDate, request.getSignDate())
+                .set(request.getRentPrice() != null, Contract::getRentPrice, request.getRentPrice())
+                .set(request.getPropertyPrice() != null, Contract::getPropertyPrice, request.getPropertyPrice())
+                .set(request.getRentArea() != null, Contract::getRentArea, request.getRentArea())
+                .set(request.getDeposit() != null, Contract::getDeposit, request.getDeposit())
+                .set(request.getChargeMode() != null, Contract::getChargeMode, request.getChargeMode())
+                .set(request.getPayCycle() != null, Contract::getPayCycle, request.getPayCycle())
+                .set(request.getFreeMonths() != null, Contract::getFreeMonths, request.getFreeMonths())
+                .set(request.getIncreaseRate() != null, Contract::getIncreaseRate, request.getIncreaseRate())
+                .set(request.getGrade() != null, Contract::getGrade, request.getGrade())
+                .set(request.getRemark() != null, Contract::getRemark, request.getRemark());
+        if (contractMapper.update(null, update) != 1) throw new BizException("合同状态已变化，请刷新后重试");
+    }
 
     /**
      * 提交审批:草稿(1)→待审核(2),并写入一条审批中心待办(biz_approval,审批中)。
@@ -136,10 +170,18 @@ public class ContractService {
         // ③ 按权威应收登记表生成租金、物业费和两类保证金分账计划
         registers.forEach(register -> receivablePlanService.generate(register.getId()));
 
-        // ④ 发布领域事件(保守:副作用已在上方同事务完成,本事件仅供下游感知;
-        //    AFTER_COMMIT 消费,事务回滚则不发)
+        // ④ 营销计佣等业务监听与本次审批同事务；通知类监听在提交后消费。
         eventPublisher.publishEvent(new DomainEvent.ContractApproved(
                 c.getId(), c.getCode(), c.getTenantRefId(), c.getProjectId(), LocalDateTime.now()));
+    }
+
+    /** 审批驳回后回到草稿；工作流、审批单和合同在同一事务内恢复可编辑状态。 */
+    @Transactional(rollbackFor = Exception.class)
+    public void reject(Long id) {
+        int updated = contractMapper.update(null, new LambdaUpdateWrapper<Contract>()
+                .eq(Contract::getId, id).eq(Contract::getStatus, ST_AUDITING)
+                .set(Contract::getStatus, ST_DRAFT));
+        if (updated != 1) throw new BizException("仅待审核合同可驳回，请刷新后重试");
     }
 
     /**
@@ -163,7 +205,7 @@ public class ContractService {
 
     /**
      * 退租:执行中(5)→已终止(9),terminate_date=今天;关联房源改回可租(1);记录一条退租版本。
-     * 仅执行中的合同可退租;条件更新抢状态,重复退租只有一次生效。
+     * 执行中或已到期的合同可退租;条件更新抢状态,重复退租只有一次生效。
      */
     @Transactional(rollbackFor = Exception.class)
     public void terminate(Long id) {
@@ -175,11 +217,11 @@ public class ContractService {
 
         int updated = contractMapper.update(null, new LambdaUpdateWrapper<Contract>()
                 .eq(Contract::getId, id)
-                .eq(Contract::getStatus, ST_RUNNING)
+                .in(Contract::getStatus, ST_RUNNING, ST_EXPIRED)
                 .set(Contract::getStatus, ST_TERMINATED)
                 .set(Contract::getTerminateDate, today));
         if (updated == 0) {
-            throw new BizException("仅执行中的合同可退租");
+            throw new BizException("仅执行中或已到期的合同可办理退租");
         }
 
         releaseRooms(id);

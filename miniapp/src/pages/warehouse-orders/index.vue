@@ -1,0 +1,8 @@
+<template><view class="page-wrap"><view class="card"><view class="wh-title">出库单</view><view class="wh-note">订单来自园区运营导入或已配置的外部接口；这里仅查看本云仓的业务。</view><view v-if="loading" class="wh-note">正在读取出库单…</view><view v-if="error" class="wh-error">{{ error }}</view><view v-if="!loading&&!error&&!rows.length" class="wh-note">暂无出库单，园区导入后可刷新查看。</view><view v-for="o in rows" :key="o.id" class="wh-item"><view class="wh-item-title">{{ o.sourceNo }}</view><view class="wh-status">{{ statusLabel(o.status) }}</view><view class="wh-meta">{{ o.qty || 0 }} 件 · {{ o.packages || 0 }} 包裹</view><view class="wh-meta">物流单号：{{ o.logisticsNo || '暂无' }}</view><view class="wh-meta">发货时间：{{ (o.eventTime || '').replace('T',' ') || '未记录' }}</view></view><button class="wh-secondary" :disabled="loading" @click="load(page)">刷新订单</button></view><view class="wh-actions wh-pager"><button class="wh-secondary" :disabled="page===1||loading" @click="load(page-1)">上一页</button><view class="wh-note">第 {{page}} 页 · 共 {{total}} 条</view><button class="wh-secondary" :disabled="page*20>=total||loading" @click="load(page+1)">下一页</button></view></view></template>
+<script setup>
+import {ref} from 'vue';import {onShow} from '@dcloudio/uni-app';import {warehouseApi} from '@/api/warehouse'
+const rows=ref([]),page=ref(1),total=ref(0),loading=ref(false),error=ref('')
+const statusLabel=s=>({1:'待确认',2:'已确认',3:'已退款',4:'已取消',5:'待确认归属'}[s]||'处理中')
+async function load(next=page.value){loading.value=true;error.value='';try{const r=await warehouseApi.orders({pageNo:next,pageSize:20});rows.value=r.records||[];total.value=r.total||0;page.value=next}catch(e){error.value=e.message||'出库单读取失败，请重试'}finally{loading.value=false}}
+onShow(()=>load())
+</script><style scoped>@import '../../styles/warehouse.css';</style>

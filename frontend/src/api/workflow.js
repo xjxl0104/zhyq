@@ -13,7 +13,7 @@ export const wfDefinitionApi = {
 // 审批链运行时:待办、通过/驳回、审批轨迹
 export const wfTaskApi = {
   my: (assignee) => request.get('/workflow/task/my', { params: { assignee } }),
-  // 我的待办(含单据类型/单据ID),assignee 留空则返回全部待审
+  // 不传 assignee 时由后台按当前用户及其角色返回获派待办；仅管理员可看全部。
   myPending: (assignee) => request.get('/workflow/task/my-pending', { params: { assignee } }),
   approve: (taskId, opinion) => request.post(`/workflow/task/${taskId}/approve`, { opinion }),
   reject: (taskId, opinion) => request.post(`/workflow/task/${taskId}/reject`, { opinion }),

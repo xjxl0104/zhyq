@@ -1,0 +1,5 @@
+# pnpm 11 默认不跑依赖的 postinstall;uni-app 用到的这三个需要本机编译,显式放行
+allowBuilds:
+  '@parcel/watcher': true
+  core-js: true
+  esbuild: true

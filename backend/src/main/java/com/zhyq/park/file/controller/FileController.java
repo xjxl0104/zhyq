@@ -1,6 +1,7 @@
 package com.zhyq.park.file.controller;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.zhyq.park.common.config.MyMetaObjectHandler;
 import com.zhyq.park.common.exception.BizException;
 import com.zhyq.park.common.result.Result;
@@ -36,6 +37,8 @@ import java.util.List;
 @RequiredArgsConstructor
 public class FileController {
 
+    private final com.zhyq.park.marketing.service.MktDocumentRetentionService marketingRetention;
+    private final com.zhyq.park.marketing.service.MktDocumentAccessService marketingAccess;
     private final FileStorageService storageService;
     private final SysFileMapper fileMapper;
     private final FileDownloadTicketService downloadTickets;
@@ -64,6 +67,7 @@ public class FileController {
     @GetMapping("/list")
     public Result<List<SysFile>> list(@RequestParam String bizType,
                                       @RequestParam Long bizId) {
+        marketingAccess.read(bizType);
         return Result.ok(fileMapper.selectList(new LambdaQueryWrapper<SysFile>()
             .eq(SysFile::getBizType, bizType)
             .eq(SysFile::getBizId, bizId)
@@ -78,6 +82,8 @@ public class FileController {
             if (!FileAccessRule.canDelete(f, MyMetaObjectHandler.currentOperator(), isAdmin())) {
                 throw new BizException(403, "仅上传者本人或管理员可删除该附件");
             }
+            marketingAccess.write(f.getBizType());
+            marketingRetention.assertDeletable(f);
             fileMapper.deleteById(id);          // 逻辑删除
             storageService.deletePhysical(f.getStorePath());
         }
@@ -89,6 +95,7 @@ public class FileController {
     public ResponseEntity<Result<DownloadTicket>> createDownloadTicket(@PathVariable Long id) {
         SysFile file = fileMapper.selectById(id);
         if (file == null) throw new BizException("附件不存在");
+        marketingAccess.read(file);
         // 在页面交接给浏览器前提示失效附件，避免把错误响应保存成合同文件。
         storageService.resolveExisting(file.getStorePath());
         return ResponseEntity.ok().cacheControl(CacheControl.noStore())
@@ -105,7 +112,7 @@ public class FileController {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).cacheControl(CacheControl.noStore()).build();
         }
         try {
-            return download(id);
+            return downloadResource(id, false);
         } catch (BizException e) {
             // 签发后文件被删除：返回真实 HTTP 错误，浏览器会把它视为下载失败。
             return ResponseEntity.status(HttpStatus.NOT_FOUND).cacheControl(CacheControl.noStore()).build();
@@ -115,10 +122,15 @@ public class FileController {
     @Operation(summary = "鉴权读取附件(用于图片预览等二进制请求)")
     @GetMapping("/download/{id}")
     public ResponseEntity<Resource> download(@PathVariable Long id) {
+        return downloadResource(id, true);
+    }
+
+    private ResponseEntity<Resource> downloadResource(Long id, boolean authorize) {
         SysFile f = fileMapper.selectById(id);
         if (f == null) {
             throw new BizException("附件不存在");
         }
+        if (authorize) marketingAccess.read(f);
         Resource resource = new FileSystemResource(storageService.resolveExisting(f.getStorePath()));
         MediaType mediaType;
         try {
@@ -149,16 +161,17 @@ public class FileController {
                 || req.getBizId() == null || req.getFileIds() == null || req.getFileIds().isEmpty()) {
             return Result.ok(0);
         }
+        marketingAccess.write(req.getBizType());
         int attached = 0;
         for (Long fileId : req.getFileIds()) {
             SysFile f = fileMapper.selectById(fileId);
             if (f == null || !FileAttachRule.canAttach(f)) {
                 continue;                    // 不存在或已关联 → 跳过,防越权覆盖
             }
-            f.setBizType(req.getBizType());
-            f.setBizId(req.getBizId());
-            fileMapper.updateById(f);
-            attached++;
+            marketingAccess.attach(f, req.getBizType());
+            attached += fileMapper.update(null, new LambdaUpdateWrapper<SysFile>()
+                    .eq(SysFile::getId, f.getId()).isNull(SysFile::getBizId)
+                    .set(SysFile::getBizType, req.getBizType()).set(SysFile::getBizId, req.getBizId()));
         }
         return Result.ok(attached);
     }
@@ -178,6 +191,9 @@ public class FileController {
     }
 
     private SysFile save(MultipartFile file, String bizType, Long bizId) {
+        if ((bizType == null || bizType.isBlank()) && bizId != null)
+            throw new BizException("未指定业务类型的附件不能关联业务对象");
+        marketingAccess.write(bizType);
         FileStorageService.StoredResult r = storageService.store(file);
         SysFile sf = new SysFile();
         sf.setBizType(bizType);

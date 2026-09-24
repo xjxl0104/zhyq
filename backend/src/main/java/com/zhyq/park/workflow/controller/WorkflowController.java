@@ -47,6 +47,7 @@ public class WorkflowController {
     private final WfNodeMapper nodeMapper;
     private final WfInstanceMapper instanceMapper;
     private final WfTaskMapper taskMapper;
+    private final com.zhyq.park.workflow.service.WorkflowAccessService access;
 
     // ==================== 运行时操作 ====================
 
@@ -72,7 +73,7 @@ public class WorkflowController {
         return Result.ok();
     }
 
-    @Operation(summary = "我的审批待办(按 assignee 约定值过滤,#7 前 assignee 多为角色码)")
+    @Operation(summary = "当前用户及角色的审批待办；管理员可按 assignee 筛选")
     @GetMapping("/task/my")
     public Result<List<WfTask>> myTasks(@RequestParam(required = false) String assignee) {
         return Result.ok(workflowService.myTasks(assignee));
@@ -81,7 +82,7 @@ public class WorkflowController {
     // ==================== 流程定义/节点查询 ====================
 
     // 定义/节点的读接口也一并收口:全项目只有 FlowConfig.vue(流程配置页)读它们,
-    // 与写接口同页同权限位,不牵连运行时审批(task/instance 系列保持原样)。
+    // 与写接口同页同权限位,运行时审批另按实际审批人和业务权限校验。
     @Operation(summary = "流程定义分页")
     @PreAuthorize("hasAuthority('workflow:definition:manage')")
     @GetMapping("/definition/page")
@@ -145,6 +146,7 @@ public class WorkflowController {
     @PreAuthorize("hasAuthority('workflow:definition:manage')")
     @PutMapping("/definition/{definitionId}/nodes")
     public Result<Void> saveNodes(@PathVariable Long definitionId, @RequestBody List<WfNode> nodes) {
+        access.validateNodes(nodes);
         nodeMapper.delete(new LambdaQueryWrapper<WfNode>().eq(WfNode::getDefinitionId, definitionId));
         if (nodes != null) {
             int seq = 1;
@@ -172,6 +174,7 @@ public class WorkflowController {
                 .eq(bizId != null, WfInstance::getBizId, bizId)
                 .eq(status != null, WfInstance::getStatus, status)
                 .orderByDesc(WfInstance::getId);
+        access.scopeInstances(qw);
         IPage<WfInstance> p = instanceMapper.selectPage(new Page<>(pageNo, pageSize), qw);
         return Result.ok(PageResult.of(p.getTotal(), p.getRecords()));
     }
@@ -179,6 +182,7 @@ public class WorkflowController {
     @Operation(summary = "某实例的任务列表(审批轨迹,按 seq 升序)")
     @GetMapping("/instance/{instanceId}/tasks")
     public Result<List<WfTask>> instanceTasks(@PathVariable Long instanceId) {
+        access.requireVisible(instanceMapper.selectById(instanceId));
         return Result.ok(taskMapper.selectList(new LambdaQueryWrapper<WfTask>()
                 .eq(WfTask::getInstanceId, instanceId)
                 .orderByAsc(WfTask::getSeq)));
@@ -189,12 +193,9 @@ public class WorkflowController {
      * 让审批人不用先猜实例就知道自己在审什么单据。单据标题由前端按 bizType 回查各自业务接口,
      * 以免 workflow 反向依赖 budget/pur 等业务模块(依赖方向保持单向)。
      *
-     * <p>权限口径:与同组运行时接口(/task/my、/instance/**)一致,暂不加 @PreAuthorize。
-     * 本接口只是 /task/my 的展示增强,不新增可读数据 —— 它返回的 bizType/bizId 同一登录用户
-     * 本就能从 /instance/page 拿到。运行时接口整体收口是 ver6.6 明确留下的存量项
-     * (需先定审批人角色口径),不在本次范围,收口时本接口应与它们一并处理。</p>
+     * <p>待办和实例可见性由 WorkflowAccessService 按实际审批人及业务权限限定。</p>
      */
-    @Operation(summary = "我的待办(含单据类型与单据ID);assignee 为空则返回全部待审")
+    @Operation(summary = "我的待办(含单据类型与单据ID)；仅管理员可查询全部")
     @GetMapping("/task/my-pending")
     public Result<List<PendingTask>> myPendingTasks(@RequestParam(required = false) String assignee) {
         List<WfTask> tasks = workflowService.myTasks(assignee);

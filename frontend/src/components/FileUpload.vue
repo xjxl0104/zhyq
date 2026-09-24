@@ -56,7 +56,10 @@ function beforeUpload(file) {
 async function onRemove(uploadFile) {
   const id = uploadFile.id || (uploadFile.raw && uploadFile.raw.id)
   if (id) {
-    try { await fileApi.remove(id) } catch (e) { /* 忽略,前端仍移除 */ }
+    // 营销合同和资金附件保留归档；提交前移除只是取消本次选择。
+    if (!props.bizType.startsWith('mkt_')) {
+      try { await fileApi.remove(id) } catch (e) { /* 忽略,前端仍移除 */ }
+    }
     const next = props.modelValue.filter(f => f.id !== id)
     emit('update:modelValue', next)
   }

@@ -39,6 +39,8 @@ services:
       DB_PASSWORD: ${DB_ROOT_PASSWORD:?must set in .env}
       JWT_SECRET: ${JWT_SECRET:?must set in .env}
       JWT_EXPIRE_SECONDS: ${JWT_EXPIRE_SECONDS:-28800}
+      # 按 docs/PASSWORD_AUTH_PROXY.md 核验后配置 Nginx 及它前面的可信代理。
+      ZHYQ_AUTH_TRUSTED_PROXIES: ${ZHYQ_AUTH_TRUSTED_PROXIES:?set verified proxy IPs/CIDRs before reverse-proxy deployment}
       ZHYQ_FIELD_ENCRYPTION_KEY: ${ZHYQ_FIELD_ENCRYPTION_KEY:-}
       APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY:-}
       VENDING_EXTERNAL_URL: ${VENDING_EXTERNAL_URL:-https://fanmaiji.top/index?isFrom=login}

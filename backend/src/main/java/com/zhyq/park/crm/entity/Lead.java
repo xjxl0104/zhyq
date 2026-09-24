@@ -58,4 +58,8 @@ public class Lead extends BaseEntity {
     private Long intentProject;
     private Long ownerId;
     private Long channelId;
+    /** 推荐伙伴 crm_promoter.id(V57) */
+    private Long referrerId;
+    /** 推荐时使用的邀请码(V57) */
+    private String referralCode;
 }

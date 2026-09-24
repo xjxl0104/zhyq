@@ -5,14 +5,11 @@ import com.zhyq.park.common.event.DomainEvent;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.event.TransactionPhase;
-import org.springframework.transaction.event.TransactionalEventListener;
+import org.springframework.context.event.EventListener;
 
 /**
- * 预算申请的审批链回调:消费 workflow 发出的通过/驳回事件,回写预算状态。
- *
- * <p>做法对齐合同与采购申请:用 AFTER_COMMIT,仅当审批链事务成功提交后才回写,
- * 保证「审批实例确已置为通过/驳回」。budget 单向依赖 workflow,不反向。</p>
+ * 审批业务在工作流提交前参与同一事务。业务失败时任务、实例和业务变更一起回滚，
+ * 保留原待审核状态供重试；提交后的通知仍由独立 AFTER_COMMIT 监听器负责。
  */
 @Slf4j
 @Component
@@ -21,7 +18,7 @@ public class BudgetWorkflowListener {
 
     private final BudgetService budgetService;
 
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    @EventListener
     public void onApproved(DomainEvent.WorkflowApproved e) {
         if (BudgetService.BIZ_TYPE.equals(e.bizType())) {
             log.info("[budget] 审批链通过 → 预算置为已通过 budgetId={}", e.bizId());
@@ -29,7 +26,7 @@ public class BudgetWorkflowListener {
         }
     }
 
-    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    @EventListener
     public void onRejected(DomainEvent.WorkflowRejected e) {
         if (BudgetService.BIZ_TYPE.equals(e.bizType())) {
             log.info("[budget] 审批链驳回 → 预算置为已驳回 budgetId={}", e.bizId());

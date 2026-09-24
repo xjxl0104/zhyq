@@ -47,6 +47,7 @@ class PaymentServiceTest {
     @Mock private BillMapper billMapper;
     @Mock private FlowMapper flowMapper;
     @Mock private ReceiptMapper receiptMapper;
+    @Mock private org.springframework.context.ApplicationEventPublisher eventPublisher;
 
     @BeforeAll
     static void initMpLambdaCache() {
@@ -56,7 +57,7 @@ class PaymentServiceTest {
     }
 
     private PaymentService service() {
-        return new PaymentService(paymentMapper, billMapper, flowMapper, receiptMapper);
+        return new PaymentService(paymentMapper, billMapper, flowMapper, receiptMapper, eventPublisher);
     }
 
     private static Bill bill(String amount, String paid, String lateFee, int status) {

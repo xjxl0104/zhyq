@@ -51,6 +51,11 @@ public sealed interface DomainEvent {
         public String type() { return "payment.received"; }
     }
 
+    /** 收款撤销(红冲完成,供佣金等依赖到账的下游回冻)。 */
+    record PaymentReversed(Long paymentId, Long billId, Long contractId, LocalDateTime occurredAt) implements DomainEvent {
+        public String type() { return "payment.reversed"; }
+    }
+
     /** 账单逾期(供催缴任务流消费,批次②)。 */
     record BillOverdue(Long billId, Long contractId, Long tenantRefId, LocalDateTime occurredAt) implements DomainEvent {
         public String type() { return "bill.overdue"; }
@@ -99,5 +104,31 @@ public sealed interface DomainEvent {
     record WorkflowTaskCreated(String bizType, Long bizId, Long taskId, String nodeName, String assignee,
                                LocalDateTime occurredAt) implements DomainEvent {
         public String type() { return "workflow.task.created"; }
+    }
+
+    // ==================== 全民营销域(V57,marketing 包) ====================
+
+    /** 云仓服务合同生效:路径 A 计佣(签约奖,冻结)+ 园区签生成首期应收 / 直签生成平台费应收。 */
+    record ServiceContractEffective(Long contractId, Long customerId, Long promoterId, Integer signMode,
+                                    LocalDateTime occurredAt) implements DomainEvent {
+        public String type() { return "service_contract.effective"; }
+    }
+
+    /** 佣金流水解冻为可结算(通知伙伴)。 */
+    record CommissionUnfrozen(Long commissionId, Long promoterId, java.math.BigDecimal amount,
+                              LocalDateTime occurredAt) implements DomainEvent {
+        public String type() { return "commission.unfrozen"; }
+    }
+
+    /** 伙伴岗位变更(自动复核或后台手动)。 */
+    record PositionChanged(Long promoterId, String fromCode, String toCode, String reason,
+                           LocalDateTime occurredAt) implements DomainEvent {
+        public String type() { return "position.changed"; }
+    }
+
+    /** 客户锁定状态变化:1预锁 2有效锁定 3已成交 4已释放。 */
+    record CustomerLockChanged(Long lockId, Long customerId, Long promoterId, Integer status,
+                               LocalDateTime occurredAt) implements DomainEvent {
+        public String type() { return "customer.lock.changed"; }
     }
 }

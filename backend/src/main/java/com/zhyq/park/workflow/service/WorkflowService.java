@@ -39,6 +39,7 @@ public class WorkflowService {
     private final WfInstanceMapper instanceMapper;
     private final WfTaskMapper taskMapper;
     private final ApplicationEventPublisher eventPublisher;
+    private final WorkflowAccessService access;
 
     // 定义状态
     private static final int DEF_ENABLED = 1;   // 启用
@@ -68,6 +69,11 @@ public class WorkflowService {
      */
     @Transactional(rollbackFor = Exception.class)
     public Long start(String bizType, Long bizId, Long approvalId) {
+        access.requireStart(bizType, bizId, approvalId);
+        WfInstance running = instanceMapper.selectOne(new LambdaQueryWrapper<WfInstance>()
+                .eq(WfInstance::getBizType, bizType).eq(WfInstance::getBizId, bizId)
+                .eq(WfInstance::getStatus, INST_RUNNING).last("limit 1"));
+        if (running != null) return running.getId();
         WfDefinition def = definitionMapper.selectOne(new LambdaQueryWrapper<WfDefinition>()
                 .eq(WfDefinition::getBizType, bizType)
                 .eq(WfDefinition::getStatus, DEF_ENABLED)
@@ -145,7 +151,8 @@ public class WorkflowService {
             if (done == 0) {
                 throw new BizException("审批实例状态已变更,通过失败");
             }
-            // 发布通过事件:AFTER_COMMIT 回调驱动业务动作(contract → contractService.approve)
+            access.completeApprovalHeader(inst, true, opinion);
+            // 发布通过事件:同步回调在同一事务驱动业务动作(contract → contractService.approve)
             eventPublisher.publishEvent(new DomainEvent.WorkflowApproved(
                     inst.getBizType(), inst.getBizId(), LocalDateTime.now()));
         }
@@ -175,6 +182,7 @@ public class WorkflowService {
         if (done == 0) {
             throw new BizException("审批实例状态已变更,驳回失败");
         }
+        access.completeApprovalHeader(inst, false, opinion);
         eventPublisher.publishEvent(new DomainEvent.WorkflowRejected(
                 inst.getBizType(), inst.getBizId(), LocalDateTime.now()));
     }
@@ -187,7 +195,7 @@ public class WorkflowService {
         task.setInstanceId(inst.getId());
         task.setNodeId(node.getId());
         task.setSeq(node.getSeq());
-        task.setAssignee(node.getApproverValue()); // 占位约定值,真实指派待 #7
+        task.setAssignee(node.getApproverValue()); // 用户名/角色码快照；类型通过不可变的历史 nodeId 判断
         task.setStatus(TASK_PENDING);
         taskMapper.insert(task);
 
@@ -217,6 +225,10 @@ public class WorkflowService {
         if (task == null) {
             throw new BizException("审批任务不存在");
         }
+        access.requireAssignee(task);
+        WfInstance instance = requireRunningInstance(task.getInstanceId());
+        if (!java.util.Objects.equals(instance.getCurrentSeq(), task.getSeq()))
+            throw new BizException("该任务不是当前审批节点");
         return task;
     }
 
@@ -225,20 +237,14 @@ public class WorkflowService {
         if (inst == null) {
             throw new BizException("审批实例不存在");
         }
-        if (inst.getStatus() != null && inst.getStatus() != INST_RUNNING) {
+        if (!Integer.valueOf(INST_RUNNING).equals(inst.getStatus())) {
             throw new BizException("审批实例非审批中状态,无法处理");
         }
         return inst;
     }
 
-    /** 我的待办:按 assignee 查待审任务(#7 前 assignee 为约定值)。 */
+    /** 只返回当前用户或当前角色实际获派的待审任务。 */
     public List<WfTask> myTasks(String assignee) {
-        LambdaQueryWrapper<WfTask> qw = new LambdaQueryWrapper<WfTask>()
-                .eq(WfTask::getStatus, TASK_PENDING)
-                .orderByDesc(WfTask::getId);
-        if (assignee != null && !assignee.isBlank()) {
-            qw.eq(WfTask::getAssignee, assignee);
-        }
-        return taskMapper.selectList(qw);
+        return access.myTasks(assignee);
     }
 }

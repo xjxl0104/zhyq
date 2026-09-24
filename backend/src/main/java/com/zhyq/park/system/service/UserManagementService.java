@@ -134,6 +134,9 @@ public class UserManagementService {
         if (!StringUtils.hasText(username)) {
             throw new BizException("请输入账号");
         }
+        if (com.zhyq.park.auth.JwtAccountService.reservedUsername(username)) {
+            throw new BizException(400, "后台账号不能使用 mp: 或 wh: 保留前缀");
+        }
         Long count = userMapper.selectCount(new LambdaQueryWrapper<SysUser>()
                 .eq(SysUser::getUsername, username.trim()));
         if (count != null && count > 0) {

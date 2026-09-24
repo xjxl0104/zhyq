@@ -2,6 +2,7 @@ package com.zhyq.park.finance.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.zhyq.park.common.event.DomainEvent;
 import com.zhyq.park.common.exception.BizException;
 import com.zhyq.park.finance.entity.Bill;
 import com.zhyq.park.finance.entity.Flow;
@@ -12,6 +13,7 @@ import com.zhyq.park.finance.mapper.FlowMapper;
 import com.zhyq.park.finance.mapper.PaymentMapper;
 import com.zhyq.park.finance.mapper.ReceiptMapper;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -34,6 +36,7 @@ public class PaymentService {
     private final BillMapper billMapper;
     private final FlowMapper flowMapper;
     private final ReceiptMapper receiptMapper;
+    private final ApplicationEventPublisher eventPublisher;
 
     // 允许收款的账单状态:待收付(3)、部分结清(4)、逾期(6)
     private static final int ST_UNPAID = 3;
@@ -156,6 +159,9 @@ public class PaymentService {
         receipt.setPayee("system");
         receiptMapper.insert(receipt);
 
+        // ⑤ 到账事件:事务提交后才投递(监听方用 AFTER_COMMIT),全民营销靠它解冻租赁/服务合同的佣金
+        eventPublisher.publishEvent(new DomainEvent.PaymentReceived(billId, bill.getContractId(), LocalDateTime.now()));
+
         return payment;
     }
 
@@ -202,6 +208,8 @@ public class PaymentService {
         if (updated == 0) {
             throw new BizException("核销失败:账单状态或金额已变化,请刷新后重试");
         }
+        // 零元首期账单没有支付单,但业务上同样代表首期已核销;复用到账事件触发服务合同计佣解冻。
+        eventPublisher.publishEvent(new DomainEvent.PaymentReceived(billId, bill.getContractId(), LocalDateTime.now()));
         return billMapper.selectById(billId);
     }
 
@@ -307,6 +315,9 @@ public class PaymentService {
         receiptMapper.update(null, new LambdaUpdateWrapper<Receipt>()
                 .eq(Receipt::getPaymentId, origin.getId())
                 .set(Receipt::getVoidStatus, 1));
+
+        eventPublisher.publishEvent(new DomainEvent.PaymentReversed(
+                origin.getId(), bill.getId(), bill.getContractId(), LocalDateTime.now()));
 
         return reversal;
     }

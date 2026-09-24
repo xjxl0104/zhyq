@@ -55,6 +55,7 @@ public class ContractController {
     private final ContractMapper contractMapper;
     private final ContractRoomMapper contractRoomMapper;
     private final ContractService contractService;
+    private final com.zhyq.park.workflow.service.WorkflowAccessService workflowAccess;
     private final ContractImportService contractImportService;
     private final ContractArchiveExportService contractArchiveExportService;
     private final ContractExpiryAlertService contractExpiryAlertService;
@@ -194,9 +195,11 @@ public class ContractController {
     @PreAuthorize("hasAuthority('contract:add')")
     @PostMapping
     public Result<Long> add(@RequestBody Contract contract) {
-        if (contract.getStatus() == null) {
-            contract.setStatus(1); // 默认草稿
-        }
+        if (contract.getStatus() != null && contract.getStatus() != 1)
+            throw new BizException("新增合同必须先保存草稿，再提交审批");
+        contract.setId(null);
+        contract.setStatus(1);
+        contract.setTerminateDate(null);
         // 编号留空时按合同设置的前缀自动生成,不让用户对着空框猜格式
         if (!org.springframework.util.StringUtils.hasText(contract.getCode())) {
             contract.setCode(nextContractCode());
@@ -221,7 +224,7 @@ public class ContractController {
     @PreAuthorize("hasAuthority('contract:edit')")
     @PutMapping
     public Result<Void> update(@RequestBody Contract contract) {
-        contractMapper.updateById(contract);
+        contractService.updateDraft(contract);
         return Result.ok();
     }
 
@@ -229,7 +232,9 @@ public class ContractController {
     @PreAuthorize("hasAuthority('contract:delete')")
     @DeleteMapping("/{id}")
     public Result<Void> delete(@PathVariable Long id) {
-        contractMapper.deleteById(id);
+        int changed = contractMapper.delete(new LambdaQueryWrapper<Contract>()
+                .eq(Contract::getId, id).eq(Contract::getStatus, 1));
+        if (changed != 1) throw new BizException("仅草稿合同可删除，其他合同请按终止或归档流程处理");
         return Result.ok();
     }
 
@@ -315,7 +320,9 @@ public class ContractController {
     @Operation(summary = "审批通过(待审核→执行中,生成账单计划)")
     @PreAuthorize("hasAuthority('contract:approve')")
     @PostMapping("/{id}/approve")
+    @Transactional(rollbackFor = Exception.class)
     public Result<Void> approve(@PathVariable Long id) {
+        workflowAccess.requireDirectApproval("contract", id);
         contractService.approve(id);
         return Result.ok();
     }
@@ -332,6 +339,10 @@ public class ContractController {
     @PreAuthorize("hasAuthority('contract:archive')")
     @PostMapping("/{id}/archive")
     public Result<Void> archive(@PathVariable Long id) {
+        Contract c = contractMapper.selectById(id);
+        if (c != null && Integer.valueOf(8).equals(c.getStatus()) && contractRoomMapper.selectCount(
+                new LambdaQueryWrapper<ContractRoom>().eq(ContractRoom::getContractId, id)) > 0)
+            throw new BizException("合同仍有关联房源，请先办理退租释放房源后归档");
         int updated = contractMapper.update(null, new LambdaUpdateWrapper<Contract>()
                 .eq(Contract::getId, id)
                 .in(Contract::getStatus, 8, 9)

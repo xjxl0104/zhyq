@@ -55,7 +55,10 @@ describe('Layout navigation chrome', () => {
   beforeEach(() => {
     projectStore.init.mockClear()
   })
-  afterEach(() => vi.unstubAllGlobals())
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    vi.unstubAllEnvs()
+  })
 
   it('renders the outlined stroke brand with the shortened title', () => {
     const wrapper = mountLayout()
@@ -65,7 +68,7 @@ describe('Layout navigation chrome', () => {
     expect(brand.findAll('[data-stroke-char]')).toHaveLength(4)
     expect(brand.find('[data-fill-text]').text()).toBe('智慧系统')
     expect(wrapper.find('.depth-brand').exists()).toBe(false)
-    expect(wrapper.get('.brand-zone .brand-logo').attributes('alt')).toBe('DIPAR')
+    expect(wrapper.get('.brand-zone .brand-logo').attributes('alt')).toBe('DIPARK')
     wrapper.unmount()
   })
 
@@ -80,6 +83,29 @@ describe('Layout navigation chrome', () => {
     expect(wrapper.find('.switcher-zone .project-switcher-stub').exists()).toBe(true)
     expect(wrapper.find('.user-zone .user').exists()).toBe(true)
     expect(wrapper.find('.screen-btn').exists()).toBe(false)
+  })
+
+  it('shows the built commit beside the account and exposes its complete SHA', () => {
+    const commit = '817f566627148fba797d1fb31fa7d8edb40cefc8'
+    vi.stubEnv('VITE_GIT_SHA', commit)
+    const wrapper = mountLayout()
+
+    const version = wrapper.get('.user-zone .build-version')
+    expect(version.text()).toBe('817f566')
+    expect(version.attributes('title')).toBe(`构建提交 ${commit}`)
+    expect(version.attributes('aria-label')).toBe(`构建提交 ${commit}`)
+    expect(wrapper.get('.user-zone .user').find('.build-version').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it.each(['', 'ver4.3', '817f566'])('does not present an invalid build value %s as a release', (value) => {
+    vi.stubEnv('VITE_GIT_SHA', value)
+    const wrapper = mountLayout()
+
+    const version = wrapper.get('.user-zone .build-version')
+    expect(version.text()).toBe('未标记')
+    expect(version.attributes('title')).toBe('构建时未提供有效的提交号')
+    wrapper.unmount()
   })
 
   it('announces the current page title to assistive tech', () => {
