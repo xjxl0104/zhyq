@@ -171,9 +171,13 @@
           </el-col>
           <el-col :span="12">
             <el-form-item label="租客" prop="tenantRefId">
-              <el-select v-model="form.tenantRefId" placeholder="选择租客" filterable style="width: 100%">
-                <el-option v-for="t in tenants" :key="t.id" :label="t.name" :value="t.id" />
-              </el-select>
+              <div class="tenant-picker">
+                <el-select v-model="form.tenantRefId" placeholder="选择租客" filterable
+                           style="flex: 1; min-width: 0" @visible-change="onTenantDropdownVisible">
+                  <el-option v-for="t in tenants" :key="t.id" :label="t.name" :value="t.id" />
+                </el-select>
+                <el-button aria-label="刷新租客列表" @click="refreshTenants"><el-icon><Refresh /></el-icon>刷新</el-button>
+              </div>
             </el-form-item>
           </el-col>
           <el-col :span="12">
@@ -314,12 +318,25 @@ const tenants = ref([])
 const projects = ref([])
 const tenantName = (id) => tenants.value.find(t => t.id === id)?.name ?? (id ?? '-')
 const projectName = (id) => projects.value.find(p => p.id === id)?.name ?? (id ?? '-')
+async function loadTenants() {
+  tenants.value = await tenantApi.list() || []
+}
 async function loadRefs() {
   try {
     const [t, p] = await Promise.all([tenantApi.list(), projectApi.list()])
     tenants.value = t || []
     projects.value = p || []
   } catch (e) { /* 下拉数据失败不阻塞列表 */ }
+}
+async function onTenantDropdownVisible(visible) {
+  if (!visible) return
+  try { await loadTenants() } catch (e) { /* 请求拦截器已提示 */ }
+}
+async function refreshTenants() {
+  try {
+    await loadTenants()
+    ElMessage.success('租客列表已刷新')
+  } catch (e) { /* 请求拦截器已提示 */ }
 }
 
 const statusOptions = [
@@ -488,6 +505,7 @@ const settingDefaults = reactive({ termYears: null, depositMonths: null })
 
 async function openDialog(row) {
   if (row && row.status !== 1) return ElMessage.warning('仅草稿合同可编辑，已提交合同请使用对应业务流程')
+  try { await loadTenants() } catch (e) { /* 请求拦截器已提示 */ }
   dialog.visible = true
   dialog.title = row ? '编辑合同' : '新增合同'
   attachFiles.value = []
@@ -574,4 +592,5 @@ onMounted(() => { loadRefs(); load() })
 .pager { margin-top: 16px; justify-content: flex-end; }
 .import-upload { margin-top: 20px; }
 .import-upload :deep(.el-upload), .import-upload :deep(.el-upload-dragger) { width: 100%; }
+.tenant-picker { display: flex; gap: 8px; width: 100%; }
 </style>
