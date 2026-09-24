@@ -117,7 +117,7 @@ public class MktCustomerController {
         Customer c = customerMapper.selectForUpdate(id);
         if (c == null) throw new BizException("客户不存在");
         MktPromoter p = promoterMapper.selectOne(new LambdaQueryWrapper<MktPromoter>()
-                .eq(MktPromoter::getInviteCode, String.valueOf(body.get("inviteCode")).trim().toUpperCase()).last("limit 1"));
+                .eq(MktPromoter::getInviteCode, String.valueOf(body.get("inviteCode")).trim().toUpperCase()).last("limit 1 FOR UPDATE"));
         if (p == null) throw new BizException("邀请码不存在");
         // 推荐人必须是正常在册伙伴:冻结/待审核/已退出的人挂上去,后续计佣会落到不可用主体
         if (!Integer.valueOf(MktPromoterService.ST_NORMAL).equals(p.getStatus())) {

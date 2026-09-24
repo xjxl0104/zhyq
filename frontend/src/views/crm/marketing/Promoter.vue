@@ -46,7 +46,7 @@
         </el-table-column>
         <el-table-column prop="source" label="来源" width="80" />
         <el-table-column prop="createTime" label="注册时间" width="160" />
-        <el-table-column label="操作" width="340" fixed="right">
+        <el-table-column label="操作" :width="canDelete ? 390 : 340" :fixed="isMobile ? false : 'right'">
           <template #default="{ row }">
             <el-button link type="primary" @click="openDetail(row)">详情</el-button>
             <el-button v-if="canReviewAccount" link type="primary" @click="openAccount(row)">收款资料</el-button>
@@ -55,6 +55,7 @@
             <el-button v-if="row.status === 1" link type="warning" @click="freeze(row)">冻结</el-button>
             <el-button v-else-if="row.status === 2" link type="success" @click="unfreeze(row)">解冻</el-button>
             <el-button v-else-if="row.status === 3" link type="success" @click="audit(row, true)">审核通过</el-button>
+            <el-button v-if="canDelete" link type="danger" :disabled="removal.busy" @click="openDelete(row)">删除</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -62,6 +63,23 @@
                      :total="total" v-model:current-page="query.pageNo"
                      v-model:page-size="query.pageSize" :page-sizes="[10,20,50]" @change="load" />
     </div>
+
+    <el-dialog v-model="removal.visible" title="删除伙伴" width="min(92vw, 480px)"
+               :close-on-click-modal="false" :close-on-press-escape="!removal.busy" :show-close="!removal.busy">
+      <p class="delete-target">确认删除伙伴「{{ removal.row?.name || '未填写姓名' }}」<span v-if="removal.row?.phone">（{{ maskPhone(removal.row.phone) }}）</span>？</p>
+      <p class="delete-note">删除后该伙伴将从列表移除，原账号退出登录，操作记录保留。有下级、客户或财务业务关联的伙伴无法删除，可使用冻结功能。</p>
+      <el-form label-position="top" @submit.prevent="submitDelete">
+        <el-form-item label="删除原因" required>
+          <el-input v-model="removal.reason" type="textarea" :rows="3" maxlength="500" show-word-limit
+                    :disabled="removal.busy" placeholder="例如：重复录入、测试账号清理" aria-label="删除原因" />
+        </el-form-item>
+      </el-form>
+      <el-alert v-if="removal.error" :title="removal.error" type="error" :closable="false" show-icon />
+      <template #footer>
+        <el-button :disabled="removal.busy" @click="removal.visible = false">取消</el-button>
+        <el-button type="danger" :loading="removal.busy" :disabled="!removal.reason.trim()" @click="submitDelete">确认删除</el-button>
+      </template>
+    </el-dialog>
 
     <!-- 录入伙伴 -->
     <el-dialog v-model="manual.visible" title="录入伙伴" width="520px">
@@ -184,8 +202,10 @@ import { mktPromoterApi, mktPositionApi } from '@/api/marketing'
 import { money } from '@/utils/format'
 import { hasPermission } from '@/utils/permission'
 import { useProjectStore } from '@/stores/project'
+import { useResponsive } from '@/composables/useResponsive'
 
 const projectStore = useProjectStore()
+const { isMobile } = useResponsive()
 const projectLabel = id => id == null ? '待分配园区' : (projectStore.projects.find(p => String(p.id) === String(id))?.name || `园区 #${id}`)
 
 const statusOptions = [
@@ -197,6 +217,32 @@ const commissionStatus = (v) => ({ 1: '冻结', 2: '可结算', 3: '已结算', 
 const maskPhone = (p) => (p && p.length === 11 ? p.slice(0, 3) + '****' + p.slice(7) : p || '-')
 
 const canReviewAccount = computed(() => hasPermission('crm:marketing:account:audit'))
+const canDelete = computed(() => hasPermission('ROLE_admin'))
+const removal = reactive({ visible: false, row: null, reason: '', busy: false, error: '' })
+function openDelete(row) {
+  if (!hasPermission('ROLE_admin') || removal.busy) return
+  Object.assign(removal, { visible: true, row: { id: row.id, name: row.name, phone: row.phone }, reason: '', error: '' })
+}
+async function submitDelete() {
+  if (!hasPermission('ROLE_admin') || !removal.visible || !removal.row || removal.busy) return
+  const reason = removal.reason.trim()
+  if (!reason) { removal.error = '请填写删除原因'; return }
+  if (reason.length > 500) { removal.error = '删除原因不能超过 500 字'; return }
+  const id = removal.row.id
+  removal.busy = true
+  removal.error = ''
+  try {
+    await mktPromoterApi.remove(id, { reason })
+    removal.visible = false
+    if (detail.row?.id === id) detail.visible = false
+    if (accountReview.id === id) accountReview.visible = false
+    if (list.value.length === 1 && query.pageNo > 1) query.pageNo -= 1
+    ElMessage.success('伙伴已删除')
+    await load()
+  } catch (error) {
+    if (removal.visible) removal.error = error?.message || '删除失败，请稍后重试'
+  } finally { removal.busy = false }
+}
 const accountReview = reactive({ visible:false, id:null, data:null, reason:'', busy:false })
 async function openAccount(row) {
   const data = await mktPromoterApi.account(row.id)
@@ -293,6 +339,8 @@ onMounted(async () => {
 </script>
 
 <style scoped>
+.delete-target { margin: 0 0 12px; overflow-wrap: anywhere; color: var(--el-text-color-primary); }
+.delete-note { margin: 0 0 20px; line-height: 1.7; color: var(--el-text-color-regular); }
 .project-note { color: var(--el-text-color-secondary); font-size: 12px; line-height: 1.5; margin-top: 4px; overflow-wrap: anywhere; }
 .toolbar { display: flex; align-items: center; gap: 12px; }
 .hint { color: var(--el-text-color-secondary); font-size: 12px; }

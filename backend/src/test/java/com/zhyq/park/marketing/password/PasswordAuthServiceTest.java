@@ -173,7 +173,7 @@ class PasswordAuthServiceTest {
 
     @Test void existingWechatIdentityCanSetPasswordWithoutCreatingNewProfile() {
         authenticate("mp:31", "ROLE_MP");
-        when(promoters.selectById(31L)).thenReturn(activePromoter());
+        when(promoters.selectForUpdate(31L)).thenReturn(activePromoter());
         service.setup(MP, new PasswordAuthService.SetupRequest("demo_user", "Passw0rd123", null), "ip");
         ArgumentCaptor<MktCredential> saved = ArgumentCaptor.forClass(MktCredential.class);
         verify(credentials).insert(saved.capture());
@@ -184,7 +184,7 @@ class PasswordAuthServiceTest {
 
     @Test void credentialChangesRequireCurrentPassword() {
         authenticate("mp:31", "ROLE_MP");
-        when(promoters.selectById(31L)).thenReturn(activePromoter());
+        when(promoters.selectForUpdate(31L)).thenReturn(activePromoter());
         when(credentials.selectOne(any())).thenReturn(credential());
         assertThatThrownBy(() -> service.setup(MP, new PasswordAuthService.SetupRequest("demo_user", "NewPass123", null), "ip"))
                 .hasMessageContaining("请填写当前密码");
@@ -195,7 +195,7 @@ class PasswordAuthServiceTest {
 
     @Test void credentialChangeUsesAtomicPasswordComparisonAndHandlesConflict() {
         authenticate("mp:31", "ROLE_MP");
-        when(promoters.selectById(31L)).thenReturn(activePromoter());
+        when(promoters.selectForUpdate(31L)).thenReturn(activePromoter());
         MktCredential credential = credential();
         when(credentials.selectOne(any())).thenReturn(credential);
         when(credentials.update(isNull(), any())).thenReturn(0);
@@ -205,7 +205,7 @@ class PasswordAuthServiceTest {
 
     @Test void currentPasswordAllowsChangingUsernameAndPasswordForSameIdentity() {
         authenticate("mp:31", "ROLE_MP");
-        when(promoters.selectById(31L)).thenReturn(activePromoter());
+        when(promoters.selectForUpdate(31L)).thenReturn(activePromoter());
         MktCredential credential = credential();
         when(credentials.selectOne(any())).thenReturn(credential, null);
         when(credentials.update(isNull(), any())).thenAnswer(invocation -> {
@@ -225,7 +225,7 @@ class PasswordAuthServiceTest {
 
     @Test void credentialUniquenessRaceReturnsUsefulConflictInsteadOfSqlDetails() {
         authenticate("mp:31", "ROLE_MP");
-        when(promoters.selectById(31L)).thenReturn(activePromoter());
+        when(promoters.selectForUpdate(31L)).thenReturn(activePromoter());
         when(credentials.insert(any(MktCredential.class))).thenThrow(new DuplicateKeyException("secret-sql"));
         assertThatThrownBy(() -> service.setup(MP, new PasswordAuthService.SetupRequest("demo_user", "Passw0rd123", null), "ip"))
                 .hasMessageContaining("已注册").hasMessageNotContaining("secret-sql");
@@ -236,6 +236,14 @@ class PasswordAuthServiceTest {
         assertThat(mapper.writeValueAsString(credential())).doesNotContain("passwordHash", "registrationPhone", "$2");
         assertThat(mapper.writeValueAsString(new PasswordAuthService.SetupRequest("demo_user", "Secret123", "OldSecret123")))
                 .doesNotContain("Secret123", "password", "currentPassword");
+    }
+
+    @Test void partnerDeletedAfterAuthenticationCannotCreateNewLoginCredential() {
+        authenticate("mp:31", "ROLE_MP");
+        when(promoters.selectForUpdate(31L)).thenReturn(null);
+        assertThatThrownBy(() -> service.setup(MP, new PasswordAuthService.SetupRequest("demo_user", "Passw0rd123", null), "ip"))
+                .hasMessageContaining("账号不存在");
+        verifyNoInteractions(credentials, auditService);
     }
 
     private MktCredential credential() {

@@ -106,10 +106,10 @@
         <el-table-column label="租赁单价" width="110">
           <template #default="{ row }">{{ row.rentPrice }} 元/㎡</template>
         </el-table-column>
-        <el-table-column label="面积" width="100">
+        <el-table-column prop="rentArea" label="面积" width="100">
           <template #default="{ row }">{{ row.rentArea }} ㎡</template>
         </el-table-column>
-        <el-table-column label="保证金" width="110">
+        <el-table-column prop="deposit" label="保证金" width="110">
           <template #default="{ row }">{{ money(row.deposit) }} 元</template>
         </el-table-column>
         <el-table-column label="状态" width="100">
@@ -138,9 +138,9 @@
         </el-table-column>
       </el-table>
       <div v-if="isMobile" class="mobile-page-summary" aria-live="polite">
-        <strong>{{ mobilePageSummary[0] }}</strong>
-        <span>面积 {{ mobilePageSummary[6] }}</span>
-        <span>保证金 {{ mobilePageSummary[7] }}</span>
+        <strong>{{ pageTotals.label }}</strong>
+        <span>面积 {{ pageTotals.rentArea }}</span>
+        <span>保证金 {{ pageTotals.deposit }}</span>
       </div>
       <el-pagination class="pager" background layout="total, prev, pager, next, sizes"
                      :total="total" v-model:current-page="query.pageNo"
@@ -356,21 +356,26 @@ const query = reactive({ pageNo: 1, pageSize: 10, code: '', tenantRefId: null, s
 
 /**
  * 本页合计 —— 列表是分页的,只能合计当前页已加载的行,故标「本页合计」而非「合计」,
- * 避免被当成全量总数去对账。列序:序号0/编号1/租客2/园区3/类型4/起止5/单价6/面积7/保证金8/状态9/操作10。
+ * 避免被当成全量总数去对账。手机和桌面共用汇总值，桌面按字段匹配列，避免增减列后错位。
  * 租赁单价是费率不是金额,合计无意义,留空。
  */
-function pageSummary({ columns }) {
+const pageTotals = computed(() => {
   const sum = (f) => list.value.reduce((acc, r) => acc + Number(r[f] || 0), 0)
-  return columns.map((col, i) => {
-    if (i === 0) return `本页合计 · ${list.value.length} 份`
-    if (i === 7) return money(sum('rentArea')) + ' ㎡'
-    if (i === 8) return money(sum('deposit')) + ' 元'
+  return {
+    label: `本页合计 · ${list.value.length} 份`,
+    rentArea: money(sum('rentArea')) + ' ㎡',
+    deposit: money(sum('deposit')) + ' 元'
+  }
+})
+
+function pageSummary({ columns }) {
+  return columns.map((col) => {
+    if (col.type === 'index') return pageTotals.value.label
+    if (col.property === 'rentArea') return pageTotals.value.rentArea
+    if (col.property === 'deposit') return pageTotals.value.deposit
     return ''
   })
 }
-
-// 手机汇总复用桌面的本页合计口径；列位置与上方 pageSummary 的约定一致。
-const mobilePageSummary = computed(() => pageSummary({ columns: Array(11).fill(null) }))
 
 function onTypeTab(name) {
   query.pageNo = 1

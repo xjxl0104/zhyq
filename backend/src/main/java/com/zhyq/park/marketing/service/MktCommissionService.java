@@ -109,7 +109,7 @@ public class MktCommissionService {
             log.info("[mkt] 计佣事件已存在,跳过: type={} no={}", ev.sourceType(), ev.sourceNo());
             return existing;
         }
-        MktPromoter seller = promoterMapper.selectById(ev.sellerPromoterId());
+        MktPromoter seller = promoterMapper.selectForUpdate(ev.sellerPromoterId());
         if (seller == null) {
             throw new BizException("成交伙伴不存在: " + ev.sellerPromoterId());
         }

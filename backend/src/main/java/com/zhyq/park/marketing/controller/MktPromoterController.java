@@ -41,6 +41,7 @@ public class MktPromoterController {
     private final com.zhyq.park.marketing.service.MktPromoterAccountService accountService;
     private final MktPromoterMapper promoterMapper;
     private final MktPromoterService promoterService;
+    private final com.zhyq.park.marketing.service.MktPromoterDeletionService deletionService;
     private final MktPositionReviewService reviewService;
     private final MktPositionHistoryMapper historyMapper;
     private final MktPromoterCommissionMapper commissionMapper;
@@ -75,6 +76,16 @@ public class MktPromoterController {
         MktPromoter p = promoterMapper.selectById(id);
         if (p == null) throw new BizException("伙伴不存在");
         return Result.ok(PromoterVO.of(p));
+    }
+
+    public record DeleteRequest(String reason) {}
+
+    @Operation(summary = "管理员删除无业务关联的伙伴")
+    @PreAuthorize("hasRole('admin')")
+    @DeleteMapping("/{id}")
+    public Result<Void> delete(@PathVariable Long id, @RequestBody DeleteRequest body) {
+        deletionService.delete(id, body == null ? null : body.reason());
+        return Result.ok();
     }
 
     @GetMapping("/{id}/account")

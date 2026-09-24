@@ -150,7 +150,8 @@ public class PasswordAuthService {
     @Transactional
     public void setup(Identity identity, SetupRequest request, String remoteAddress) {
         Long identityId = currentIdentityId(identity);
-        requireActiveIdentity(identity, identityId);
+        if (identity == Identity.MP) JwtAccountService.assertPromoterActive(promoters.selectForUpdate(identityId));
+        else requireActiveIdentity(identity, identityId);
         limiter.check("setup:ip:" + remoteAddress, 30);
         String attemptKey = "setup:" + identity.code + ":" + identityId;
         limiter.check(attemptKey, 10);

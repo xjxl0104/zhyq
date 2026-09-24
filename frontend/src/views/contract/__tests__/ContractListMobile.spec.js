@@ -22,6 +22,7 @@ function mountPage() {
     global: {
       stubs: {
         MobileRecordList: false, FileUpload: true,
+        ElTable: { name: 'ElTable', props: { showSummary: Boolean, summaryMethod: Function }, template: '<div><slot /></div>' },
         ElPopconfirm: { template: '<div><slot name="reference" /></div>' },
         Search: true, Plus: true
       }
@@ -85,14 +86,27 @@ describe('合同手机版保留主线台账能力', () => {
     expect(push).toHaveBeenCalledWith({path:'/oa/approval',query:{bizType:'contract',bizId:'17'}})
   })
 
-  it('桌面仍使用带本页合计的原表格', async () => {
+  it('桌面按字段对应本页合计，新增或调整列后仍保持金额归位', async () => {
     mobile = false
     const wrapper = mountPage()
     await flushPromises()
     expect(wrapper.find('.mobile-record-list').exists()).toBe(false)
     const table = wrapper.findComponent({ name: 'ElTable' })
     expect(table.props('showSummary')).toBe(true)
-    expect(table.props('summaryMethod')({ columns: Array(10).fill({}) }))
-      .toEqual(['本页合计 · 2 份', '', '', '', '', '', '300.75 ㎡', '13,346.10 元', '', ''])
+    const columns = wrapper.findAllComponents({ name: 'ElTableColumn' }).map(column => ({
+      type: column.props('type'), property: column.props('prop'), label: column.props('label')
+    }))
+    expect(columns.some(column => column.label === '合同类型')).toBe(true)
+    const summaryMethod = table.props('summaryMethod')
+    const summary = summaryMethod({ columns })
+    const summaries = Object.fromEntries(columns.map((column, index) => [column.label, summary[index]]))
+    expect(summaries).toMatchObject({
+      序号: '本页合计 · 2 份', 面积: '300.75 ㎡', 保证金: '13,346.10 元', 合同类型: '', 租赁单价: ''
+    })
+    const reorderedColumns = [
+      { property: 'futureColumn' }, { property: 'deposit' }, { type: 'index' }, { property: 'rentArea' }
+    ]
+    expect(summaryMethod({ columns: reorderedColumns }))
+      .toEqual(['', '13,346.10 元', '本页合计 · 2 份', '300.75 ㎡'])
   })
 })

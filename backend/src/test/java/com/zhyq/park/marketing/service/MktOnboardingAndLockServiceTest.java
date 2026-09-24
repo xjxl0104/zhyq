@@ -202,7 +202,7 @@ class MktOnboardingAndLockServiceTest {
 
         @Test
         void prelockCreatesRowWithPrelockDeadline() {
-            when(promoterMapper.selectById(9L)).thenReturn(normalPromoter());
+            when(promoterMapper.selectForUpdate(9L)).thenReturn(normalPromoter());
             capOf(50, 0L);
             when(bizSettings.getInt(eq("marketing"), eq("prelock_days"), anyInt())).thenReturn(7);
             when(bizSettings.getInt(eq("marketing"), eq("lock_cooldown_days"), anyInt())).thenReturn(30);
@@ -218,20 +218,20 @@ class MktOnboardingAndLockServiceTest {
         @Test
         void prelockRejectsFrozenPromoter() {
             MktPromoter p = normalPromoter(); p.setStatus(2);
-            when(promoterMapper.selectById(9L)).thenReturn(p);
+            when(promoterMapper.selectForUpdate(9L)).thenReturn(p);
             assertThatThrownBy(() -> service.prelock(5L, 9L)).isInstanceOf(BizException.class);
         }
 
         @Test
         void prelockRejectsWhenCapReached() {
-            when(promoterMapper.selectById(9L)).thenReturn(normalPromoter());
+            when(promoterMapper.selectForUpdate(9L)).thenReturn(normalPromoter());
             capOf(50, 50L);
             assertThatThrownBy(() -> service.prelock(5L, 9L)).isInstanceOf(BizException.class).hasMessageContaining("上限");
         }
 
         @Test
         void prelockTranslatesDuplicateKeyIntoAlreadyReported() {
-            when(promoterMapper.selectById(9L)).thenReturn(normalPromoter());
+            when(promoterMapper.selectForUpdate(9L)).thenReturn(normalPromoter());
             capOf(50, 0L);
             when(bizSettings.getInt(eq("marketing"), eq("prelock_days"), anyInt())).thenReturn(7);
             when(bizSettings.getInt(eq("marketing"), eq("lock_cooldown_days"), anyInt())).thenReturn(30);

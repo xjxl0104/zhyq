@@ -76,7 +76,8 @@ public class MpBizController {
     @Transactional
     public Result<Map<String, Object>> referral(@RequestBody Map<String, Object> body) {
         Long pid = MpAuthService.currentPromoterId();
-        MktPromoter me = promoterMapper.selectById(pid);
+        MktPromoter me = promoterMapper.selectForUpdate(pid);
+        if (me == null || !Integer.valueOf(1).equals(me.getStatus())) throw new BizException("伙伴不存在或状态异常，不能推荐客户");
         String phone = str(body, "phone");
         String name = str(body, "name");
         if (!StringUtils.hasText(name) || phone == null || !phone.matches("^1\\d{10}$")) throw new BizException("客户名称与 11 位手机号必填");

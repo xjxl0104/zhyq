@@ -32,6 +32,7 @@ export const mktPromoterApi = {
   parent: (id, data) => request.post(`${BASE}/promoter/${id}/parent`, data),
   freeze: (id, data) => request.post(`${BASE}/promoter/${id}/freeze`, data),
   unfreeze: (id) => request.post(`${BASE}/promoter/${id}/unfreeze`),
+  remove: (id, data) => request.delete(`${BASE}/promoter/${id}`, { data }),
   resetInvite: (id) => request.post(`${BASE}/promoter/${id}/reset-invite`)
 }
 
