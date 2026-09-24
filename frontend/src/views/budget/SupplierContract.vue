@@ -121,9 +121,13 @@
           <el-input v-model="form.code" disabled />
         </el-form-item>
         <el-form-item label="供应商" prop="supplierId">
-          <el-select v-model="form.supplierId" placeholder="请选择供应商" filterable style="width: 100%">
-            <el-option v-for="s in suppliers" :key="s.id" :label="s.name" :value="s.id" />
-          </el-select>
+          <div class="supplier-picker">
+            <el-select v-model="form.supplierId" placeholder="请选择供应商" filterable style="flex: 1; min-width: 0">
+              <el-option v-for="s in suppliers" :key="s.id" :label="s.name" :value="s.id" />
+            </el-select>
+            <el-button :aria-label="'刷新供应商列表'" @click="refreshSuppliers"><el-icon><Refresh /></el-icon>刷新</el-button>
+            <el-button type="primary" plain @click="openSupplierDialog"><el-icon><Plus /></el-icon>新增供应商</el-button>
+          </div>
         </el-form-item>
         <el-form-item label="合同名称" prop="name">
           <el-input v-model="form.name" placeholder="如:2026年度保洁服务合同" />
@@ -170,6 +174,24 @@
       <template #footer>
         <el-button @click="dialog.visible = false">取消</el-button>
         <el-button type="primary" @click="submit">确定</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="supplierDialog.visible" title="新增供应商" width="520px" append-to-body>
+      <el-alert type="info" :closable="false" show-icon style="margin-bottom: 16px">
+        保存后会自动带回当前合同并选中该供应商。
+      </el-alert>
+      <el-form ref="supplierFormRef" :model="newSupplierForm" :rules="supplierRules" label-width="100px">
+        <el-form-item label="供应商名称" prop="name">
+          <el-input v-model="newSupplierForm.name" placeholder="请输入供应商名称" />
+        </el-form-item>
+        <el-form-item label="联系人"><el-input v-model="newSupplierForm.contact" /></el-form-item>
+        <el-form-item label="联系电话"><el-input v-model="newSupplierForm.phone" /></el-form-item>
+        <el-form-item label="备注"><el-input v-model="newSupplierForm.remark" type="textarea" :rows="2" /></el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="supplierDialog.visible = false">取消</el-button>
+        <el-button type="primary" :loading="supplierDialog.loading" @click="createSupplier">保存并带回</el-button>
       </template>
     </el-dialog>
 
@@ -295,6 +317,7 @@ function reset() {
 }
 
 const formRef = ref()
+const supplierFormRef = ref()
 const photoInput = ref()
 const importFile = ref(null)
 const documentFile = ref(null)
@@ -309,6 +332,31 @@ const attachFiles = ref([])
 const rules = {
   supplierId: [{ required: true, message: '请选择供应商', trigger: 'change' }],
   name: [{ required: true, message: '请输入合同名称', trigger: 'blur' }]
+}
+const supplierDialog = reactive({ visible: false, loading: false })
+const newSupplierForm = reactive({ name: '', contact: '', phone: '', remark: '' })
+const supplierRules = { name: [{ required: true, message: '请输入供应商名称', trigger: 'blur' }] }
+
+async function refreshSuppliers() {
+  await loadSuppliers()
+  ElMessage.success('供应商列表已刷新')
+}
+function openSupplierDialog() {
+  Object.assign(newSupplierForm, { name: '', contact: '', phone: '', remark: '' })
+  supplierDialog.visible = true
+}
+async function createSupplier() {
+  await supplierFormRef.value.validate()
+  supplierDialog.loading = true
+  try {
+    const supplierId = await supplierApi.add({ ...newSupplierForm })
+    await loadSuppliers()
+    form.supplierId = supplierId
+    supplierDialog.visible = false
+    ElMessage.success('供应商已新增并带入当前合同')
+  } finally {
+    supplierDialog.loading = false
+  }
 }
 
 function onImportFile(uploadFile) { importFile.value = uploadFile.raw }
@@ -435,4 +483,5 @@ onMounted(() => {
 .pager { margin-top: 16px; justify-content: flex-end; }
 .import-upload { margin-top: 20px; }
 .import-upload :deep(.el-upload), .import-upload :deep(.el-upload-dragger) { width: 100%; }
+.supplier-picker { display: flex; gap: 8px; width: 100%; }
 </style>
