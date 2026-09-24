@@ -22,6 +22,7 @@ import com.zhyq.park.marketing.mapper.MktWarehouseMapper;
 import com.zhyq.park.marketing.mapper.MktWithdrawalMapper;
 import com.zhyq.park.marketing.service.MktAuditService;
 import com.zhyq.park.marketing.service.MktCustomerAssignmentService;
+import com.zhyq.park.marketing.service.MktCustomerDeletionService;
 import com.zhyq.park.marketing.service.MktCommissionService;
 import com.zhyq.park.marketing.service.MktLockService;
 import com.zhyq.park.marketing.service.MktWarehouseOnboardingService;
@@ -68,6 +69,7 @@ public class MpBizController {
     private final BizSettings bizSettings;
     private final MktAuditService auditService;
     private final MktCustomerAssignmentService assignmentService;
+    private final MktCustomerDeletionService deletionService;
 
     // ---------------- 推荐 / 报备(§2.2 + §2.2a) ----------------
 
@@ -76,14 +78,14 @@ public class MpBizController {
     @Transactional
     public Result<Map<String, Object>> referral(@RequestBody Map<String, Object> body) {
         Long pid = MpAuthService.currentPromoterId();
-        MktPromoter me = promoterMapper.selectById(pid);
+        MktPromoter me = promoterMapper.selectForUpdate(pid);
+        if (me == null || !Integer.valueOf(1).equals(me.getStatus())) throw new BizException("伙伴不存在或状态异常，不能推荐客户");
         String phone = str(body, "phone");
         String name = str(body, "name");
         if (!StringUtils.hasText(name) || phone == null || !phone.matches("^1\\d{10}$")) throw new BizException("客户名称与 11 位手机号必填");
         if (phone.equals(me.getPhone())) throw new BizException("不能自我推荐");
         int cap = bizSettings.getInt(MODULE, "daily_referral_cap", 20);
-        long today = customerMapper.selectCount(new LambdaQueryWrapper<Customer>()
-                .eq(Customer::getReferrerId, pid).ge(Customer::getCreateTime, LocalDate.now().atStartOfDay()));
+        long today = customerMapper.countReferralsSince(pid, LocalDate.now().atStartOfDay());
         if (today >= cap) throw new BizException("今日推荐已达上限 " + cap + " 个");
         if (customerMapper.selectCount(new LambdaQueryWrapper<Customer>().eq(Customer::getPhone, phone)) > 0) {
             throw new BizException("该客户已在系统中(已被推荐)");
@@ -142,6 +144,13 @@ public class MpBizController {
         Customer c = customerMapper.selectById(id);
         if (c == null || !MpAuthService.currentPromoterId().equals(c.getReferrerId())) throw new BizException(403, "无权查看");
         return Result.ok(customerView(c));
+    }
+
+    @Operation(summary = "删除自己推荐的客户（有合同或订单不可删除）")
+    @DeleteMapping("/referral/{id}")
+    public Result<Void> deleteCustomer(@PathVariable Long id) {
+        deletionService.deleteOwnReferral(id);
+        return Result.ok();
     }
 
     @Operation(summary = "申请延期锁定(运营审核;阶段 B 直接按规则延期)")

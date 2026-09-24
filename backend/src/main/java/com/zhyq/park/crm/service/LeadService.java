@@ -33,9 +33,15 @@ public class LeadService {
     private static final String NO_PREFIX = "KH-";
 
     private final LeadMapper leadMapper;
+    private final com.zhyq.park.marketing.mapper.MktPromoterMapper promoterMapper;
 
     @Transactional(rollbackFor = Exception.class)
     public Long create(Lead lead) {
+        if (lead.getReferrerId() != null) {
+            var promoter = promoterMapper.selectForUpdate(lead.getReferrerId());
+            if (promoter == null || !Integer.valueOf(1).equals(promoter.getStatus()))
+                throw new BizException("推荐伙伴不存在或状态异常");
+        }
         lead.setId(null);
         lead.setLeadNo(nextLeadNo());
         // 跟进统计归服务端,由跟进记录回写

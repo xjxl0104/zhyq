@@ -6,15 +6,15 @@
       <view v-if="loading" class="note">正在读取账号信息…</view>
       <template v-else-if="ready">
         <view class="field-label">登录账号</view>
-        <input class="input" v-model="form.username" maxlength="32" placeholder="4–32 位字母、数字或下划线" :disabled="busy" aria-label="登录账号" />
+        <input class="input" v-model="form.username" :maxlength="-1" placeholder="请输入账号" :disabled="busy" aria-label="登录账号" />
         <template v-if="configured">
           <view class="field-label">当前密码</view>
-          <input class="input" v-model="form.currentPassword" password maxlength="64" placeholder="请输入当前密码" :disabled="busy" aria-label="当前密码" />
+          <input class="input" v-model="form.currentPassword" password :maxlength="-1" placeholder="请输入当前密码" :disabled="busy" aria-label="当前密码" />
         </template>
         <view class="field-label">新密码</view>
-        <input class="input" v-model="form.password" password maxlength="64" placeholder="8–64 位，包含字母和数字" :disabled="busy" aria-label="新密码" />
+        <input class="input" v-model="form.password" password :maxlength="-1" placeholder="请输入新密码" :disabled="busy" aria-label="新密码" />
         <view class="field-label">确认新密码</view>
-        <input class="input" v-model="confirmation" password maxlength="64" placeholder="再次输入新密码" :disabled="busy" aria-label="确认新密码" />
+        <input class="input" v-model="confirmation" password :maxlength="-1" placeholder="再次输入新密码" :disabled="busy" aria-label="确认新密码" />
       </template>
       <view v-if="error" class="error" role="alert">{{ error }}</view>
       <button v-if="ready" class="btn" :loading="busy" :disabled="busy || loading" @click="save">保存账号密码</button>
@@ -45,8 +45,8 @@ async function load() {
 async function save() {
   if (busy.value || !ready.value) return
   error.value = ''; saved.value = false
-  if (!/^[A-Za-z0-9_]{4,32}$/.test(form.username.trim())) { error.value = '账号需为 4–32 位字母、数字或下划线'; return }
-  if (form.password.length < 8 || form.password.length > 64 || !/[A-Za-z]/.test(form.password) || !/\d/.test(form.password)) { error.value = '密码需为 8–64 位，并包含字母和数字'; return }
+  if (!form.username.trim()) { error.value = '请输入账号'; return }
+  if (!form.password) { error.value = '请输入密码'; return }
   if (form.password !== confirmation.value) { error.value = '两次输入的密码不一致'; return }
   if (configured.value && !form.currentPassword) { error.value = '修改密码需要填写当前密码'; return }
   busy.value = true

@@ -1,4 +1,4 @@
-import { get, post, put } from '@/utils/request'
+import { get, post, put, request } from '@/utils/request'
 
 export const authApi = {
   wxLogin: (jsCode, appId) => post('/auth/wx-login', { jsCode, appId }),
@@ -26,6 +26,7 @@ export const bizApi = {
   referral: (data) => post('/referral', data),
   customers: (params) => get('/referral/page', params),
   customer: (id) => get(`/referral/${id}`),
+  removeCustomer: (id) => request('DELETE', `/referral/${id}`),
   extend: (id, reason) => post(`/referral/${id}/extend`, { reason }),
   warehouses: () => get('/warehouses'),
   commissions: (params) => get('/commission/page', params),

@@ -52,7 +52,7 @@ public class MktPromoterService {
         MktPromoter parent = null;
         if (StringUtils.hasText(parentInviteCode)) {
             parent = promoterMapper.selectOne(new LambdaQueryWrapper<MktPromoter>()
-                    .eq(MktPromoter::getInviteCode, parentInviteCode.trim().toUpperCase()).last("limit 1"));
+                    .eq(MktPromoter::getInviteCode, parentInviteCode.trim().toUpperCase()).last("limit 1 FOR UPDATE"));
             if (parent == null) {
                 throw new BizException("邀请码不存在: " + parentInviteCode);
             }
@@ -91,14 +91,14 @@ public class MktPromoterService {
     @Transactional
     public void changeParent(Long id, Long newParentId, String reason) {
         requireReason(reason);
-        MktPromoter me = require(id);
+        MktPromoter me = requireLocked(id);
         if (newParentId != null && newParentId.equals(id)) {
             throw new BizException("上级不能是自己");
         }
         String oldPrefix = me.getPath();
         String newParentPath = "/";
         if (newParentId != null) {
-            MktPromoter np = require(newParentId);
+            MktPromoter np = requireLocked(newParentId);
             if (np.getPath().startsWith(oldPrefix)) {
                 throw new BizException("新上级在当前伙伴的团队里,会成环");
             }
@@ -127,7 +127,7 @@ public class MktPromoterService {
     public void changeParentByInvite(Long id, String inviteCode) {
         if (!StringUtils.hasText(inviteCode)) throw new BizException("请输入邀请码");
         MktPromoter parent = promoterMapper.selectOne(new LambdaQueryWrapper<MktPromoter>()
-                .eq(MktPromoter::getInviteCode, inviteCode.trim().toUpperCase()).last("limit 1"));
+                .eq(MktPromoter::getInviteCode, inviteCode.trim().toUpperCase()).last("limit 1 FOR UPDATE"));
         if (parent == null) throw new BizException("邀请码不存在");
         changeParent(id, parent.getId(), "伙伴补填邀请码 " + parent.getInviteCode());
     }
@@ -206,6 +206,12 @@ public class MktPromoterService {
         if (p == null) {
             throw new BizException("伙伴不存在: " + id);
         }
+        return p;
+    }
+
+    private MktPromoter requireLocked(Long id) {
+        MktPromoter p = promoterMapper.selectForUpdate(id);
+        if (p == null) throw new BizException("伙伴不存在或已删除: " + id);
         return p;
     }
 

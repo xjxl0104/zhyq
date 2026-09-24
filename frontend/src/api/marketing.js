@@ -32,6 +32,7 @@ export const mktPromoterApi = {
   parent: (id, data) => request.post(`${BASE}/promoter/${id}/parent`, data),
   freeze: (id, data) => request.post(`${BASE}/promoter/${id}/freeze`, data),
   unfreeze: (id) => request.post(`${BASE}/promoter/${id}/unfreeze`),
+  remove: (id, data) => request.delete(`${BASE}/promoter/${id}`, { data }),
   resetInvite: (id) => request.post(`${BASE}/promoter/${id}/reset-invite`)
 }
 
@@ -54,6 +55,7 @@ export const mktGradeApi = {
 export const mktCustomerApi = {
   page: (params) => request.get(`${BASE}/customer/page`, { params }),
   get: (id) => request.get(`${BASE}/customer/${id}`),
+  remove: (id) => request.delete(`${BASE}/customer/${id}`),
   assignWarehouse: (id, data) => request.post(`${BASE}/customer/${id}/assign-warehouse`, data),
   progress: (id, data) => request.post(`${BASE}/customer/${id}/progress`, data),
   suggestGrade: (id) => request.get(`${BASE}/customer/${id}/suggest-grade`),

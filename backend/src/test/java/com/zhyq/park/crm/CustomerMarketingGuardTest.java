@@ -10,7 +10,7 @@ import static org.mockito.Mockito.*;
 import static org.mockito.ArgumentMatchers.*;
 class CustomerMarketingGuardTest {
     CustomerMapper customers=mock(CustomerMapper.class);
-    CustomerController controller=new CustomerController(customers,mock(LeadMapper.class),mock(MktCustomerAssignmentService.class),mock(MktLockService.class));
+    CustomerController controller=new CustomerController(customers,mock(LeadMapper.class),mock(MktCustomerAssignmentService.class),mock(MktLockService.class),mock(MktCustomerDeletionService.class));
     @Test void ordinarySignCannotFakeMarketingContractCompletion(){
         Customer c=new Customer();c.setId(1L);c.setReferrerId(9L);when(customers.selectForUpdate(1L)).thenReturn(c);
         assertThatThrownBy(()->controller.sign(1L)).isInstanceOf(BizException.class).hasMessageContaining("真实合同");

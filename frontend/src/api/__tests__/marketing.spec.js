@@ -3,7 +3,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import request from '@/utils/request'
 import { useProjectStore } from '@/stores/project'
-import { mktCommissionApi, mktOrderApi, mktContractApi, mktCustomerApi } from '../marketing'
+import { mktCommissionApi, mktOrderApi, mktContractApi, mktCustomerApi, mktPromoterApi } from '../marketing'
 
 let server
 let received
@@ -76,4 +76,12 @@ it('marketing restore and amendment send the actual business request bodies', as
   await mktContractApi.amendCancel(77, { reason: '暂缓变更' })
   expect(received.url).toBe('/api/crm/marketing/contract/77/amend-cancel')
   expect(JSON.parse(received.body)).toMatchObject({ reason: '暂缓变更' })
+})
+
+it('partner deletion sends an authenticated DELETE with its reason in the body', async () => {
+  await mktPromoterApi.remove(17, { reason: '重复录入' })
+  expect(received.method).toBe('DELETE')
+  expect(received.url).toBe('/api/crm/marketing/promoter/17')
+  expect(received.authorization).toBe('Bearer mkt-test-token')
+  expect(JSON.parse(received.body)).toMatchObject({ reason: '重复录入' })
 })

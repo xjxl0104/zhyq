@@ -292,7 +292,8 @@ class MktP1HardeningTest {
         @Test
         void rejectsFrozenPromoter() {
             MktCustomerController controller = new MktCustomerController(
-                    customerMapper, promoterMapper, gradeMapper, contractMapper, lockService, audit, assignmentService);
+                    customerMapper, promoterMapper, gradeMapper, contractMapper, lockService, audit, assignmentService,
+                    org.mockito.Mockito.mock(com.zhyq.park.marketing.service.MktCustomerDeletionService.class));
             when(customerMapper.selectForUpdate(1L)).thenReturn(customer(1L));
             when(promoterMapper.selectOne(any(Wrapper.class))).thenReturn(promoter(9L, MktPromoterService.ST_FROZEN));
 
@@ -303,7 +304,8 @@ class MktP1HardeningTest {
         @Test
         void acceptsNormalPromoter() {
             MktCustomerController controller = new MktCustomerController(
-                    customerMapper, promoterMapper, gradeMapper, contractMapper, lockService, audit, assignmentService);
+                    customerMapper, promoterMapper, gradeMapper, contractMapper, lockService, audit, assignmentService,
+                    org.mockito.Mockito.mock(com.zhyq.park.marketing.service.MktCustomerDeletionService.class));
             when(customerMapper.selectForUpdate(1L)).thenReturn(customer(1L));
             when(promoterMapper.selectOne(any(Wrapper.class))).thenReturn(promoter(9L, MktPromoterService.ST_NORMAL));
             when(lockService.activeLockOf(1L)).thenReturn(null);

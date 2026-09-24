@@ -76,7 +76,7 @@ class MktCommissionServiceTest {
     void createAndSplitWritesOrderAndOneRowPerPayee() {
         MktPromoter seller = promoter(1L, "P1");
         when(orderMapper.selectOne(any(Wrapper.class))).thenReturn(null);
-        when(promoterMapper.selectById(1L)).thenReturn(seller);
+        when(promoterMapper.selectForUpdate(1L)).thenReturn(seller);
         when(ladderResolver.chainOf(seller)).thenReturn(List.of(
                 new ChainNode(1L, "P1", 1, false), new ChainNode(2L, "P2", 1, false),
                 new ChainNode(3L, "P3", 1, false), new ChainNode(4L, "P4", 1, false)));
@@ -116,7 +116,7 @@ class MktCommissionServiceTest {
     @Test
     void unknownSellerIsRejected() {
         when(orderMapper.selectOne(any(Wrapper.class))).thenReturn(null);
-        when(promoterMapper.selectById(1L)).thenReturn(null);
+        when(promoterMapper.selectForUpdate(1L)).thenReturn(null);
 
         assertThatThrownBy(() -> service.createAndSplit(leaseEvent("1")))
                 .isInstanceOf(BizException.class);

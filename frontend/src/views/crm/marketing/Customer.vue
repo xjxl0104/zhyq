@@ -42,7 +42,7 @@
           <template #default="{ row }"><div>{{ row.assignedWarehouseName || '尚未分派' }}</div><div class="project-note">{{ ASSIGN[row.warehouseAssignmentStatus || 0] }}</div><div v-if="row.intendedWarehouseName" class="project-note">意向：{{ row.intendedWarehouseName }}</div></template>
         </el-table-column>
         <el-table-column prop="publicProgress" label="伙伴可见进度" min-width="155" show-overflow-tooltip />
-        <el-table-column label="操作" width="245" fixed="right">
+        <el-table-column label="操作" :width="canDelete ? 300 : 245" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click="openAssignment(row)">分派云仓</el-button>
             <el-button link type="primary" @click="openProgress(row)">更新进度</el-button>
@@ -51,6 +51,7 @@
               <el-button link type="primary" class="more-action">更多</el-button>
               <template #dropdown><el-dropdown-menu><el-dropdown-item command="grade">客户评级</el-dropdown-item><el-dropdown-item command="referrer">设置推荐人</el-dropdown-item><el-dropdown-item command="sign">签约方式</el-dropdown-item><el-dropdown-item v-if="canEdit && row.status === 1" command="lose" divided>标记流失</el-dropdown-item><el-dropdown-item v-if="canEdit && row.status === 3" command="restore" divided>恢复跟进</el-dropdown-item></el-dropdown-menu></template>
             </el-dropdown>
+            <el-button v-if="canDelete" link type="danger" :disabled="removal.busy" @click="openDelete(row)">删除</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -58,6 +59,16 @@
                      :total="total" v-model:current-page="query.pageNo"
                      v-model:page-size="query.pageSize" :page-sizes="[10,20,50]" @change="load" />
     </div>
+
+    <el-dialog v-model="removal.visible" title="删除推荐客户" width="min(460px, 92vw)" :close-on-click-modal="false" :close-on-press-escape="!removal.busy" :show-close="!removal.busy">
+      <p class="delete-target">确认删除客户「{{ removal.row?.name }}」？</p>
+      <p class="delete-note">删除后将从客户列表移除并释放推荐锁定，操作记录保留。已关联合同、订单或佣金的客户无法删除。</p>
+      <el-alert v-if="removal.error" :title="removal.error" type="error" :closable="false" show-icon />
+      <template #footer>
+        <el-button :disabled="removal.busy" @click="removal.visible = false">取消</el-button>
+        <el-button type="danger" :loading="removal.busy" @click="submitDelete">确认删除</el-button>
+      </template>
+    </el-dialog>
 
     <el-dialog v-model="assignment.visible" title="分派承接云仓" width="500px">
       <el-alert type="info" :closable="false" title="分派后商家需要确认承接。已有生效合同的客户不能更换承接仓。" />
@@ -139,12 +150,34 @@
 import { hasPermission } from '@/utils/permission'
 const canEdit=hasPermission('crm:marketing:customer:edit')
 
-import { reactive, ref, onMounted } from 'vue'
+import { reactive, ref, onMounted, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { mktCustomerApi, mktWarehouseApi } from '@/api/marketing'
 import { useProjectStore } from '@/stores/project'
 
 const projectStore = useProjectStore()
+const canDelete = computed(() => hasPermission('ROLE_admin'))
+const removal = reactive({ visible: false, row: null, busy: false, error: '' })
+function openDelete(row) {
+  if (!hasPermission('ROLE_admin') || removal.busy) return
+  Object.assign(removal, { visible: true, row: { id: row.id, name: row.name }, error: '' })
+}
+async function submitDelete() {
+  if (!hasPermission('ROLE_admin') || !removal.visible || !removal.row || removal.busy) return
+  const id = removal.row.id
+  removal.busy = true
+  removal.error = ''
+  try {
+    await mktCustomerApi.remove(id)
+    removal.visible = false
+    if (lock.row?.id === id) lock.visible = false
+    if (list.value.length === 1 && query.pageNo > 1) query.pageNo -= 1
+    ElMessage.success('客户已删除')
+    await load()
+  } catch (error) {
+    removal.error = error?.message || '删除失败，请稍后重试'
+  } finally { removal.busy = false }
+}
 const projectLabel = id => id == null ? '待分配园区' : (projectStore.projects.find(p => String(p.id) === String(id))?.name || `园区 #${id}`)
 const ASSIGN = {0:'待分派',1:'待商家确认',2:'已承接',3:'已拒绝'}
 const warehouses = ref([])
@@ -270,4 +303,6 @@ onMounted(load)
 .muted { color: var(--el-text-color-placeholder); }
 .mb { margin-bottom: 12px; }
 .lock-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 16px; }
+.delete-target { overflow-wrap: anywhere; }
+.delete-note { color: var(--el-text-color-regular); line-height: 1.7; }
 </style>

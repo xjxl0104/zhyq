@@ -62,7 +62,7 @@ public class MktLockService {
         if (customer.getReferrerId() != null && !Objects.equals(customer.getReferrerId(), promoterId)) {
             throw new BizException("报备伙伴与客户归属不一致");
         }
-        MktPromoter p = promoterMapper.selectById(promoterId);
+        MktPromoter p = promoterMapper.selectForUpdate(promoterId);
         if (p == null || p.getStatus() == null || p.getStatus() != 1) {
             throw new BizException("伙伴状态异常,不能报备");
         }
@@ -211,7 +211,7 @@ public class MktLockService {
         if (!Objects.equals(customer.getReferrerId(), old.getPromoterId())) throw new BizException("锁定与客户归属不一致，请先核对");
         if (Objects.equals(old.getPromoterId(), toPromoterId)) throw new BizException("请选择其他伙伴");
         release(lockId, "转移:" + reason, MktAuditService.currentOperator());
-        MktPromoter to = promoterMapper.selectById(toPromoterId);
+        MktPromoter to = promoterMapper.selectForUpdate(toPromoterId);
         if (to == null || to.getStatus() == null || to.getStatus() != 1) {
             throw new BizException("目标伙伴状态异常");
         }

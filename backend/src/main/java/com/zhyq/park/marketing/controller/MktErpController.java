@@ -5,6 +5,8 @@ import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.zhyq.park.common.exception.BizException;
+import com.zhyq.park.crm.mapper.CustomerMapper;
+import org.springframework.transaction.annotation.Transactional;
 import com.zhyq.park.common.result.PageResult;
 import com.zhyq.park.common.result.Result;
 import com.zhyq.park.marketing.entity.MktCustomerErpMap;
@@ -43,6 +45,7 @@ public class MktErpController {
     private final MktErpSyncLogMapper logMapper;
     private final FieldEncryptionService encryption;
     private final MktAuditService auditService;
+    private final CustomerMapper customerMapper;
 
     @Operation(summary = "云仓的凭证(不含 secret)") @PreAuthorize("hasAuthority('crm:marketing:erp:query')") @GetMapping("/warehouse/{warehouseId}")
     public Result<Map<String, Object>> get(@PathVariable Long warehouseId) {
@@ -101,8 +104,10 @@ public class MktErpController {
     }
 
     @Operation(summary = "新增/更新映射(客户在该云仓 ERP 的货主编码)") @PreAuthorize("hasAuthority('crm:marketing:erp:config')") @PostMapping("/warehouse/{warehouseId}/mappings")
+    @Transactional
     public Result<Void> saveMapping(@PathVariable Long warehouseId, @RequestBody Map<String, Object> body) {
         Long customerId = Long.valueOf(body.get("customerId").toString());
+        if (customerMapper.selectForUpdate(customerId) == null) throw new BizException("客户不存在或已删除");
         String code = String.valueOf(body.get("customerCode")).trim();
         if (!StringUtils.hasText(code)) throw new BizException("货主编码必填");
         MktCustomerErpMap m = mapMapper.selectOne(new LambdaQueryWrapper<MktCustomerErpMap>()

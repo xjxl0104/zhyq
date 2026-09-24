@@ -29,6 +29,7 @@ public class CustomerController {
     private final LeadMapper leadMapper;
     private final com.zhyq.park.marketing.service.MktCustomerAssignmentService assignmentService;
     private final com.zhyq.park.marketing.service.MktLockService marketingLocks;
+    private final com.zhyq.park.marketing.service.MktCustomerDeletionService deletionService;
 
     @Operation(summary = "分页查询意向客户")
     @GetMapping("/page")
@@ -94,7 +95,7 @@ public class CustomerController {
         assignmentService.assertNoActiveContracts(id);
         if (isMarketing(current) || marketingLocks.displayLockOf(id) != null)
             throw new BizException("该客户关联营销业务，请保留档案并按业务流程标记流失");
-        customerMapper.deleteById(id);
+        deletionService.deleteOrdinary(id);
         return Result.ok();
     }
 
