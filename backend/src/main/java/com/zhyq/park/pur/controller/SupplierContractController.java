@@ -12,12 +12,14 @@ import com.zhyq.park.pur.entity.Supplier;
 import com.zhyq.park.pur.entity.SupplierContract;
 import com.zhyq.park.pur.mapper.SupplierContractMapper;
 import com.zhyq.park.pur.mapper.SupplierMapper;
+import com.zhyq.park.pur.service.SupplierContractImportService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -49,6 +51,7 @@ public class SupplierContractController {
 
     private final SupplierContractMapper contractMapper;
     private final SupplierMapper supplierMapper;
+    private final SupplierContractImportService supplierContractImportService;
 
     @Operation(summary = "分页查询供应商合同")
     @PreAuthorize("hasAuthority('pur:supplierContract:query')")
@@ -112,6 +115,14 @@ public class SupplierContractController {
         }
         contractMapper.insert(contract);
         return Result.ok(contract.getId());
+    }
+
+    @Operation(summary = "导入供应商合同台账")
+    @PreAuthorize("hasAuthority('pur:supplierContract:add')")
+    @PostMapping(value = "/import", consumes = "multipart/form-data")
+    public Result<SupplierContractImportService.ImportResult> importFile(
+            @RequestParam("file") MultipartFile file) {
+        return Result.ok(supplierContractImportService.importFile(file));
     }
 
     @Operation(summary = "修改供应商合同")

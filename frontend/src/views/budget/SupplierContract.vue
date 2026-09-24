@@ -56,6 +56,9 @@
     <div class="table-card">
       <div class="toolbar">
         <el-button type="primary" @click="openDialog()"><el-icon><Plus /></el-icon>新增合同</el-button>
+        <el-button @click="importDialog.visible = true"><el-icon><Upload /></el-icon>导入合同</el-button>
+        <el-button type="success" plain @click="triggerPhoto"><el-icon><Camera /></el-icon>拍照录入</el-button>
+        <input ref="photoInput" type="file" accept="image/*" capture="environment" hidden @change="onPhoto" />
       </div>
       <el-table :data="list" v-loading="loading" border stripe>
         <el-table-column type="index" label="序号" width="70" />
@@ -169,12 +172,47 @@
         <el-button type="primary" @click="submit">确定</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog v-model="importDialog.visible" title="导入供应商合同" width="520px" @closed="resetImportFiles">
+      <el-tabs v-model="importDialog.mode">
+        <el-tab-pane label="合同台账" name="sheet">
+          <el-alert type="info" :closable="false" show-icon>
+            支持 Excel（.xlsx/.xls）或 CSV 批量导入。导入后均保存为草稿，请核对后再生效。
+          </el-alert>
+          <el-upload class="import-upload" drag :auto-upload="false" :limit="1"
+                     accept=".xlsx,.xls,.csv" :on-change="onImportFile" :on-remove="() => importFile = null">
+            <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
+            <div class="el-upload__text">拖拽文件到这里，或 <em>点击选择</em></div>
+            <template #tip><div class="el-upload__tip">表头示例：供应商、合同名称、合同类型、合同金额、生效日期、到期日期、结算周期、付款方式、备注</div></template>
+          </el-upload>
+        </el-tab-pane>
+        <el-tab-pane label="PDF / 图片原件" name="document">
+          <el-alert type="info" :closable="false" show-icon>
+            上传单份 PDF 或图片后会打开合同草稿，原件会自动关联；只需补齐供应商、合同名称等必要信息。
+          </el-alert>
+          <el-upload class="import-upload" drag :auto-upload="false" :limit="1"
+                     accept="application/pdf,.pdf,image/*" :on-change="onDocumentFile" :on-remove="() => documentFile = null">
+            <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
+            <div class="el-upload__text">拖拽 PDF / 图片到这里，或 <em>点击选择</em></div>
+            <template #tip><div class="el-upload__tip">单个文件不超过 100MB</div></template>
+          </el-upload>
+        </el-tab-pane>
+      </el-tabs>
+      <template #footer>
+        <el-button @click="importDialog.visible = false">取消</el-button>
+        <el-button v-if="importDialog.mode === 'sheet'" type="primary" :loading="importDialog.loading"
+                   :disabled="!importFile" @click="doImport">开始导入</el-button>
+        <el-button v-else type="primary" :loading="importDialog.loading"
+                   :disabled="!documentFile" @click="doDocumentImport">使用原件新增合同</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
 import { reactive, ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
+import { Upload, UploadFilled, Camera } from '@element-plus/icons-vue'
 import { supplierApi, supplierContractApi } from '@/api/supplier'
 import { dictApi } from '@/api/system'
 import { fileApi } from '@/api/file'
@@ -257,6 +295,10 @@ function reset() {
 }
 
 const formRef = ref()
+const photoInput = ref()
+const importFile = ref(null)
+const documentFile = ref(null)
+const importDialog = reactive({ visible: false, loading: false, mode: 'sheet' })
 const dialog = reactive({ visible: false, title: '' })
 const defaultForm = () => ({
   id: null, code: '', supplierId: null, name: '', contractType: null, amount: null,
@@ -269,10 +311,71 @@ const rules = {
   name: [{ required: true, message: '请输入合同名称', trigger: 'blur' }]
 }
 
+function onImportFile(uploadFile) { importFile.value = uploadFile.raw }
+function onDocumentFile(uploadFile) { documentFile.value = uploadFile.raw }
+function resetImportFiles() {
+  importFile.value = null
+  documentFile.value = null
+  importDialog.mode = 'sheet'
+}
+function triggerPhoto() { photoInput.value?.click() }
+
+async function attachUploadedContractFile(file, description) {
+  const body = new FormData()
+  body.append('file', file)
+  body.append('bizType', 'supplier_contract')
+  const uploaded = await fileApi.upload(body)
+  await openDialog()
+  form.remark = `${description}：${file.name}（请核对合同字段后保存）`
+  attachFiles.value = [uploaded]
+}
+
+async function onPhoto(event) {
+  const file = event.target.files?.[0]
+  event.target.value = ''
+  if (!file) return
+  try {
+    await attachUploadedContractFile(file, '拍照合同原件')
+    ElMessage.success('合同照片已加入草稿，请补齐必要字段后保存')
+  } catch (e) { /* 请求拦截器已提示 */ }
+}
+
+async function doImport() {
+  if (!importFile.value) return
+  importDialog.loading = true
+  try {
+    const body = new FormData()
+    body.append('file', importFile.value)
+    const result = await supplierContractApi.importFile(body)
+    const errors = result.errors?.length ? `，${result.errors.length} 行需检查` : ''
+    ElMessage.success(`成功导入 ${result.imported} 份，跳过 ${result.skipped} 份${errors}`)
+    importDialog.visible = false
+    importFile.value = null
+    load()
+    loadStats()
+  } finally {
+    importDialog.loading = false
+  }
+}
+
+async function doDocumentImport() {
+  if (!documentFile.value) return
+  importDialog.loading = true
+  try {
+    const file = documentFile.value
+    importDialog.visible = false
+    await attachUploadedContractFile(file, '导入合同原件')
+    ElMessage.success('合同原件已加入草稿，请补齐必要字段后保存')
+  } finally {
+    importDialog.loading = false
+  }
+}
+
 async function openDialog(row) {
   dialog.visible = true
   dialog.title = row ? '编辑供应商合同' : '新增供应商合同'
   Object.assign(form, defaultForm())
+  if (!row && activeTab.value !== 'all') form.contractType = activeTab.value
   attachFiles.value = []
   if (row) {
     Object.assign(form, row)
@@ -330,4 +433,6 @@ onMounted(() => {
 .stat-value.warn { color: #ea9a13; }
 .soon { margin-left: 6px; }
 .pager { margin-top: 16px; justify-content: flex-end; }
+.import-upload { margin-top: 20px; }
+.import-upload :deep(.el-upload), .import-upload :deep(.el-upload-dragger) { width: 100%; }
 </style>

@@ -20,6 +20,9 @@ export const supplierContractApi = {
   stats: () => request.get('/pur/supplier-contract/stats'),
   get: (id) => request.get(`/pur/supplier-contract/${id}`),
   add: (data) => request.post('/pur/supplier-contract', data),
+  importFile: (formData) => request.post('/pur/supplier-contract/import', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  }),
   update: (data) => request.put('/pur/supplier-contract', data),
   remove: (id) => request.delete(`/pur/supplier-contract/${id}`),
   changeStatus: (id, status) =>
