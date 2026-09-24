@@ -116,6 +116,7 @@ public class ContractArchiveExportService {
             case 4 -> "电子合同";
             case 5 -> "优惠合同";
             case 6 -> "成本合同";
+            case 7 -> "合作合同";
             default -> "-";
         };
     }

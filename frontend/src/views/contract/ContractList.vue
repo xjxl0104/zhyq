@@ -1,6 +1,6 @@
 <template>
   <div class="page-container">
-    <!-- 合同类型页签(规格书:合同列表/电子/意向/草稿/优惠/成本) -->
+    <!-- 合同类型页签 -->
     <el-tabs v-model="typeTab" @tab-change="onTypeTab">
       <el-tab-pane label="全部合同" name="all" />
       <el-tab-pane label="正式合同" name="1" />
@@ -9,6 +9,7 @@
       <el-tab-pane label="电子合同" name="4" />
       <el-tab-pane label="优惠合同" name="5" />
       <el-tab-pane label="成本合同" name="6" />
+      <el-tab-pane label="合作合同" name="7" />
     </el-tabs>
 
     <!-- 查询区 -->
@@ -98,6 +99,9 @@
         <el-table-column label="园区" min-width="130">
           <template #default="{ row }">{{ projectName(row.projectId) }}</template>
         </el-table-column>
+        <el-table-column label="合同类型" width="100">
+          <template #default="{ row }">{{ contractTypeText(row.contractType) }}</template>
+        </el-table-column>
         <el-table-column label="起止日期" min-width="200">
           <template #default="{ row }">{{ row.startDate }} ~ {{ row.endDate }}</template>
         </el-table-column>
@@ -165,6 +169,7 @@
                 <el-option label="电子" :value="4" />
                 <el-option label="优惠" :value="5" />
                 <el-option label="成本" :value="6" />
+                <el-option label="合作" :value="7" />
               </el-select>
             </el-form-item>
           </el-col>
@@ -271,7 +276,7 @@
         </el-tab-pane>
         <el-tab-pane label="PDF 合同原件" name="pdf">
           <el-alert type="info" :closable="false" show-icon>
-            上传 PDF 原件后会打开新增合同草稿。请补齐合同信息并保存，PDF 将自动关联到该合同。
+            上传 PDF 原件后会打开新增合同草稿。请补齐合同信息并保存，PDF 将自动关联到该合同；在“合作合同”页签导入时，会自动设为合作合同。
           </el-alert>
           <el-upload class="import-upload" drag :auto-upload="false" :limit="1"
                      accept="application/pdf,.pdf" :on-change="onPdfFile" :on-remove="() => pdfFile = null">
@@ -335,6 +340,8 @@ const statusOptions = [
 ]
 const statusMap = statusOptions.reduce((m, s) => (m[s.value] = s.label, m), {})
 function statusText(v) { return statusMap[v] || '-' }
+const contractTypeMap = { 1: '正式', 2: '意向', 3: '草稿', 4: '电子', 5: '优惠', 6: '成本', 7: '合作' }
+function contractTypeText(v) { return contractTypeMap[v] || '-' }
 function statusTagType(v) {
   // 待处理=warning / 执行中=primary / 成功=success / 终止异常=danger / 归档=info
   if ([2, 3, 4, 7].includes(v)) return 'warning'
@@ -353,21 +360,21 @@ const query = reactive({ pageNo: 1, pageSize: 10, code: '', tenantRefId: null, s
 
 /**
  * 本页合计 —— 列表是分页的,只能合计当前页已加载的行,故标「本页合计」而非「合计」,
- * 避免被当成全量总数去对账。列序:序号0/编号1/租客2/园区3/起止4/单价5/面积6/保证金7/状态8/操作9。
+ * 避免被当成全量总数去对账。列序:序号0/编号1/租客2/园区3/类型4/起止5/单价6/面积7/保证金8/状态9/操作10。
  * 租赁单价是费率不是金额,合计无意义,留空。
  */
 function pageSummary({ columns }) {
   const sum = (f) => list.value.reduce((acc, r) => acc + Number(r[f] || 0), 0)
   return columns.map((col, i) => {
     if (i === 0) return `本页合计 · ${list.value.length} 份`
-    if (i === 6) return money(sum('rentArea')) + ' ㎡'
-    if (i === 7) return money(sum('deposit')) + ' 元'
+    if (i === 7) return money(sum('rentArea')) + ' ㎡'
+    if (i === 8) return money(sum('deposit')) + ' 元'
     return ''
   })
 }
 
 // 手机汇总复用桌面的本页合计口径；列位置与上方 pageSummary 的约定一致。
-const mobilePageSummary = computed(() => pageSummary({ columns: Array(10).fill(null) }))
+const mobilePageSummary = computed(() => pageSummary({ columns: Array(11).fill(null) }))
 
 function onTypeTab(name) {
   query.pageNo = 1
@@ -494,6 +501,8 @@ async function openDialog(row) {
     return
   }
   Object.assign(form, emptyForm())
+  // 从“合作合同”页签新增或导入 PDF 时，默认写入合作合同类型。
+  if (typeTab.value === '7') form.contractType = 7
   // 新增:编号与租期/保证金规则都来自「合同设置」,用户不必对着空框猜格式
   try {
     const d = await contractApi.defaults()
