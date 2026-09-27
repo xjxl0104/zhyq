@@ -35,7 +35,8 @@ public class MktSelfProfileService {
     private final MktAuditService audit;
 
     public boolean promoterPhoneEditable(MktPromoter promoter) {
-        return !StringUtils.hasText(promoter.getOpenid()) && credential("mp", promoter.getId()) != null;
+        if (StringUtils.hasText(promoter.getOpenid())) return !isMobilePhone(promoter.getPhone());
+        return credential("mp", promoter.getId()) != null;
     }
 
     @Transactional
@@ -113,8 +114,8 @@ public class MktSelfProfileService {
     }
 
     private boolean warehousePhoneEditable(MktWarehouse warehouse) {
-        return !StringUtils.hasText(warehouse.getContactOpenid())
-                && contacts.selectCount(new LambdaQueryWrapper<MktWarehouseContact>()
+        if (StringUtils.hasText(warehouse.getContactOpenid())) return !isMobilePhone(warehouse.getPhone());
+        return contacts.selectCount(new LambdaQueryWrapper<MktWarehouseContact>()
                     .eq(MktWarehouseContact::getWarehouseId, warehouse.getId())) == 0
                 && credential("wh", warehouse.getId()) != null;
     }
@@ -131,8 +132,10 @@ public class MktSelfProfileService {
                     .ne("wh".equals(type), MktWarehouse::getId, id)) > 0
                 || contacts.selectCount(new LambdaQueryWrapper<MktWarehouseContact>().eq(MktWarehouseContact::getPhone, phone)) > 0;
         if (occupied) throw phoneConflict();
-        // Persist the unverified marker in the same transaction as the business profile.
-        // A later verified-phone login must not claim this password account.
+        // WeChat-only profiles already retain an immutable openid owner. Their first self-reported
+        // phone never grants another WeChat identity access, and cannot be changed again here.
+        // Password profiles also need the existing reservation marker to prevent phone claiming.
+        if (credential(type, id) == null) return;
         try {
             if (credentials.update(null, new LambdaUpdateWrapper<MktCredential>()
                     .eq(MktCredential::getIdentityType, type).eq(MktCredential::getIdentityId, id)

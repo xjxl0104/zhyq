@@ -1,6 +1,7 @@
 import { whGet, whPost, whPut, uploadWarehouseFile, openWarehouseFile } from '@/utils/request'
 
 export const warehouseAuthApi = {
+  quickLogin: data => whPost('/auth/quick-login', data),
   wxLogin: (jsCode, warehouseId, appId) => whPost('/auth/wx-login', { jsCode, warehouseId, appId }),
   passwordLogin: (data) => whPost('/auth/password-login', data),
   passwordRegister: (data) => whPost('/auth/password-register', data),

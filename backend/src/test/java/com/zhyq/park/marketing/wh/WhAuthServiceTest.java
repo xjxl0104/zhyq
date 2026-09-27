@@ -140,6 +140,16 @@ class WhAuthServiceTest {
         verify(contacts, never()).insert(any(MktWarehouseContact.class));
     }
 
+    @Test void disabledOwnerCannotFallBackToLegacyColumn() {
+        MktWarehouseContact c = new MktWarehouseContact(); c.setWarehouseId(11L); c.setStatus(0); c.setOpenid("mock:owner");
+        when(contacts.selectOne(any())).thenReturn(c);
+        WhAuthService service = new WhAuthService(jwt, warehouses, promoters, audit,
+                (a, s, code) -> { throw new AssertionError("mock"); }, (k, e, i) -> "unused", contacts, phoneBindingGuard);
+        service.setMockLogin(true);
+        assertThatThrownBy(() -> service.wxLogin("owner")).hasMessageContaining("停用");
+        verifyNoInteractions(warehouses, jwt);
+    }
+
     private static MktWarehouse warehouse(Long id, String openid, String contactOpenid, String phone) {
         MktWarehouse w = new MktWarehouse();
         w.setId(id); w.setCode("WH-" + id); w.setName("仓" + id); w.setContactOpenid(contactOpenid);

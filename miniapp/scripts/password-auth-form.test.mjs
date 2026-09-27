@@ -80,7 +80,7 @@ test('云仓注册完成直接进入工作台，不强制完善加盟资料', ()
   const login = readFileSync(new URL('../src/pages/warehouse-login/index.vue', import.meta.url), 'utf8')
   const script = login.split('<script setup>')[1].split('</script>')[0].replace(/^import .*$/gm, '')
   let route, saved
-  const context = vm.createContext({ ref: value => ({ value }), warehouseToken: { set: value => { saved = value } }, uni: { reLaunch: options => { route = options.url } } })
+  const context = vm.createContext({ mock: false, ref: value => ({ value }), warehouseToken: { set: value => { saved = value } }, uni: { reLaunch: options => { route = options.url } } })
   vm.runInContext(script + "\ndone('new-token', true)", context)
   assert.equal(saved, 'new-token')
   assert.equal(route, '/pages/warehouse-dashboard/index')

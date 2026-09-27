@@ -1,6 +1,7 @@
 import { get, post, put, request } from '@/utils/request'
 
 export const authApi = {
+  quickLogin: data => post('/auth/quick-login', data),
   wxLogin: (jsCode, appId) => post('/auth/wx-login', { jsCode, appId }),
   passwordLogin: (data) => post('/auth/password-login', data),
   passwordRegister: (data) => post('/auth/password-register', data),

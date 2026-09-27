@@ -25,7 +25,7 @@ function requestWith(base, auth, loginPath, method, url, data = {}) {
       data,
       header: { 'Content-Type': 'application/json', Authorization: auth.get() ? 'Bearer ' + auth.get() : '' },
       success: ({ statusCode, data: body }) => {
-        const publicAuth = /^\/auth\/(wx-login|bind-phone|password-login|password-register)$/.test(url)
+        const publicAuth = /^\/auth\/(quick-login|wx-login|bind-phone|password-login|password-register)$/.test(url)
         if ((statusCode === 401 || body?.code === 401) && !publicAuth) {
           auth.clear()
           uni.reLaunch({ url: loginPath })

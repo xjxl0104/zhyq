@@ -90,6 +90,11 @@ public class MktPromoterService {
                 promoterMapper.insert(p);
                 break;
             } catch (DuplicateKeyException dup) {
+                // A duplicate WeChat owner is a concurrent registration, not an invitation-code
+                // collision. Leave the transaction and resolve that owner on a fresh login attempt.
+                if (StringUtils.hasText(p.getOpenid()) && promoterMapper.selectOne(new LambdaQueryWrapper<MktPromoter>()
+                        .eq(MktPromoter::getOpenid, p.getOpenid()).last("limit 1 FOR UPDATE")) != null)
+                    throw new BizException(409, "登录资料正在更新，请重新点击登录");
                 if (attempt == 4) throw new BizException("生成邀请码失败,请重试");
             }
         }

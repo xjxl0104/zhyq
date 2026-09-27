@@ -96,7 +96,7 @@ class MktSelfProfileServiceTest {
     }
 
     @Test void bothWechatBindingsAndApprovedWarehouseProfilesStayLocked() {
-        MktWarehouse warehouse = warehouse(2); warehouse.setContactOpenid("wx-owner");
+        MktWarehouse warehouse = warehouse(2); warehouse.setContactOpenid("wx-owner"); warehouse.setPhone("13900139000");
         when(warehouses.selectOne(any())).thenReturn(warehouse);
         assertThatThrownBy(() -> service.updateWarehouse(41L, Map.of("phone", "13800138000"))).hasMessageContaining("微信绑定");
         warehouse.setContactOpenid(null);
@@ -120,9 +120,39 @@ class MktSelfProfileServiceTest {
             return 1;
         });
         service.updatePromoter(31L, Map.of("name", "小明", "phone", "13800138000", "parentId", "99"));
-        promoter.setOpenid("wx-bound");
+        promoter.setOpenid("wx-bound"); promoter.setPhone("13900139000");
         assertThatThrownBy(() -> service.updatePromoter(31L, Map.of("phone", "13800138000"))).hasMessageContaining("微信绑定");
         verify(promoters, times(1)).update(isNull(), any());
+    }
+
+    @Test void wechatOnlyPartnerCanFillFirstPhoneWithoutCreatingPasswordCredentials() {
+        MktPromoter promoter = new MktPromoter(); promoter.setId(31L); promoter.setStatus(1);
+        promoter.setOpenid("wx-owner"); promoter.setPhone("p:012345678901234567");
+        when(promoters.selectForUpdate(31L)).thenReturn(promoter);
+        when(promoters.update(isNull(), any())).thenReturn(1);
+        assertThat(service.promoterPhoneEditable(promoter)).isTrue();
+        service.updatePromoter(31L, Map.of("phone", "13800138000", "name", "小明"));
+        verify(credentials, never()).update(any(), any());
+        verify(credentials, never()).insert(any(MktCredential.class));
+        promoter.setPhone("13800138000");
+        assertThat(service.promoterPhoneEditable(promoter)).isFalse();
+        assertThatThrownBy(() -> service.updatePromoter(31L, Map.of("phone", "13900139000")))
+                .hasMessageContaining("微信绑定");
+    }
+
+    @Test void wechatOnlyWarehouseCanFillFirstPhoneAndCannotReplaceItsOwner() {
+        MktWarehouse warehouse = warehouse(2); warehouse.setContactOpenid("wx-owner");
+        when(warehouses.selectById(41L)).thenReturn(warehouse);
+        when(warehouses.selectOne(any())).thenReturn(warehouse);
+        when(warehouses.update(isNull(), any())).thenReturn(1);
+        assertThat(service.warehouseProfile(41L)).containsEntry("phoneEditable", true);
+        Map<String, Object> saved = service.updateWarehouse(41L, Map.of("phone", "13800138000"));
+        assertThat(saved).containsEntry("phoneEditable", false).containsEntry("phone", "13800138000");
+        assertThat(warehouse.getContactOpenid()).isEqualTo("wx-owner");
+        verify(credentials, never()).update(any(), any());
+        verify(contacts, never()).update(any(), any());
+        assertThatThrownBy(() -> service.updateWarehouse(41L, Map.of("phone", "13900139000")))
+                .hasMessageContaining("微信绑定");
     }
 
     @Test void placeholderPhoneIsUniqueNonMobileAndNeverSerializedAsContactData() throws Exception {

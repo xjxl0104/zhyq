@@ -80,8 +80,9 @@ public class WhAuthService {
     private MktWarehouse resolveWarehouseByOpenid(String openid, Long requestedWarehouseId) {
         if (!StringUtils.hasText(openid)) return null;
         MktWarehouseContact contact = contactMapper.selectOne(new LambdaQueryWrapper<MktWarehouseContact>()
-                .eq(MktWarehouseContact::getOpenid, openid).eq(MktWarehouseContact::getStatus, 1).last("limit 1"));
+                .eq(MktWarehouseContact::getOpenid, openid).last("limit 1"));
         if (contact != null) {
+            if (!Integer.valueOf(1).equals(contact.getStatus())) throw new BizException(403, "云仓联系人已停用，请联系园区运营");
             if (requestedWarehouseId != null && !requestedWarehouseId.equals(contact.getWarehouseId())) return null;
             return warehouseMapper.selectById(contact.getWarehouseId());
         }
@@ -124,6 +125,7 @@ public class WhAuthService {
         MktWarehouseContact existingContact = contactMapper.selectOne(new LambdaQueryWrapper<MktWarehouseContact>()
                 .eq(MktWarehouseContact::getOpenid, openid).last("limit 1"));
         if (existingContact != null) {
+            if (!Integer.valueOf(1).equals(existingContact.getStatus())) throw new BizException(403, "云仓联系人已停用，请联系园区运营");
             if (!existingContact.getWarehouseId().equals(w.getId())) throw new BizException(409, "该微信已绑定其他云仓");
             return new LoginResult(true, issue(w), openid, w);
         }
@@ -168,6 +170,26 @@ public class WhAuthService {
     }
 
     public Claims parse(String token) { return jwtService.parse(token); }
+    /** Shortcut login accepts only a server-exchanged WeChat identity; no client openid/session key. */
+    public WxSessionClient.Session quickSession(String jsCode, String clientAppId) {
+        if (!mockLogin && !StringUtils.hasText(clientAppId)) throw new BizException("缺少小程序 AppID");
+        if (!mockLogin && !clientAppId.equals(appId)) throw new BizException("当前小程序 AppID 与服务配置不一致");
+        return code2Session(jsCode);
+    }
+
+    public String quickPhone(String phoneCode, String plaintextPhone) {
+        if (!mockLogin && StringUtils.hasText(plaintextPhone)) throw new BizException("真实模式必须使用微信手机号授权");
+        if (!StringUtils.hasText(phoneCode) && !StringUtils.hasText(plaintextPhone)) return null;
+        String phone;
+        if (mockLogin) {
+            phone = plaintextPhone;
+        } else {
+            phone = wxSessionClient.exchangePhone(appId, appSecret, phoneCode);
+        }
+        if (!StringUtils.hasText(phone) || !phone.matches("^1\\d{10}$")) throw new BizException("手机号授权失败，请重新授权");
+        return phone;
+    }
+
     public void setMockLogin(boolean value) { mockLogin = value; }
     public void setAppId(String value) { appId = value; }
     public void setAppSecret(String value) { appSecret = value; }

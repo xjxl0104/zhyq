@@ -210,6 +210,26 @@ public class MpAuthService {
         return jwtService.parse(token);
     }
 
+    /** Shortcut login accepts only a server-exchanged WeChat identity; no client openid/session key. */
+    public WxSessionClient.Session quickSession(String jsCode, String clientAppId) {
+        if (!mockLogin && !StringUtils.hasText(clientAppId)) throw new BizException("缺少小程序 AppID");
+        if (!mockLogin && !clientAppId.equals(appId)) throw new BizException("当前小程序 AppID 与服务配置不一致");
+        return code2Session(jsCode);
+    }
+
+    public String quickPhone(String phoneCode, String plaintextPhone) {
+        if (!mockLogin && StringUtils.hasText(plaintextPhone)) throw new BizException("真实模式必须使用微信手机号授权");
+        if (!StringUtils.hasText(phoneCode) && !StringUtils.hasText(plaintextPhone)) return null;
+        String phone;
+        if (mockLogin) {
+            phone = plaintextPhone;
+        } else {
+            phone = wxSessionClient.exchangePhone(appId, appSecret, phoneCode);
+        }
+        if (!StringUtils.hasText(phone) || !phone.matches("^1\\d{10}$")) throw new BizException("手机号授权失败，请重新授权");
+        return phone;
+    }
+
     public void setMockLogin(boolean mockLogin) { this.mockLogin = mockLogin; }
     public void setAppId(String appId) { this.appId = appId; }
     public void setAppSecret(String appSecret) { this.appSecret = appSecret; }
