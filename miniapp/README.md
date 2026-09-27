@@ -1,6 +1,6 @@
 # 全民营销小程序：园区伙伴与云仓商家
 
-uni-app + Vue3，同一工程输出微信小程序与 H5。当前正式小程序为“智慧云仓全民营销助手”，AppID `wx156df8d81fd39ef5`。两个身份使用独立的业务权限与 token。
+uni-app + Vue3，同一工程输出微信小程序与 H5。当前正式小程序为“数智云仓全民营销助手”，AppID `wxc01f4ad2297319a0`。两个身份使用独立的业务权限与 token。
 
 ## 登录与注册
 
@@ -28,11 +28,11 @@ H5 开发请求经 Vite 代理到本机 `8090`。微信构建默认接口为 `ht
 
 前后端默认关闭 mock。正式服务器配置必须成对匹配：
 
-- `WX_MP_APPID` / `WX_MP_SECRET`
-- `WX_WH_APPID` / `WX_WH_SECRET`
+- `WX_MP_APPID=wxc01f4ad2297319a0` / `WX_MP_SECRET`
+- `WX_WH_APPID=wxc01f4ad2297319a0` / `WX_WH_SECRET`
 - `WX_MP_MOCK_LOGIN=false` / `WX_WH_MOCK_LOGIN=false`
 
-本工程同一个小程序包含两个身份，服务器两组凭据应配置为当前正式小程序的同一组 AppID/Secret。不得将测试号 Secret 与正式号 AppID 混用。密钥仅放服务器环境变量，不写前端或 Git。
+本工程同一个小程序包含两个身份，服务器两组凭据应配置为当前正式小程序的同一组 AppID/Secret。旧版小程序已停用，不得继续使用旧版的 AppID 或 Secret，也不得将其他小程序的 Secret 与当前 AppID 混用。密钥仅放服务器环境变量，不写前端或 Git。
 
 真实流程：`uni.login` 获取一次性 code，连同运行中的 AppID 发送 `/auth/wx-login`。未注册用户获得 5 分钟一次性的 `loginTicket`；授权手机号后发送 `{openid,loginTicket,phoneCode}`。服务端使用微信 `stable_token` 和 `getuserphonenumber` 取得手机号，校验 AppID。旧 `encryptedData/iv` 仍兼容，但也需要票据。失败后重新微信登录获取新票据。
 

@@ -6,7 +6,7 @@
   "versionCode": "1",
   "vueVersion": "3",
   "mp-weixin": {
-    "appid": "wx156df8d81fd39ef5",
+    "appid": "wxc01f4ad2297319a0",
     "setting": { "urlCheck": true, "es6": true, "minified": true },
     "usingComponents": true,
     "permission": {},
