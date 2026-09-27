@@ -131,6 +131,7 @@ public class MktWarehouseOnboardingService {
 
     public static void validateProfile(MktWarehouse w) {
         requireText(w.getName(), "云仓名称", 100);
+        if (MktSelfProfileService.PENDING_WAREHOUSE_NAME.equals(w.getName().trim())) throw new BizException("请补充真实云仓名称");
         requireText(w.getContact(), "联系人", 32);
         requireText(w.getRegion(), "所在区域", 64);
         requireText(w.getAddress(), "详细地址", 255);

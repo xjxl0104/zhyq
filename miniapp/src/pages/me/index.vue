@@ -4,8 +4,9 @@
     <view v-if="loading && !me" class="card muted">正在读取个人资料…</view>
     <template v-if="me">
       <view class="card">
-        <view class="title">{{ me.name }} <text class="tag">{{ POS[me.positionCode] }}</text></view>
-        <view class="muted">{{ me.phone }}</view>
+        <view class="title">{{ me.name || '园区伙伴' }} <text class="tag">{{ POS[me.positionCode] }}</text></view>
+        <view class="muted">{{ me.phone || '联系电话待补充' }}</view>
+        <button class="menu-row" @click="go('/pages/profile/index')">个人信息 <text>{{ me.phone ? '查看 / 修改' : '去补充' }} ›</text></button>
         <view class="row"><text>我的邀请码</text><button size="mini" @click="copy(me.inviteCode)">{{ me.inviteCode }} · 复制</button></view>
         <view class="muted">朋友注册时填写邀请码，即可加入您的团队。</view>
       </view>

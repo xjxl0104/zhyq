@@ -18,6 +18,7 @@ import com.zhyq.park.marketing.mapper.MktPromoterMapper;
 import com.zhyq.park.marketing.mapper.MktReferralOrderMapper;
 import com.zhyq.park.marketing.service.MktAuditService;
 import com.zhyq.park.marketing.service.MktCommissionService;
+import com.zhyq.park.marketing.service.MktSelfProfileService;
 import com.zhyq.park.receivable.service.FieldEncryptionService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -57,18 +58,21 @@ public class MpMeController {
     private final FieldEncryptionService encryption;
     private final MktAuditService auditService;
     private final com.zhyq.park.common.setting.BizSettings bizSettings;
+    private final MktSelfProfileService profiles;
 
     @Operation(summary = "我的资料") @GetMapping("/me")
     public Result<Map<String, Object>> me() {
-        return Result.ok(profile(current()));
+        MktPromoter promoter = current();
+        Map<String, Object> result = profile(promoter);
+        result.put("phoneEditable", profiles.promoterPhoneEditable(promoter));
+        result.put("contactPhone", MktSelfProfileService.isMobilePhone(promoter.getPhone()) ? promoter.getPhone() : null);
+        result.put("profileComplete", StringUtils.hasText(promoter.getName()) && MktSelfProfileService.isMobilePhone(promoter.getPhone()));
+        return Result.ok(result);
     }
 
-    @Operation(summary = "改昵称/头像") @PutMapping("/me")
+    @Operation(summary = "修改姓名、头像或补充联系电话") @PutMapping("/me")
     public Result<Void> updateMe(@RequestBody Map<String, String> body) {
-        promoterMapper.update(null, new LambdaUpdateWrapper<MktPromoter>()
-                .eq(MktPromoter::getId, MpAuthService.currentPromoterId())
-                .set(StringUtils.hasText(body.get("name")), MktPromoter::getName, body.get("name"))
-                .set(StringUtils.hasText(body.get("avatar")), MktPromoter::getAvatar, body.get("avatar")));
+        profiles.updatePromoter(MpAuthService.currentPromoterId(), body);
         return Result.ok();
     }
 
@@ -216,7 +220,7 @@ public class MpMeController {
     static Map<String, Object> profile(MktPromoter p) {
         Map<String, Object> m = new HashMap<>();
         m.put("id", p.getId()); m.put("name", p.getName()); m.put("avatar", p.getAvatar());
-        m.put("phone", p.getPhone() == null || p.getPhone().length() < 11 ? p.getPhone() : p.getPhone().substring(0, 3) + "****" + p.getPhone().substring(7));
+        m.put("phone", !MktSelfProfileService.isMobilePhone(p.getPhone()) ? null : p.getPhone().substring(0, 3) + "****" + p.getPhone().substring(7));
         m.put("inviteCode", p.getInviteCode()); m.put("positionCode", p.getPositionCode()); m.put("status", p.getStatus());
         m.put("hasParent", p.getParentId() != null); m.put("inviteDeadline", p.getInviteDeadline());
         m.put("idVerified", p.getIdVerified()); m.put("agreed", p.getAgreedAt() != null);

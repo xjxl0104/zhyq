@@ -107,6 +107,42 @@ class PasswordAuthServiceTest {
         assertThat(jwt.parse((String) result.get("token")).get("auth")).isEqualTo(List.of("ROLE_WH"));
     }
 
+    @ParameterizedTest
+    @EnumSource(PasswordAuthService.Identity.class)
+    void minimalRegistrationDefersContactDetailsWithoutGrantingApproval(PasswordAuthService.Identity identity) {
+        if (identity == MP) {
+            when(promoterService.registerWithoutPhone(any(), isNull())).thenAnswer(invocation -> {
+                MktPromoter promoter = invocation.getArgument(0);
+                assertThat(promoter.getPhone()).isNull();
+                assertThat(promoter.getName()).isEqualTo("园区伙伴");
+                promoter.setId(31L); promoter.setStatus(1);
+                when(promoters.selectById(31L)).thenReturn(promoter);
+                return promoter;
+            });
+        } else {
+            when(warehouseService.apply(any())).thenAnswer(invocation -> {
+                MktWarehouse warehouse = invocation.getArgument(0);
+                assertThat(warehouse.getPhone()).isNull();
+                assertThat(warehouse.getContact()).isNull();
+                assertThat(warehouse.getName()).isEqualTo("待完善云仓");
+                warehouse.setId(41L); warehouse.setJoinStatus(2);
+                when(warehouses.selectById(41L)).thenReturn(warehouse);
+                return warehouse;
+            });
+        }
+        var request = new PasswordAuthService.RegisterRequest("新账号", "123", null, null, null, null, true);
+        Map<String, Object> result = service.register(identity, request, "ip");
+        assertThat(result).containsKey("token");
+        ArgumentCaptor<MktCredential> saved = ArgumentCaptor.forClass(MktCredential.class);
+        verify(credentials).insert(saved.capture());
+        assertThat(saved.getValue().getRegistrationPhone()).isNull();
+        assertThat(saved.getValue().getAgreedAt()).isNotNull();
+        verify(promoters, never()).selectCount(any());
+        verify(warehouses, never()).selectCount(any());
+        verifyNoInteractions(contacts);
+        if (identity == WH) assertThat(((Map<?, ?>) result.get("warehouse")).get("joinStatus")).isEqualTo(2);
+    }
+
     @Test void unverifiedPhoneCannotClaimExistingPartner() {
         when(promoters.selectCount(any())).thenReturn(1L);
         assertThatThrownBy(() -> service.register(MP, registration(), "ip")).isInstanceOf(BizException.class).hasMessageContaining("不能凭填写手机号合并身份");

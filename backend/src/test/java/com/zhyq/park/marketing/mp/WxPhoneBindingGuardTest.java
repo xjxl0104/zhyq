@@ -9,6 +9,14 @@ import static org.mockito.Mockito.*;
 import static org.mockito.ArgumentMatchers.any;
 
 class WxPhoneBindingGuardTest {
+    @Test void simplifiedPasswordRegistrationCannotLaterBeClaimedThroughWeChatPhone() {
+        MktCredentialMapper mapper = mock(MktCredentialMapper.class);
+        MktCredential credential = new MktCredential();
+        credential.setAgreedAt(java.time.LocalDateTime.now());
+        when(mapper.selectOne(any())).thenReturn(credential);
+        assertThatThrownBy(() -> new WxPhoneBindingGuard(mapper).assertCanBind("wh", 1L))
+                .isInstanceOf(BizException.class).hasMessageContaining("待核验");
+    }
     @Test void passwordRegistrationCannotBeMergedUsingAnUnverifiedPhone() {
         MktCredentialMapper mapper = mock(MktCredentialMapper.class);
         MktCredential credential = new MktCredential();

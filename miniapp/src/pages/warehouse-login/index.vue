@@ -72,7 +72,7 @@ async function bind(phoneAuth = {}) {
   }
   finally { busy.value = false }
 }
-function done(t, newlyRegistered = false) { warehouseToken.set(t); uni.reLaunch({ url: newlyRegistered ? '/pages/warehouse-apply/index' : '/pages/warehouse-dashboard/index' }) }
+function done(t) { warehouseToken.set(t); uni.reLaunch({ url: '/pages/warehouse-dashboard/index' }) }
 function chooseIdentity() { uni.reLaunch({ url: '/pages/entry/index' }) }
 </script>
 <style scoped>

@@ -17,7 +17,7 @@ public class WxPhoneBindingGuard {
     public void assertCanBind(String identityType, Long identityId) {
         MktCredential credential = credentialMapper.selectOne(new LambdaQueryWrapper<MktCredential>()
                 .eq(MktCredential::getIdentityType, identityType).eq(MktCredential::getIdentityId, identityId).last("limit 1"));
-        if (credential != null && StringUtils.hasText(credential.getRegistrationPhone()))
+        if (credential != null && (credential.getAgreedAt() != null || StringUtils.hasText(credential.getRegistrationPhone())))
             throw new BizException("该手机号存在待核验的账号资料,请使用账号密码登录或联系园区运营核验后绑定微信");
     }
 }

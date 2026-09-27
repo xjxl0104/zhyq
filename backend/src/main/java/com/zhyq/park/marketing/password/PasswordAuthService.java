@@ -18,6 +18,7 @@ import com.zhyq.park.marketing.mapper.MktWarehouseContactMapper;
 import com.zhyq.park.marketing.service.MktAuditService;
 import com.zhyq.park.marketing.service.MktPromoterService;
 import com.zhyq.park.marketing.service.MktWarehouseOnboardingService;
+import com.zhyq.park.marketing.service.MktSelfProfileService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.security.core.Authentication;
@@ -100,12 +101,11 @@ public class PasswordAuthService {
         limiter.check("register:ip:" + remoteAddress, 10);
         String username = username(request.username());
         requirePassword(request.password());
-        String phone = request.phone() == null ? "" : request.phone().trim();
-        if (!phone.matches("^1\\d{10}$")) throw new BizException(400, "手机号格式不正确");
-        String name = requiredText(request.name(), "姓名", 32);
+        String phone = MktSelfProfileService.optionalPhone(request.phone());
+        String name = MktSelfProfileService.optionalText(request.name(), "姓名", 32);
         if (!Boolean.TRUE.equals(request.agreed())) throw new BizException(400, "请先同意用户协议和隐私政策");
         if (findByUsername(identity, username) != null) throw new BizException(409, "该账号已注册，请直接登录");
-        rejectExistingPhone(phone);
+        if (phone != null) rejectExistingPhone(phone);
         // Hash before creating business records; the surrounding transaction also rolls back conflicts.
         String hash = encodePassword(request.password());
         Long identityId;
@@ -113,7 +113,7 @@ public class PasswordAuthService {
             String invite = request.inviteCode() == null ? null : request.inviteCode().trim().toUpperCase(Locale.ROOT);
             if (StringUtils.hasText(invite) && !invite.matches("^[A-Z2-9]{8}$")) throw new BizException(400, "邀请码格式不正确");
             MktPromoter promoter = new MktPromoter();
-            promoter.setName(name);
+            promoter.setName(name == null ? "园区伙伴" : name);
             promoter.setPhone(phone);
             promoter.setLastLogin(LocalDateTime.now());
             promoter.setAgreementVersion("v1");
@@ -123,12 +123,14 @@ public class PasswordAuthService {
             if (!StringUtils.hasText(invite)) {
                 promoter.setInviteDeadline(LocalDateTime.now().plusDays(settings.getInt("marketing", "invite_grace_days", 7)));
             }
-            promoterService.register(promoter, invite, "mp");
+            if (phone == null) promoterService.registerWithoutPhone(promoter, invite);
+            else promoterService.register(promoter, invite, "mp");
             identityId = promoter.getId();
         } else {
             MktWarehouse warehouse = new MktWarehouse();
             warehouse.setCode("WH-" + UUID.randomUUID().toString().replace("-", "").substring(0, 20).toUpperCase(Locale.ROOT));
-            warehouse.setName(requiredText(request.warehouseName(), "云仓名称", 100));
+            String warehouseName = MktSelfProfileService.optionalText(request.warehouseName(), "云仓名称", 100);
+            warehouse.setName(warehouseName == null ? MktSelfProfileService.PENDING_WAREHOUSE_NAME : warehouseName);
             warehouse.setContact(name);
             warehouse.setPhone(phone);
             warehouse.setRemark("账号密码自助申请；联系电话未经手机验证，待运营资质审核");
@@ -311,9 +313,4 @@ public class PasswordAuthService {
         }
     }
 
-    private static String requiredText(String value, String label, int maxLength) {
-        String normalized = value == null ? "" : value.trim();
-        if (normalized.isEmpty() || normalized.length() > maxLength) throw new BizException(400, label + "必填且不能超过 " + maxLength + " 字");
-        return normalized;
-    }
 }

@@ -16,6 +16,7 @@ import org.springframework.util.StringUtils;
 
 import java.security.SecureRandom;
 import java.time.LocalDateTime;
+import java.util.UUID;
 
 /**
  * 伙伴档案(PARK-MKT-001 §2.1):注册/录入、绑上级、改上级(整棵子树 path 一起改)、冻结/解冻/审核。
@@ -49,6 +50,19 @@ public class MktPromoterService {
         if (promoterMapper.selectCount(new LambdaQueryWrapper<MktPromoter>().eq(MktPromoter::getPhone, p.getPhone())) > 0) {
             throw new BizException("该手机号已注册为伙伴");
         }
+        return createProfile(p, parentInviteCode, source);
+    }
+
+    /** Password registration may postpone contact details. The legacy phone column is NOT NULL + UNIQUE. */
+    @Transactional
+    public MktPromoter registerWithoutPhone(MktPromoter p, String parentInviteCode) {
+        if (StringUtils.hasText(p.getPhone())) throw new BizException("无手机号注册不能携带联系电话");
+        // A non-phone identifier cannot match a verified mobile or an existing WeChat identity.
+        p.setPhone("p:" + UUID.randomUUID().toString().replace("-", "").substring(0, 18));
+        return createProfile(p, parentInviteCode, "mp");
+    }
+
+    private MktPromoter createProfile(MktPromoter p, String parentInviteCode, String source) {
         MktPromoter parent = null;
         if (StringUtils.hasText(parentInviteCode)) {
             parent = promoterMapper.selectOne(new LambdaQueryWrapper<MktPromoter>()
@@ -178,7 +192,7 @@ public class MktPromoterService {
     }
 
     public boolean isInternal(String phone) {
-        return StringUtils.hasText(phone)
+        return phone != null && phone.matches("^1\\d{10}$")
                 && sysUserMapper.selectCount(new LambdaQueryWrapper<SysUser>().eq(SysUser::getPhone, phone)) > 0;
     }
 

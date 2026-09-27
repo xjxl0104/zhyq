@@ -27,7 +27,7 @@ const form = reactive({ name: '', region: '', address: '', contact: '', phone: '
 const fields = [{ key: 'name', label: '云仓名称', max: 100 }, { key: 'region', label: '所在区域', max: 64 }, { key: 'address', label: '详细地址', max: 255 }, { key: 'contact', label: '联系人', max: 32 }, { key: 'phone', label: '联系电话', max: 11 }]
 const attachments = ref([]); const loading = ref(true); const ready = ref(false); const busy = ref(false); const fileBusy = ref(false); const error = ref('')
 const editable = computed(() => [1, 2].includes(form.joinStatus))
-async function load() { loading.value = true; error.value = ''; try { const [profile, steps] = await Promise.all([warehouseApi.apply(), warehouseApi.onboarding()]); Object.assign(form, profile); attachments.value = parseFiles(steps.find(s => s.step === 1)?.attachments); ready.value = true } catch(e) { error.value = e.message || '资料读取失败，请重试' } finally { loading.value = false } }
+async function load() { loading.value = true; error.value = ''; try { const [profile, steps] = await Promise.all([warehouseApi.apply(), warehouseApi.onboarding()]); Object.assign(form, profile); if (form.name === '待完善云仓') form.name = ''; attachments.value = parseFiles(steps.find(s => s.step === 1)?.attachments); ready.value = true } catch(e) { error.value = e.message || '资料读取失败，请重试' } finally { loading.value = false } }
 async function save() {
   if (busy.value || fileBusy.value || !editable.value) return
   error.value = ''

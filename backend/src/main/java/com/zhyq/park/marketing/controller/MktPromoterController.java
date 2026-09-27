@@ -119,7 +119,7 @@ public class MktPromoterController {
                                     LocalDateTime bindTime, LocalDateTime inviteDeadline, LocalDateTime lastLogin,
                                     String source, String remark, Long projectId, LocalDateTime createTime) {
         static PromoterVO of(MktPromoter p) {
-            return new PromoterVO(p.getId(), p.getName(), p.getPhone(), p.getAvatar(), p.getInviteCode(), p.getParentId(),
+            return new PromoterVO(p.getId(), p.getName(), p.jsonPhone(), p.getAvatar(), p.getInviteCode(), p.getParentId(),
                     p.getPath(), p.getPositionCode(), p.getPositionSince(), p.getStatus(), p.getIsInternal(),
                     p.getAgreementVersion(), p.getAgreedAt(), p.getIdVerified(), p.getBindTime(), p.getInviteDeadline(),
                     p.getLastLogin(), p.getSource(), p.getRemark(), p.getProjectId(), p.getCreateTime());

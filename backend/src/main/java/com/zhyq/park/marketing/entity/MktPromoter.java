@@ -1,6 +1,7 @@
 package com.zhyq.park.marketing.entity;
 
 import com.baomidou.mybatisplus.annotation.TableName;
+import com.fasterxml.jackson.annotation.JsonGetter;
 import com.zhyq.park.common.base.BaseEntity;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
@@ -16,6 +17,9 @@ public class MktPromoter extends BaseEntity {
     private String openid;
     private String unionid;
     private String phone;
+    /** Storage-only identifiers for accounts that have not supplied a phone must never appear as contact data. */
+    @JsonGetter("phone")
+    public String jsonPhone() { return phone != null && phone.startsWith("p:") ? null : phone; }
     private String name;
     private String avatar;
     /** 8 位,去掉 0/O/1/I */

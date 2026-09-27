@@ -9,6 +9,8 @@ export const warehouseAuthApi = {
   bindPhone: (data) => whPost('/auth/bind-phone', data)
 }
 export const warehouseApi = {
+  me: () => whGet('/me'),
+  saveMe: (data) => whPut('/me', data),
   uploadFile: uploadWarehouseFile,
   openFile: openWarehouseFile,
   files: () => whGet('/files'),

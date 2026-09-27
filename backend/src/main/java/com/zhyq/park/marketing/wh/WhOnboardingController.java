@@ -1,6 +1,8 @@
 package com.zhyq.park.marketing.wh;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.zhyq.park.auth.JwtAccountService;
 import com.zhyq.park.common.exception.BizException;
 import com.zhyq.park.common.result.Result;
 import com.zhyq.park.marketing.entity.MktWarehouse;
@@ -10,6 +12,7 @@ import com.zhyq.park.marketing.mapper.MktWarehouseOnboardingMapper;
 import com.zhyq.park.marketing.service.MktAuditService;
 import com.zhyq.park.marketing.service.MktWarehouseFileService;
 import com.zhyq.park.marketing.service.MktWarehouseOnboardingService;
+import com.zhyq.park.marketing.service.MktSelfProfileService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.transaction.annotation.Transactional;
@@ -28,6 +31,7 @@ public class WhOnboardingController {
     private final MktAuditService auditService;
     private final MktWarehouseFileService files;
     private final ObjectMapper json;
+    private final MktSelfProfileService profiles;
 
     @GetMapping("/apply")
     public Result<MktWarehouse> apply() { return Result.ok(WhAuthContext.requireWarehouse(warehouseMapper)); }
@@ -37,8 +41,13 @@ public class WhOnboardingController {
     @Transactional
     public Result<MktWarehouse> saveApply(@RequestBody MktWarehouse body) {
         Long id = WhAuthContext.currentWarehouseId();
-        MktWarehouse before = WhAuthContext.requireWarehouse(warehouseMapper, id);
+        MktWarehouse before = warehouseMapper.selectOne(new LambdaQueryWrapper<MktWarehouse>()
+                .eq(MktWarehouse::getId, id).last("FOR UPDATE"));
+        JwtAccountService.assertWarehouseActive(before);
+        if (!Integer.valueOf(1).equals(before.getJoinStatus()) && !Integer.valueOf(2).equals(before.getJoinStatus()))
+            throw new BizException("资质已审核，资料修改请联系园区运营");
         MktWarehouseOnboardingService.validateProfile(body);
+        profiles.prepareWarehousePhoneChange(before, body.getPhone());
         int changed = warehouseMapper.update(null, new LambdaUpdateWrapper<MktWarehouse>()
                 .eq(MktWarehouse::getId, id).in(MktWarehouse::getJoinStatus, 1, 2)
                 .set(MktWarehouse::getName, body.getName().trim()).set(MktWarehouse::getRegion, body.getRegion().trim())
