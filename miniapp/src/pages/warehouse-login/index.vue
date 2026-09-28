@@ -8,7 +8,7 @@
     <view class="card login-card">
       <WechatAuthForm v-if="method === 'wechat'" warehouse @authenticated="done" @busy="busy = $event" />
       <PasswordAuthForm v-else warehouse @authenticated="done" />
-      <button v-if="canUseWechat" class="method-link" :disabled="busy" @click="choose(method === 'wechat' ? 'password' : 'wechat')">{{ method === 'wechat' ? '使用账号密码登录' : '返回一键登录' }}</button>
+      <button v-if="canUseWechat" class="method-link" :disabled="busy" @click="choose(method === 'wechat' ? 'password' : 'wechat')">{{ method === 'wechat' ? '账号密码登录（备用）' : '返回一键登录' }}</button>
     </view>
     <button class="identity-link" :disabled="busy" @click="chooseIdentity">切换身份</button>
   </view>
