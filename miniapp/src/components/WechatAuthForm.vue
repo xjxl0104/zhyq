@@ -1,7 +1,7 @@
 <template>
   <view>
     <view class="title">一键登录</view>
-    <view class="quick-note">首次登录自动创建账号，个人信息可稍后补充。</view>
+    <view class="quick-note">首次登录自动注册，以后可继续使用微信或手机号登录。</view>
     <template v-if="mock">
       <view class="quick-note">开发测试模式</view>
       <input class="input" v-model="testCode" :disabled="busy" placeholder="开发测试标识" aria-label="开发测试标识" />
@@ -17,7 +17,7 @@
     <button class="btn" :loading="busy && !usingPhone" :disabled="busy || !agreed" @click="login()">微信一键登录</button>
     <button v-if="mock" class="btn ghost" :loading="busy && usingPhone" :disabled="busy || !agreed" @click="loginWithTestPhone">手机号一键登录</button>
     <button v-else class="btn ghost" open-type="getPhoneNumber" :loading="busy && usingPhone" :disabled="busy || !agreed" @getphonenumber="onPhone">手机号一键登录</button>
-    <view class="quick-note secondary-note">已有业务账号，请使用原登录方式，避免重复建号。</view>
+    <view class="quick-note secondary-note">账号密码为备用登录方式。已有账号尚未关联微信时，请联系园区运营核验关联。</view>
   </view>
 </template>
 

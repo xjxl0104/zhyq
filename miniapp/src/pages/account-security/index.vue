@@ -2,7 +2,7 @@
   <view class="page-wrap">
     <view class="card security-card">
       <view class="title">{{ configured ? '修改账号密码' : '设置账号密码' }}</view>
-      <view class="note">设置后可使用账号密码登录{{ warehouse ? '云仓商家端' : '园区伙伴端' }}，继续使用当前资料和业务记录。</view>
+      <view class="note">账号密码可作为登录{{ warehouse ? '云仓商家端' : '园区伙伴端' }}的备用方式，继续使用当前资料和业务记录。已关联微信的账号仍可使用微信或手机号一键登录。</view>
       <view v-if="loading" class="note">正在读取账号信息…</view>
       <template v-else-if="ready">
         <view class="field-label">登录账号</view>
@@ -19,7 +19,7 @@
       <view v-if="error" class="error" role="alert">{{ error }}</view>
       <button v-if="ready" class="btn" :loading="busy" :disabled="busy || loading" @click="save">保存账号密码</button>
       <button v-else-if="!loading && !saved" class="btn" @click="load">重新读取</button>
-      <view v-if="saved" class="success" role="status">账号已更新，请使用新账号密码重新登录。</view>
+      <view v-if="saved" class="success" role="status">账号已更新，请返回登录页重新登录。</view>
     </view>
   </view>
 </template>
@@ -54,7 +54,7 @@ async function save() {
     await api().passwordSetup({ ...form, username: form.username.trim() })
     configured.value = true; saved.value = true; ready.value = false; form.password = ''; form.currentPassword = ''; confirmation.value = ''
     ;(warehouse.value ? warehouseToken : token).clear()
-    uni.showModal({ title: '账号已更新', content: '请使用新账号密码重新登录，原登录会话已失效。', showCancel: false,
+    uni.showModal({ title: '账号已更新', content: '原登录会话已失效，请重新登录。已关联微信的账号可继续使用微信或手机号一键登录，也可使用新账号密码。', showCancel: false,
       complete: () => uni.reLaunch({ url: warehouse.value ? '/pages/warehouse-login/index' : '/pages/login/index' }) })
   } catch (e) { error.value = e.message || '保存失败，请稍后重试' }
   finally { busy.value = false }
