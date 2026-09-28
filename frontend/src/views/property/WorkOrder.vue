@@ -60,6 +60,10 @@
       />
       <div class="toolbar">
         <el-button type="primary" @click="openDialog()"><el-icon><Plus /></el-icon>新增工单</el-button>
+        <el-button @click="openWecom">
+          <el-icon><ChatDotRound /></el-icon>企业微信通知
+          <el-tag v-if="wecom.enabled" type="success" size="small" style="margin-left: 6px">已开启</el-tag>
+        </el-button>
       </div>
       <MobileRecordList
         v-if="isMobile"
@@ -172,6 +176,7 @@
             clearable
             placeholder="选择承接该工单的单位(可不填)"
             style="width: 100%"
+            @change="onUnitChange"
           >
             <el-option
               v-for="u in unitOptions"
@@ -181,14 +186,40 @@
             />
           </el-select>
         </el-form-item>
-        <el-form-item label="联系人"><el-input v-model="form.contact" /></el-form-item>
-        <el-form-item label="联系电话"><el-input v-model="form.contactPhone" /></el-form-item>
+        <el-form-item label="联系人">
+          <el-input v-model="form.contact" placeholder="选责任单位后自动带出，可改" />
+        </el-form-item>
+        <el-form-item label="联系电话">
+          <el-input v-model="form.contactPhone" placeholder="选责任单位后自动带出，可改" />
+        </el-form-item>
         <el-form-item label="备注"><el-input v-model="form.remark" type="textarea" /></el-form-item>
         <el-form-item label="附件"><FileUpload v-model="attachFiles" biz-type="work_order" :biz-id="form.id" /></el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="dialog.visible = false">取消</el-button>
         <el-button type="primary" @click="submit">确定</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 企业微信群通知设置 -->
+    <el-dialog v-model="wecom.visible" title="企业微信群通知" width="620px">
+      <el-alert type="info" :closable="false" show-icon style="margin-bottom: 14px"
+                title="填入企业微信群机器人的 Webhook 地址后，每新建一条工单会自动往该群发一条报修信息。留空并保存即关闭推送。" />
+      <el-form label-width="110px">
+        <el-form-item label="Webhook 地址">
+          <el-input v-model="wecom.webhook" type="textarea" :rows="3"
+                    placeholder="https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=..." />
+        </el-form-item>
+        <el-form-item label="怎么获取">
+          <div class="wecom-tip">
+            企业微信电脑端 → 进入群聊 → 右上角「...」→ 群机器人 → 添加机器人 → 复制 Webhook 地址
+          </div>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="wecom.visible = false">取消</el-button>
+        <el-button :loading="wecom.testing" :disabled="!wecom.enabled" @click="testWecom">发送测试消息</el-button>
+        <el-button type="primary" :loading="wecom.saving" @click="saveWecom">保存</el-button>
       </template>
     </el-dialog>
 
@@ -272,6 +303,7 @@
 import { reactive, ref, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { ChatDotRound } from '@element-plus/icons-vue'
 import { workOrderApi, responsibleUnitApi } from '@/api/property'
 import { fileApi } from '@/api/file'
 import { userApi } from '@/api/system'
@@ -354,6 +386,13 @@ function sourceLink(order) {
 function gotoSource(order) {
   const path = SOURCE_ROUTES[order.sourceType]
   if (path) router.push({ path, query: { highlightId: order.sourceId } })
+}
+// 选中责任单位后把它的联系人/电话带进表单,单位没留联系人就不动手填的内容
+function onUnitChange(id) {
+  const unit = unitOptions.value.find((u) => u.id === id)
+  if (!unit) return
+  if (unit.contact) form.contact = unit.contact
+  if (unit.contactPhone) form.contactPhone = unit.contactPhone
 }
 async function loadUnitOptions() {
   try {
@@ -475,6 +514,41 @@ async function openDetail(row) {
   detailDialog.visible = true
 }
 
+// 企业微信群机器人:地址存在后端 biz_setting,这里只做读写与测试
+const wecom = reactive({ visible: false, webhook: '', enabled: false, saving: false, testing: false })
+async function loadWecom() {
+  try {
+    const d = await workOrderApi.wecomWebhook()
+    wecom.webhook = d?.webhook || ''
+    wecom.enabled = !!d?.enabled
+  } catch {
+    wecom.enabled = false   // 读不到不影响建单
+  }
+}
+function openWecom() {
+  wecom.visible = true
+  loadWecom()
+}
+async function saveWecom() {
+  wecom.saving = true
+  try {
+    await workOrderApi.saveWecomWebhook(wecom.webhook)
+    ElMessage.success(wecom.webhook ? '已保存，后续新建工单会推送到该群' : '已关闭推送')
+    await loadWecom()
+  } finally {
+    wecom.saving = false
+  }
+}
+async function testWecom() {
+  wecom.testing = true
+  try {
+    await workOrderApi.testWecomWebhook()
+    ElMessage.success('已发送，请到群里查看')
+  } finally {
+    wecom.testing = false
+  }
+}
+
 onMounted(() => {
   // 支持从工单汇总页点状态卡片跳进来时带上筛选
   const s = Number(route.query.status)
@@ -484,10 +558,12 @@ onMounted(() => {
   refresh()
   loadStaff()
   loadUnitOptions()
+  loadWecom()
 })
 </script>
 
 <style scoped>
+.wecom-tip { color: var(--text-secondary, #909399); font-size: 13px; line-height: 1.6; }
 .stat-row { display: flex; gap: 16px; margin-bottom: 16px; }
 .stat-card {
   flex: 1; background: var(--bg-card); border-radius: var(--radius);

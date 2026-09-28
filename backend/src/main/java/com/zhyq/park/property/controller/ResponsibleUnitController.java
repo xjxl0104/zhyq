@@ -68,8 +68,10 @@ public class ResponsibleUnitController {
     public Result<List<ResponsibleUnit>> options(@RequestParam(required = false) Long projectId) {
         LambdaQueryWrapper<ResponsibleUnit> q = new LambdaQueryWrapper<ResponsibleUnit>()
                 .eq(ResponsibleUnit::getEnabled, 1)
+                // 联系人/电话给建单页自动带出责任人信息用
                 .select(ResponsibleUnit::getId, ResponsibleUnit::getName,
-                        ResponsibleUnit::getUnitType, ResponsibleUnit::getServiceScope)
+                        ResponsibleUnit::getUnitType, ResponsibleUnit::getServiceScope,
+                        ResponsibleUnit::getContact, ResponsibleUnit::getContactPhone)
                 .orderByAsc(ResponsibleUnit::getName);
         if (projectId != null) {
             // 园区专属 + 全局通用一并返回

@@ -18,6 +18,10 @@ export const workOrderApi = {
       params: { sourceType, sourceIds: sourceIds.join(',') }
     }),
   add: (data) => request.post('/property/workorder', data),
+  // 企业微信群机器人:读取/保存 webhook、测试推送
+  wecomWebhook: () => request.get('/property/workorder/wecom-webhook'),
+  saveWecomWebhook: (webhook) => request.post('/property/workorder/wecom-webhook', { webhook }),
+  testWecomWebhook: () => request.post('/property/workorder/wecom-webhook/test'),
   update: (data) => request.put('/property/workorder', data),
   remove: (id) => request.delete(`/property/workorder/${id}`),
   dispatch: (id, data) => request.post(`/property/workorder/${id}/dispatch`, data),

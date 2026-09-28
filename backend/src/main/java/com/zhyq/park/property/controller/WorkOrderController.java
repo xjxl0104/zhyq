@@ -18,6 +18,7 @@ import com.zhyq.park.property.service.WorkOrderSummaryService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
+import com.zhyq.park.property.notify.WeComBotNotifier;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
@@ -49,6 +50,7 @@ public class WorkOrderController {
     private final SlaEscalationJob slaEscalationJob;
     private final WorkOrderSummaryService summaryService;
     private final ApplicationEventPublisher eventPublisher;
+    private final WeComBotNotifier weComBotNotifier;
 
     @Operation(summary = "分页查询工单")
     @GetMapping("/page")
@@ -99,6 +101,31 @@ public class WorkOrderController {
         eventPublisher.publishEvent(new DomainEvent.WorkOrderCreated(
                 wo.getId(), wo.getOrderType(), null, LocalDateTime.now()));
         return Result.ok(wo.getId());
+    }
+
+    @Operation(summary = "读取企业微信群机器人 Webhook")
+    @GetMapping("/wecom-webhook")
+    public Result<Map<String, Object>> getWeComWebhook() {
+        Map<String, Object> m = new HashMap<>();
+        m.put("webhook", weComBotNotifier.webhook());
+        m.put("enabled", weComBotNotifier.enabled());
+        return Result.ok(m);
+    }
+
+    @Operation(summary = "保存企业微信群机器人 Webhook(留空则关闭推送)")
+    @PostMapping("/wecom-webhook")
+    public Result<Void> saveWeComWebhook(@RequestBody Map<String, String> body) {
+        weComBotNotifier.saveWebhook(body == null ? null : body.get("webhook"));
+        return Result.ok();
+    }
+
+    @Operation(summary = "测试推送一条消息到企业微信群")
+    @PostMapping("/wecom-webhook/test")
+    public Result<Void> testWeComWebhook() {
+        weComBotNotifier.sendTest("""
+                **【测试消息】智慧园区工单通知已接通**
+                > 之后新建报修工单会自动推送到本群""");
+        return Result.ok();
     }
 
     @Operation(summary = "修改工单")
