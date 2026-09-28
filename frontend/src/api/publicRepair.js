@@ -12,5 +12,11 @@ function unwrap(res) {
 
 export const repairApi = {
   submit: (data) => http.post('/public/repair', data).then(unwrap),
+  uploadPhoto(file) {
+    const fd = new FormData()
+    fd.append('file', file)
+    // 手机原图较大，单独放宽超时
+    return http.post('/public/repair/photo', fd, { timeout: 60000 }).then(unwrap)
+  },
   my: (phone) => http.get('/public/repair/my', { params: { phone } }).then(unwrap)
 }

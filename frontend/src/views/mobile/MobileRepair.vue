@@ -52,6 +52,21 @@
         <span class="lb">联系电话 <i>*</i></span>
         <input v-model="form.contactPhone" type="tel" maxlength="11" inputmode="numeric" placeholder="维修人员联系您用" />
       </label>
+      <div class="field">
+        <span class="lb">现场照片 <em class="opt">最多 {{ MAX_PHOTOS }} 张</em></span>
+        <div class="photos">
+          <div v-for="p in photos" :key="p.id" class="photo">
+            <img :src="p.preview" alt="现场照片" />
+            <button type="button" class="photo-del" @click="removePhoto(p.id)">×</button>
+          </div>
+          <label v-if="photos.length < MAX_PHOTOS" class="photo-add">
+            <input type="file" accept="image/*" multiple @change="pickPhotos" />
+            <span v-if="uploading" class="photo-add-ico">…</span>
+            <span v-else class="photo-add-ico">＋</span>
+            <span class="photo-add-tx">{{ uploading ? '上传中' : '拍照/相册' }}</span>
+          </label>
+        </div>
+      </div>
       <label class="field">
         <span class="lb">补充说明</span>
         <textarea v-model="form.remark" maxlength="500" rows="3" placeholder="方便上门的时间、具体情况等" />
@@ -117,6 +132,7 @@ const PHONE_RE = /^1[3-9]\d{9}$/
 const statusText = (s) => STATUS[s] || '处理中'
 const statusClass = (s) => (s === 5 ? 'ok' : s === 7 ? 'warn' : 'doing')
 
+const MAX_PHOTOS = 6
 const tab = ref('submit')
 const error = ref('')
 const submitting = ref(false)
@@ -133,17 +149,47 @@ async function submit() {
   try {
     const phone = form.contactPhone.trim()
     const contact = form.contact.trim()
-    const res = await repairApi.submit({ ...form, contact, contactPhone: phone })
+    const fileIds = photos.value.map((p) => p.id).join(',')
+    const res = await repairApi.submit({ ...form, contact, contactPhone: phone, fileIds })
     doneCode.value = res.code
     queryPhone.value = phone   // 查进度时不用再输一遍
     myList.value = []
     // 姓名与手机号留着，同一个人连着报两单不用重填
     Object.assign(form, emptyForm(), { contact, contactPhone: phone })
+    photos.value.forEach((p) => URL.revokeObjectURL(p.preview))
+    photos.value = []
   } catch (e) {
     error.value = e?.message || '提交失败，请稍后再试'
   } finally {
     submitting.value = false
   }
+}
+
+// 照片先传后关联:提交时把拿到的文件 id 一起带上
+const photos = ref([])
+const uploading = ref(false)
+async function pickPhotos(e) {
+  const files = Array.from(e.target.files || [])
+  e.target.value = ''            // 同一张图再选一次也能触发 change
+  if (!files.length) return
+  error.value = ''
+  uploading.value = true
+  try {
+    for (const file of files) {
+      if (photos.value.length >= MAX_PHOTOS) break
+      const res = await repairApi.uploadPhoto(file)
+      photos.value.push({ id: res.id, preview: URL.createObjectURL(file) })
+    }
+  } catch (err) {
+    error.value = err?.message || '照片上传失败，可不传照片直接提交'
+  } finally {
+    uploading.value = false
+  }
+}
+function removePhoto(id) {
+  const hit = photos.value.find((p) => p.id === id)
+  if (hit) URL.revokeObjectURL(hit.preview)
+  photos.value = photos.value.filter((p) => p.id !== id)
 }
 
 const queryPhone = ref('')
@@ -186,6 +232,17 @@ input, textarea { width: 100%; box-sizing: border-box; padding: 11px 12px; borde
   border-radius: 8px; font-size: 16px; color: #303133; background: #fff; font-family: inherit; }
 input:focus, textarea:focus { outline: none; border-color: #4c5ce0; }
 .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.opt { font-style: normal; font-size: 12px; color: #909399; margin-left: 4px; }
+.photos { display: flex; flex-wrap: wrap; gap: 10px; }
+.photo { position: relative; width: 78px; height: 78px; border-radius: 8px; overflow: hidden; }
+.photo img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.photo-del { position: absolute; top: 0; right: 0; width: 22px; height: 22px; border: none;
+  border-radius: 0 0 0 8px; background: rgba(0, 0, 0, .5); color: #fff; font-size: 15px; line-height: 22px; padding: 0; }
+.photo-add { width: 78px; height: 78px; border: 1px dashed #c8ccd6; border-radius: 8px; display: flex;
+  flex-direction: column; align-items: center; justify-content: center; gap: 2px; color: #909399; background: #fafbfc; }
+.photo-add input { display: none; }
+.photo-add-ico { font-size: 22px; line-height: 1; }
+.photo-add-tx { font-size: 11px; }
 .chip { padding: 8px 14px; border: 1px solid #dcdfe6; border-radius: 16px; background: #fff; font-size: 14px; color: #606266; }
 .chip.on { border-color: #4c5ce0; color: #4c5ce0; background: #eef0fd; }
 .primary { width: 100%; padding: 13px 0; border: none; border-radius: 8px; background: #4c5ce0;

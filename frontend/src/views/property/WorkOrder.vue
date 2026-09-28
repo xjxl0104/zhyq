@@ -285,6 +285,15 @@
           >查看来源记录</el-button>
         </el-descriptions-item>
       </el-descriptions>
+
+      <div v-if="detailFiles.length" class="detail-files">
+        <div class="detail-files-hd">报修照片 / 附件</div>
+        <div class="detail-files-list">
+          <el-button v-for="f in detailFiles" :key="f.id" link type="primary" @click="downloadFile(f)">
+            {{ f.originalName }}
+          </el-button>
+        </div>
+      </div>
       <el-divider content-position="left">流转记录</el-divider>
       <el-timeline v-if="detail.logs?.length">
         <el-timeline-item v-for="log in detail.logs" :key="log.id"
@@ -306,6 +315,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { ChatDotRound } from '@element-plus/icons-vue'
 import { workOrderApi, responsibleUnitApi } from '@/api/property'
 import { fileApi } from '@/api/file'
+import { startFileDownload } from '@/utils/fileDownload'
 import { userApi } from '@/api/system'
 import FileUpload from '@/components/FileUpload.vue'
 import HighlightNotice from '@/components/HighlightNotice.vue'
@@ -507,11 +517,17 @@ async function submitVerify() {
 // 详情
 const detailDialog = reactive({ visible: false })
 const detail = reactive({ order: null, logs: [] })
+const detailFiles = ref([])
 async function openDetail(row) {
   const res = await workOrderApi.get(row.id)
   detail.order = res.order
   detail.logs = res.logs || []
   detailDialog.visible = true
+  // 手机自助报修传的照片也走通用附件表,这里一并列出来
+  try { detailFiles.value = await fileApi.list('work_order', row.id) } catch { detailFiles.value = [] }
+}
+function downloadFile(f) {
+  startFileDownload(f.id, f.originalName)
 }
 
 // 企业微信群机器人:地址存在后端 biz_setting,这里只做读写与测试
@@ -563,6 +579,9 @@ onMounted(() => {
 </script>
 
 <style scoped>
+.detail-files { margin-bottom: 16px; }
+.detail-files-hd { font-size: 13px; color: var(--text-secondary, #909399); margin-bottom: 6px; }
+.detail-files-list { display: flex; flex-wrap: wrap; gap: 12px; }
 .wecom-tip { color: var(--text-secondary, #909399); font-size: 13px; line-height: 1.6; }
 .stat-row { display: flex; gap: 16px; margin-bottom: 16px; }
 .stat-card {

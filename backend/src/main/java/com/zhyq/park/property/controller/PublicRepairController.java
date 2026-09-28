@@ -4,6 +4,9 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.zhyq.park.common.event.DomainEvent;
 import com.zhyq.park.common.exception.BizException;
 import com.zhyq.park.common.result.Result;
+import com.zhyq.park.file.entity.SysFile;
+import com.zhyq.park.file.mapper.SysFileMapper;
+import com.zhyq.park.file.service.FileStorageService;
 import com.zhyq.park.property.entity.WorkOrder;
 import com.zhyq.park.property.mapper.WorkOrderMapper;
 import com.zhyq.park.property.model.WorkOrderSource;
@@ -16,8 +19,11 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.time.LocalDateTime;
+import java.util.Locale;
+import java.util.Set;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -48,7 +54,19 @@ public class PublicRepairController {
     /** 同一 IP 10 分钟内最多 10 单 */
     private static final int IP_LIMIT = 10;
 
+    /** 只收常见手机拍照格式,且按扩展名与 content-type 双重判断 */
+    private static final Set<String> IMAGE_EXT = Set.of("jpg", "jpeg", "png", "webp", "heic", "heif", "bmp", "gif");
+    /** 单张 10MB:手机原图普遍 3-8MB */
+    private static final long MAX_PHOTO_SIZE = 10L * 1024 * 1024;
+    /** 一单最多 6 张 */
+    private static final int MAX_PHOTOS = 6;
+    /** 附件只认本次提交前 2 小时内上传的,防止拿旧 id 硬凑 */
+    private static final long PHOTO_MAX_AGE_HOURS = 2;
+    private static final String BIZ_TYPE = "work_order";
+
     private final WorkOrderMapper workOrderMapper;
+    private final SysFileMapper fileMapper;
+    private final FileStorageService fileStorageService;
     private final ApplicationEventPublisher eventPublisher;
     private final SubmitThrottle throttle = new SubmitThrottle();
 
@@ -87,6 +105,7 @@ public class PublicRepairController {
         wo.setContactPhone(phone);
         wo.setRemark(remark);
         workOrderMapper.insert(wo);
+        attachPhotos(body.get("fileIds"), wo);
 
         // 复用既有事件:已配置企业微信群机器人时,物业群里会立刻收到这条报修
         eventPublisher.publishEvent(new DomainEvent.WorkOrderCreated(
@@ -127,6 +146,83 @@ public class PublicRepairController {
             list.add(m);
         }
         return Result.ok(list);
+    }
+
+    @Operation(summary = "上传报修照片(单张)")
+    @PostMapping("/photo")
+    public Result<Map<String, Object>> photo(@RequestParam("file") MultipartFile file, HttpServletRequest request) {
+        if (file == null || file.isEmpty()) {
+            throw new BizException("请选择照片");
+        }
+        if (file.getSize() > MAX_PHOTO_SIZE) {
+            throw new BizException("单张照片不要超过 10MB");
+        }
+        String ext = FileStorageService.extOf(
+                file.getOriginalFilename() == null ? "" : file.getOriginalFilename()).toLowerCase(Locale.ROOT);
+        String contentType = file.getContentType() == null ? "" : file.getContentType().toLowerCase(Locale.ROOT);
+        if (!IMAGE_EXT.contains(ext) || !contentType.startsWith("image/")) {
+            throw new BizException("只能上传照片(jpg/png/heic 等)");
+        }
+        throttle.checkPhoto(clientIp(request));
+
+        FileStorageService.StoredResult stored = fileStorageService.store(file);
+        SysFile sf = new SysFile();
+        sf.setBizType(BIZ_TYPE);
+        sf.setBizId(null);                 // 建单成功后再回填,和后台"先传后关联"一个路子
+        sf.setOriginalName(stored.originalName());
+        sf.setStorePath(stored.storePath());
+        sf.setUrl(stored.url());
+        sf.setFileSize(stored.size());
+        sf.setContentType(stored.contentType());
+        sf.setExt(stored.ext());
+        fileMapper.insert(sf);
+
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("id", sf.getId());
+        m.put("name", sf.getOriginalName());
+        return Result.ok(m);
+    }
+
+    /**
+     * 把刚上传的照片关联到新建的工单。
+     * 只认:未关联过、类型是 work_order、确为图片、且 2 小时内上传的记录 ——
+     * 匿名接口不能让人拿别处的文件 id 蹭进工单。
+     */
+    private void attachPhotos(String fileIds, WorkOrder wo) {
+        if (!StringUtils.hasText(fileIds)) {
+            return;
+        }
+        int attached = 0;
+        for (String raw : fileIds.split(",")) {
+            if (attached >= MAX_PHOTOS) {
+                break;
+            }
+            Long id;
+            try {
+                id = Long.valueOf(raw.trim());
+            } catch (NumberFormatException e) {
+                continue;
+            }
+            SysFile f = fileMapper.selectById(id);
+            if (f == null || f.getBizId() != null || !BIZ_TYPE.equals(f.getBizType())) {
+                continue;
+            }
+            if (f.getExt() == null || !IMAGE_EXT.contains(f.getExt().toLowerCase(Locale.ROOT))) {
+                continue;
+            }
+            if (f.getCreateTime() == null
+                    || f.getCreateTime().isBefore(LocalDateTime.now().minusHours(PHOTO_MAX_AGE_HOURS))) {
+                continue;
+            }
+            SysFile update = new SysFile();
+            update.setId(f.getId());
+            update.setBizId(wo.getId());
+            fileMapper.updateById(update);
+            attached++;
+        }
+        if (attached > 0) {
+            log.info("[public-repair] 工单 {} 关联照片 {} 张", wo.getCode(), attached);
+        }
     }
 
     private static int parseUrgency(String v) {
@@ -174,6 +270,16 @@ public class PublicRepairController {
             }
             // 顺手清掉过期 key,避免 map 无限增长
             hits.entrySet().removeIf(e -> e.getValue().stream().noneMatch(t -> now - t < PHONE_WINDOW_MS));
+        }
+
+        /** 照片单独一档:一单最多 6 张,10 分钟 40 次足够连传几单 */
+        synchronized void checkPhoto(String ip) {
+            long now = System.currentTimeMillis();
+            String key = "f:" + (ip == null ? "-" : ip);
+            if (count(key, now) >= 40) {
+                throw new BizException("上传太频繁了,请稍后再试");
+            }
+            record(key, now);
         }
 
         private int count(String key, long now) {
