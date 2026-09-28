@@ -63,6 +63,9 @@ public class SecurityConfig {
                         "/mp/v1/auth/**",
                         "/wh/v1/auth/**",
                         "/open/v1/erp/**",
+                        // 手机自助报修:业主扫码即填,不要求账号。控制器内做手机号校验与限流,
+                        // 且只暴露"建单 + 按手机号查自己那几单",不开放工单列表。
+                        "/public/repair/**",
                         "/doc.html", "/webjars/**", "/v3/api-docs/**", "/swagger-ui/**",
                         "/favicon.ico", "/error"
                 ).permitAll()

@@ -9,6 +9,8 @@ const routes = [
   ] : []),
   // 登录(不套 Layout)
   { path: '/login', name: 'Login', meta: { title: '登录', public: true }, component: () => import('@/views/Login.vue') },
+  // 手机自助报修:业主扫码/点链接直接进,不需要账号
+  { path: '/m/repair', name: 'MobileRepair', meta: { title: '园区报修', public: true }, component: () => import('@/views/mobile/MobileRepair.vue') },
   {
     path: '/',
     component: Layout,
