@@ -24,6 +24,15 @@
       </view>
       <view class="role-arrow">›</view>
     </view>
+
+    <view class="demo-entry pressable" @click="goDemo">
+      <view class="demo-entry-mark">◈</view>
+      <view class="demo-entry-main">
+        <view class="demo-entry-title">无需登录，先体验功能</view>
+        <view class="demo-entry-desc">临时演示数据 · 不会提交真实业务</view>
+      </view>
+      <view class="demo-entry-arrow">进入 ›</view>
+    </view>
   </view>
 </template>
 
@@ -39,6 +48,7 @@ onLoad(() => {
 
 function goPartner() { uni.reLaunch({ url: '/pages/login/index' }) }
 function goWarehouse() { uni.reLaunch({ url: '/pages/warehouse-login/index' }) }
+function goDemo() { uni.navigateTo({ url: '/pages/demo/index' }) }
 </script>
 
 <style scoped>
@@ -55,4 +65,10 @@ function goWarehouse() { uni.reLaunch({ url: '/pages/warehouse-login/index' }) }
 .role-title { color: var(--park-ink); font-size: 32rpx; font-weight: 650; }
 .role-desc { margin-top: 8rpx; color: var(--park-muted); font-size: 25rpx; }
 .role-arrow { color: #c3cadb; font-size: 40rpx; }
+.demo-entry { display: flex; align-items: center; gap: 18rpx; margin: 28rpx 24rpx 0; padding: 22rpx 24rpx; border: 1rpx solid rgba(56,87,245,.18); border-radius: 22rpx; background: linear-gradient(135deg, #f4f6ff, #eefbfc); }
+.demo-entry-mark { display: flex; align-items: center; justify-content: center; width: 58rpx; height: 58rpx; color: #3857f5; border-radius: 18rpx; background: #fff; box-shadow: 0 8rpx 18rpx rgba(56,87,245,.13); font-size: 30rpx; }
+.demo-entry-main { flex: 1; }
+.demo-entry-title { color: var(--park-ink); font-size: 28rpx; font-weight: 650; }
+.demo-entry-desc { margin-top: 6rpx; color: var(--park-muted); font-size: 22rpx; }
+.demo-entry-arrow { color: var(--park-blue); font-size: 24rpx; font-weight: 600; }
 </style>
