@@ -1,7 +1,7 @@
 <template>
   <view class="page-wrap home-page">
     <view class="card hero-card">
-      <view class="hero-title">园区伙伴工作台</view>
+      <view class="hero-title">全民营销</view>
       <view class="hero-subtitle">连接客户、空间与云仓服务，让每一次推荐都有回响</view>
       <view class="hero-label">累计收益（元）</view>
       <view class="hero-number">{{ fmt(home.total) }}</view>
@@ -18,7 +18,7 @@
         <view class="quick-icon">荐</view><view><view class="quick-title">推荐客户</view><view class="quick-desc">园区入驻 / 云仓服务</view></view>
       </view>
       <view class="quick-card pressable" @click="go('/pages/position/index')">
-        <view class="quick-icon">岗</view><view><view class="quick-title">我的岗位</view><view class="quick-desc">{{ me.positionCode || '-' }} · 晋升进度</view></view>
+        <view class="quick-icon">岗</view><view><view class="quick-title">我的称号</view><view class="quick-desc">{{ me.positionCode || '-' }} · 查看详情</view></view>
       </view>
       <view class="quick-card pressable" @click="go('/pages/team/index')">
         <view class="quick-icon">团</view><view><view class="quick-title">我的团队</view><view class="quick-desc">查看直属成员</view></view>
@@ -26,7 +26,11 @@
       <view class="quick-card pressable" @click="go('/pages/withdraw/index')">
         <view class="quick-icon">提</view><view><view class="quick-title">申请提现</view><view class="quick-desc">可提 {{ fmt(home.withdrawable) }}</view></view>
       </view>
+      <view v-if="me.positionCode === 'P4' && Number(me.status) === 1" class="quick-card pressable" @click="go('/pages/allocation/index')">
+        <view class="quick-icon">价</view><view><view class="quick-title">客户定价与分佣</view><view class="quick-desc">按客户自定义每单金额</view></view>
+      </view>
     </view>
+    <view class="card"><view class="muted">积分及礼品兑换规则待配置，当前收益按金额展示。</view></view>
 
     <view class="section-head"><text class="section-title">最近动态</text><text class="caption" @click="uni.navigateTo({url:'/pages/notices/index'})">消息通知 ›</text></view>
     <view class="card activity-card">
@@ -48,7 +52,7 @@ import { token } from '@/utils/request'
 const STATUS = { 1: '冻结', 2: '可结算', 3: '已结算', 4: '已提现', 5: '作废' }
 const home = ref({})
 const me = ref({})
-const fmt = (v) => Number(v || 0).toFixed(2)
+const fmt = (v) => Number(v || 0).toFixed(3)
 const go = (url) => uni.navigateTo({ url })
 
 onShow(async () => {

@@ -41,17 +41,20 @@
         <el-table-column prop="promoterName" label="成交伙伴" width="110" />
         <el-table-column prop="customerGrade" label="评级" width="60" align="center" />
         <el-table-column prop="qty" label="件数" width="80" /><el-table-column prop="packages" label="包裹数" width="85" /><el-table-column label="服务费(元)" width="115" align="right"><template #default="{ row }">{{ money(row.serviceFee) }}</template></el-table-column>
-        <el-table-column label="基数(元)" width="110" align="right"><template #default="{ row }">{{ money(row.baseAmount) }}</template></el-table-column>
-        <el-table-column label="系数" width="90" align="right">
-          <template #default="{ row }">{{ row.sourceType === 1 ? `${row.poolFactor} 月` : `${row.poolFactor}%` }}</template>
+        <el-table-column label="基数 / 计佣单量" width="140" align="right"><template #default="{ row }">{{ row.pricingId != null ? `${row.commissionOrderCount ?? '—'} 单` : `${money(row.baseAmount)} 元` }}</template></el-table-column>
+        <el-table-column label="计佣规则" width="160" align="right">
+          <template #default="{ row }">
+            <template v-if="row.pricingId != null">{{ Number(row.commissionUnitPrice || 0).toFixed(3) }} 元 / 单<div class="basis-note">P4 自定义</div></template>
+            <template v-else>{{ row.sourceType === 1 ? `${row.poolFactor} 月` : `${row.poolFactor}%` }}</template>
+          </template>
         </el-table-column>
-        <el-table-column label="佣金池(元)" width="110" align="right"><template #default="{ row }">{{ money(row.poolAmount) }}</template></el-table-column>
+        <el-table-column label="伙伴佣金池(元)" width="125" align="right"><template #default="{ row }">{{ row.pricingId != null ? Number(row.poolAmount || 0).toFixed(3) : money(row.poolAmount) }}</template></el-table-column>
         <el-table-column label="状态" width="90"><template #default="{ row }"><el-tag :type="stType(row.status)">{{ ST[row.status] }}</el-tag></template></el-table-column>
         <el-table-column prop="remark" label="业务说明" min-width="170" show-overflow-tooltip />
         <el-table-column prop="eventTime" label="事件时间" width="160" />
         <el-table-column label="操作" width="150" fixed="right">
           <template #default="{ row }">
-            <el-button v-if="Number(row.poolAmount) > 0" link type="primary" @click="openSplits(row)">拆分</el-button>
+            <el-button v-if="row.pricingId != null || Number(row.poolAmount) > 0" link type="primary" @click="openSplits(row)">拆分</el-button>
             <el-button v-if="row.status === 2" link type="danger" @click="voidOrder(row)">作废</el-button>
           </template>
         </el-table-column>
@@ -61,16 +64,17 @@
                      v-model:page-size="query.pageSize" :page-sizes="[10,20,50]" @change="load" />
     </div>
 
-    <el-drawer v-model="splits.visible" :title="`佣金拆分 · ${splits.row?.sourceNo || ''}`" size="560px">
+    <el-drawer v-model="splits.visible" :title="`佣金拆分 · ${splits.row?.sourceNo || ''}`" size="min(680px, 100vw)">
       <el-table :data="splits.list" size="small" border>
         <el-table-column prop="promoterId" label="伙伴" width="80" />
         <el-table-column prop="positionCode" label="岗位" width="70" />
-        <el-table-column label="份额 / 级差" width="110"><template #default="{ row }">{{ row.sharePct }}% / {{ row.diffPct }}%</template></el-table-column>
-        <el-table-column label="金额(元)" width="110" align="right"><template #default="{ row }">{{ money(row.amount) }}</template></el-table-column>
+        <el-table-column label="计佣依据" min-width="190"><template #default="{ row }"><CommissionBasis :row="row" /></template></el-table-column>
+        <el-table-column label="金额(元)" width="110" align="right"><template #default="{ row }">{{ row.pricingId != null ? Number(row.amount || 0).toFixed(3) : money(row.amount) }}</template></el-table-column>
         <el-table-column label="状态"><template #default="{ row }">{{ CST[row.status] }}</template></el-table-column>
         <el-table-column prop="unfreezeAt" label="解冻时间" width="160" />
       </el-table>
-      <p class="hint">合计 {{ sum }} / 池 {{ splits.row?.poolAmount }};差额为园区留存(链未到顶格、退出或内部人员)。</p>
+      <p v-if="splits.row?.pricingId != null" class="hint split-summary">总佣金 {{ snapshotAmount(splits.row.commissionUnitPrice, splits.row.commissionOrderCount) }} 元；伙伴佣金池 {{ Number(splits.row.poolAmount || 0).toFixed(3) }} 元；公司剩余额 {{ snapshotAmount(splits.row.companyPerOrder, splits.row.commissionOrderCount) }} 元。按订单生成时的 P4 配置计算，当前流水合计 {{ sum }} 元。</p>
+      <p v-else class="hint">合计 {{ sum }} / 池 {{ splits.row?.poolAmount }};差额为园区留存(链未到顶格、退出或内部人员)。</p>
     </el-drawer>
   </div>
 </template>
@@ -80,6 +84,7 @@ import { reactive, ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { mktOrderApi } from '@/api/marketing'
 import { money } from '@/utils/format'
+import CommissionBasis from './CommissionBasis.vue'
 
 const SRC = { 1: '租赁签约', 2: '出库单', 3: '平台费收款', 4: '签约奖', 5: '增值服务' }
 const ST = { 1: '待确认', 2: '已确认', 3: '已退款', 4: '已取消', 5: '无归属' }
@@ -126,7 +131,8 @@ async function voidOrder(row) {
 
 const splits = reactive({ visible: false, row: null, list: [] })
 async function openSplits(row) { splits.row = row; splits.list = await mktOrderApi.splits(row.id); splits.visible = true }
-const sum = computed(() => splits.list.reduce((a, s) => a + Number(s.amount || 0), 0).toFixed(2))
+const snapshotAmount = (unitPrice, count) => unitPrice == null || count == null ? '—' : (Number(unitPrice) * Number(count)).toFixed(3)
+const sum = computed(() => splits.list.reduce((a, s) => a + Number(s.amount || 0), 0).toFixed(splits.row?.pricingId != null ? 3 : 2))
 
 onMounted(load)
 </script>
@@ -134,6 +140,7 @@ onMounted(load)
 <style scoped>
 .toolbar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .hint { color: var(--el-text-color-secondary); font-size: 12px; }
+.basis-note { color: var(--el-text-color-regular); font-size: 12px; margin-top: 4px; }
 .mb { margin-bottom: 12px; }
 .errs { margin: 4px 0 0 16px; max-height: 120px; overflow: auto; }
 .pager { margin-top: 16px; justify-content: flex-end; }

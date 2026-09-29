@@ -64,6 +64,14 @@ it('template download goes through axios with the login token and returns a blob
   expect(res.data).toBeInstanceOf(Blob)
 })
 
+it('customer pricing uses the authenticated read endpoint scoped to the selected project', async () => {
+  await mktCustomerApi.pricing(17)
+  expect(received.method).toBe('GET')
+  expect(received.url).toBe('/api/crm/marketing/customer/17/pricing?projectId=7')
+  expect(received.authorization).toBe('Bearer mkt-test-token')
+  expect(received.body).toBe('')
+})
+
 
 it('marketing restore and amendment send the actual business request bodies', async () => {
   await mktCustomerApi.restore(42, { reason: '重新沟通' })

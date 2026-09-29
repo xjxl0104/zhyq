@@ -53,6 +53,8 @@ public class MktCommissionController {
         List<Map<String, Object>> rows = p.getRecords().stream().map(c -> {
             Map<String, Object> m = new HashMap<>();
             m.put("id", c.getId()); m.put("referralOrderId", c.getReferralOrderId()); m.put("promoterId", c.getPromoterId());
+            m.put("withdrawnAmount", c.getWithdrawnAmount()); m.put("withdrawalAmount", c.getWithdrawalAmount());
+            m.put("pricingId", c.getPricingId()); m.put("amountPerOrder", c.getAmountPerOrder()); m.put("orderCount", c.getOrderCount());
             m.put("positionCode", c.getPositionCode()); m.put("sharePct", c.getSharePct()); m.put("diffPct", c.getDiffPct());
             m.put("baseAmount", c.getBaseAmount()); m.put("rate", c.getRate()); m.put("amount", c.getAmount()); m.put("sign", c.getSign());
             m.put("status", c.getStatus()); m.put("unfreezeAt", c.getUnfreezeAt()); m.put("settleBatchId", c.getSettleBatchId());

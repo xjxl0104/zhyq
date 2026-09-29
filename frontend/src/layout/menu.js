@@ -40,7 +40,7 @@ export const menuTree = [
         title: '全民营销', icon: 'Share', children: [
           { title: '看板', path: '/crm/marketing/dashboard' },
           { title: '伙伴管理', path: '/crm/marketing/promoter' },
-          { title: '岗位与份额', path: '/crm/marketing/position' },
+          { title: '角色与称号', path: '/crm/marketing/position' },
           { title: '客户评级', path: '/crm/marketing/grade' },
           { title: '客户管理', path: '/crm/marketing/customer' },
           { title: '服务合同', path: '/crm/marketing/contract' },

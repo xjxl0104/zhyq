@@ -188,6 +188,8 @@ public class MpBizController {
         List<Map<String, Object>> rows = p.getRecords().stream().map(c -> {
             Map<String, Object> m = new HashMap<>();
             m.put("id", c.getId()); m.put("amount", c.getAmount()); m.put("sign", c.getSign()); m.put("status", c.getStatus());
+            m.put("withdrawnAmount", c.getWithdrawnAmount()); m.put("withdrawalAmount", c.getWithdrawalAmount());
+            m.put("pricingId", c.getPricingId()); m.put("amountPerOrder", c.getAmountPerOrder()); m.put("orderCount", c.getOrderCount());
             m.put("positionCode", c.getPositionCode()); m.put("sharePct", c.getSharePct()); m.put("diffPct", c.getDiffPct());
             m.put("rate", c.getRate()); m.put("baseAmount", c.getBaseAmount()); m.put("unfreezeAt", c.getUnfreezeAt()); m.put("time", c.getCreateTime());
             MktReferralOrder o = orderMapper.selectById(c.getReferralOrderId());
@@ -206,7 +208,10 @@ public class MpBizController {
         Long pid = MpAuthService.currentPromoterId();
         MktPromoter me = promoterMapper.selectById(pid);
         Map<String, Object> m = new HashMap<>();
-        m.put("balance", withdrawalService.balance(pid));
+        BigDecimal balance = withdrawalService.balance(pid);
+        BigDecimal cashable = balance.max(BigDecimal.ZERO).setScale(2, java.math.RoundingMode.DOWN);
+        m.put("balance", balance); m.put("cashableBalance", cashable);
+        m.put("fractionalBalance", balance.max(BigDecimal.ZERO).subtract(cashable));
         m.put("minWithdraw", bizSettings.getDecimal(MODULE, "min_withdraw", new BigDecimal("100")));
         m.put("idVerified", me.getIdVerified());
         m.put("taxMode", bizSettings.getInt(MODULE, "tax_mode", 1));

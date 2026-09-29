@@ -36,6 +36,8 @@ public class MktWithdrawal extends BaseEntity {
     private String rejectReason;
     /** 本次提现覆盖的流水 id */
     private String commissionIds;
+    /** 每次提现的逐流水金额快照，部分提现后仍可对账。 */
+    private String commissionAllocations;
     private Long accountId;
     private String accountName;
     private Integer accountType;

@@ -48,54 +48,11 @@ public class MktPositionReviewService {
     /** 遍历正常伙伴复核一遍。返回变更人数。 */
     @Transactional
     public int reviewAll() {
-        List<MktPosition> ladder = positionMapper.selectList(new LambdaQueryWrapper<MktPosition>()
-                .eq(MktPosition::getStatus, 1).orderByAsc(MktPosition::getSort));
-        if (ladder.isEmpty()) {
-            return 0;
-        }
-        List<MktPromoter> all = promoterMapper.selectList(new LambdaQueryWrapper<MktPromoter>()
-                .eq(MktPromoter::getStatus, 1));
-        int changed = 0;
-        for (MktPromoter p : all) {
-            if (reviewOne(p, ladder)) {
-                changed++;
-            }
-        }
-        return changed;
+        // P1–P4 现作为明确授予的角色；P4 有定价权，业绩不再自动授予或撤销角色。
+        return 0;
     }
 
     boolean reviewOne(MktPromoter p, List<MktPosition> ladder) {
-        LocalDateTime since = LocalDateTime.now().minusMonths(LOOKBACK_MONTHS);
-        List<MktReferralOrder> orders = orderMapper.selectList(new LambdaQueryWrapper<MktReferralOrder>()
-                .eq(MktReferralOrder::getPromoterId, p.getId())
-                .eq(MktReferralOrder::getStatus, MktCommissionService.ORDER_CONFIRMED)
-                .ge(MktReferralOrder::getEventTime, since));
-        BigDecimal amount = orders.stream().map(MktReferralOrder::getBaseAmount)
-                .filter(a -> a != null).reduce(BigDecimal.ZERO, BigDecimal::add);
-        int count = orders.size();
-
-        MktPosition current = ladder.stream().filter(x -> x.getCode().equals(p.getPositionCode())).findFirst().orElse(null);
-        if (current == null) {
-            return false;
-        }
-        // 晋升:满足门槛的最高岗位(sort 更大)
-        MktPosition target = ladder.stream()
-                .filter(x -> x.getSort() > current.getSort() && meets(x, amount, count))
-                .max(Comparator.comparing(MktPosition::getSort)).orElse(null);
-        if (target != null) {
-            change(p, target.getCode(), REASON_AUTO, "近12月成交额 " + amount + " / 单数 " + count);
-            return true;
-        }
-        // 降级:当前岗位允许降、且不满足当前门槛、且 90 天内没有手动调岗
-        boolean demotable = Integer.valueOf(1).equals(current.getDemoteEnabled()) && !meets(current, amount, count);
-        if (demotable && !recentlyManuallyChanged(p.getId())) {
-            MktPosition lower = ladder.stream().filter(x -> x.getSort() < current.getSort())
-                    .max(Comparator.comparing(MktPosition::getSort)).orElse(null);
-            if (lower != null) {
-                change(p, lower.getCode(), REASON_AUTO, "不满足当前岗位门槛");
-                return true;
-            }
-        }
         return false;
     }
 

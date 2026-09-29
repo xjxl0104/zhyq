@@ -20,13 +20,13 @@
 
     <div class="table-card">
       <div class="toolbar">
-        <span class="hint">管理推荐归属、云仓承接和伙伴可见进度。客户资料可在「招商 › 意向客户」补充。</span>
+        <span class="hint">管理推荐归属、云仓承接和伙伴可见进度。云仓按单佣金由所属 P4 在小程序配置，可在此查看金额与分配明细。</span>
       </div>
       <el-table :data="list" v-loading="loading" border stripe>
-        <el-table-column prop="name" label="客户 / 联系方式" min-width="180">
+        <el-table-column prop="name" label="客户 / 品牌 / 联系方式" min-width="180">
           <template #default="{ row }"><div>{{ row.name }}</div><div class="project-note">{{ row.contact || '联系人未填写' }} · {{ row.phone || '电话未填写' }}</div><div class="project-note">{{ projectLabel(row.projectId) }}</div></template>
         </el-table-column>
-        <el-table-column label="推荐伙伴" width="100">
+        <el-table-column label="推荐来源" width="100">
           <template #default="{ row }">{{ row.referrerName || (row.referrerId ? `#${row.referrerId}` : '—') }}</template>
         </el-table-column>
         <el-table-column label="评级" width="65" align="center">
@@ -42,8 +42,9 @@
           <template #default="{ row }"><div>{{ row.assignedWarehouseName || '尚未分派' }}</div><div class="project-note">{{ ASSIGN[row.warehouseAssignmentStatus || 0] }}</div><div v-if="row.intendedWarehouseName" class="project-note">意向：{{ row.intendedWarehouseName }}</div></template>
         </el-table-column>
         <el-table-column prop="publicProgress" label="伙伴可见进度" min-width="155" show-overflow-tooltip />
-        <el-table-column label="操作" :width="canDelete ? 300 : 245" fixed="right">
+        <el-table-column label="操作" :width="canDelete ? 380 : 325" fixed="right">
           <template #default="{ row }">
+            <el-button v-if="row.bizLine !== 1" link type="primary" @click="openPricing(row)">按单佣金</el-button>
             <el-button link type="primary" @click="openAssignment(row)">分派云仓</el-button>
             <el-button link type="primary" @click="openProgress(row)">更新进度</el-button>
             <el-button link type="primary" @click="openLock(row)">锁定</el-button>
@@ -59,6 +60,8 @@
                      :total="total" v-model:current-page="query.pageNo"
                      v-model:page-size="query.pageSize" :page-sizes="[10,20,50]" @change="load" />
     </div>
+
+    <CustomerPricingDrawer v-model="pricing.visible" :customer="pricing.row" />
 
     <el-dialog v-model="removal.visible" title="删除推荐客户" width="min(460px, 92vw)" :close-on-click-modal="false" :close-on-press-escape="!removal.busy" :show-close="!removal.busy">
       <p class="delete-target">确认删除客户「{{ removal.row?.name }}」？</p>
@@ -154,6 +157,7 @@ import { reactive, ref, onMounted, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { mktCustomerApi, mktWarehouseApi } from '@/api/marketing'
 import { useProjectStore } from '@/stores/project'
+import CustomerPricingDrawer from './CustomerPricingDrawer.vue'
 
 const projectStore = useProjectStore()
 const canDelete = computed(() => hasPermission('ROLE_admin'))
@@ -171,6 +175,7 @@ async function submitDelete() {
     await mktCustomerApi.remove(id)
     removal.visible = false
     if (lock.row?.id === id) lock.visible = false
+    if (pricing.row?.id === id) pricing.visible = false
     if (list.value.length === 1 && query.pageNo > 1) query.pageNo -= 1
     ElMessage.success('客户已删除')
     await load()
@@ -222,6 +227,9 @@ async function load() {
 }
 function search() { query.pageNo = 1; load() }
 function reset() { Object.assign(query, { pageNo: 1, keyword: '', grade: null, referredOnly: null }); load() }
+
+const pricing = reactive({ visible: false, row: null })
+function openPricing(row) { Object.assign(pricing, { visible: true, row }) }
 
 function handleMore(action, row) {
   if (action === 'grade') return openGrade(row)

@@ -67,8 +67,7 @@ class PasswordAuthServiceTest {
     @AfterEach void clear() { SecurityContextHolder.clearContext(); }
 
     @Test void partnerRegistrationCreatesBusinessProfileAndBcryptCredential() {
-        when(settings.getInt("marketing", "invite_grace_days", 7)).thenReturn(7);
-        when(promoterService.register(any(), isNull(), eq("mp"))).thenAnswer(invocation -> {
+        when(promoterService.register(any(), eq("ABCD2345"), eq("mp"))).thenAnswer(invocation -> {
             MktPromoter p = invocation.getArgument(0); p.setId(31L); p.setStatus(1);
             when(promoters.selectById(31L)).thenReturn(p); return p;
         });
@@ -82,13 +81,23 @@ class PasswordAuthServiceTest {
         assertThat(saved.getValue().getIdentityType()).isEqualTo("mp");
         assertThat(saved.getValue().getIdentityId()).isEqualTo(31L);
         ArgumentCaptor<MktPromoter> profile = ArgumentCaptor.forClass(MktPromoter.class);
-        verify(promoterService).register(profile.capture(), isNull(), eq("mp"));
+        verify(promoterService).register(profile.capture(), eq("ABCD2345"), eq("mp"));
         assertThat(profile.getValue().getOpenid()).isNull();
         assertThat(profile.getValue().getIdVerified()).isZero();
         assertThat(profile.getValue().getAgreedAt()).isNotNull();
-        assertThat(profile.getValue().getInviteDeadline()).isNotNull();
+        assertThat(profile.getValue().getInviteDeadline()).isNull();
         assertThat(jwt.parse((String) result.get("token")).getSubject()).isEqualTo("mp:31");
         assertThat(result).doesNotContainKeys("password", "passwordHash", "registrationPhone");
+    }
+
+    @Test void partnerRegistrationRejectsMissingOrMalformedInviteBeforePersistence() {
+        var r = registration();
+        for (String invite : new String[] { null, "", "   ", "ABC", "ABCD1234" }) {
+            assertThatThrownBy(() -> service.register(MP,
+                    new PasswordAuthService.RegisterRequest(r.username(), r.password(), r.phone(), r.name(), invite, null, true), "ip"))
+                    .isInstanceOf(BizException.class).hasMessageContaining("邀请码");
+        }
+        verifyNoInteractions(credentials, promoterService, warehouseService, promoters, warehouses, contacts);
     }
 
     @Test void warehouseRegistrationUsesExistingApplicationWorkflow() {
@@ -111,7 +120,7 @@ class PasswordAuthServiceTest {
     @EnumSource(PasswordAuthService.Identity.class)
     void minimalRegistrationDefersContactDetailsWithoutGrantingApproval(PasswordAuthService.Identity identity) {
         if (identity == MP) {
-            when(promoterService.registerWithoutPhone(any(), isNull())).thenAnswer(invocation -> {
+            when(promoterService.registerWithoutPhone(any(), eq("ABCD2345"))).thenAnswer(invocation -> {
                 MktPromoter promoter = invocation.getArgument(0);
                 assertThat(promoter.getPhone()).isNull();
                 assertThat(promoter.getName()).isEqualTo("园区伙伴");
@@ -130,7 +139,7 @@ class PasswordAuthServiceTest {
                 return warehouse;
             });
         }
-        var request = new PasswordAuthService.RegisterRequest("新账号", "123", null, null, null, null, true);
+        var request = new PasswordAuthService.RegisterRequest("新账号", "123", null, null, "ABCD2345", null, true);
         Map<String, Object> result = service.register(identity, request, "ip");
         assertThat(result).containsKey("token");
         ArgumentCaptor<MktCredential> saved = ArgumentCaptor.forClass(MktCredential.class);
@@ -171,8 +180,7 @@ class PasswordAuthServiceTest {
     @EnumSource(PasswordAuthService.Identity.class)
     void bothIdentitiesCanRegisterAndLoginWith123(PasswordAuthService.Identity identity) {
         if (identity == MP) {
-            when(settings.getInt("marketing", "invite_grace_days", 7)).thenReturn(7);
-            when(promoterService.register(any(), isNull(), eq("mp"))).thenAnswer(invocation -> {
+                when(promoterService.register(any(), eq("ABCD2345"), eq("mp"))).thenAnswer(invocation -> {
                 MktPromoter p = invocation.getArgument(0); p.setId(31L); p.setStatus(1);
                 when(promoters.selectById(31L)).thenReturn(p); return p;
             });
@@ -182,7 +190,7 @@ class PasswordAuthServiceTest {
                 when(warehouses.selectById(31L)).thenReturn(w); return w;
             });
         }
-        var request = new PasswordAuthService.RegisterRequest("123", "123", "13800138000", "新用户", null, "示例云仓", true);
+        var request = new PasswordAuthService.RegisterRequest("123", "123", "13800138000", "新用户", " abcd2345 ", "示例云仓", true);
         assertThat(service.register(identity, request, "ip")).containsKey("token");
         ArgumentCaptor<MktCredential> saved = ArgumentCaptor.forClass(MktCredential.class);
         verify(credentials).insert(saved.capture());
@@ -422,7 +430,7 @@ class PasswordAuthServiceTest {
         MktPromoter p = new MktPromoter(); p.setId(31L); p.setStatus(1); return p;
     }
     private PasswordAuthService.RegisterRequest registration() {
-        return new PasswordAuthService.RegisterRequest("Demo_User", "Passw0rd123", "13800138000", "新用户", null, "示例云仓", true);
+        return new PasswordAuthService.RegisterRequest("Demo_User", "Passw0rd123", "13800138000", "新用户", " abcd2345 ", "示例云仓", true);
     }
     private void authenticate(String subject, String role) {
         SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(subject, null, List.of(new SimpleGrantedAuthority(role))));

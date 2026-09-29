@@ -36,7 +36,7 @@ export const mktPromoterApi = {
   resetInvite: (id) => request.post(`${BASE}/promoter/${id}/reset-invite`)
 }
 
-// 岗位与份额
+// 角色称号与管理参数；按单佣金由客户所属 P4 在小程序配置
 export const mktPositionApi = {
   list: () => request.get(`${BASE}/position/list`),
   update: (data) => request.put(`${BASE}/position`, data),
@@ -55,6 +55,7 @@ export const mktGradeApi = {
 export const mktCustomerApi = {
   page: (params) => request.get(`${BASE}/customer/page`, { params }),
   get: (id) => request.get(`${BASE}/customer/${id}`),
+  pricing: (id) => request.get(`${BASE}/customer/${id}/pricing`),
   remove: (id) => request.delete(`${BASE}/customer/${id}`),
   assignWarehouse: (id, data) => request.post(`${BASE}/customer/${id}/assign-warehouse`, data),
   progress: (id, data) => request.post(`${BASE}/customer/${id}/progress`, data),

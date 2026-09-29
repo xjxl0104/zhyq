@@ -27,10 +27,10 @@
         <el-table-column prop="referralOrderId" label="订单" width="80" />
         <el-table-column prop="promoterName" label="伙伴" width="110"><template #default="{ row }">{{ row.promoterName || '#' + row.promoterId }}</template></el-table-column>
         <el-table-column prop="positionCode" label="岗位" width="70" />
-        <el-table-column label="份额 / 级差" width="110"><template #default="{ row }">{{ row.sharePct }}% / {{ row.diffPct }}%</template></el-table-column>
-        <el-table-column label="基数(元)" width="110" align="right"><template #default="{ row }">{{ money(row.baseAmount) }}</template></el-table-column>
+        <el-table-column label="计佣依据" min-width="190"><template #default="{ row }"><CommissionBasis :row="row" /></template></el-table-column>
+        <el-table-column label="历史基数(元)" width="115" align="right"><template #default="{ row }">{{ row.pricingId != null ? '—' : money(row.baseAmount) }}</template></el-table-column>
         <el-table-column label="金额(元)" width="110" align="right">
-          <template #default="{ row }"><span :class="{ neg: row.sign === -1 }">{{ money(row.amount) }}</span></template>
+          <template #default="{ row }"><span :class="{ neg: row.sign === -1 }">{{ row.pricingId != null ? Number(row.amount || 0).toFixed(3) : money(row.amount) }}</span></template>
         </el-table-column>
         <el-table-column label="状态" width="90"><template #default="{ row }"><el-tag :type="stType(row.status)">{{ ST[row.status] }}</el-tag></template></el-table-column>
         <el-table-column prop="unfreezeAt" label="解冻时间" width="160" />
@@ -50,7 +50,7 @@
       <el-table :data="batches.list" size="small" border>
         <el-table-column prop="batchNo" label="批次号" width="180" />
         <el-table-column prop="cnt" label="条数" width="70" />
-        <el-table-column label="合计(元)" width="110" align="right"><template #default="{ row }">{{ money(row.totalAmount) }}</template></el-table-column>
+        <el-table-column label="合计(元)" width="110" align="right"><template #default="{ row }">{{ Number(row.totalAmount || 0).toFixed(3) }}</template></el-table-column>
         <el-table-column prop="operator" label="操作人" width="100" />
         <el-table-column prop="createTime" label="时间" />
       </el-table>
@@ -65,6 +65,7 @@ import { reactive, ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { mktCommissionApi } from '@/api/marketing'
 import { money } from '@/utils/format'
+import CommissionBasis from './CommissionBasis.vue'
 
 const ST = { 1: '冻结', 2: '可结算', 3: '已结算', 4: '已提现', 5: '作废' }
 const stType = (s) => ({ 2: 'success', 3: '', 4: 'info', 5: 'danger' }[s] || 'warning')
@@ -78,7 +79,7 @@ const selected = ref([])
 // 扣回行(sign=-1)只能在打款时抵扣,不能拿去结算,否则余额公式就不再认它
 const isSettleable = (row) => row.status === 2 && row.sign === 1 && !row.withdrawalId
 const settleable = computed(() => selected.value.filter(isSettleable))
-const settleSum = computed(() => settleable.value.reduce((a, r) => a + Number(r.amount || 0), 0).toFixed(2))
+const settleSum = computed(() => settleable.value.reduce((a, r) => a + Number(r.amount || 0), 0).toFixed(3))
 
 async function load() {
   loading.value = true

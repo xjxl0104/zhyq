@@ -54,6 +54,14 @@ class MktWithdrawalServiceTest {
         lenient().when(accountMapper.selectOne(any())).thenReturn(account);
     }
 
+    @Test void thousandthsAccumulateIntoExactCentWithoutTruncation() {
+        when(commissionMapper.selectList(any(Wrapper.class))).thenReturn(List.of(row(1L,"99.993"), row(2L,"0.007")));
+        when(commissionMapper.update(isNull(), any(Wrapper.class))).thenReturn(1);
+        var withdrawal = service.apply(1L,new BigDecimal("100.00"));
+        org.assertj.core.api.Assertions.assertThat(withdrawal.getAmount()).isEqualByComparingTo("100.00");
+        verify(commissionMapper,times(2)).update(isNull(),any(Wrapper.class));
+    }
+
     @Test void applyLocksOnlyRowsNeededForRequestedAmount() {
         MktPromoterCommission a = row(1L, "100");
         MktPromoterCommission b = row(2L, "900");
@@ -70,12 +78,106 @@ class MktWithdrawalServiceTest {
                 .isInstanceOf(BizException.class).hasMessageContaining("锁定");
     }
 
-    @Test void applyRejectsPartialRequestAgainstIndivisibleCommissionRow() {
-        when(commissionMapper.selectList(any(Wrapper.class))).thenReturn(List.of(row(1L, "1000")));
-        assertThatThrownBy(() -> service.apply(1L, new BigDecimal("100")))
-                .isInstanceOf(BizException.class).hasMessageContaining("完整流水");
-        verify(commissionMapper, never()).update(isNull(), any(Wrapper.class));
-        verify(withdrawalMapper, never()).insert(any(MktWithdrawal.class));
+    @Test void applyMayReservePartOfOneCommissionWithoutChangingOriginalEntitlement() {
+        var original = row(1L, "100.001");
+        when(commissionMapper.selectList(any(Wrapper.class))).thenReturn(List.of(original));
+        when(commissionMapper.update(isNull(),any(Wrapper.class))).thenReturn(1);
+        var withdrawal = service.apply(1L,new BigDecimal("100.00"));
+        org.assertj.core.api.Assertions.assertThat(original.getAmount()).isEqualByComparingTo("100.001");
+        org.assertj.core.api.Assertions.assertThat(original.getWithdrawalAmount()).isEqualByComparingTo("100.00");
+        org.assertj.core.api.Assertions.assertThat(withdrawal.getCommissionAllocations()).contains("\"amount\":100.00");
+        org.assertj.core.api.Assertions.assertThat(original.getWithdrawnAmount()).isNull();
+    }
+
+    @Test void partialPaymentReleasesExactRemainderAndKeepsSettlementStatus() {
+        var original = row(1L,"100.001"); original.setWithdrawalId(9L); original.setWithdrawalAmount(new BigDecimal("100.00"));
+        MktWithdrawal w = approvedWithdrawal("100.00");
+        mockPay(w,List.of(original));
+        service.pay(9L,"PARTIAL","file:10","finance");
+        org.assertj.core.api.Assertions.assertThat(original.getAmount()).isEqualByComparingTo("100.001");
+        org.assertj.core.api.Assertions.assertThat(original.getWithdrawnAmount()).isEqualByComparingTo("100.00");
+        org.assertj.core.api.Assertions.assertThat(original.getWithdrawalId()).isNull();
+        org.assertj.core.api.Assertions.assertThat(original.getWithdrawalAmount()).isNull();
+        org.assertj.core.api.Assertions.assertThat(original.getStatus()).isEqualTo(MktCommissionService.C_SETTLED);
+        org.assertj.core.api.Assertions.assertThat(service.balance(1L)).isEqualByComparingTo("0.001");
+    }
+
+    @Test void carriedThousandthCanCombineWithNextCommissionWithoutRepayingOldHundred() {
+        var original = row(1L,"100.001"); original.setWithdrawnAmount(new BigDecimal("100.000"));
+        var next = row(2L,"99.999");
+        when(commissionMapper.selectList(any(Wrapper.class))).thenReturn(List.of(original,next));
+        when(commissionMapper.update(isNull(),any(Wrapper.class))).thenReturn(1);
+        var withdrawal = service.apply(1L,new BigDecimal("100.00"));
+        org.assertj.core.api.Assertions.assertThat(original.getWithdrawalAmount()).isEqualByComparingTo("0.001");
+        org.assertj.core.api.Assertions.assertThat(next.getWithdrawalAmount()).isEqualByComparingTo("99.999");
+        org.assertj.core.api.Assertions.assertThat(withdrawal.getAmount()).isEqualByComparingTo("100.00");
+        org.assertj.core.api.Assertions.assertThat(service.remainingAmount(original)).isEqualByComparingTo("0.001");
+    }
+
+    @Test void refundDebtAfterPartialPaymentIsFullyOffsetBeforeAnotherWithdrawal() {
+        var original = row(1L,"100.001"); original.setWithdrawnAmount(new BigDecimal("100.000"));
+        var debit = row(2L,"-100.001"); debit.setSign(-1); debit.setStatus(MktCommissionService.C_SETTLEABLE);
+        var next = row(3L,"200.001");
+        when(commissionMapper.selectList(any(Wrapper.class))).thenReturn(List.of(original,debit,next));
+        when(commissionMapper.update(isNull(),any(Wrapper.class))).thenReturn(1);
+        service.apply(1L,new BigDecimal("100.00"));
+        org.assertj.core.api.Assertions.assertThat(debit.getWithdrawalAmount()).isEqualByComparingTo("-100.001");
+        org.assertj.core.api.Assertions.assertThat(original.getWithdrawalAmount()).isEqualByComparingTo("0.001");
+        org.assertj.core.api.Assertions.assertThat(next.getWithdrawalAmount()).isEqualByComparingTo("200.000");
+        org.assertj.core.api.Assertions.assertThat(original.getWithdrawnAmount()).isEqualByComparingTo("100.000");
+    }
+
+    @Test void replayedPartialPaymentDoesNotConsumeReleasedRemainderAgain() {
+        var original = row(1L,"100.001"); original.setWithdrawalId(9L); original.setWithdrawalAmount(new BigDecimal("100.00"));
+        var w = approvedWithdrawal("100.00"); mockPay(w,List.of(original));
+        service.pay(9L,"PARTIAL-ONCE","file:10","finance");
+        w.setStatus(MktWithdrawalService.WS_PAID); w.setPayProof("file:10");
+        org.mockito.Mockito.doReturn(w).when(withdrawalMapper).selectOne(any());
+        service.pay(9L,"PARTIAL-ONCE","file:10","finance");
+        verify(commissionMapper,times(1)).update(isNull(),any(Wrapper.class));
+        org.assertj.core.api.Assertions.assertThat(MktWithdrawalService.remainingAmount(original)).isEqualByComparingTo("0.001");
+    }
+
+    @Test void rejectedPartialWithdrawalClearsReservationWithoutChangingCumulativePaidAmount() {
+        var original = row(1L,"200.001"); original.setWithdrawnAmount(new BigDecimal("100.00"));
+        when(commissionMapper.selectList(any(Wrapper.class))).thenReturn(List.of(original));
+        when(commissionMapper.update(isNull(),any(Wrapper.class))).thenReturn(1);
+        var withdrawal = service.apply(1L,new BigDecimal("100.00"));
+        when(withdrawalMapper.selectById(9L)).thenReturn(withdrawal);
+        when(withdrawalMapper.update(isNull(),any(Wrapper.class))).thenReturn(1);
+        service.reject(9L,"资料待核实","ops");
+        var cap = org.mockito.ArgumentCaptor.forClass(Wrapper.class);
+        verify(commissionMapper,times(2)).update(isNull(),cap.capture());
+        var update = (com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<?>) cap.getAllValues().get(1);
+        org.assertj.core.api.Assertions.assertThat(update.getSqlSet()).contains("withdrawal_id=", "withdrawal_amount=").doesNotContain("withdrawn_amount=");
+        org.assertj.core.api.Assertions.assertThat(original.getWithdrawnAmount()).isEqualByComparingTo("100.00");
+    }
+
+    @Test void legacyWholeRowPendingPaymentStillWorksWithoutReservationSnapshot() {
+        var original = row(1L,"100.00"); original.setWithdrawalId(9L);
+        mockPay(approvedWithdrawal("100.00"),List.of(original));
+        service.pay(9L,"LEGACY","file:10","finance");
+        org.assertj.core.api.Assertions.assertThat(original.getStatus()).isEqualTo(MktCommissionService.C_WITHDRAWN);
+        org.assertj.core.api.Assertions.assertThat(original.getWithdrawnAmount()).isEqualByComparingTo("100.00");
+    }
+
+    @Test void concurrentChangeDuringPartialPaymentRollsBackInsteadOfAcknowledgingPayout() {
+        var original = row(1L,"100.001"); original.setWithdrawalId(9L); original.setWithdrawalAmount(new BigDecimal("100.00"));
+        mockPay(approvedWithdrawal("100.00"),List.of(original));
+        when(commissionMapper.update(isNull(),any(Wrapper.class))).thenReturn(0);
+        assertThatThrownBy(() -> service.pay(9L,"RACE","file:10","finance")).hasMessageContaining("回滚");
+    }
+
+    private static MktWithdrawal approvedWithdrawal(String amount) {
+        var w = new MktWithdrawal(); w.setId(9L); w.setPromoterId(1L); w.setStatus(2); w.setAmount(new BigDecimal(amount));
+        w.setAccountNoEnc("encrypted"); w.setAccountVerifiedAt(java.time.LocalDateTime.now()); return w;
+    }
+    private void mockPay(MktWithdrawal w, List<MktPromoterCommission> rows) {
+        when(withdrawalMapper.selectById(9L)).thenReturn(w);
+        when(withdrawalMapper.selectOne(any())).thenAnswer(inv -> ((Wrapper<?>) inv.getArgument(0)).getSqlSegment().contains("FOR UPDATE") ? w : null);
+        when(withdrawalMapper.update(isNull(),any(Wrapper.class))).thenReturn(1);
+        when(commissionMapper.selectList(any(Wrapper.class))).thenReturn(rows);
+        lenient().when(commissionMapper.update(isNull(),any(Wrapper.class))).thenReturn(1);
     }
 
     @Test void newlyFrozenPartnerCannotReceivePendingPayout() {

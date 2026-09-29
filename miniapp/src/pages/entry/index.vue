@@ -4,13 +4,13 @@
       <view class="brand-mark">D</view>
       <view class="eyebrow">DIPARK · SMART PARK</view>
       <view class="entry-title">选择你的身份</view>
-      <view class="entry-subtitle">同一个入口，进入园区伙伴或云仓商家工作台</view>
+      <view class="entry-subtitle">进入全民营销或云仓商家工作台</view>
     </view>
 
     <view class="card role-card pressable" @click="goPartner">
       <view class="role-mark partner">P</view>
       <view class="role-main">
-        <view class="role-title">园区伙伴</view>
+        <view class="role-title">全民营销</view>
         <view class="role-desc">推荐客户、查看收益与团队</view>
       </view>
       <view class="role-arrow">›</view>

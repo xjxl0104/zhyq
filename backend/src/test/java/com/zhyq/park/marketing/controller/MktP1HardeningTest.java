@@ -202,7 +202,7 @@ class MktP1HardeningTest {
             verify(mapper).update(isNull(), cap.capture());
             WrapperAssert wa = WrapperAssert.of((LambdaUpdateWrapper<MktCustomerGrade>) cap.getValue());
             assertThat(wa.setColumns()).doesNotContain("code", "sort");
-            assertThat(wa.setColumns()).contains("lease_commission_months", "erp_total_rate");
+            assertThat(wa.setColumns()).contains("lease_commission_months").doesNotContain("erp_total_rate");
         }
 
         @Test
@@ -241,7 +241,7 @@ class MktP1HardeningTest {
             MktPosition req = pos(2L, "P2", 2, 100);
 
             assertThatThrownBy(() -> controller.update(List.of(req)))
-                    .isInstanceOf(BizException.class).hasMessageContaining("份额");
+                    .isInstanceOf(BizException.class).hasMessageContaining("固定比例已停用");
         }
 
         @Test

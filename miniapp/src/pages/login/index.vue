@@ -2,7 +2,7 @@
   <view class="page-wrap login-page">
     <view class="login-hero">
       <view class="brand-mark">P</view>
-      <view class="login-title">园区伙伴</view>
+      <view class="login-title">全民营销</view>
       <view class="login-subtitle">连接客户与园区服务，让每一次推荐更有价值</view>
     </view>
     <view class="card login-card">

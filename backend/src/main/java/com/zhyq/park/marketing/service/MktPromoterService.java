@@ -16,6 +16,7 @@ import org.springframework.util.StringUtils;
 
 import java.security.SecureRandom;
 import java.time.LocalDateTime;
+import java.util.Locale;
 import java.util.UUID;
 
 /**
@@ -44,6 +45,7 @@ public class MktPromoterService {
     /** 后台手工录入(阶段 A)或小程序注册(阶段 B)共用:校验手机号唯一、找上级、生成邀请码、算 path。 */
     @Transactional
     public MktPromoter register(MktPromoter p, String parentInviteCode, String source) {
+        if ("mp".equals(source)) parentInviteCode = requireRegistrationInvite(parentInviteCode);
         if (!StringUtils.hasText(p.getPhone()) || !p.getPhone().matches("^1\\d{10}$")) {
             throw new BizException("手机号格式不正确");
         }
@@ -56,6 +58,7 @@ public class MktPromoterService {
     /** Password registration may postpone contact details. The legacy phone column is NOT NULL + UNIQUE. */
     @Transactional
     public MktPromoter registerWithoutPhone(MktPromoter p, String parentInviteCode) {
+        parentInviteCode = requireRegistrationInvite(parentInviteCode);
         if (StringUtils.hasText(p.getPhone())) throw new BizException("无手机号注册不能携带联系电话");
         // A non-phone identifier cannot match a verified mobile or an existing WeChat identity.
         p.setPhone("p:" + UUID.randomUUID().toString().replace("-", "").substring(0, 18));
@@ -63,6 +66,12 @@ public class MktPromoterService {
     }
 
     private MktPromoter createProfile(MktPromoter p, String parentInviteCode, String source) {
+        // Both phone and profile-later registration require attribution; manual root creation remains available.
+        if ("mp".equals(source)) {
+            parentInviteCode = requireRegistrationInvite(parentInviteCode);
+            p.setPositionCode("P1");
+            p.setInviteDeadline(null);
+        }
         MktPromoter parent = null;
         if (StringUtils.hasText(parentInviteCode)) {
             parent = promoterMapper.selectOne(new LambdaQueryWrapper<MktPromoter>()
@@ -104,6 +113,13 @@ public class MktPromoterService {
         p.setPath(path);
         auditService.log("promoter.register", BIZ_TYPE, p.getId(), source);
         return p;
+    }
+
+    public static String requireRegistrationInvite(String inviteCode) {
+        if (!StringUtils.hasText(inviteCode)) throw new BizException(400, "请填写上级邀请码");
+        String normalized = inviteCode.trim().toUpperCase(Locale.ROOT);
+        if (!normalized.matches("^[A-Z2-9]{8}$")) throw new BizException(400, "请输入有效的 8 位上级邀请码");
+        return normalized;
     }
 
     /** 改上级:不能是自己、新上级不能在自己子树里(成环);整棵子树 path 前缀替换,一个事务。 */

@@ -158,8 +158,10 @@ class MktSelfProfileServiceTest {
     @Test void placeholderPhoneIsUniqueNonMobileAndNeverSerializedAsContactData() throws Exception {
         MktPromoterService registration = new MktPromoterService(promoters, mock(SysUserMapper.class), audit, mock(JdbcTemplate.class));
         when(promoters.insert(any(MktPromoter.class))).thenAnswer(invocation -> { ((MktPromoter) invocation.getArgument(0)).setId(31L); return 1; });
-        MktPromoter first = registration.registerWithoutPhone(new MktPromoter(), null);
-        MktPromoter second = registration.registerWithoutPhone(new MktPromoter(), null);
+        MktPromoter inviter = new MktPromoter(); inviter.setId(8L); inviter.setStatus(1); inviter.setPath("/8/");
+        when(promoters.selectOne(any())).thenReturn(inviter);
+        MktPromoter first = registration.registerWithoutPhone(new MktPromoter(), "ABCD2345");
+        MktPromoter second = registration.registerWithoutPhone(new MktPromoter(), "ABCD2345");
         assertThat(first.getPhone()).startsWith("p:").hasSize(20).isNotEqualTo(second.getPhone());
         assertThat(MktSelfProfileService.isMobilePhone(first.getPhone())).isFalse();
         ObjectMapper json = new ObjectMapper().findAndRegisterModules();

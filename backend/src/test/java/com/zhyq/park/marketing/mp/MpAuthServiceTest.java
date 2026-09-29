@@ -78,7 +78,7 @@ class MpAuthServiceTest {
         existing.setOpenid("other");
         when(promoters.selectOne(any())).thenReturn(null, null, existing);
         doThrow(new BizException("生成邀请码失败,请重试")).when(promoterService).register(any(), any(), any());
-        assertThatThrownBy(() -> service.bindPhone("openid", "13800138000", null, null))
+        assertThatThrownBy(() -> service.bindPhone("openid", "13800138000", "ABCD2345", null))
                 .isInstanceOf(BizException.class).hasMessageContaining("已绑定其他微信");
     }
     @Test void mismatchedAppIdFailsBeforeWechatCall() {
@@ -103,14 +103,37 @@ class MpAuthServiceTest {
         org.mockito.Mockito.doAnswer(call -> {
             com.zhyq.park.marketing.entity.MktPromoter p = call.getArgument(0);
             p.setId(7L); p.setStatus(1); return p;
-        }).when(promoterService).register(any(), org.mockito.ArgumentMatchers.isNull(), org.mockito.ArgumentMatchers.eq("mp"));
-        var result = service.bindPhoneAuthorized("openid", ticket, "phone-code", null, null, null, "伙伴");
+        }).when(promoterService).register(any(), org.mockito.ArgumentMatchers.eq("ABCD2345"), org.mockito.ArgumentMatchers.eq("mp"));
+        var result = service.bindPhoneAuthorized("openid", ticket, "phone-code", null, null, " abcd2345 ", "伙伴");
         assertThat(result.registered()).isTrue();
         verify(promoterService).register(org.mockito.ArgumentMatchers.argThat(p -> "13800138000".equals(p.getPhone())),
-                org.mockito.ArgumentMatchers.isNull(), org.mockito.ArgumentMatchers.eq("mp"));
+                org.mockito.ArgumentMatchers.eq("ABCD2345"), org.mockito.ArgumentMatchers.eq("mp"));
         assertThatThrownBy(() -> service.bindPhoneAuthorized("openid", ticket, "phone-code", null, null, null, null))
                 .isInstanceOf(BizException.class);
         verify(client).exchangePhone("id", "secret", "phone-code");
+    }
+
+    @Test void newWechatRegistrationRequiresInviteAndDoesNotCreateOrIssueToken() {
+        MpAuthService service = new MpAuthService(jwt, promoters, promoterService, settings,
+                (a, s, c) -> null, (k, e, i) -> "unused", phoneBindingGuard);
+        service.setMockLogin(true);
+        for (String invite : new String[] { null, " ", "ABC" }) {
+            assertThatThrownBy(() -> service.bindPhone("new-openid", "13800138000", invite, "伙伴"))
+                    .isInstanceOf(BizException.class).hasMessageContaining("邀请码");
+        }
+        verify(promoterService, never()).register(any(), any(), any());
+        org.mockito.Mockito.verifyNoInteractions(jwt);
+    }
+
+    @Test void existingWechatUserDoesNotNeedToRegisterOrRebindInvite() {
+        MpAuthService service = new MpAuthService(jwt, promoters, promoterService, settings,
+                (a, s, c) -> null, (k, e, i) -> "unused", phoneBindingGuard);
+        service.setMockLogin(true);
+        var existing = new com.zhyq.park.marketing.entity.MktPromoter();
+        existing.setId(9L); existing.setStatus(1); existing.setOpenid("existing-openid");
+        when(promoters.selectOne(any())).thenReturn(existing);
+        assertThat(service.bindPhone("existing-openid", "13800138000", null, null).registered()).isTrue();
+        verify(promoterService, never()).register(any(), any(), any());
     }
 
     @Test void realModeRejectsPlainPhone() {

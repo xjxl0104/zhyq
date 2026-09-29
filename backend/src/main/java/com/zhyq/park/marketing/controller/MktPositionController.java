@@ -64,37 +64,21 @@ public class MktPositionController {
             if (cur == null) throw new BizException("岗位不存在: " + p.getId());
             // 白名单:只接受可编辑字段,code/sort 是阶梯身份与排序锚点,禁止改
             if (p.getName() != null) cur.setName(p.getName());
-            if (p.getSharePct() != null) cur.setSharePct(p.getSharePct());
-            if (p.getShareMinPct() != null) cur.setShareMinPct(p.getShareMinPct());
+            if (p.getSharePct() != null && !p.getSharePct().equals(cur.getSharePct()))
+                throw new BizException("岗位固定比例已停用，请由 P4 按客户设置每单金额");
+            if (p.getShareMinPct() != null && !p.getShareMinPct().equals(cur.getShareMinPct()))
+                throw new BizException("岗位固定比例下限已停用");
             if (p.getLockCap() != null) cur.setLockCap(p.getLockCap());
             if (p.getPromoteAmount() != null) cur.setPromoteAmount(p.getPromoteAmount());
             if (p.getPromoteOrders() != null) cur.setPromoteOrders(p.getPromoteOrders());
             if (p.getTeamCounted() != null) cur.setTeamCounted(p.getTeamCounted());
             if (p.getDemoteEnabled() != null) cur.setDemoteEnabled(p.getDemoteEnabled());
         }
-        // 按 sort 对全量校验;sort 为 null 视为 0(原实现 Integer.compare(a.getSort(),..) 会 NPE)
-        List<MktPosition> all = new ArrayList<>(merged.values());
-        all.sort((a, b) -> Integer.compare(a.getSort() == null ? 0 : a.getSort(), b.getSort() == null ? 0 : b.getSort()));
-        int prev = 0;
-        for (MktPosition p : all) {
-            if (p.getSharePct() == null || p.getSharePct() <= prev) {
-                throw new BizException(p.getCode() + " 的份额必须大于上一级 " + prev);
-            }
-            if (p.getShareMinPct() == null || p.getShareMinPct() > p.getSharePct()) {
-                throw new BizException(p.getCode() + " 的下限不能高于份额");
-            }
-            prev = p.getSharePct();
-        }
-        if (prev != 100) {
-            throw new BizException("最高岗位份额必须为 100");
-        }
         for (MktPosition p : list) {
             MktPosition cur = merged.get(p.getId());
             positionMapper.update(null, new LambdaUpdateWrapper<MktPosition>()
                     .eq(MktPosition::getId, cur.getId())
                     .set(MktPosition::getName, cur.getName())
-                    .set(MktPosition::getSharePct, cur.getSharePct())
-                    .set(MktPosition::getShareMinPct, cur.getShareMinPct())
                     .set(MktPosition::getLockCap, cur.getLockCap())
                     .set(MktPosition::getPromoteAmount, cur.getPromoteAmount())
                     .set(MktPosition::getPromoteOrders, cur.getPromoteOrders())
@@ -116,19 +100,7 @@ public class MktPositionController {
     @PreAuthorize("hasAuthority('crm:marketing:position:config')")
     @PutMapping("/depth")
     public Result<Void> setDepth(@RequestBody Map<String, Integer> body) {
-        Integer depth = body.get("depth");
-        if (depth == null || (depth != 2 && depth != 4)) {
-            throw new BizException("岗位数只能是 2 或 4");
-        }
-        int before = bizSettings.getInt(MODULE, KEY_DEPTH, 2);
-        int n = jdbc.update("UPDATE biz_setting SET svalue = ?, update_time = NOW() WHERE module = ? AND skey = ? AND deleted = 0",
-                String.valueOf(depth), MODULE, KEY_DEPTH);
-        if (n == 0) {
-            jdbc.update("INSERT INTO biz_setting(module, skey, svalue, remark, tenant_id, create_by, create_time, version, deleted) VALUES (?,?,?,?,1,'system',NOW(),1,0)",
-                    MODULE, KEY_DEPTH, String.valueOf(depth), "岗位数 2/4");
-        }
-        auditService.log("position.depth", "setting", null, "岗位数 " + before + " → " + depth, before, depth);
-        return Result.ok();
+        throw new BizException("岗位数量切换已停用，P1–P4 作为角色保留，金额由 P4 自定义");
     }
 
     @Operation(summary = "立即执行晋升/降级复核,返回调整人数")

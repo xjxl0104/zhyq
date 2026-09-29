@@ -38,30 +38,30 @@ public class MktGradeController {
     @PutMapping
     @Transactional
     public Result<Void> update(@RequestBody List<MktCustomerGrade> list) {
+        if (list == null || list.isEmpty()) throw new BizException("提交内容为空");
         for (MktCustomerGrade g : list) {
             if (g.getId() == null) throw new BizException("评级 id 必填");
             MktCustomerGrade before = gradeMapper.selectById(g.getId());
             if (before == null) throw new BizException("评级不存在: " + g.getId());
-            if (g.getLeaseCommissionMonths() == null || g.getLeaseCommissionMonths().compareTo(new BigDecimal("0.25")) < 0
-                    || g.getLeaseCommissionMonths().compareTo(new BigDecimal("2")) > 0) {
+            if (g.getLeaseCommissionMonths() != null && (g.getLeaseCommissionMonths().compareTo(new BigDecimal("0.25")) < 0
+                    || g.getLeaseCommissionMonths().compareTo(new BigDecimal("2")) > 0)) {
                 throw new BizException(before.getCode() + " 租赁佣金月数须在 0.25–2 之间");
             }
-            if (g.getErpTotalRate() == null || g.getErpTotalRate().signum() < 0 || g.getErpTotalRate().compareTo(new BigDecimal("100")) > 0) {
-                throw new BizException(before.getCode() + " 入仓总比例须在 0–100 之间");
+            if (g.getErpTotalRate() != null && (before.getErpTotalRate() == null || g.getErpTotalRate().compareTo(before.getErpTotalRate()) != 0)) {
+                throw new BizException("入仓岗位固定比例已停用，请由 P4 按客户设置每单金额");
             }
             // 白名单更新:code/sort 是评级身份与排序锚点,改了会让历史 grade 快照失配、导入回落默认档;
             // 名称/描述/参数可改。用 before.code 记审计,避免请求体伪造 code 污染日志。
             gradeMapper.update(null, new LambdaUpdateWrapper<MktCustomerGrade>()
                     .eq(MktCustomerGrade::getId, g.getId())
-                    .set(MktCustomerGrade::getName, g.getName())
-                    .set(MktCustomerGrade::getDescr, g.getDescr())
-                    .set(MktCustomerGrade::getLeaseCommissionMonths, g.getLeaseCommissionMonths())
-                    .set(MktCustomerGrade::getErpTotalRate, g.getErpTotalRate())
-                    .set(MktCustomerGrade::getServiceTotalRate, g.getServiceTotalRate())
-                    .set(MktCustomerGrade::getContractBonus, g.getContractBonus())
-                    .set(MktCustomerGrade::getAutoMinRent, g.getAutoMinRent())
-                    .set(MktCustomerGrade::getAutoMinOrders, g.getAutoMinOrders())
-                    .set(MktCustomerGrade::getStatus, g.getStatus()));
+                    .set(g.getName() != null, MktCustomerGrade::getName, g.getName())
+                    .set(g.getDescr() != null, MktCustomerGrade::getDescr, g.getDescr())
+                    .set(g.getLeaseCommissionMonths() != null, MktCustomerGrade::getLeaseCommissionMonths, g.getLeaseCommissionMonths())
+                    .set(g.getServiceTotalRate() != null, MktCustomerGrade::getServiceTotalRate, g.getServiceTotalRate())
+                    .set(g.getContractBonus() != null, MktCustomerGrade::getContractBonus, g.getContractBonus())
+                    .set(g.getAutoMinRent() != null, MktCustomerGrade::getAutoMinRent, g.getAutoMinRent())
+                    .set(g.getAutoMinOrders() != null, MktCustomerGrade::getAutoMinOrders, g.getAutoMinOrders())
+                    .set(g.getStatus() != null, MktCustomerGrade::getStatus, g.getStatus()));
             auditService.log("grade.config", "grade", g.getId(), null, before, g);
         }
         return Result.ok();

@@ -19,9 +19,16 @@ export const meApi = {
   home: () => get('/home'),
   position: () => get('/position'),
   team: () => get('/team'),
-  allocation: () => get('/team/allocation'),
-  setAllocation: (data) => put('/team/allocation', data),
   poster: () => get('/poster')
+}
+export const pricingApi = {
+  customers: () => get('/pricing/customers'),
+  beneficiaries: () => get('/pricing/beneficiaries'),
+  team: () => get('/pricing/team'),
+  positions: () => get('/pricing/positions'),
+  setPosition: (promoterId, code) => put(`/pricing/team/${promoterId}/position`, { code }),
+  customer: (customerId) => get(`/pricing/customer/${customerId}`),
+  save: (customerId, data) => put(`/pricing/customer/${customerId}`, data)
 }
 export const bizApi = {
   referral: (data) => post('/referral', data),

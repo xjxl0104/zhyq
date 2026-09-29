@@ -333,7 +333,7 @@ class MktTransitionGuardTest {
         @BeforeEach
         void setUp() {
             service = new MktCommissionService(orderMapper, commissionMapper, batchMapper, promoterMapper,
-                    ladderResolver, auditService, eventPublisher, org.mockito.Mockito.mock(MktWithdrawalMapper.class));
+                    ladderResolver, org.mockito.Mockito.mock(MktCustomerPricingService.class), auditService, eventPublisher, org.mockito.Mockito.mock(MktWithdrawalMapper.class));
             captor = ArgumentCaptor.forClass(Wrapper.class);
             when(commissionMapper.update(isNull(), captor.capture())).thenReturn(1);
             MktPromoterCommission c = new MktPromoterCommission();

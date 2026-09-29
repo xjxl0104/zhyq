@@ -29,7 +29,7 @@ function harness({ warehouse = false, mock = false, agreed = true, inviteCode = 
     bindPhone: () => { calls.oldLogin++; throw new Error('一键登录不得复用旧 bind-phone') },
   })
   const context = vm.createContext({
-    ref: value => ({ value }), computed: get => ({ get value() { return get() } }),
+    watch: () => {}, ref: value => ({ value }), computed: get => ({ get value() { return get() } }),
     defineProps: () => ({ warehouse, inviteCode }),
     defineEmits: () => (...args) => calls.emitted.push(args),
     partnerMock: warehouse ? false : mock, warehouseMock: warehouse ? mock : false,
@@ -176,9 +176,9 @@ for (const warehouse of [false, true]) {
 
 test('邀请码只传入伙伴 quick-login，云仓不接收伙伴邀请', async () => {
   for (const warehouse of [false, true]) {
-    const { calls, run } = harness({ warehouse, inviteCode: 'ABCD1234' })
+    const { calls, run } = harness({ warehouse, inviteCode: 'ABCD2345' })
     await run('login()')
-    assert.equal(calls.quick[0].data.inviteCode, warehouse ? undefined : 'ABCD1234')
+    assert.equal(calls.quick[0].data.inviteCode, warehouse ? undefined : 'ABCD2345')
   }
 })
 
@@ -226,3 +226,20 @@ for (const warehouse of [false, true]) {
     }
   })
 }
+
+test('新微信伙伴缺少邀请码时提示填写，重试带邀请码且重新获取微信身份', async () => {
+  const { calls, run } = harness({ quickLogin: async (data) => {
+    if (!data.inviteCode) throw new Error('请填写上级邀请码')
+    return { token: 'new-partner-token' }
+  } })
+  await run('login()')
+  assert.equal(calls.emitted.some(event => event[0] === 'authenticated'), false)
+  assert.equal(run('needsInvite.value'), true)
+  await run('login()')
+  assert.equal(calls.quick.length, 1)
+  await run("invite.value = ' abcd2345 '; login()")
+  assert.equal(calls.quick.length, 2)
+  assert.equal(calls.quick[1].data.inviteCode, 'ABCD2345')
+  assert.equal(calls.login.length, 2)
+  assert.ok(calls.emitted.some(event => event[0] === 'authenticated'))
+})
