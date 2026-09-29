@@ -24,7 +24,7 @@ page {
   -webkit-font-smoothing: antialiased;
 }
 
-view, text, button, input, textarea, picker { box-sizing: border-box; }
+view, text, button, input, textarea, picker, scroll-view { box-sizing: border-box; }
 button::after { border: 0; }
 button { font-family: inherit; }
 
