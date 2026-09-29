@@ -61,6 +61,7 @@ function getRowClass(row, index) {
 
 <style scoped>
 .mobile-record-list {
+  --text-secondary: var(--list-secondary, var(--el-text-color-secondary));
   display: grid;
   gap: 12px;
 }
@@ -68,9 +69,30 @@ function getRowClass(row, index) {
 .mobile-record-card {
   min-width: 0;
   padding: 16px;
-  border: 1px solid var(--border, var(--el-border-color-lighter));
+  border: 1px solid var(--list-border, var(--el-border-color-lighter));
   border-radius: var(--radius, 12px);
-  background: var(--bg-card, var(--el-bg-color));
+  background: var(--list-surface, var(--el-bg-color));
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+
+.mobile-record-card:nth-of-type(even):not(.source-highlight-row) {
+  background: var(--list-stripe, var(--el-fill-color-light));
+}
+
+.mobile-record-card:focus-within:not(.source-highlight-row) {
+  background: var(--list-hover, var(--el-color-primary-light-9));
+  border-color: var(--list-outline, var(--el-color-primary));
+}
+
+@media (hover: hover) {
+  .mobile-record-card:hover:not(.source-highlight-row) {
+    background: var(--list-hover, var(--el-color-primary-light-9));
+    border-color: var(--list-outline, var(--el-color-primary));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mobile-record-card { transition: none; }
 }
 
 .mobile-record-card__header {
@@ -100,13 +122,18 @@ function getRowClass(row, index) {
   gap: 4px 12px;
   margin-top: 12px;
   padding-top: 10px;
-  border-top: 1px solid var(--border, var(--el-border-color-lighter));
+  border-top: 1px solid var(--list-border, var(--el-border-color-lighter));
 }
 
 .mobile-record-card__actions :deep(.el-button) {
   min-width: 44px;
   min-height: 44px;
   margin-left: 0;
+}
+
+.mobile-record-card :deep(:focus-visible) {
+  outline: 2px solid var(--brand, var(--el-color-primary));
+  outline-offset: 2px;
 }
 
 .mobile-record-card__body :deep(.mobile-record-summary) {

@@ -22,6 +22,18 @@
   --text-secondary: #6b7280;
   --text-muted: #9aa1ac;
 
+  /* 列表层级：表头 / 常规行 / 交替行 / 悬停 / 选中。固定列使用不透明底色。 */
+  --list-header: #eee8f5;
+  --list-header-text: #544563;
+  --list-secondary: #566075;
+  --list-surface: #ffffff;
+  --list-stripe: #f8f5fc;
+  --list-hover: #eee5fa;
+  --list-selected: #e9dff8;
+  --list-selected-hover: #e6daf5;
+  --list-border: #e5ddef;
+  --list-outline: #8b65b8;
+
   /* —— 圆角 / 阴影(扁平:阴影极轻,靠边框分层)—— */
   --radius-lg: 14px;
   --radius: 10px;
@@ -363,20 +375,113 @@ body {
   box-shadow: 0 0 0 1px var(--brand) inset !important;
 }
 
-/* 表格 —— 去重边框,细分隔线,柔和表头,行悬浮 */
+/* 表格 —— 所有业务表共享底色与反馈，包括无 stripe 的明细/树表。 */
 .el-table {
-  --el-table-border-color: var(--border);
-  --el-table-header-bg-color: var(--bg-subtle);
-  --el-table-row-hover-bg-color: var(--el-color-primary-light-9);
+  --text-muted: var(--list-secondary);
+  --text-secondary: var(--list-secondary);
+  --el-text-color-secondary: var(--list-secondary);
+  --el-text-color-placeholder: var(--list-secondary);
+  --el-table-border-color: var(--list-border);
+  --el-table-header-bg-color: var(--list-header);
+  --el-table-tr-bg-color: var(--list-surface);
+  --el-table-row-hover-bg-color: var(--list-hover);
+  --el-table-current-row-bg-color: var(--list-selected);
   font-size: 13.5px;
 }
 .el-table th.el-table__cell {
-  background: var(--bg-subtle) !important;
-  color: var(--text-secondary) !important;
+  background: var(--list-header) !important;
+  color: var(--list-header-text) !important;
   font-weight: 600;
   height: 46px;
 }
 .el-table td.el-table__cell { padding: 10px 0; }
+/* 横条单独占底部 14px，末行描边和操作不再被覆盖。
+   max-height 逐层传递，定高表缩小滚动视口而不突破外框；空表/窄表不额外留白。 */
+.el-table--scrollable-x > .el-table__inner-wrapper {
+  max-height: inherit;
+  > .el-table__body-wrapper {
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    > .el-scrollbar {
+      min-height: 0;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      > .el-scrollbar__wrap { min-height: 0; flex: 1; }
+      &:has(> .el-scrollbar__wrap > .el-scrollbar__view > .el-table__body > tbody > .el-table__row) {
+        padding-bottom: 14px;
+        > .el-scrollbar__bar.is-vertical { bottom: 16px; }
+      }
+    }
+  }
+}
+.el-table .el-table__body > tbody > tr.el-table__row {
+  --list-row-outline: transparent;
+  --list-cell-separator: var(--el-table-border-color);
+
+  > td.el-table__cell {
+    --list-cell-start: transparent;
+    --list-cell-end: transparent;
+    background-color: var(--list-surface);
+    /* 画线覆盖 border-box，跨列连成一整圈；不增减边框宽度，也不占用 fixed 的伪元素。 */
+    background-image:
+      linear-gradient(var(--list-row-outline), var(--list-row-outline)),
+      linear-gradient(var(--list-row-outline), var(--list-row-outline)),
+      linear-gradient(var(--list-cell-start), var(--list-cell-start)),
+      linear-gradient(var(--list-cell-end), var(--list-cell-end));
+    background-size: 100% 1px, 100% 1px, 1px 100%, 1px 100%;
+    background-position: left top, left bottom, left top, right top;
+    background-repeat: no-repeat;
+    background-origin: border-box;
+    background-clip: border-box;
+    border-right-color: var(--list-cell-separator);
+    border-bottom-color: var(--list-cell-separator);
+    transition: background-color 120ms ease;
+  }
+  > td.el-table__cell:first-child { --list-cell-start: var(--list-row-outline); }
+  > td.el-table__cell:last-child { --list-cell-end: var(--list-row-outline); }
+
+  /* 只计数据行，展开面板不改变后续条纹；不覆盖业务 warning !important。 */
+  &:where(:nth-child(even of .el-table__row)) > td.el-table__cell {
+    background-color: var(--list-stripe);
+  }
+
+  &:is(.hover-row, :focus-within) {
+    --list-row-outline: var(--list-outline);
+    --list-cell-separator: transparent;
+    > td.el-table__cell { background-color: var(--list-hover); }
+  }
+  @media (hover: hover) {
+    &:hover {
+      --list-row-outline: var(--list-outline);
+      --list-cell-separator: transparent;
+      > td.el-table__cell { background-color: var(--list-hover); }
+    }
+  }
+
+  /* 只读取选择列的勾选框，不把行内配置开关误判为选中。 */
+  &:is(.current-row, :has(> td.el-table-column--selection .el-checkbox.is-checked)) {
+    > td.el-table__cell { background-color: var(--list-selected); }
+    > td.el-table__cell:first-child { box-shadow: inset 3px 0 var(--brand); }
+    &:is(.hover-row, :focus-within) > td.el-table__cell { background-color: var(--list-selected-hover); }
+    @media (hover: hover) {
+      &:hover > td.el-table__cell { background-color: var(--list-selected-hover); }
+    }
+  }
+}
+.el-table .el-table__footer-wrapper td.el-table__cell {
+  background: var(--list-header);
+  color: var(--text-body);
+  font-weight: 600;
+}
+.el-table :is(button, input, [tabindex]):focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .el-table .el-table__body > tbody > tr.el-table__row > td.el-table__cell { transition: none; }
+}
 .el-table__inner-wrapper { border-radius: var(--radius-sm); }
 /* 去掉表格外层粗边框,交给 .table-card */
 .el-table--border { border: none; }

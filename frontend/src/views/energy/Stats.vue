@@ -189,7 +189,13 @@ onMounted(async () => {
 .stat-card .sub.split { color: #6b7280; min-height: 16px; }
 
 .rank-list { display: flex; flex-direction: column; gap: 12px; }
-.rank-row { display: flex; align-items: center; gap: 12px; }
+.rank-row { display: flex; align-items: center; gap: 12px; padding: 10px; background: var(--list-surface); border-bottom: 1px solid var(--list-border); }
+.rank-row:last-child { border-bottom: 0; }
+.rank-row:nth-child(even) { background: var(--list-stripe); }
+.rank-row:focus-within { background: var(--list-hover); outline: 1px solid var(--list-outline); outline-offset: -1px; }
+@media (hover: hover) {
+  .rank-row:hover { background: var(--list-hover); outline: 1px solid var(--list-outline); outline-offset: -1px; }
+}
 .rank-no { flex-shrink: 0; width: 24px; height: 24px; line-height: 24px; text-align: center; border-radius: 6px; font-size: 13px; font-weight: 600; color: #6b7280; background: #f0f2f5; }
 .rank-no.top { color: #fff; background: #4f46e5; }
 .rank-info { width: 220px; flex-shrink: 0; }
@@ -201,7 +207,11 @@ onMounted(async () => {
 
 @media (max-width: 767px), (max-width: 1023px) and (max-height: 500px) {
 .ov-groups { grid-template-columns: minmax(0, 1fr); }
-.rank-row { gap: 8px; }
-.rank-name { min-width: 0; overflow-wrap: anywhere; }
+.rank-row { display: grid; grid-template-columns: 24px minmax(0, 1fr) auto; gap: 8px; }
+.rank-no { grid-column: 1; grid-row: 1; }
+.rank-info { grid-column: 2; grid-row: 1; width: auto; min-width: 0; }
+.rank-name { min-width: 0; flex-wrap: wrap; overflow-wrap: anywhere; }
+.rank-val { grid-column: 3; grid-row: 1; width: auto; }
+.rank-bar-wrap { grid-column: 2 / -1; grid-row: 2; min-width: 0; }
 }
 </style>
