@@ -293,7 +293,6 @@ onMounted(async () => {
 .panel-head { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; margin-bottom: 14px; }
 .panel-head :deep(.el-select) { max-width: 100%; }
 .panel-title { font-size: 15px; font-weight: 650; color: var(--text-title); }
-.bill-table { --el-table-row-hover-bg-color: var(--bg-hover, #f5f7fa); }
 .owe { color: var(--el-color-danger); font-weight: 650; font-variant-numeric: tabular-nums; }
 .late-fee { color: var(--el-color-warning); font-weight: 600; }
 .manual-tag { margin-left: 6px; }

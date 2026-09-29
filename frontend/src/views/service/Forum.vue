@@ -287,11 +287,18 @@ onMounted(() => {
 /* 帖子卡片流 */
 .feed { display: flex; flex-direction: column; gap: 12px; min-height: 120px; }
 .post-card {
-  background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius);
-  padding: 16px 18px; transition: all .15s; border-left: 3px solid transparent;
+  background: var(--list-surface); border: 1px solid var(--list-border); border-radius: var(--radius);
+  padding: 16px 18px; transition: background-color 120ms ease, border-color 120ms ease; border-left: 3px solid transparent;
 }
-.post-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-card); border-color: var(--border-strong); }
+.post-card:nth-child(even) { background: var(--list-stripe); }
+.post-card:focus-within { background: var(--list-hover); outline: 1px solid var(--list-outline); outline-offset: 0; }
+@media (hover: hover) {
+  .post-card:hover { background: var(--list-hover); border-color: var(--border-strong); outline: 1px solid var(--list-outline); outline-offset: 0; }
+}
 .post-card.pending { border-left-color: var(--el-color-warning); }
+@media (prefers-reduced-motion: reduce) {
+  .post-card { transition: none; }
+}
 
 .post-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
 .post-title {

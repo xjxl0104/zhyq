@@ -19,4 +19,13 @@ async function upload({file,onSuccess,onError}) { busy.value=true;emit('busy',tr
 function remove(id){emit('update:modelValue',props.modelValue.filter(f=>f.id!==id))}
 async function download(f){try{await startFileDownload(f.id,f.name)}catch(e){error.value=e.message||'附件下载失败'}}
 </script>
-<style scoped>.file-row{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:8px}.file-row :deep(.el-button){white-space:normal;text-align:left;overflow-wrap:anywhere}.hint{font-size:12px;color:var(--el-text-color-secondary);line-height:1.5}</style>
+<style scoped>
+.file-row { display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:8px;padding:8px 10px;background:var(--list-surface);border-bottom:1px solid var(--list-border); }
+.file-row:nth-child(even) { background:var(--list-stripe); }
+.file-row:focus-within { background:var(--list-hover);outline:1px solid var(--list-outline);outline-offset:-1px; }
+@media (hover: hover) {
+  .file-row:hover { background:var(--list-hover);outline:1px solid var(--list-outline);outline-offset:-1px; }
+}
+.file-row :deep(.el-button) { white-space:normal;text-align:left;overflow-wrap:anywhere; }
+.hint { font-size:12px;color:var(--el-text-color-secondary);line-height:1.5; }
+</style>

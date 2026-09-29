@@ -289,12 +289,16 @@ onMounted(load)
   padding: 10px 11px;
   color: inherit;
   text-align: left;
-  background: #f8f9fb;
-  border: 1px solid transparent;
+  background: var(--list-surface);
+  border: 1px solid var(--list-border);
   border-radius: 11px;
   cursor: pointer;
 }
-.alarm-card:hover { background: #f3f5f9; border-color: var(--border); }
+.alarm-card:nth-child(even), .todo-item:nth-child(even) { background: var(--list-stripe); }
+.alarm-card:focus-within, .todo-item:focus-within { background: var(--list-hover); outline: 1px solid var(--list-outline); outline-offset: -1px; }
+@media (hover: hover) {
+  .alarm-card:hover, .todo-item:hover { background: var(--list-hover); outline: 1px solid var(--list-outline); outline-offset: -1px; }
+}
 .al-dot { width: 8px; height: 8px; flex: 0 0 8px; border-radius: 50%; }
 .alarm-card.high .al-dot { background: #d95c62; box-shadow: 0 0 0 4px #fff0f1; }
 .alarm-card.mid .al-dot { background: #d99022; box-shadow: 0 0 0 4px #fff7e8; }
@@ -303,7 +307,7 @@ onMounted(load)
 .al-loc { color: var(--text-muted); font-size: 9px; }
 .alarm-card > .el-icon { color: var(--text-muted); font-size: 11px; }
 
-.todo-item { display: flex; align-items: center; gap: 10px; min-width: 0; padding: 8px 0; border-bottom: 1px solid #f0f2f5; }
+.todo-item { display: flex; align-items: center; gap: 10px; min-width: 0; padding: 8px 10px; background: var(--list-surface); border-bottom: 1px solid var(--list-border); }
 .todo-item:last-child { border-bottom: 0; }
 .todo-check { display: grid; place-items: center; width: 28px; height: 28px; flex: 0 0 28px; color: var(--brand); background: #eef0ff; border-radius: 9px; }
 .todo-copy { display: grid; min-width: 0; flex: 1; gap: 3px; }
