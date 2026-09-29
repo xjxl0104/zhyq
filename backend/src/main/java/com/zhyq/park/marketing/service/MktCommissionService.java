@@ -69,6 +69,7 @@ public class MktCommissionService {
     private final MktSettleBatchMapper batchMapper;
     private final MktPromoterMapper promoterMapper;
     private final LadderResolver ladderResolver;
+    private final MktCustomerPricingService pricingService;
     private final MktAuditService auditService;
     private final ApplicationEventPublisher eventPublisher;
     private final com.zhyq.park.marketing.mapper.MktWithdrawalMapper withdrawalMapper;
@@ -113,7 +114,20 @@ public class MktCommissionService {
         if (seller == null) {
             throw new BizException("成交伙伴不存在: " + ev.sellerPromoterId());
         }
+        MktCustomerPricingService.PricingSnapshot pricing = ev.sourceType() == SOURCE_OUTBOUND
+                ? pricingService.forAccrual(ev.customerId()) : null;
+        if (pricing != null && ev.poolAmount().compareTo(pricing.totalPerOrder().subtract(pricing.companyPerOrder())) != 0) {
+            throw new BizException("客户定价已变化，请按最新定价重试该出库单");
+        }
         MktReferralOrder order = newOrder(ev);
+        if (pricing != null) {
+            order.setBaseMode(2);
+            order.setPoolFactor(BigDecimal.ZERO);
+            order.setPricingId(pricing.pricingId());
+            order.setCommissionUnitPrice(pricing.totalPerOrder());
+            order.setCommissionOrderCount(1);
+            order.setCompanyPerOrder(pricing.companyPerOrder());
+        }
         try {
             orderMapper.insert(order);
         } catch (DuplicateKeyException dup) {
@@ -122,13 +136,27 @@ public class MktCommissionService {
             requireSameOwner(raced, ev);
             return raced;
         }
-        List<Split> splits = CommissionEngine.split(new SplitRequest(
-                ev.poolAmount(), ladderResolver.chainOf(seller), ladderResolver.resolve(seller)));
-        for (Split s : splits) {
-            commissionMapper.insert(newCommission(order, ev, s));
+        int count = 0;
+        if (pricing != null) {
+            if (pricing.ownerPerOrder().signum() > 0) {
+                commissionMapper.insert(newPerOrderCommission(order, ev, pricing.ownerPromoterId(),
+                        pricing.ownerPositionCode(), pricing.ownerPerOrder()));
+                count++;
+            }
+            for (MktCustomerPricingService.Beneficiary beneficiary : pricing.beneficiaries()) {
+                if (beneficiary.amountPerOrder().signum() <= 0) continue;
+                commissionMapper.insert(newPerOrderCommission(order, ev, beneficiary.promoterId(),
+                        beneficiary.positionCode(), beneficiary.amountPerOrder()));
+                count++;
+            }
+        } else {
+            List<Split> splits = CommissionEngine.split(new SplitRequest(
+                    ev.poolAmount(), ladderResolver.chainOf(seller), ladderResolver.resolve(seller)));
+            for (Split s : splits) commissionMapper.insert(newCommission(order, ev, s));
+            count = splits.size();
         }
         auditService.log("commission.create", "referral_order", order.getId(),
-                "生成 " + splits.size() + " 行佣金,池 " + ev.poolAmount());
+                "生成 " + count + " 行佣金,池 " + ev.poolAmount());
         return order;
     }
 
@@ -359,8 +387,9 @@ public class MktCommissionService {
         }
         commissionMapper.update(null, new LambdaUpdateWrapper<MktPromoterCommission>()
                 .eq(MktPromoterCommission::getWithdrawalId, id).eq(MktPromoterCommission::getPromoterId, row.getPromoterId())
-                .set(MktPromoterCommission::getWithdrawalId, null));
-        row.setWithdrawalId(null);
+                .set(MktPromoterCommission::getWithdrawalId, null)
+                .set(MktPromoterCommission::getWithdrawalAmount, null));
+        row.setWithdrawalId(null); row.setWithdrawalAmount(null);
         if (n > 0) auditService.log("withdrawal.reject", "withdrawal", id, "佣金扣回自动驳回: " + reason);
     }
 
@@ -384,6 +413,18 @@ public class MktCommissionService {
         o.setProjectId(ev.projectId());
         o.setWarehouseId(ev.warehouseId());
         return o;
+    }
+
+    private static MktPromoterCommission newPerOrderCommission(MktReferralOrder order, CommissionEvent ev,
+            Long promoterId, String positionCode, BigDecimal perOrder) {
+        MktPromoterCommission c = new MktPromoterCommission();
+        c.setReferralOrderId(order.getId()); c.setPromoterId(promoterId); c.setPositionCode(positionCode);
+        // 兼容非空的历史字段；新模式只解释 amountPerOrder / orderCount，不伪造百分比。
+        c.setSharePct(0); c.setDiffPct(0); c.setRate(BigDecimal.ZERO); c.setBaseAmount(ev.baseAmount());
+        c.setPricingId(order.getPricingId()); c.setAmountPerOrder(perOrder); c.setOrderCount(1);
+        c.setAmount(perOrder); c.setSign(SIGN_POSITIVE); c.setStatus(C_FROZEN);
+        c.setUnfreezeAt(ev.unfreezeAt()); c.setProjectId(ev.projectId());
+        return c;
     }
 
     private static MktPromoterCommission newCommission(MktReferralOrder order, CommissionEvent ev, Split s) {
@@ -460,6 +501,7 @@ public class MktCommissionService {
         row.setReferralOrderId(src.getReferralOrderId()); row.setPromoterId(src.getPromoterId());
         row.setPositionCode(src.getPositionCode()); row.setSharePct(src.getSharePct()); row.setDiffPct(src.getDiffPct());
         row.setBaseAmount(src.getBaseAmount()); row.setRate(src.getRate()); row.setProjectId(src.getProjectId());
+        row.setPricingId(src.getPricingId()); row.setAmountPerOrder(src.getAmountPerOrder()); row.setOrderCount(src.getOrderCount());
         row.setAmount(sign == SIGN_POSITIVE ? src.getAmount() : src.getAmount().negate());
         row.setSign(sign); row.setAdjustmentSequence(cycle); row.setVoidReason(reason);
         row.setStatus(sign == SIGN_POSITIVE ? C_SETTLED : C_SETTLEABLE);
@@ -476,6 +518,7 @@ public class MktCommissionService {
         back.setDiffPct(src.getDiffPct());
         back.setBaseAmount(src.getBaseAmount());
         back.setRate(src.getRate());
+        back.setPricingId(src.getPricingId()); back.setAmountPerOrder(src.getAmountPerOrder()); back.setOrderCount(src.getOrderCount());
         back.setAmount(src.getAmount().negate());
         back.setSign(SIGN_CLAWBACK);
         back.setAdjustmentSequence(0);

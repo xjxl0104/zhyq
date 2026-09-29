@@ -8,11 +8,12 @@
       <view class="row">
         <view>
           <view>{{ c.customerName || '客户' }} · {{ SRC[c.sourceType] || '' }}</view>
-          <view class="muted">{{ c.grade ? c.grade + ' 级' : '' }} {{ c.sourceType === 1 ? c.poolFactor + ' 个月' : c.poolFactor + '%' }} × 级差 {{ c.diffPct }}%(份额 {{ c.sharePct }}%)</view>
+          <view v-if="c.pricingId || c.amountPerOrder != null" class="muted">自定义单价 {{ formatPerOrder(c.amountPerOrder) }} 元／单 × {{ c.orderCount ?? '—' }} 单</view>
+          <view v-else class="muted">历史规则：{{ c.grade ? c.grade + ' 级' : '' }} {{ c.sourceType === 1 ? c.poolFactor + ' 个月' : c.poolFactor + '%' }} × 级差 {{ c.diffPct }}%（份额 {{ c.sharePct }}%）</view>
           <view class="muted">{{ c.time?.slice(0, 16) }}<text v-if="c.status === 1 && c.unfreezeAt"> · 预计 {{ c.unfreezeAt.slice(0, 10) }} 解冻</text></view>
         </view>
         <view style="text-align:right">
-          <view class="money" :style="{ color: c.sign === -1 ? '#c00' : '' }">{{ Number(c.amount).toFixed(2) }}</view>
+          <view class="money" :style="{ color: c.sign === -1 ? '#c00' : '' }">{{ Number(c.amount).toFixed(3) }}</view>
           <text class="tag" :class="c.status === 1 ? 'warn' : c.status >= 2 && c.status <= 4 ? 'ok' : ''">{{ STATUS[c.status] }}</text>
         </view>
       </view>
@@ -26,6 +27,7 @@ import { ref, reactive, computed, onUnmounted } from 'vue'
 import { onShow, onReachBottom } from '@dcloudio/uni-app'
 import { bizApi } from '@/api'
 import { createPager } from '@/utils/pagination.mjs'
+import { formatPerOrder } from '@/utils/pricing.mjs'
 const FILTERS = { '': '全部', 1: '冻结', 2: '可结算', 3: '已结算', 4: '已提现' }
 const STATUS = { 1: '冻结', 2: '可结算', 3: '已结算', 4: '已提现', 5: '作废' }
 const SRC = { 1: '园区入驻', 2: '出库单', 3: '平台费', 4: '签约奖' }

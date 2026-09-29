@@ -128,18 +128,14 @@ public class MpMeController {
         MktPromoter p = current();
         List<MktPosition> ladder = positionMapper.selectList(new LambdaQueryWrapper<MktPosition>().eq(MktPosition::getStatus, 1).orderByAsc(MktPosition::getSort));
         MktPosition cur = ladder.stream().filter(x -> x.getCode().equals(p.getPositionCode())).findFirst().orElse(null);
-        MktPosition next = cur == null ? null : ladder.stream().filter(x -> x.getSort() > cur.getSort()).findFirst().orElse(null);
         List<MktReferralOrder> orders = orderMapper.selectList(new LambdaQueryWrapper<MktReferralOrder>()
                 .eq(MktReferralOrder::getPromoterId, p.getId()).eq(MktReferralOrder::getStatus, MktCommissionService.ORDER_CONFIRMED)
                 .ge(MktReferralOrder::getEventTime, LocalDateTime.now().minusMonths(12)));
         BigDecimal amount = orders.stream().map(MktReferralOrder::getBaseAmount).filter(a -> a != null).reduce(BigDecimal.ZERO, BigDecimal::add);
         Map<String, Object> m = new HashMap<>();
         m.put("code", p.getPositionCode()); m.put("name", cur == null ? p.getPositionCode() : cur.getName());
-        m.put("sharePct", cur == null ? null : cur.getSharePct()); m.put("since", p.getPositionSince());
-        m.put("amount12m", amount); m.put("orders12m", orders.size());
-        if (next != null) {
-            m.put("next", Map.of("code", next.getCode(), "name", next.getName(), "needAmount", next.getPromoteAmount(), "needOrders", next.getPromoteOrders()));
-        }
+        m.put("pricingMode", "CUSTOM_PER_ORDER"); m.put("canPrice", TOP_CODE.equals(p.getPositionCode()) && Integer.valueOf(1).equals(p.getStatus())); m.put("since", p.getPositionSince());
+        m.put("amount12m", amount); m.put("orders12m", orders.size()); m.put("automaticReviewEnabled", false);
         return Result.ok(m);
     }
 
@@ -157,41 +153,15 @@ public class MpMeController {
 
     @Operation(summary = "团队分配:本团队各岗位默认份额/下限/当前覆盖(仅顶格岗位可见)") @GetMapping("/team/allocation")
     public Result<Map<String, Object>> allocation() {
-        MktPromoter p = requireTop();
-        List<MktPosition> ladder = positionMapper.selectList(new LambdaQueryWrapper<MktPosition>().eq(MktPosition::getStatus, 1).orderByAsc(MktPosition::getSort));
-        Map<String, Integer> ov = overrideMapper.selectList(new LambdaQueryWrapper<MktPositionOverride>().eq(MktPositionOverride::getOwnerPromoterId, p.getId()))
-                .stream().collect(Collectors.toMap(MktPositionOverride::getPositionCode, MktPositionOverride::getSharePct));
-        Map<String, Object> m = new HashMap<>();
-        m.put("enabled", bizSettings.getBoolean(MODULE, "override_enabled", true));
-        m.put("positions", ladder.stream().filter(x -> !TOP_CODE.equals(x.getCode())).map(x -> Map.of(
-                "code", x.getCode(), "name", x.getName(), "defaultPct", x.getSharePct(), "minPct", x.getShareMinPct(),
-                "currentPct", ov.getOrDefault(x.getCode(), x.getSharePct()))).collect(Collectors.toList()));
-        return Result.ok(m);
+        requireTop();
+        return Result.ok(Map.of("enabled", false, "positions", List.of(),
+                "message", "已改为按客户设置每单金额，请进入客户定价"));
     }
 
-    @Operation(summary = "团队分配:下调某岗位份额(min ≤ 值 ≤ 默认,仍递增)") @PutMapping("/team/allocation")
+    @Operation(summary = "旧团队比例配置已停用") @PutMapping("/team/allocation")
     public Result<Void> setAllocation(@RequestBody Map<String, Integer> body) {
-        if (!bizSettings.getBoolean(MODULE, "override_enabled", true)) throw new BizException("园区已关闭团队分配功能");
-        MktPromoter p = requireTop();
-        List<MktPosition> ladder = positionMapper.selectList(new LambdaQueryWrapper<MktPosition>().eq(MktPosition::getStatus, 1).orderByAsc(MktPosition::getSort));
-        int prev = 0;
-        for (MktPosition x : ladder) {
-            Integer v = body.get(x.getCode());
-            int val = v == null || TOP_CODE.equals(x.getCode()) ? x.getSharePct() : v;
-            if (val < x.getShareMinPct() || val > x.getSharePct()) throw new BizException(x.getName() + " 份额须在 " + x.getShareMinPct() + "–" + x.getSharePct() + " 之间");
-            if (val <= prev) throw new BizException(x.getName() + " 份额必须高于下一级");
-            prev = val;
-        }
-        for (MktPosition x : ladder) {
-            Integer v = body.get(x.getCode());
-            if (v == null || TOP_CODE.equals(x.getCode())) continue;
-            MktPositionOverride o = overrideMapper.selectOne(new LambdaQueryWrapper<MktPositionOverride>()
-                    .eq(MktPositionOverride::getOwnerPromoterId, p.getId()).eq(MktPositionOverride::getPositionCode, x.getCode()));
-            if (o == null) { o = new MktPositionOverride(); o.setOwnerPromoterId(p.getId()); o.setPositionCode(x.getCode()); o.setSharePct(v); overrideMapper.insert(o); }
-            else { o.setSharePct(v); overrideMapper.updateById(o); }
-        }
-        auditService.log("position.override", "promoter", p.getId(), "钻石合伙人团队分配", null, body);
-        return Result.ok();
+        requireTop();
+        throw new BizException("岗位固定比例已停用，请按客户设置每单金额");
     }
 
     @Operation(summary = "邀请海报数据:邀请码 + 小程序路径(码图由前端用 wx 接口生成)") @GetMapping("/poster")
@@ -213,7 +183,7 @@ public class MpMeController {
 
     private MktPromoter requireTop() {
         MktPromoter p = current();
-        if (!TOP_CODE.equals(p.getPositionCode())) throw new BizException("只有顶格岗位可以做团队分配");
+        if (!TOP_CODE.equals(p.getPositionCode()) || !Integer.valueOf(1).equals(p.getStatus())) throw new BizException("只有顶格岗位可以做团队分配");
         return p;
     }
 

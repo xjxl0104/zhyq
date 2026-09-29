@@ -4,14 +4,14 @@
     <view v-if="loading && !me" class="card muted">正在读取个人资料…</view>
     <template v-if="me">
       <view class="card">
-        <view class="title">{{ me.name || '园区伙伴' }} <text class="tag">{{ POS[me.positionCode] }}</text></view>
+        <view class="title">{{ me.name || '园区伙伴' }} <text class="tag">{{ me.positionName || POS[me.positionCode] || me.positionCode }}</text></view>
         <view class="muted">{{ me.phone || '联系电话待补充' }}</view>
         <button class="menu-row" @click="go('/pages/profile/index')">个人信息 <text>{{ me.phone ? '查看 / 修改' : '去补充' }} ›</text></button>
         <view class="row"><text>我的邀请码</text><button size="mini" @click="copy(me.inviteCode)">{{ me.inviteCode }} · 复制</button></view>
         <view class="muted">朋友注册时填写邀请码，即可加入您的团队。</view>
       </view>
       <view v-if="!me.hasParent && me.inviteDeadline" class="card">
-        <view class="muted">可在 {{ me.inviteDeadline.slice(0, 10) }} 前补填一次上级邀请码。</view>
+        <view class="muted">历史账号尚未绑定上级，可在 {{ me.inviteDeadline.slice(0, 10) }} 前补填一次邀请码。</view>
         <input class="input" v-model="invite" maxlength="8" placeholder="上级邀请码" aria-label="上级邀请码" />
         <button class="btn" :disabled="busy" @click="bindInvite">绑定上级</button>
       </view>
@@ -38,7 +38,8 @@
       <view class="card">
         <button class="menu-row" @click="go('/pages/account-security/index?role=mp')">账号与密码 <text>设置密码登录 ›</text></button>
         <button class="menu-row" @click="go('/pages/team/index')">我的团队 <text>›</text></button>
-        <button class="menu-row" @click="go('/pages/position/index')">我的岗位 <text>›</text></button>
+        <button class="menu-row" @click="go('/pages/position/index')">我的称号 <text>›</text></button>
+        <button v-if="me.positionCode === 'P4' && Number(me.status) === 1" class="menu-row" @click="go('/pages/allocation/index')">客户定价与分佣 <text>自定义金额 ›</text></button>
         <button class="menu-row" @click="go('/pages/invite/index')">邀请伙伴 <text>分享与海报 ›</text></button>
         <button class="menu-row" @click="go('/pages/notices/index')">消息通知 <text>›</text></button>
         <button class="menu-row" @click="logout">切换身份 / 退出登录 <text>›</text></button>

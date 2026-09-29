@@ -17,7 +17,7 @@
     </view>
 
     <view class="role-switch">
-      <button :class="['role-switch-item', { active: role === 'partner' }]" @click="setRole('partner')">园区伙伴</button>
+      <button :class="['role-switch-item', { active: role === 'partner' }]" @click="setRole('partner')">全民营销</button>
       <button :class="['role-switch-item', { active: role === 'warehouse' }]" @click="setRole('warehouse')">云仓商家</button>
     </view>
 
@@ -31,7 +31,7 @@
 
     <template v-if="role === 'partner'">
       <view v-if="section === 'home'">
-        <view class="demo-section-heading"><view><view class="demo-section-label">PARTNER WORKSPACE</view><view class="demo-section-title">园区伙伴工作台</view></view><text class="demo-date">本月演示</text></view>
+        <view class="demo-section-heading"><view><view class="demo-section-label">PARTNER WORKSPACE</view><view class="demo-section-title">全民营销</view></view><text class="demo-date">本月演示</text></view>
         <view class="demo-metric-hero">
           <view class="metric-caption">累计收益（元）</view><view class="metric-number">12,860.50</view>
           <view class="metric-foot"><text>可提现 8,240.00</text><text>本月 +18.6%</text></view>
@@ -63,7 +63,7 @@
 
       <view v-else-if="section === 'team'">
         <view class="demo-section-heading"><view><view class="demo-section-label">PARTNER NETWORK</view><view class="demo-section-title">我的团队</view></view><text class="demo-date">12 位成员</text></view>
-        <view class="demo-team-hero"><view class="team-ring">P3</view><view><view class="team-title">金牌合伙人</view><view class="demo-muted">距离钻石合伙人还差 8 个有效客户</view></view></view>
+        <view class="demo-team-hero"><view class="team-ring">P3</view><view><view class="team-title">金牌合伙人</view><view class="demo-muted">称号由所属 P4 设置，每单金额按客户约定</view></view></view>
         <view class="demo-card"><view v-for="member in partnerTeam" :key="member.name" class="team-row"><view class="team-avatar">{{ member.name.slice(0, 1) }}</view><view class="team-main"><view class="activity-title">{{ member.name }}</view><view class="activity-time">{{ member.position }} · {{ member.customers }} 个客户</view></view><text class="team-score">{{ member.score }}</text></view></view>
       </view>
 
@@ -149,7 +149,7 @@ const warehouseStats = [
 ]
 const partnerActions = [
   { key: 'customers', label: '推荐客户', desc: '新增业务线索', icon: '荐', tone: 'blue' }, { key: 'income', label: '收益明细', desc: '查看佣金进度', icon: '收', tone: 'cyan' },
-  { key: 'team', label: '我的团队', desc: '成员与晋升', icon: '团', tone: 'gold' }, { key: 'notices', label: '消息通知', desc: '查看重要提醒', icon: '信', tone: 'purple' },
+  { key: 'team', label: '我的团队', desc: '成员与称号', icon: '团', tone: 'gold' }, { key: 'notices', label: '消息通知', desc: '查看重要提醒', icon: '信', tone: 'purple' },
 ]
 const warehouseActions = [
   { key: 'orders', label: '出库单', desc: '订单与履约', icon: '单', tone: 'blue' }, { key: 'erp', label: 'ERP 接入', desc: '连接业务系统', icon: '接', tone: 'cyan' },

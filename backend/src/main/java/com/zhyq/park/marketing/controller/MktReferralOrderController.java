@@ -139,6 +139,8 @@ public class MktReferralOrderController {
         Map<String, Object> m = new HashMap<>();
         m.put("id", o.getId()); m.put("sourceType", o.getSourceType()); m.put("sourceNo", o.getSourceNo()); m.put("sourceId", o.getSourceId());
         m.put("customerId", o.getCustomerId()); m.put("promoterId", o.getPromoterId()); m.put("customerGrade", o.getCustomerGrade());
+        m.put("pricingId", o.getPricingId()); m.put("commissionUnitPrice", o.getCommissionUnitPrice());
+        m.put("commissionOrderCount", o.getCommissionOrderCount()); m.put("companyPerOrder", o.getCompanyPerOrder());
         m.put("poolFactor", o.getPoolFactor()); m.put("baseMode", o.getBaseMode()); m.put("baseAmount", o.getBaseAmount());
         m.put("poolAmount", o.getPoolAmount()); m.put("qty", o.getQty()); m.put("packages", o.getPackages()); m.put("serviceFee", o.getServiceFee());
         m.put("status", o.getStatus()); m.put("eventTime", o.getEventTime()); m.put("warehouseId", o.getWarehouseId()); m.put("remark", o.getRemark());

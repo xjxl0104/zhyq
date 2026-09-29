@@ -6,7 +6,7 @@ import vm from 'node:vm'
 const component = readFileSync(new URL('../src/components/PasswordAuthForm.vue', import.meta.url), 'utf8')
 const source = component.split('<script setup>')[1].split('</script>')[0].replace(/^import .*$/gm, '')
 
-function harness({ warehouse = false, registering = false, username = '123', password = '123', agreed = true, inviteCode = '' } = {}) {
+function harness({ warehouse = false, registering = false, username = '123', password = '123', agreed = true, inviteCode = 'ABCD2345' } = {}) {
   const calls = []
   const api = role => ({
     passwordLogin: async data => { calls.push({ role, action: 'login', data }); return { token: 'ok' } },
@@ -63,16 +63,16 @@ for (const warehouse of [false, true]) {
   test(`${warehouse ? '云仓' : '伙伴'}无需业务资料即可注册`, async () => {
     const { calls, context } = harness({ warehouse, registering: true })
     await vm.runInContext('submit()', context)
-    assert.deepEqual(JSON.parse(JSON.stringify(calls[0]?.data)), { username: '123', password: '123', agreed: true })
+    assert.deepEqual(JSON.parse(JSON.stringify(calls[0]?.data)), { username: '123', password: '123', agreed: true, ...(!warehouse ? { inviteCode: 'ABCD2345' } : {}) })
     assert.equal(calls[1]?.emitted[2], true)
   })
 }
 
 test('邀请链接仍带入伙伴注册，云仓注册不携带伙伴邀请', async () => {
   for (const warehouse of [false, true]) {
-    const { calls, context } = harness({ warehouse, registering: true, inviteCode: 'ABCD1234' })
+    const { calls, context } = harness({ warehouse, registering: true, inviteCode: 'ABCD2345' })
     await vm.runInContext('submit()', context)
-    assert.equal(calls[0]?.data.inviteCode, warehouse ? undefined : 'ABCD1234')
+    assert.equal(calls[0]?.data.inviteCode, warehouse ? undefined : 'ABCD2345')
   }
 })
 
@@ -84,4 +84,21 @@ test('云仓注册完成直接进入工作台，不强制完善加盟资料', ()
   vm.runInContext(script + "\ndone('new-token', true)", context)
   assert.equal(saved, 'new-token')
   assert.equal(route, '/pages/warehouse-dashboard/index')
+})
+
+test('伙伴注册必须填写有效邀请码；已有账号登录和云仓不受限制', async () => {
+  for (const inviteCode of ['', '  ', 'ABC', 'ABCD1234']) {
+    const { calls, context } = harness({ registering: true, inviteCode })
+    await vm.runInContext('submit()', context)
+    assert.equal(calls.length, 0)
+    assert.match(vm.runInContext('error.value', context), /邀请码/)
+  }
+  for (const values of [{ registering: false, inviteCode: '' }, { warehouse: true, registering: true, inviteCode: '' }]) {
+    const { calls, context } = harness(values)
+    await vm.runInContext('submit()', context)
+    assert.equal(calls[1].emitted[0], 'authenticated')
+  }
+  const { calls, context } = harness({ registering: true, inviteCode: ' abcd2345 ' })
+  await vm.runInContext('submit()', context)
+  assert.equal(calls[0].data.inviteCode, 'ABCD2345')
 })

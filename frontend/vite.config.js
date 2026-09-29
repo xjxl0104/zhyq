@@ -5,6 +5,8 @@ import Components from 'unplugin-vue-components/vite'
 import { ElementPlusResolver } from 'unplugin-vue-components/resolvers'
 import { fileURLToPath, URL } from 'node:url'
 
+const apiTarget = process.env.VITE_DEV_API_PROXY || 'http://localhost:8090'
+
 export default defineConfig({
   test: {
     environment: 'jsdom',
@@ -23,7 +25,7 @@ export default defineConfig({
     port: 5273,
     proxy: {
       '/api': {
-        target: 'http://localhost:8090',
+        target: apiTarget,
         changeOrigin: true
       }
     }
@@ -34,7 +36,7 @@ export default defineConfig({
     allowedHosts: true,
     proxy: {
       '/api': {
-        target: 'http://localhost:8090',
+        target: apiTarget,
         changeOrigin: true
       }
     }

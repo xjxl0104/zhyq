@@ -28,6 +28,9 @@ public class MktPromoterCommission extends BaseEntity {
     private BigDecimal rate;
     /** 正向为佣金,负向为扣回 */
     private BigDecimal amount;
+    private Long pricingId;
+    private BigDecimal amountPerOrder;
+    private Integer orderCount;
     /** 1正向 -1扣回 */
     private Integer sign;
     /** 0 = original commission/permanent clawback; >0 = paired receipt reversal/restoration cycle. */
@@ -42,6 +45,10 @@ public class MktPromoterCommission extends BaseEntity {
     private LocalDateTime unfreezeAt;
     private Long settleBatchId;
     private Long withdrawalId;
+    /** 已成功提现/抵扣的累计金额，保留原始 amount 用于退款权益核算。 */
+    private BigDecimal withdrawnAmount;
+    /** 当前提现单锁定的金额；旧待付款单为空时按完整未提金额解释。 */
+    private BigDecimal withdrawalAmount;
     private String voidReason;
     private Long projectId;
 }

@@ -17,7 +17,7 @@ export default defineConfig(({ mode }) => {
     },
     server: {
       port: 5274,
-      proxy: { '/api': { target: 'http://localhost:8090', changeOrigin: true } }
+      proxy: { '/api': { target: env.VITE_DEV_API_PROXY || 'http://localhost:8090', changeOrigin: true } }
     }
   }
 })

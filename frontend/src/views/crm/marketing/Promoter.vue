@@ -5,7 +5,7 @@
         <el-form-item label="姓名/手机">
           <el-input v-model="query.keyword" placeholder="姓名或手机号" clearable style="width: 180px" />
         </el-form-item>
-        <el-form-item label="岗位">
+        <el-form-item label="角色 / 称号">
           <el-select v-model="query.positionCode" placeholder="全部" clearable style="width: 130px">
             <el-option v-for="p in positions" :key="p.code" :label="p.name" :value="p.code" />
           </el-select>
@@ -25,7 +25,7 @@
     <div class="table-card">
       <div class="toolbar">
         <el-button type="primary" @click="openManual"><el-icon><Plus /></el-icon>录入伙伴</el-button>
-        <span class="hint">伙伴可通过小程序微信或账号密码注册，注册资料自动显示在此；运营也可手工录入。</span>
+        <span class="hint">伙伴注册时绑定上级邀请码；P4 拥有定价权，P1–P4 按单金额均由 P4 自定义。</span>
       </div>
       <el-table :data="list" v-loading="loading" border stripe>
         <el-table-column type="index" label="#" width="60" />
@@ -34,8 +34,8 @@
           <template #default="{ row }">{{ maskPhone(row.phone) }}</template>
         </el-table-column>
         <el-table-column prop="inviteCode" label="邀请码" width="110" />
-        <el-table-column label="岗位" width="110">
-          <template #default="{ row }"><el-tag>{{ positionName(row.positionCode) }}</el-tag></template>
+        <el-table-column label="角色 / 称号" width="160">
+          <template #default="{ row }"><el-tag>{{ row.positionCode }} · {{ positionName(row.positionCode) }}</el-tag></template>
         </el-table-column>
         <el-table-column prop="parentId" label="上级 ID" width="90" align="center" />
         <el-table-column label="状态" width="90">
@@ -152,7 +152,8 @@
             <el-descriptions-item label="姓名">{{ detail.row.name }}</el-descriptions-item>
             <el-descriptions-item label="手机">{{ maskPhone(detail.row.phone) }}</el-descriptions-item>
             <el-descriptions-item label="邀请码">{{ detail.row.inviteCode }}</el-descriptions-item>
-            <el-descriptions-item label="岗位">{{ positionName(detail.row.positionCode) }}</el-descriptions-item>
+            <el-descriptions-item label="角色 / 称号">{{ detail.row.positionCode }} · {{ positionName(detail.row.positionCode) }}</el-descriptions-item>
+            <el-descriptions-item label="定价权限" :span="2">{{ detail.row.positionCode === 'P4' ? '可在小程序内自定义所属客户的按单金额' : '每单金额由所属 P4 设置' }}</el-descriptions-item>
             <el-descriptions-item label="上级 ID">{{ detail.row.parentId || '—(根节点)' }}</el-descriptions-item>
             <el-descriptions-item label="路径">{{ detail.row.path }}</el-descriptions-item>
             <el-descriptions-item label="状态">{{ statusText(detail.row.status) }}</el-descriptions-item>
@@ -172,8 +173,8 @@
           <el-table :data="detail.commissions" size="small" border>
             <el-table-column prop="referralOrderId" label="订单" width="80" />
             <el-table-column prop="positionCode" label="岗位" width="70" />
-            <el-table-column label="份额/级差" width="100"><template #default="{ row }">{{ row.sharePct }}% / {{ row.diffPct }}%</template></el-table-column>
-            <el-table-column label="金额(元)" width="110" align="right"><template #default="{ row }">{{ money(row.amount) }}</template></el-table-column>
+            <el-table-column label="计佣依据" min-width="180"><template #default="{ row }"><CommissionBasis :row="row" /></template></el-table-column>
+            <el-table-column label="金额(元)" width="110" align="right"><template #default="{ row }">{{ row.pricingId != null ? Number(row.amount || 0).toFixed(3) : money(row.amount) }}</template></el-table-column>
             <el-table-column label="状态"><template #default="{ row }">{{ commissionStatus(row.status) }}</template></el-table-column>
             <el-table-column prop="createTime" label="时间" width="160" />
           </el-table>
@@ -203,6 +204,7 @@ import { money } from '@/utils/format'
 import { hasPermission } from '@/utils/permission'
 import { useProjectStore } from '@/stores/project'
 import { useResponsive } from '@/composables/useResponsive'
+import CommissionBasis from './CommissionBasis.vue'
 
 const projectStore = useProjectStore()
 const { isMobile } = useResponsive()

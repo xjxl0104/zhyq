@@ -55,7 +55,7 @@ public class MktWithdrawalController {
             m.put("auditBy", w.getAuditBy()); m.put("auditAt", w.getAuditAt()); m.put("payBy", w.getPayBy()); m.put("payAt", w.getPayAt());
             m.put("payProof", w.getPayProof()); m.put("accountName", w.getAccountName());
             m.put("accountType", w.getAccountType()); m.put("accountTail", w.getAccountTail()); m.put("bankName", w.getBankName());
-            m.put("accountVerifiedAt", w.getAccountVerifiedAt());
+            m.put("accountVerifiedAt", w.getAccountVerifiedAt()); m.put("commissionAllocations", w.getCommissionAllocations());
             m.put("rejectReason", w.getRejectReason()); m.put("createTime", w.getCreateTime());
             MktPromoter pr = promoterMapper.selectById(w.getPromoterId());
             m.put("promoterName", pr == null ? null : pr.getName());

@@ -128,15 +128,12 @@ public class MpAuthService {
             byPhone.setOpenid(openid);
             return new LoginResult(true, issue(byPhone), openid, byPhone);
         }
+        inviteCode = MktPromoterService.requireRegistrationInvite(inviteCode);
         MktPromoter p = new MktPromoter();
         p.setOpenid(openid);
         p.setPhone(phone);
         p.setName(StringUtils.hasText(name) ? name : "伙伴" + phone.substring(7));
         p.setLastLogin(LocalDateTime.now());
-        if (!StringUtils.hasText(inviteCode)) {
-            int grace = bizSettings.getInt(MODULE, "invite_grace_days", 7);
-            p.setInviteDeadline(LocalDateTime.now().plusDays(grace));
-        }
         try {
             promoterService.register(p, inviteCode, "mp");
         } catch (BizException e) {
@@ -148,7 +145,7 @@ public class MpAuthService {
         return new LoginResult(true, issue(p), openid, p);
     }
 
-    /** 无邀请码注册后,宽限期内补填一次。 */
+    /** 兼容历史无邀请码账号在原宽限期内补填；新注册必须填写邀请码。 */
     public void bindInvite(Long promoterId, String inviteCode) {
         MktPromoter p = promoterMapper.selectById(promoterId);
         if (p == null) throw new BizException("伙伴不存在");

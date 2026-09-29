@@ -104,14 +104,14 @@ public class PasswordAuthService {
         String phone = MktSelfProfileService.optionalPhone(request.phone());
         String name = MktSelfProfileService.optionalText(request.name(), "姓名", 32);
         if (!Boolean.TRUE.equals(request.agreed())) throw new BizException(400, "请先同意用户协议和隐私政策");
+        String invite = identity == Identity.MP
+                ? MktPromoterService.requireRegistrationInvite(request.inviteCode()) : null;
         if (findByUsername(identity, username) != null) throw new BizException(409, "该账号已注册，请直接登录");
         if (phone != null) rejectExistingPhone(phone);
         // Hash before creating business records; the surrounding transaction also rolls back conflicts.
         String hash = encodePassword(request.password());
         Long identityId;
         if (identity == Identity.MP) {
-            String invite = request.inviteCode() == null ? null : request.inviteCode().trim().toUpperCase(Locale.ROOT);
-            if (StringUtils.hasText(invite) && !invite.matches("^[A-Z2-9]{8}$")) throw new BizException(400, "邀请码格式不正确");
             MktPromoter promoter = new MktPromoter();
             promoter.setName(name == null ? "园区伙伴" : name);
             promoter.setPhone(phone);
@@ -120,9 +120,6 @@ public class PasswordAuthService {
             promoter.setAgreedAt(LocalDateTime.now());
             promoter.setIdVerified(0);
             promoter.setRemark("账号密码自助注册；联系电话未经手机验证");
-            if (!StringUtils.hasText(invite)) {
-                promoter.setInviteDeadline(LocalDateTime.now().plusDays(settings.getInt("marketing", "invite_grace_days", 7)));
-            }
             if (phone == null) promoterService.registerWithoutPhone(promoter, invite);
             else promoterService.register(promoter, invite, "mp");
             identityId = promoter.getId();

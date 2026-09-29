@@ -74,6 +74,7 @@ public class MktReferralOrderImportService {
     private final CustomerMapper customerMapper;
     private final MktServiceContractMapper contractMapper;
     private final MktCustomerGradeMapper gradeMapper;
+    private final MktCustomerPricingService pricingService;
     private final MktReferralOrderMapper orderMapper;
     private final MktCommissionService commissionService;
     private final BizSettings bizSettings;
@@ -252,12 +253,11 @@ public class MktReferralOrderImportService {
         BigDecimal serviceFee = serviceFee(contract.getPriceTable(), row.qty(), row.packages());
         String gradeCode = StringUtils.hasText(contract.getGrade()) ? contract.getGrade()
                 : StringUtils.hasText(customer.getGrade()) ? customer.getGrade() : "D";
-        MktCustomerGrade grade = gradeMapper.selectOne(new LambdaQueryWrapper<MktCustomerGrade>()
-                .eq(MktCustomerGrade::getCode, gradeCode).last("limit 1"));
-        BigDecimal rate = grade == null ? null : grade.getErpTotalRate();
+        MktCustomerPricingService.PricingSnapshot pricing = pricingService.forAccrual(customer.getId());
+        BigDecimal rate = BigDecimal.ZERO;
         if (serviceFee.signum() <= 0) throw new BizException("合同缺少有效的单票/按件服务单价");
-        if (rate == null || rate.signum() < 0 || rate.compareTo(new BigDecimal("100")) > 0) throw new BizException("客户评级佣金比例配置不合法");
-        BigDecimal pool = PoolCalculator.ratePool(serviceFee, rate);
+        // 一条唯一出库单号计一单；包裹数、件数只用于服务费和仓库成本。
+        BigDecimal pool = pricing.totalPerOrder().subtract(pricing.companyPerOrder());
         BigDecimal cost = serviceFee(resolved.warehouse().getFeeModel(), row.qty(), row.packages());
         if (cost.signum() <= 0) throw new BizException("云仓应付费率尚未配置,请先核算成本");
         if (serviceFee.subtract(cost).subtract(pool).signum() < 0)

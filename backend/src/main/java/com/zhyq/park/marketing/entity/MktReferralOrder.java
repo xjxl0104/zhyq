@@ -37,6 +37,12 @@ public class MktReferralOrder extends BaseEntity {
     private BigDecimal baseAmount;
     /** 佣金池 = 基数 × pool_factor */
     private BigDecimal poolAmount;
+    /** P4 按客户定价版本；历史比例单为空。 */
+    private Long pricingId;
+    private BigDecimal commissionUnitPrice;
+    private Integer commissionOrderCount;
+    /** 公司留存，不生成个人佣金流水。 */
+    private BigDecimal companyPerOrder;
     private Integer qty;
     private Integer packages;
     /** 园区按合同单价表自算的服务费 */

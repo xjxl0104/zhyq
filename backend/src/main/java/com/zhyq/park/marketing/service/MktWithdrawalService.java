@@ -59,7 +59,7 @@ public class MktWithdrawalService {
                 .isNull(MktPromoterCommission::getWithdrawalId)
                 .and(w -> w.eq(MktPromoterCommission::getStatus, MktCommissionService.C_SETTLED).eq(MktPromoterCommission::getSign, 1)
                         .or().in(MktPromoterCommission::getStatus, MktCommissionService.C_SETTLEABLE, MktCommissionService.C_SETTLED).eq(MktPromoterCommission::getSign, -1)));
-        return rows.stream().map(MktPromoterCommission::getAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
+        return rows.stream().map(MktWithdrawalService::remainingAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 
     /** 申请提现:校验伙伴正常、最低金额、余额;锁定流水(按时间先后凑够金额);算税。 */
@@ -109,34 +109,47 @@ public class MktWithdrawalService {
                 .isNull(MktPromoterCommission::getWithdrawalId)
                 .and(q -> q.eq(MktPromoterCommission::getStatus, MktCommissionService.C_SETTLED).eq(MktPromoterCommission::getSign, 1)
                         .or().in(MktPromoterCommission::getStatus, MktCommissionService.C_SETTLEABLE, MktCommissionService.C_SETTLED).eq(MktPromoterCommission::getSign, -1))
-                .orderByAsc(MktPromoterCommission::getId));
+                .orderByAsc(MktPromoterCommission::getId).last("FOR UPDATE"));
         List<MktPromoterCommission> selected = new java.util.ArrayList<>();
+        java.util.Map<Long, BigDecimal> allocations = new java.util.LinkedHashMap<>();
         BigDecimal selectedAmount = BigDecimal.ZERO;
         // Every outstanding debit must be deducted before selecting positive commissions.
         for (MktPromoterCommission c : rows) if (Integer.valueOf(-1).equals(c.getSign())) {
-            selected.add(c); selectedAmount = selectedAmount.add(c.getAmount());
+            BigDecimal remaining = remainingAmount(c);
+            if (remaining.signum() == 0) continue;
+            if (remaining.signum() > 0) throw new BizException("扣回流水余额异常，请联系财务核对");
+            selected.add(c); allocations.put(c.getId(), remaining); selectedAmount = selectedAmount.add(remaining);
         }
         for (MktPromoterCommission c : rows) {
             if (Integer.valueOf(-1).equals(c.getSign())) continue;
             if (selectedAmount.compareTo(amount) >= 0) break;
-            selected.add(c);
-            selectedAmount = selectedAmount.add(c.getAmount());
+            BigDecimal remaining = remainingAmount(c);
+            if (remaining.signum() <= 0) continue;
+            // 最后一行可以只提到分，不拆改原始佣金，千分位留在该行累计余额中。
+            BigDecimal allocated = remaining.min(amount.subtract(selectedAmount));
+            selected.add(c); allocations.put(c.getId(), allocated);
+            selectedAmount = selectedAmount.add(allocated);
         }
         if (selectedAmount.compareTo(amount) != 0) {
-            throw new BizException("提现金额必须与完整流水金额一致,可选择全部可提现余额");
+            throw new BizException("可提现余额已变化，请刷新后重试");
         }
+        w.setCommissionIds("[" + selected.stream().map(c -> String.valueOf(c.getId())).collect(Collectors.joining(",")) + "]");
+        w.setCommissionAllocations("[" + selected.stream().map(c -> "{\"commissionId\":" + c.getId()
+                + ",\"amount\":" + allocations.get(c.getId()).toPlainString() + "}").collect(Collectors.joining(",")) + "]");
         withdrawalMapper.insert(w);
         for (MktPromoterCommission c : selected) {
             int locked = commissionMapper.update(null, new LambdaUpdateWrapper<MktPromoterCommission>()
                     .eq(MktPromoterCommission::getId, c.getId()).eq(MktPromoterCommission::getPromoterId, promoterId)
                     .eq(MktPromoterCommission::getStatus, c.getStatus()).eq(MktPromoterCommission::getSign, c.getSign())
                     .isNull(MktPromoterCommission::getWithdrawalId)
-                    .set(MktPromoterCommission::getWithdrawalId, w.getId()));
+                    .eq(c.getWithdrawnAmount() != null, MktPromoterCommission::getWithdrawnAmount, c.getWithdrawnAmount())
+                    .set(MktPromoterCommission::getWithdrawalId, w.getId())
+                    .set(MktPromoterCommission::getWithdrawalAmount, allocations.get(c.getId())));
             if (locked != 1) {
                 throw new BizException("提现余额已被其它申请锁定,请刷新后重试");
             }
+            c.setWithdrawalId(w.getId()); c.setWithdrawalAmount(allocations.get(c.getId()));
         }
-        w.setCommissionIds("[" + selected.stream().map(c -> String.valueOf(c.getId())).collect(Collectors.joining(",")) + "]");
         withdrawalMapper.updateById(w);
         auditService.log("withdrawal.apply", BIZ_TYPE, w.getId(), "税前 " + amount + " 税 " + tax);
         return w;
@@ -169,7 +182,9 @@ public class MktWithdrawalService {
                 .set(MktWithdrawal::getAuditBy, operator).set(MktWithdrawal::getAuditAt, LocalDateTime.now()));
         requireUpdated(updated, id);
         commissionMapper.update(null, new LambdaUpdateWrapper<MktPromoterCommission>()
-                .eq(MktPromoterCommission::getWithdrawalId, id).set(MktPromoterCommission::getWithdrawalId, null));
+                .eq(MktPromoterCommission::getWithdrawalId, id)
+                .set(MktPromoterCommission::getWithdrawalId, null)
+                .set(MktPromoterCommission::getWithdrawalAmount, null));
         auditService.log("withdrawal.reject", BIZ_TYPE, id, reason);
     }
 
@@ -201,9 +216,9 @@ public class MktWithdrawalService {
         proofService.require(payProof, "mkt_withdrawal", id);
         List<MktPromoterCommission> linked = commissionMapper.selectList(new LambdaQueryWrapper<MktPromoterCommission>()
                 .eq(MktPromoterCommission::getWithdrawalId, id).last("FOR UPDATE"));
-        BigDecimal linkedAmount = linked.stream().map(MktPromoterCommission::getAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal linkedAmount = linked.stream().map(MktWithdrawalService::reservedAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
         if (linked.isEmpty() || linkedAmount.compareTo(current.getAmount()) != 0
-                || linked.stream().anyMatch(c -> !lockedCurrent.getPromoterId().equals(c.getPromoterId())
+                || linked.stream().anyMatch(c -> !validReservation(c) || !lockedCurrent.getPromoterId().equals(c.getPromoterId())
                 || !((Integer.valueOf(1).equals(c.getSign()) && Integer.valueOf(MktCommissionService.C_SETTLED).equals(c.getStatus()))
                 || (Integer.valueOf(-1).equals(c.getSign()) && (Integer.valueOf(MktCommissionService.C_SETTLEABLE).equals(c.getStatus()) || Integer.valueOf(MktCommissionService.C_SETTLED).equals(c.getStatus()))))))
             throw new BizException("提现流水金额不一致或状态已变化,请刷新后重试");
@@ -221,13 +236,45 @@ public class MktWithdrawalService {
             throw new BizException("打款凭证号已被占用,请刷新");
         }
         requireUpdated(updated, id);
-        int paid = commissionMapper.update(null, new LambdaUpdateWrapper<MktPromoterCommission>()
-                .eq(MktPromoterCommission::getWithdrawalId, id)
-                .in(MktPromoterCommission::getStatus, MktCommissionService.C_SETTLED, MktCommissionService.C_SETTLEABLE)
-                .set(MktPromoterCommission::getStatus, MktCommissionService.C_WITHDRAWN));
-        if (paid != linked.size()) throw new BizException("提现流水状态已变化,本次打款登记已回滚");
+        for (MktPromoterCommission c : linked) {
+            BigDecimal withdrawn = alreadyWithdrawn(c).add(reservedAmount(c));
+            boolean complete = withdrawn.compareTo(c.getAmount()) == 0;
+            LambdaUpdateWrapper<MktPromoterCommission> update = new LambdaUpdateWrapper<MktPromoterCommission>()
+                    .eq(MktPromoterCommission::getId, c.getId()).eq(MktPromoterCommission::getWithdrawalId, id)
+                    .eq(MktPromoterCommission::getStatus, c.getStatus()).eq(MktPromoterCommission::getSign, c.getSign())
+                    .eq(c.getWithdrawnAmount() != null, MktPromoterCommission::getWithdrawnAmount, c.getWithdrawnAmount())
+                    .eq(c.getWithdrawalAmount() != null, MktPromoterCommission::getWithdrawalAmount, c.getWithdrawalAmount())
+                    .set(MktPromoterCommission::getWithdrawnAmount, withdrawn)
+                    .set(MktPromoterCommission::getWithdrawalAmount, null)
+                    .set(MktPromoterCommission::getStatus, complete ? MktCommissionService.C_WITHDRAWN : c.getStatus());
+            if (!complete) update.set(MktPromoterCommission::getWithdrawalId, null);
+            if (commissionMapper.update(null, update) != 1) throw new BizException("提现流水状态已变化，本次打款登记已回滚");
+            c.setWithdrawnAmount(withdrawn); c.setWithdrawalAmount(null);
+            if (complete) c.setStatus(MktCommissionService.C_WITHDRAWN);
+            else c.setWithdrawalId(null);
+        }
         auditService.log("withdrawal.pay", BIZ_TYPE, id, payNo);
         return withdrawalMapper.selectById(id);
+    }
+
+    static BigDecimal alreadyWithdrawn(MktPromoterCommission c) {
+        return c.getWithdrawnAmount() == null ? BigDecimal.ZERO : c.getWithdrawnAmount();
+    }
+
+    /** 尚未提现的权益，退款始终仍以不可变的原始 amount 计量。 */
+    public static BigDecimal remainingAmount(MktPromoterCommission c) {
+        return c.getAmount().subtract(alreadyWithdrawn(c));
+    }
+
+    private static BigDecimal reservedAmount(MktPromoterCommission c) {
+        return c.getWithdrawalAmount() == null ? remainingAmount(c) : c.getWithdrawalAmount();
+    }
+
+    private static boolean validReservation(MktPromoterCommission c) {
+        BigDecimal reservation = reservedAmount(c), remaining = remainingAmount(c), paid = alreadyWithdrawn(c);
+        if (Integer.valueOf(1).equals(c.getSign()))
+            return paid.signum() >= 0 && remaining.signum() > 0 && reservation.signum() > 0 && reservation.compareTo(remaining) <= 0;
+        return Integer.valueOf(-1).equals(c.getSign()) && paid.signum() <= 0 && remaining.signum() < 0 && reservation.compareTo(remaining) == 0;
     }
 
     private MktWithdrawal samePayment(MktWithdrawal existing, Long id, String proof) {

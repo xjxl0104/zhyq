@@ -14,6 +14,11 @@
         <view class="row"><text class="muted">承接状态</text><text>{{ ASSIGN[c.warehouseAssignmentStatus || 0] }}</text></view>
         <view class="row"><text class="muted">推荐时间</text><text>{{ c.createTime?.slice(0, 16) }}</text></view>
       </view>
+      <view v-if="me.positionCode === 'P4' && Number(me.status) === 1" class="card">
+        <view class="title">客户定价与分佣</view>
+        <view class="muted" style="margin-top:16rpx">由您自定义总佣金、P4 本人和具体受益人的每单金额。</view>
+        <button class="btn secondary" @click="uni.navigateTo({ url: '/pages/allocation/index?customerId=' + c.id })">设置每单金额</button>
+      </view>
       <view class="card">
         <view class="title">服务进度</view>
         <view class="progress">{{ c.publicProgress || '园区尚未更新服务进度，请稍后查看。' }}</view>
@@ -31,18 +36,18 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { onLoad, onShow } from '@dcloudio/uni-app'
-import { bizApi } from '@/api'
+import { bizApi, meApi } from '@/api'
 import DeleteCustomerButton from '@/components/DeleteCustomerButton.vue'
 const STATUS = {1:'跟进中',2:'已签约',3:'已流失'}
 const ASSIGN = {0:'待分派',1:'待商家确认',2:'已承接',3:'商家已拒绝，等待重新分派'}
-const c = ref(null), error = ref(''), loading = ref(false), busy = ref(false)
+const c = ref(null), me = ref({}), error = ref(''), loading = ref(false), busy = ref(false)
 let id
 onLoad(q => { id = q.id })
 onShow(load)
 async function load() {
   if (!id || loading.value) return
   loading.value = true; error.value = ''
-  try { c.value = await bizApi.customer(id) } catch (e) { error.value = e.message } finally { loading.value = false }
+  try { [c.value, me.value] = await Promise.all([bizApi.customer(id), meApi.me()]) } catch (e) { error.value = e.message } finally { loading.value = false }
 }
 const lockText = computed(() => {
   const x = c.value

@@ -52,6 +52,7 @@ class MktCommissionServiceTest {
     @Mock MktSettleBatchMapper batchMapper;
     @Mock MktPromoterMapper promoterMapper;
     @Mock LadderResolver ladderResolver;
+    @Mock MktCustomerPricingService pricingService;
     @Mock MktAuditService auditService;
     @Mock ApplicationEventPublisher eventPublisher;
     @Mock com.zhyq.park.marketing.mapper.MktWithdrawalMapper withdrawalMapper;
@@ -69,7 +70,65 @@ class MktCommissionServiceTest {
     @BeforeEach
     void setUp() {
         service = new MktCommissionService(orderMapper, commissionMapper, batchMapper, promoterMapper,
-                ladderResolver, auditService, eventPublisher, withdrawalMapper);
+                ladderResolver, pricingService, auditService, eventPublisher, withdrawalMapper);
+    }
+
+
+    @Test void customOrderUsesExactAmountsAndNeverPaysCompanyRemainderToP4() {
+        var seller = promoter(1L, "P1");
+        when(promoterMapper.selectForUpdate(1L)).thenReturn(seller);
+        when(pricingService.forAccrual(5L)).thenReturn(new MktCustomerPricingService.PricingSnapshot(20L,4L,"P4",
+                new BigDecimal("0.300"),new BigDecimal("0.023"),new BigDecimal("0.199"), List.of(
+                new MktCustomerPricingService.Beneficiary(1L,"A","P1",new BigDecimal("0.077")),
+                new MktCustomerPricingService.Beneficiary(2L,"B","P2",new BigDecimal("0.001")))));
+        when(orderMapper.insert(any(MktReferralOrder.class))).thenAnswer(i -> { ((MktReferralOrder)i.getArgument(0)).setId(100L); return 1; });
+        var ev = new CommissionEvent(2,"CUSTOM",10L,5L,1L,"A",BigDecimal.ZERO,BigDecimal.TEN,
+                new BigDecimal("0.101"),LocalDateTime.now(),null,1L,7L);
+        var order = service.createAndSplit(ev);
+        assertThat(order.getBaseMode()).isEqualTo(2); assertThat(order.getPricingId()).isEqualTo(20L);
+        assertThat(order.getCompanyPerOrder()).isEqualByComparingTo("0.199");
+        assertThat(order.getCommissionUnitPrice()).isEqualByComparingTo("0.300");
+        ArgumentCaptor<MktPromoterCommission> cap = ArgumentCaptor.forClass(MktPromoterCommission.class);
+        verify(commissionMapper,times(3)).insert(cap.capture());
+        assertThat(cap.getAllValues()).extracting(MktPromoterCommission::getAmount).containsExactly(
+                new BigDecimal("0.023"),new BigDecimal("0.077"),new BigDecimal("0.001"));
+        assertThat(cap.getAllValues()).allMatch(c -> c.getPricingId()==20L && c.getOrderCount()==1);
+        org.mockito.Mockito.verifyNoInteractions(ladderResolver);
+    }
+
+    @Test void missingCustomPricingLeavesOrderUnwrittenForRetry() {
+        when(promoterMapper.selectForUpdate(1L)).thenReturn(promoter(1L,"P1"));
+        when(pricingService.forAccrual(5L)).thenThrow(new BizException("客户尚未配置，请重试"));
+        var ev = new CommissionEvent(2,"WAIT",10L,5L,1L,"A",BigDecimal.ZERO,BigDecimal.TEN,
+                BigDecimal.ZERO,LocalDateTime.now(),null,1L,7L);
+        assertThatThrownBy(() -> service.createAndSplit(ev)).hasMessageContaining("尚未配置");
+        verify(orderMapper,never()).insert(any(MktReferralOrder.class));
+        verify(commissionMapper,never()).insert(any(MktPromoterCommission.class));
+    }
+
+    @Test void refundAfterPartialPaymentRecoversOnlyPaidNetAndPreservesOriginalEntitlement() {
+        var original = commission(11L,MktCommissionService.C_SETTLED,"100.001");
+        original.setSign(1); original.setWithdrawnAmount(new BigDecimal("100.000"));
+        when(commissionMapper.selectList(any())).thenReturn(List.of(original));
+        when(commissionMapper.update(isNull(),any())).thenReturn(1);
+        service.clawback(100L,"退款");
+        ArgumentCaptor<MktPromoterCommission> cap = ArgumentCaptor.forClass(MktPromoterCommission.class);
+        verify(commissionMapper).insert(cap.capture());
+        var debit = cap.getValue();
+        assertThat(debit.getAmount()).isEqualByComparingTo("-100.001");
+        assertThat(MktWithdrawalService.remainingAmount(original).add(MktWithdrawalService.remainingAmount(debit))).isEqualByComparingTo("-100.000");
+        assertThat(original.getAmount()).isEqualByComparingTo("100.001");
+        assertThat(original.getReceiptSuspended()).isEqualTo(2);
+    }
+
+    @Test void previouslyAccruedOrderKeepsHistoryAfterPricingChange() {
+        var old = new MktReferralOrder(); old.setId(9L); old.setWarehouseId(7L); old.setCustomerId(5L); old.setSourceId(10L);
+        when(orderMapper.selectOne(any())).thenReturn(old);
+        var ev = new CommissionEvent(2,"EXISTING",10L,5L,1L,"A",BigDecimal.ZERO,BigDecimal.TEN,
+                BigDecimal.ZERO,LocalDateTime.now(),null,1L,7L);
+        assertThat(service.createAndSplit(ev)).isSameAs(old);
+        org.mockito.Mockito.verifyNoInteractions(pricingService);
+        verify(commissionMapper,never()).insert(any(MktPromoterCommission.class));
     }
 
     @Test

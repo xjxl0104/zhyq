@@ -12,7 +12,7 @@
         </el-table-column>
         <el-table-column prop="remark" label="说明" min-width="300" />
       </el-table>
-      <p class="hint">改参数只影响之后的计佣/锁定;已生成的流水与锁定不受影响。岗位数(ladder_depth)请在「岗位与份额」页切换,那里有合规提示与二次确认。</p>
+      <p class="hint">云仓按单佣金由 P4 在小程序按客户 / 品牌自定义，可在「客户管理 › 按单佣金」查看。此处管理业务参数，已生成流水与锁定记录不受影响。</p>
     </div>
   </div>
 </template>
@@ -25,7 +25,7 @@ import { mktSettingApi } from '@/api/marketing'
 const loading = ref(false)
 const saving = ref(false)
 const list = ref([])
-async function load() { loading.value = true; try { list.value = await mktSettingApi.all() } finally { loading.value = false } }
+async function load() { loading.value = true; try { list.value = (await mktSettingApi.all()).filter(row => row.skey !== 'ladder_depth') } finally { loading.value = false } }
 async function save() {
   saving.value = true
   try { await mktSettingApi.update(list.value.map(r => ({ skey: r.skey, svalue: r.svalue }))); ElMessage.success('已保存'); load() } finally { saving.value = false }

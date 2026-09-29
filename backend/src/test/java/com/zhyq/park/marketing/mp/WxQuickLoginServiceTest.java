@@ -71,13 +71,30 @@ class WxQuickLoginServiceTest {
     @Test void newWechatPartnerEntersWithoutPhoneAndRecordsAgreement() {
         session();
         doAnswer(call -> { MktPromoter p = call.getArgument(0); p.setId(31L); p.setStatus(1); return p; })
-                .when(promoterService).registerWithoutPhone(any(), isNull());
+                .when(promoterService).registerWithoutPhone(any(), eq("ABCD2345"));
         when(jwt.issueForIdentity("mp", 31L)).thenReturn("mp-token");
         var result = service.login(MP, request(null), "ip");
         assertThat(result).containsEntry("registered", true).containsEntry("token", "mp-token");
         verify(promoterService).registerWithoutPhone(argThat(p -> "verified-openid".equals(p.getOpenid())
-                && p.getPhone() == null && p.getAgreedAt() != null && "v1".equals(p.getAgreementVersion())), isNull());
+                && p.getPhone() == null && p.getAgreedAt() != null && "v1".equals(p.getAgreementVersion())), eq("ABCD2345"));
         verify(provider, never()).exchangePhone(any(), any(), any());
+    }
+
+    @Test void newPartnerNeedsInviteEvenWhenNoPhoneIsRequested() {
+        session();
+        assertThatThrownBy(() -> service.login(MP,
+                new WxQuickLoginService.Request("js-code", "app", true, null, null, null), "ip"))
+                .isInstanceOf(BizException.class).hasMessageContaining("邀请码");
+        verifyNoInteractions(promoterService, jwt);
+    }
+
+    @Test void existingPartnerDoesNotNeedInviteAgain() {
+        session();
+        when(promoters.selectOne(any())).thenReturn(partner(31L, 1, "verified-openid"));
+        assertThat(service.login(MP,
+                new WxQuickLoginService.Request("js-code", "app", true, null, null, null), "ip"))
+                .containsEntry("registered", true);
+        verifyNoInteractions(promoterService);
     }
 
     @Test void newWechatWarehouseCreatesPendingWorkspaceAndOwnerTogether() {
@@ -97,13 +114,13 @@ class WxQuickLoginServiceTest {
     @Test void phoneExchangePrecedesRegistrationAndUsesOnlyWechatResponse() {
         session(); when(provider.exchangePhone("app", "secret", "phone-code")).thenReturn("13800138000");
         doAnswer(call -> { MktPromoter p = call.getArgument(0); p.setId(31L); p.setStatus(1); return p; })
-                .when(promoterService).register(any(), isNull(), eq("mp"));
+                .when(promoterService).register(any(), eq("ABCD2345"), eq("mp"));
         service.login(MP, request("phone-code"), "ip");
         var order = inOrder(provider, promoterService);
         order.verify(provider).exchange("app", "secret", "js-code");
         order.verify(provider).exchangePhone("app", "secret", "phone-code");
         order.verify(promoterService).register(argThat(p -> "13800138000".equals(p.getPhone())
-                && "verified-openid".equals(p.getOpenid())), isNull(), eq("mp"));
+                && "verified-openid".equals(p.getOpenid())), eq("ABCD2345"), eq("mp"));
         verify(promoterService, never()).registerWithoutPhone(any(), any());
     }
 
@@ -230,7 +247,7 @@ class WxQuickLoginServiceTest {
 
     private void session() { when(provider.exchange("app", "secret", "js-code")).thenReturn(new WxSessionClient.Session("verified-openid", "session-key")); }
     private void createWarehouse() { doAnswer(call -> { MktWarehouse w = call.getArgument(0); w.setId(41L); w.setJoinStatus(1); return w; }).when(onboarding).apply(any()); }
-    private static WxQuickLoginService.Request request(String phoneCode) { return new WxQuickLoginService.Request("js-code", "app", true, phoneCode, null, null); }
+    private static WxQuickLoginService.Request request(String phoneCode) { return new WxQuickLoginService.Request("js-code", "app", true, phoneCode, null, "ABCD2345"); }
     private static MktPromoter partner(Long id, int status, String openid) { MktPromoter p = new MktPromoter(); p.setId(id); p.setStatus(status); p.setOpenid(openid); return p; }
     private static MktWarehouse warehouse(Long id, int status) { MktWarehouse w = new MktWarehouse(); w.setId(id); w.setJoinStatus(status); return w; }
     static class RecordingTransactionManager extends AbstractPlatformTransactionManager {

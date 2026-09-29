@@ -101,15 +101,12 @@ public class WxQuickLoginService {
                 return partnerResult(existing);
             }
         }
-        String invite = inviteCode == null ? null : inviteCode.trim().toUpperCase(Locale.ROOT);
-        if (StringUtils.hasText(invite) && !invite.matches("^[A-Z2-9]{8}$")) throw new BizException("邀请码格式不正确");
+        String invite = MktPromoterService.requireRegistrationInvite(inviteCode);
         MktPromoter created = new MktPromoter();
         created.setOpenid(openid); created.setPhone(phone); created.setName("园区伙伴");
         created.setLastLogin(LocalDateTime.now()); created.setAgreementVersion("v1");
         created.setAgreedAt(LocalDateTime.now()); created.setIdVerified(0);
         created.setRemark(phone == null ? "微信快捷注册；联系资料待补充" : "微信手机号授权注册");
-        if (!StringUtils.hasText(invite))
-            created.setInviteDeadline(LocalDateTime.now().plusDays(settings.getInt("marketing", "invite_grace_days", 7)));
         if (phone == null) promoterService.registerWithoutPhone(created, invite);
         else promoterService.register(created, invite, "mp");
         return partnerResult(created);

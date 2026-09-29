@@ -36,7 +36,7 @@ const routes = [
       // 招商 › 全民营销(园区伙伴 · 云仓生态)
       { path: 'crm/marketing/dashboard', meta: { title: '看板' }, component: () => import('@/views/crm/marketing/Dashboard.vue') },
       { path: 'crm/marketing/promoter', meta: { title: '伙伴管理' }, component: () => import('@/views/crm/marketing/Promoter.vue') },
-      { path: 'crm/marketing/position', meta: { title: '岗位与份额' }, component: () => import('@/views/crm/marketing/Position.vue') },
+      { path: 'crm/marketing/position', meta: { title: '角色与称号' }, component: () => import('@/views/crm/marketing/Position.vue') },
       { path: 'crm/marketing/grade', meta: { title: '客户评级' }, component: () => import('@/views/crm/marketing/Grade.vue') },
       { path: 'crm/marketing/customer', meta: { title: '客户管理' }, component: () => import('@/views/crm/marketing/Customer.vue') },
       { path: 'crm/marketing/contract', meta: { title: '服务合同' }, component: () => import('@/views/crm/marketing/ServiceContract.vue') },
