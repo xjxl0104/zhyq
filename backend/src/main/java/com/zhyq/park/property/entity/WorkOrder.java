@@ -1,6 +1,10 @@
 package com.zhyq.park.property.entity;
 
 import com.baomidou.mybatisplus.annotation.TableName;
+import com.baomidou.mybatisplus.annotation.TableField;
+import com.fasterxml.jackson.annotation.JsonProperty;
+import com.zhyq.park.property.model.FloorLocationSelection;
+import java.math.BigDecimal;
 import com.zhyq.park.common.base.BaseEntity;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
@@ -24,6 +28,16 @@ public class WorkOrder extends BaseEntity {
     private String title;
     private Long projectId;
     private Long buildingId;
+    @JsonProperty(access = JsonProperty.Access.READ_ONLY)
+    private Long floorId;
+    @JsonProperty(access = JsonProperty.Access.READ_ONLY)
+    private Long floorPlanFileId;
+    @JsonProperty(access = JsonProperty.Access.READ_ONLY)
+    private BigDecimal planX;
+    @JsonProperty(access = JsonProperty.Access.READ_ONLY)
+    private BigDecimal planY;
+    @TableField(exist = false)
+    private FloorLocationSelection floorLocation;
     private Long roomId;
     private Long spaceId;
     /** 位置 */
