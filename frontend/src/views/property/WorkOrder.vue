@@ -322,7 +322,6 @@ import { workOrderApi } from '@/api/property'
 import { supplierApi } from '@/api/supplier'
 import { fileApi } from '@/api/file'
 import { startFileDownload } from '@/utils/fileDownload'
-import { userApi } from '@/api/system'
 import FileUpload from '@/components/FileUpload.vue'
 import WorkOrderLocation from '@/components/WorkOrderLocation.vue'
 import FloorPlanViewer from '@/components/FloorPlanViewer.vue'
@@ -494,7 +493,7 @@ const dispatchForm = reactive({ assignee: '' })
 const dispatchRules = { assignee: [{ required: true, message: '请选择责任人', trigger: 'change' }] }
 const staffList = ref([])
 async function loadStaff() {
-  try { staffList.value = await userApi.list() || [] } catch (e) { /* 无权限或失败则下拉为空,不阻断 */ }
+  try { staffList.value = await workOrderApi.assignees() || [] } catch (e) { /* 失败时下拉为空,不阻断 */ }
 }
 function openDispatch(row) {
   dispatchDialog.visible = true

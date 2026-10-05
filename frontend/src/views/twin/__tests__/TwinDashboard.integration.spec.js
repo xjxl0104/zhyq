@@ -8,6 +8,7 @@ import Layout from '@/layout/Layout.vue'
 import ProjectSwitcher from '@/layout/ProjectSwitcher.vue'
 import TwinDashboard from '../TwinDashboard.vue'
 import { useProjectStore } from '@/stores/project'
+import { useAccessStore } from '@/stores/access'
 
 // Only external data and GPU-heavy presentation are replaced; Layout/project switching are real.
 vi.mock('@/api/building', () => ({ projectApi: { list: async () => [{ id: 101, name: '云仓项目甲' }, { id: 102, name: '云仓项目乙' }] } }))
@@ -24,6 +25,7 @@ describe('three dimensional homepage in the existing application layout', () => 
     localStorage.clear()
     sceneUnmounted.mockClear()
     const pinia = createPinia()
+    useAccessStore(pinia).admin = true
     const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/', component: Layout, children: [
       { path: 'dashboard', component: TwinDashboard },
       { path: 'contract/list', component: { template: '<div>合同列表</div>' } },

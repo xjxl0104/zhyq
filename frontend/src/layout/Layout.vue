@@ -15,7 +15,7 @@
                class="mobile-navigation" append-to-body :destroy-on-close="true">
       <nav id="mobile-navigation" aria-label="主导航">
         <el-menu :default-active="activePath" router unique-opened class="mobile-drawer-menu">
-          <MenuItem v-for="(item, i) in menuTree" :key="item.title" :item="item" :top-index="i" @leaf="onClick" />
+          <MenuItem v-for="(item, i) in menuTree" :key="item.title" :item="item" :top-index="item.topIndex ?? i" @leaf="onClick" />
         </el-menu>
       </nav>
       <template #footer>
@@ -58,7 +58,7 @@
               v-for="(item, i) in menuTree"
               :key="item.title"
               :item="item"
-              :top-index="i"
+              :top-index="item.topIndex ?? i"
               @leaf="onClick"
             />
           </el-menu>
@@ -95,9 +95,9 @@
 <script setup>
 import { computed, ref, watch, onMounted, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { menuTree } from './menu'
 import request from '@/utils/request'
 import { useProjectStore } from '@/stores/project'
+import { useAccessStore } from '@/stores/access'
 import GrainientBg from '@/components/GrainientBg.vue'
 import StrokeBrand from './StrokeBrand.vue'
 import MenuItem from './MenuItem.vue'
@@ -109,6 +109,8 @@ import { Menu } from '@element-plus/icons-vue'
 const route = useRoute()
 const router = useRouter()
 const projectStore = useProjectStore()
+const accessStore = useAccessStore()
+const menuTree = computed(() => accessStore.navigation)
 const { isMobile } = useResponsive()
 const mobileMenuOpen = ref(false)
 const configuredCommit = String(import.meta.env.VITE_GIT_SHA || '').trim().toLowerCase()
@@ -168,6 +170,7 @@ async function onUserCmd(cmd) {
     localStorage.removeItem('zhyq_user')
     localStorage.removeItem('zhyq_username')
     projectStore.reset()
+    accessStore.reset()
     router.push('/login')
   }
 }

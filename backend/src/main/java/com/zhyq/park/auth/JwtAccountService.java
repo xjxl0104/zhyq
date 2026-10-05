@@ -41,6 +41,13 @@ public class JwtAccountService {
             permissions.selectRoleCodesByUserId(id).stream().filter(s -> s != null && !s.isBlank())
                     .forEach(s -> auth.add("ROLE_" + s));
             permissions.selectPermsByUserId(id).stream().filter(s -> s != null && !s.isBlank()).forEach(auth::add);
+            List<com.zhyq.park.system.entity.SysMenu> grantedMenus = permissions.selectGrantedMenusByUserId(id);
+            if (grantedMenus == null) grantedMenus = List.of();
+            grantedMenus.stream()
+                    .map(com.zhyq.park.system.entity.SysMenu::getPath)
+                    .filter(s -> s != null && !s.isBlank())
+                    .map(s -> "MENU:/" + s.replaceAll("^/+", ""))
+                    .forEach(auth::add);
             return new Account(type, id, u.getUsername(), List.copyOf(auth), "admin:" + id + ":" + u.getPassword());
         }
         String subject;

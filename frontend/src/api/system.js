@@ -2,7 +2,8 @@ import request from '@/utils/request'
 
 // 认证
 export const authApi = {
-  myMenuIds: () => request.get('/auth/my-menu-ids')
+  myMenuIds: () => request.get('/auth/my-menu-ids'),
+  myAccess: () => request.get('/auth/my-access')
 }
 
 // 用户

@@ -45,7 +45,7 @@ export function buildPermissionTree(menus) {
   const paths = new Map(), folders = new Map()
   const makeNode = (item, ancestors = [], index) => {
     const name = index === undefined ? item.title : `${String(index + 1).padStart(2, '0')} ${item.title}`
-    const node = { id: `nav:${[...ancestors, item.title].join('/')}`, name, children: [],
+    const node = { id: `nav:${[...ancestors, item.title].join('/')}`, name, path: item.path, children: [],
       searchText: [...ancestors, name].join(' ') }
     folders.set(item.title, node)
     if (item.path) paths.set(item.path, node)
