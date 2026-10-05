@@ -78,7 +78,7 @@ const routes = [
       // 物业
       { path: 'property/workorder-summary', meta: { title: '工单汇总' }, component: () => import('@/views/property/WorkOrderSummary.vue') },
       { path: 'property/workorder', meta: { title: '物业报修' }, component: () => import('@/views/property/WorkOrder.vue') },
-      { path: 'property/responsible-unit', meta: { title: '责任单位' }, component: () => import('@/views/property/ResponsibleUnit.vue') },
+      { path: 'property/responsible-unit', meta: { title: '供应商档案' }, component: () => import('@/views/budget/Supplier.vue') },
       { path: 'property/meeting', meta: { title: '会议室预约' }, component: () => import('@/views/property/Meeting.vue') },
       { path: 'property/asset', meta: { title: '资产管理' }, component: () => import('@/views/property/Asset.vue') },
       { path: 'property/inspection', meta: { title: '设备巡检' }, component: () => import('@/views/property/Inspection.vue') },
@@ -103,7 +103,7 @@ const routes = [
       { path: 'budget/plan-year', meta: { title: '年度采购计划', planType: 1 }, component: () => import('@/views/budget/PurPlan.vue') },
       { path: 'budget/plan-month', meta: { title: '月度采购计划', planType: 2 }, component: () => import('@/views/budget/PurPlan.vue') },
       { path: 'budget/flow', meta: { title: '审批流程' }, component: () => import('@/views/budget/FlowConfig.vue') },
-      { path: 'budget/supplier', meta: { title: '供应商档案' }, component: () => import('@/views/budget/Supplier.vue') },
+      { path: 'budget/supplier', redirect: '/property/responsible-unit' },
       { path: 'budget/supplier-contract', meta: { title: '供应商合同' }, component: () => import('@/views/budget/SupplierContract.vue') },
 
       // 便捷通行(#21,门禁记录/访客登记/停车)

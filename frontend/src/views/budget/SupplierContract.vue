@@ -55,6 +55,7 @@
     <!-- 表格区 -->
     <div class="table-card">
       <div class="toolbar">
+        <el-button v-if="query.supplierId" @click="router.push('/property/responsible-unit')">返回供应商档案</el-button>
         <el-button type="primary" @click="openDialog()"><el-icon><Plus /></el-icon>新增合同</el-button>
         <el-button @click="importDialog.visible = true"><el-icon><Upload /></el-icon>导入合同</el-button>
         <el-button type="success" plain @click="triggerPhoto"><el-icon><Camera /></el-icon>拍照录入</el-button>
@@ -64,6 +65,12 @@
         <el-table-column type="index" label="序号" width="70" />
         <el-table-column prop="code" label="合同编号" width="160" />
         <el-table-column prop="name" label="合同名称" min-width="200" show-overflow-tooltip />
+        <el-table-column label="协议关系" min-width="150">
+          <template #default="{ row }">
+            <el-tag v-if="row.parentContractId" type="warning">补充协议 · {{ row.parentContractName || row.parentContractId }}</el-tag>
+            <span v-else>主合同</span>
+          </template>
+        </el-table-column>
         <el-table-column prop="supplierName" label="供应商" min-width="160" show-overflow-tooltip />
         <el-table-column label="类型" width="110">
           <template #default="{ row }">
@@ -128,6 +135,17 @@
             <el-button :aria-label="'刷新供应商列表'" @click="refreshSuppliers"><el-icon><Refresh /></el-icon>刷新</el-button>
             <el-button type="primary" plain @click="openSupplierDialog"><el-icon><Plus /></el-icon>新增供应商</el-button>
           </div>
+        </el-form-item>
+        <el-form-item label="协议类型">
+          <el-radio-group v-model="isAddendum" :disabled="!!form.id" @change="onAgreementTypeChange">
+            <el-radio :value="false">主合同</el-radio>
+            <el-radio :value="true">补充协议</el-radio>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item v-if="isAddendum" label="关联主合同" prop="parentContractId">
+          <el-select v-model="form.parentContractId" :disabled="!!form.id" filterable placeholder="请选择同一供应商的主合同" style="width: 100%">
+            <el-option v-for="c in parentContracts" :key="c.id" :value="c.id" :label="`${c.code} ${c.name}`" />
+          </el-select>
         </el-form-item>
         <el-form-item label="合同名称" prop="name">
           <el-input v-model="form.name" placeholder="如:2026年度保洁服务合同" />
@@ -232,7 +250,8 @@
 </template>
 
 <script setup>
-import { reactive, ref, onMounted } from 'vue'
+import { reactive, ref, onMounted, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Upload, UploadFilled, Camera } from '@element-plus/icons-vue'
 import { supplierApi, supplierContractApi } from '@/api/supplier'
@@ -246,6 +265,24 @@ const typeLabel = (v) => types.value.find(t => t.value === v)?.label ?? v
 const typeColor = (v) => types.value.find(t => t.value === v)?.color || 'primary'
 
 const suppliers = ref([])
+const route = useRoute()
+const router = useRouter()
+const isAddendum = ref(false)
+const parentContracts = ref([])
+let parentRequest = 0
+
+async function loadParentContracts() {
+  const request = ++parentRequest
+  if (!form.supplierId) { parentContracts.value = []; return }
+  const result = await supplierContractApi.page({ supplierId: form.supplierId, pageNo: 1, pageSize: 1000 })
+  if (request === parentRequest) {
+    parentContracts.value = result.records.filter(c => !c.parentContractId && c.id !== form.id)
+  }
+}
+function onAgreementTypeChange() {
+  form.parentContractId = null
+  if (isAddendum.value) loadParentContracts()
+}
 
 const loading = ref(false)
 const list = ref([])
@@ -294,7 +331,7 @@ async function loadSuppliers() {
   }
 }
 async function loadStats() {
-  stats.value = await supplierContractApi.stats()
+  stats.value = await supplierContractApi.stats({ supplierId: query.supplierId })
 }
 async function load() {
   loading.value = true
@@ -312,7 +349,8 @@ function onTabChange(name) {
   load()
 }
 function reset() {
-  Object.assign(query, { pageNo: 1, name: '', supplierId: null, status: null })
+  Object.assign(query, { pageNo: 1, name: '',
+    supplierId: Number(route.query.supplierId) || null, status: null })
   load()
 }
 
@@ -324,13 +362,22 @@ const documentFile = ref(null)
 const importDialog = reactive({ visible: false, loading: false, mode: 'sheet' })
 const dialog = reactive({ visible: false, title: '' })
 const defaultForm = () => ({
-  id: null, code: '', supplierId: null, name: '', contractType: null, amount: null,
+  id: null, code: '', supplierId: query.supplierId, parentContractId: null, name: '', contractType: null, amount: null,
   signDate: null, startDate: null, endDate: null, payCycle: '', payTerms: '', remark: ''
 })
 const form = reactive(defaultForm())
+watch(() => form.supplierId, () => {
+  if (!form.id) form.parentContractId = null
+  if (isAddendum.value) loadParentContracts()
+})
+watch(() => query.supplierId, loadStats)
 const attachFiles = ref([])
 const rules = {
   supplierId: [{ required: true, message: '请选择供应商', trigger: 'change' }],
+  parentContractId: [{ validator: (_rule, value, callback) => {
+    if (isAddendum.value && !value) callback(new Error('请选择关联主合同'))
+    else callback()
+  }, trigger: 'change' }],
   name: [{ required: true, message: '请输入合同名称', trigger: 'blur' }]
 }
 const supplierDialog = reactive({ visible: false, loading: false })
@@ -423,6 +470,7 @@ async function openDialog(row) {
   dialog.visible = true
   dialog.title = row ? '编辑供应商合同' : '新增供应商合同'
   Object.assign(form, defaultForm())
+  isAddendum.value = !!row?.parentContractId
   if (!row && activeTab.value !== 'all') form.contractType = activeTab.value
   attachFiles.value = []
   if (row) {
@@ -435,6 +483,7 @@ async function openDialog(row) {
     }
     try { attachFiles.value = await fileApi.list('supplier_contract', row.id) } catch (e) { /* 忽略 */ }
   }
+  if (isAddendum.value) await loadParentContracts()
 }
 async function submit() {
   await formRef.value.validate()
@@ -466,8 +515,25 @@ async function remove(id) {
 onMounted(() => {
   loadTypes()
   loadSuppliers()
-  loadStats()
-  load()
+  const supplierId = Number(route.query.supplierId)
+  if (Number.isSafeInteger(supplierId) && supplierId > 0) query.supplierId = supplierId
+  else loadStats()
+  load().then(async () => {
+    const editId = Number(route.query.editId)
+    if (Number.isSafeInteger(editId) && editId > 0) {
+      const row = await supplierContractApi.get(editId)
+      if (row && (!query.supplierId || row.supplierId === query.supplierId)) await openDialog(row)
+    } else if (route.query.create === '1') {
+      await openDialog()
+      form.supplierId = query.supplierId
+      const parentId = Number(route.query.parentContractId)
+      if (Number.isSafeInteger(parentId) && parentId > 0) {
+        isAddendum.value = true
+        await loadParentContracts()
+        if (parentContracts.value.some(c => c.id === parentId)) form.parentContractId = parentId
+      }
+    }
+  })
 })
 </script>
 

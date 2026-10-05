@@ -169,9 +169,9 @@
             <el-radio :value="3">高</el-radio>
           </el-radio-group>
         </el-form-item>
-        <el-form-item label="责任单位">
+        <el-form-item label="供应商">
           <el-select
-            v-model="form.responsibleUnitId"
+            v-model="form.supplierId"
             filterable
             clearable
             placeholder="选择承接该工单的单位(可不填)"
@@ -179,7 +179,7 @@
             @change="onUnitChange"
           >
             <el-option
-              v-for="u in unitOptions"
+              v-for="u in selectableUnits"
               :key="u.id"
               :label="u.serviceScope ? `${u.name}（${u.serviceScope}）` : u.name"
               :value="u.id"
@@ -187,10 +187,10 @@
           </el-select>
         </el-form-item>
         <el-form-item label="联系人">
-          <el-input v-model="form.contact" placeholder="选责任单位后自动带出，可改" />
+          <el-input v-model="form.contact" placeholder="选供应商后自动带出，可改" />
         </el-form-item>
         <el-form-item label="联系电话">
-          <el-input v-model="form.contactPhone" placeholder="选责任单位后自动带出，可改" />
+          <el-input v-model="form.contactPhone" placeholder="选供应商后自动带出，可改" />
         </el-form-item>
         <el-form-item label="备注"><el-input v-model="form.remark" type="textarea" /></el-form-item>
         <el-form-item label="附件"><FileUpload v-model="attachFiles" biz-type="work_order" :biz-id="form.id" /></el-form-item>
@@ -272,7 +272,7 @@
         </el-descriptions-item>
         <el-descriptions-item label="到场时间">{{ detail.order?.arriveTime || '-' }}</el-descriptions-item>
         <el-descriptions-item label="完成时间">{{ detail.order?.finishTime || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="责任单位">{{ unitName(detail.order?.responsibleUnitId) }}</el-descriptions-item>
+        <el-descriptions-item label="供应商">{{ unitName(detail.order?.supplierId) }}</el-descriptions-item>
         <el-descriptions-item label="来源">
           <span>{{ detail.order?.source || '手工新建' }}</span>
           <!-- sourceType+sourceId 打通后才能反查源记录;存量数据只有类型没有 id -->
@@ -300,11 +300,12 @@
 </template>
 
 <script setup>
-import { reactive, ref, onMounted } from 'vue'
+import { computed, reactive, ref, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ChatDotRound } from '@element-plus/icons-vue'
-import { workOrderApi, responsibleUnitApi } from '@/api/property'
+import { workOrderApi } from '@/api/property'
+import { supplierApi } from '@/api/supplier'
 import { fileApi } from '@/api/file'
 import { userApi } from '@/api/system'
 import FileUpload from '@/components/FileUpload.vue'
@@ -370,9 +371,10 @@ function reset() {
 // 新增工单
 const formRef = ref()
 const dialog = reactive({ visible: false, title: '' })
-const defaultForm = () => ({ id: null, title: '', orderType: '报修', location: '', category: '', urgency: 2, contact: '', contactPhone: '', remark: '', responsibleUnitId: null })
+const defaultForm = () => ({ id: null, title: '', orderType: '报修', location: '', category: '', urgency: 2, contact: '', contactPhone: '', remark: '', supplierId: null })
 // 责任单位下拉:只取启用中的
 const unitOptions = ref([])
+const selectableUnits = computed(() => unitOptions.value.filter(u => u.status === 1))
 function unitName(id) {
   if (!id) return '-'
   return unitOptions.value.find((u) => u.id === id)?.name || `#${id}`
@@ -392,11 +394,11 @@ function onUnitChange(id) {
   const unit = unitOptions.value.find((u) => u.id === id)
   if (!unit) return
   if (unit.contact) form.contact = unit.contact
-  if (unit.contactPhone) form.contactPhone = unit.contactPhone
+  if (unit.phone) form.contactPhone = unit.phone
 }
 async function loadUnitOptions() {
   try {
-    unitOptions.value = await responsibleUnitApi.options()
+    unitOptions.value = await supplierApi.options()
   } catch {
     unitOptions.value = []   // 取不到不阻塞建单流程
   }

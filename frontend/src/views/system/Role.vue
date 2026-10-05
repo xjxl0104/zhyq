@@ -67,24 +67,23 @@
 
     <el-dialog v-model="permission.visible" :title="`配置权限：${permission.roleName}`" width="680px">
       <div class="permission-toolbar">
-        <span class="permission-tip">勾选菜单和按钮权限；保存后，相关用户重新登录即可生效。</span>
+        <span class="permission-tip">按业务模块勾选权限；保存后，相关用户重新登录即可生效。</span>
         <div>
           <el-button link type="primary" @click="selectAllPermissions">全选</el-button>
           <el-button link @click="clearPermissions">清空</el-button>
         </div>
       </div>
+      <el-input v-model="permissionKeyword" placeholder="搜索模块、功能或操作" clearable style="margin-bottom: 12px" />
       <div v-loading="permission.loading" class="permission-tree-wrap">
         <el-tree ref="permissionTreeRef" :data="menuTree" node-key="id" show-checkbox
-                 check-strictly default-expand-all
+                 :filter-node-method="filterPermission"
                  :props="{ label: 'name', children: 'children', disabled: 'disabled' }">
           <template #default="{ data }">
             <div class="permission-node">
               <span>{{ data.name }}</span>
-              <el-tag size="small" :type="menuTypeMap[data.type]?.color || 'info'">
+              <el-tag v-if="data.type" size="small" :type="menuTypeMap[data.type]?.color || 'info'">
                 {{ menuTypeMap[data.type]?.label || '未知' }}
               </el-tag>
-              <span v-if="data.perm" class="permission-code">{{ data.perm }}</span>
-              <el-tag v-if="data.status !== 1" size="small" type="info">已停用</el-tag>
             </div>
           </template>
         </el-tree>
@@ -98,9 +97,10 @@
 </template>
 
 <script setup>
-import { computed, nextTick, reactive, ref, onMounted } from 'vue'
+import { computed, nextTick, reactive, ref, onMounted, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { menuApi, roleApi } from '@/api/system'
+import { buildPermissionTree, filterPermission } from '@/utils/permissionTree'
 
 const loading = ref(false)
 const list = ref([])
@@ -153,19 +153,14 @@ const permission = reactive({
   roleId: null,
   roleName: ''
 })
-const menuTree = computed(() => buildMenuTree(menuFlat.value, 0))
+const menuTree = computed(() => buildPermissionTree(menuFlat.value))
+const permissionKeyword = ref('')
+watch(permissionKeyword, value => permissionTreeRef.value?.filter(value))
 const enabledMenuIds = computed(() => menuFlat.value.filter(menu => menu.status === 1).map(menu => menu.id))
-
-function buildMenuTree(menus, parentId) {
-  return menus.filter(menu => menu.parentId === parentId).map(menu => {
-    const children = buildMenuTree(menus, menu.id)
-    const node = { ...menu, disabled: menu.status !== 1 }
-    return children.length ? { ...node, children } : node
-  })
-}
 
 async function openPermission(role) {
   if (isProtected(role)) return
+  permissionKeyword.value = ''
   permission.visible = true
   permission.loading = true
   permission.roleId = role.id

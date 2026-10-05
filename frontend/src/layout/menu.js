@@ -94,7 +94,7 @@ export const menuTree = [
         title: '物业', icon: 'Tools', children: [
           { title: '工单汇总', path: '/property/workorder-summary' },
           { title: '物业报修', path: '/property/workorder' },
-          { title: '责任单位', path: '/property/responsible-unit' },
+          { title: '供应商档案', path: '/property/responsible-unit' },
           { title: '会议室预约', path: '/property/meeting' },
           { title: '设备巡检', path: '/property/inspection' },
           { title: '安防巡更', path: '/property/patrol' },
@@ -183,9 +183,7 @@ export const menuTree = [
           { title: '月度预算', path: '/budget/monthly' },
           { title: '年度采购计划', path: '/budget/plan-year' },
           { title: '月度采购计划', path: '/budget/plan-month' },
-          { title: '审批流程', path: '/budget/flow' },
-          { title: '供应商档案', path: '/budget/supplier' },
-          { title: '供应商合同', path: '/budget/supplier-contract' }
+          { title: '审批流程', path: '/budget/flow' }
         ]
       },
       { title: '应用中心', path: '/app/center' }

@@ -86,10 +86,7 @@ public class ResponsibleUnitController {
     @PreAuthorize("hasAuthority('property:unit:save')")
     @OperationLog(module = "责任单位", action = "新增")
     public Result<Long> add(@RequestBody ResponsibleUnit unit) {
-        requireName(unit);
-        if (unit.getEnabled() == null) unit.setEnabled(1);
-        unitMapper.insert(unit);
-        return Result.ok(unit.getId());
+        throw new BizException("责任单位已合并至供应商档案，请刷新页面后在供应商档案中新增");
     }
 
     @Operation(summary = "修改")
@@ -97,10 +94,7 @@ public class ResponsibleUnitController {
     @PreAuthorize("hasAuthority('property:unit:save')")
     @OperationLog(module = "责任单位", action = "修改")
     public Result<Void> update(@PathVariable Long id, @RequestBody ResponsibleUnit unit) {
-        requireName(unit);
-        unit.setId(id);
-        unitMapper.updateById(unit);
-        return Result.ok();
+        throw new BizException("责任单位已合并至供应商档案，请刷新页面后在供应商档案中修改");
     }
 
     @Operation(summary = "删除")
@@ -108,8 +102,7 @@ public class ResponsibleUnitController {
     @PreAuthorize("hasAuthority('property:unit:delete')")
     @OperationLog(module = "责任单位", action = "删除")
     public Result<Void> delete(@PathVariable Long id) {
-        unitMapper.deleteById(id);
-        return Result.ok();
+        throw new BizException("责任单位已合并至供应商档案，请刷新页面后在供应商档案中操作");
     }
 
     @Operation(summary = "下载导入模板")
@@ -131,7 +124,7 @@ public class ResponsibleUnitController {
     @OperationLog(module = "责任单位", action = "导入", saveParams = false)
     public Result<Map<String, Object>> importUnits(@RequestPart("file") MultipartFile file,
                                                    @RequestParam(required = false) Long projectId) {
-        return Result.ok(importService.importUnits(file, projectId));
+        throw new BizException("责任单位已合并至供应商档案，请使用供应商档案的表格导入");
     }
 
     @Operation(summary = "导入前校验(只解析不落库)")
@@ -147,9 +140,4 @@ public class ResponsibleUnitController {
                 "rows", r.rows()));
     }
 
-    private static void requireName(ResponsibleUnit unit) {
-        if (unit == null || !StringUtils.hasText(unit.getName())) {
-            throw new BizException("单位名称不能为空");
-        }
-    }
 }
