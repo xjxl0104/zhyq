@@ -78,19 +78,24 @@ public class SupplierContractController {
     @Operation(summary = "供应商合同统计")
     @PreAuthorize("hasAuthority('pur:supplierContract:query')")
     @GetMapping("/stats")
-    public Result<Map<String, Object>> stats() {
+    public Result<Map<String, Object>> stats(@RequestParam(required = false) Long supplierId) {
         Map<String, Object> map = new HashMap<>();
-        map.put("total", contractMapper.selectCount(new LambdaQueryWrapper<>()));
-        map.put("running", contractMapper.selectCount(new LambdaQueryWrapper<SupplierContract>()
+        map.put("total", contractMapper.selectCount(supplierScope(supplierId)));
+        map.put("running", contractMapper.selectCount(supplierScope(supplierId)
                 .eq(SupplierContract::getStatus, ST_RUNNING)));
-        map.put("expiring", contractMapper.selectCount(new LambdaQueryWrapper<SupplierContract>()
+        map.put("expiring", contractMapper.selectCount(supplierScope(supplierId)
                 .eq(SupplierContract::getStatus, ST_RUNNING)
                 .isNotNull(SupplierContract::getEndDate)
                 .le(SupplierContract::getEndDate, LocalDate.now().plusDays(EXPIRING_DAYS))
                 .ge(SupplierContract::getEndDate, LocalDate.now())));
-        map.put("expired", contractMapper.selectCount(new LambdaQueryWrapper<SupplierContract>()
+        map.put("expired", contractMapper.selectCount(supplierScope(supplierId)
                 .eq(SupplierContract::getStatus, ST_EXPIRED)));
         return Result.ok(map);
+    }
+
+    private LambdaQueryWrapper<SupplierContract> supplierScope(Long supplierId) {
+        return new LambdaQueryWrapper<SupplierContract>()
+                .eq(supplierId != null, SupplierContract::getSupplierId, supplierId);
     }
 
     @Operation(summary = "供应商合同详情")
@@ -109,6 +114,7 @@ public class SupplierContractController {
     @PostMapping
     public Result<Long> add(@RequestBody SupplierContract contract) {
         validate(contract);
+        validateParent(contract.getParentContractId(), contract.getSupplierId(), null);
         contract.setCode(nextCode());
         if (contract.getStatus() == null) {
             contract.setStatus(ST_DRAFT);
@@ -139,6 +145,21 @@ public class SupplierContractController {
         if (contract.getSupplierId() != null && supplierMapper.selectById(contract.getSupplierId()) == null) {
             throw new BizException("供应商不存在或已删除");
         }
+        SupplierContract existing = contractMapper.selectById(contract.getId());
+        if (existing == null) throw new BizException("合同不存在");
+        if (contract.getParentContractId() != null
+                && !contract.getParentContractId().equals(existing.getParentContractId())) {
+            throw new BizException("合同与补充协议的关联保存后不可修改");
+        }
+        Long supplierId = contract.getSupplierId() == null ? existing.getSupplierId() : contract.getSupplierId();
+        if (!supplierId.equals(existing.getSupplierId()) &&
+                contractMapper.selectCount(new LambdaQueryWrapper<SupplierContract>()
+                        .eq(SupplierContract::getParentContractId, existing.getId())) > 0) {
+            throw new BizException("主合同已有补充协议，不能更换供应商");
+        }
+        Long parentId = contract.getParentContractId() == null
+                ? existing.getParentContractId() : contract.getParentContractId();
+        validateParent(parentId, supplierId, contract.getId());
         if (contract.getStartDate() != null && contract.getEndDate() != null
                 && contract.getEndDate().isBefore(contract.getStartDate())) {
             throw new BizException("到期日期不能早于生效日期");
@@ -154,6 +175,10 @@ public class SupplierContractController {
     @PreAuthorize("hasAuthority('pur:supplierContract:delete')")
     @DeleteMapping("/{id}")
     public Result<Void> delete(@PathVariable Long id) {
+        if (contractMapper.selectCount(new LambdaQueryWrapper<SupplierContract>()
+                .eq(SupplierContract::getParentContractId, id)) > 0) {
+            throw new BizException("主合同下还有补充协议，不能删除");
+        }
         contractMapper.deleteById(id);
         return Result.ok();
     }
@@ -213,6 +238,16 @@ public class SupplierContractController {
         }
     }
 
+    private void validateParent(Long parentId, Long supplierId, Long currentId) {
+        if (parentId == null) return;
+        if (parentId.equals(currentId)) throw new BizException("补充协议不能关联自身");
+        SupplierContract parent = contractMapper.selectById(parentId);
+        if (parent == null || parent.getParentContractId() != null
+                || !parent.getSupplierId().equals(supplierId)) {
+            throw new BizException("补充协议必须关联同一供应商的主合同");
+        }
+    }
+
     /** 回填供应商名称(展示字段,不落库) */
     private void fillSupplierNames(List<SupplierContract> rows) {
         if (rows == null || rows.isEmpty()) {
@@ -226,6 +261,14 @@ public class SupplierContractController {
         Map<Long, String> nameById = supplierMapper.selectBatchIds(ids).stream()
                 .collect(Collectors.toMap(Supplier::getId, Supplier::getName, (a, b) -> a));
         rows.forEach(r -> r.setSupplierName(nameById.get(r.getSupplierId())));
+        Set<Long> parentIds = rows.stream().map(SupplierContract::getParentContractId)
+                .filter(java.util.Objects::nonNull).collect(Collectors.toSet());
+        if (!parentIds.isEmpty()) {
+            Map<Long, String> parentNames = contractMapper.selectBatchIds(parentIds).stream()
+                    .collect(Collectors.toMap(SupplierContract::getId,
+                            SupplierContract::getName, (a, b) -> a));
+            rows.forEach(r -> r.setParentContractName(parentNames.get(r.getParentContractId())));
+        }
     }
 
     /**

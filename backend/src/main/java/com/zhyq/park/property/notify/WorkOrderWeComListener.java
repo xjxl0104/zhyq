@@ -4,6 +4,8 @@ import com.zhyq.park.common.event.DomainEvent;
 import com.zhyq.park.property.entity.ResponsibleUnit;
 import com.zhyq.park.property.entity.WorkOrder;
 import com.zhyq.park.property.mapper.ResponsibleUnitMapper;
+import com.zhyq.park.pur.entity.Supplier;
+import com.zhyq.park.pur.mapper.SupplierMapper;
 import com.zhyq.park.property.mapper.WorkOrderMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -29,6 +31,7 @@ public class WorkOrderWeComListener {
 
     private final WorkOrderMapper workOrderMapper;
     private final ResponsibleUnitMapper unitMapper;
+    private final SupplierMapper supplierMapper;
     private final WeComBotNotifier notifier;
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
@@ -41,13 +44,17 @@ public class WorkOrderWeComListener {
             if (wo == null) {
                 return;
             }
-            notifier.sendMarkdown(buildMarkdown(wo, unitName(wo.getResponsibleUnitId())));
+            notifier.sendMarkdown(buildMarkdown(wo, unitName(wo.getSupplierId(), wo.getResponsibleUnitId())));
         } catch (Exception e) {
             log.warn("[wecom] 工单 {} 推送失败", event.workOrderId(), e);
         }
     }
 
-    private String unitName(Long unitId) {
+    private String unitName(Long supplierId, Long unitId) {
+        if (supplierId != null) {
+            Supplier supplier = supplierMapper.selectById(supplierId);
+            if (supplier != null) return supplier.getName();
+        }
         if (unitId == null) {
             return null;
         }

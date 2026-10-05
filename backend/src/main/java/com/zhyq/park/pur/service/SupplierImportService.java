@@ -51,6 +51,8 @@ public class SupplierImportService {
         COLUMN_MAP.put(List.of("开户行", "开户银行", "银行"), Supplier::setBankName);
         COLUMN_MAP.put(List.of("银行账号", "账号", "开户账号", "银行帐号"), Supplier::setBankAccount);
         COLUMN_MAP.put(List.of("经营范围", "业务范围", "服务范围", "主营业务"), Supplier::setBusinessScope);
+        COLUMN_MAP.put(List.of("服务范围", "专业"), Supplier::setServiceScope);
+        COLUMN_MAP.put(List.of("单位类型"), Supplier::setUnitType);
         COLUMN_MAP.put(List.of("资质说明", "资质", "资质证书"), Supplier::setQualification);
         COLUMN_MAP.put(List.of("备注", "说明"), Supplier::setRemark);
     }
