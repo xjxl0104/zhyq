@@ -37,6 +37,14 @@ public class FloorController {
     @Operation(summary = "新增楼层")
     @PostMapping
     public Result<Long> add(@RequestBody Floor floor) {
+        Building building = floor.getBuildingId() == null ? null : buildingMapper.selectById(floor.getBuildingId());
+        if (building == null) throw new BizException("请选择有效楼宇");
+        if (floor.getName() == null || floor.getName().isBlank()) throw new BizException("请输入楼层名称");
+        if (floor.getFloorNo() == null || floor.getFloorNo() < -20 || floor.getFloorNo() > 300) throw new BizException("楼层编号须在 -20 到 300 之间");
+        if (floorMapper.selectCount(new LambdaQueryWrapper<Floor>().eq(Floor::getBuildingId, floor.getBuildingId())
+                .eq(Floor::getFloorNo, floor.getFloorNo())) > 0) throw new BizException("该楼宇的楼层编号已存在");
+        floor.setProjectId(building.getProjectId());
+        floor.setTenantId(building.getTenantId());
         floorMapper.insert(floor);
         try { spaceSyncService.sync("floor", floor.getId()); } catch (Exception e) { log.warn("space sync fail floor {}", floor.getId(), e); }
         return Result.ok(floor.getId());
