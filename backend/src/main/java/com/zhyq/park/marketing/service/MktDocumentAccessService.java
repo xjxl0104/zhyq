@@ -65,7 +65,11 @@ public class MktDocumentAccessService {
     private void check(String type, boolean write) {
         Authentication auth = authentication();
         List<String> permissions;
-        if (type != null && type.startsWith("mkt_")) {
+        if ("floor_plan".equals(type)) {
+            // Uploads go through FloorPlanController to validate image and floor ownership.
+            if (write) throw new BizException(403, "请在建筑管理的楼层平面图入口上传");
+            permissions = List.of("building:floorPlan:query", "building:floorPlan:edit", "property:workorder:query", "property:workorder:edit");
+        } else if (type != null && type.startsWith("mkt_")) {
             List<String> marketing = switch (type) {
                 case "mkt_warehouse" -> write ? List.of("warehouse:edit", "onboarding:audit", "contract:edit", "contract:audit") : List.of("warehouse:query", "onboarding:query", "contract:query");
                 case "mkt_withdrawal" -> write ? List.of("withdrawal:pay") : List.of("withdrawal:pay", "withdrawal:audit");

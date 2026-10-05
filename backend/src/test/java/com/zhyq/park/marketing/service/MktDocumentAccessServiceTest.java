@@ -60,5 +60,15 @@ class MktDocumentAccessServiceTest {
         file.setBizId(7L);
         assertThatThrownBy(() -> access.attach(file, "contract")).isInstanceOf(BizException.class);
     }
+    @Test void workOrderReadersMayReadPlansButOnlyDedicatedControllerCanUploadOrDeleteThem() {
+        login("property:workorder:query"); access.read("floor_plan");
+        assertThatThrownBy(() -> access.write("floor_plan")).isInstanceOf(BizException.class);
+        login("building:floorPlan:edit"); access.read("floor_plan");
+        assertThatThrownBy(() -> access.write("floor_plan")).isInstanceOf(BizException.class);
+        login("ROLE_admin");
+        assertThatThrownBy(() -> access.write("floor_plan")).isInstanceOf(BizException.class);
+        login("crm:customer:query");
+        assertThatThrownBy(() -> access.read("floor_plan")).isInstanceOf(BizException.class);
+    }
     private void login(String permission){SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken("ops",null,List.of(new SimpleGrantedAuthority(permission))));}
 }

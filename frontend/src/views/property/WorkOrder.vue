@@ -152,7 +152,7 @@
     </div>
 
     <!-- 新增工单弹窗 -->
-    <el-dialog v-model="dialog.visible" :title="dialog.title" width="560px">
+    <el-dialog v-model="dialog.visible" :title="dialog.title" width="min(820px, 94vw)" destroy-on-close :close-on-click-modal="false">
       <el-form :model="form" label-width="80px" ref="formRef" :rules="rules">
         <el-form-item label="标题" prop="title"><el-input v-model="form.title" /></el-form-item>
         <el-form-item label="类型">
@@ -160,7 +160,10 @@
             <el-option v-for="t in orderTypes" :key="t" :label="t" :value="t" />
           </el-select>
         </el-form-item>
-        <el-form-item label="位置"><el-input v-model="form.location" /></el-form-item>
+        <el-form-item label="楼层定位">
+          <WorkOrderLocation v-if="dialog.visible" :key="locationKey" :model-value="floorLocation" :project-id="form.projectId" @update:model-value="setFloorLocation" @busy="locationBusy = $event" />
+        </el-form-item>
+        <el-form-item label="位置说明"><el-input v-model="form.location" placeholder="如东侧电梯口、消防通道，未上传平面图时可直接填写" /></el-form-item>
         <el-form-item label="分类"><el-input v-model="form.category" placeholder="如:水电/空调/门窗" /></el-form-item>
         <el-form-item label="紧急度">
           <el-radio-group v-model="form.urgency">
@@ -193,11 +196,11 @@
           <el-input v-model="form.contactPhone" placeholder="选供应商后自动带出，可改" />
         </el-form-item>
         <el-form-item label="备注"><el-input v-model="form.remark" type="textarea" /></el-form-item>
-        <el-form-item label="附件"><FileUpload v-model="attachFiles" biz-type="work_order" :biz-id="form.id" /></el-form-item>
+        <el-form-item label="附件"><FileUpload :key="locationKey" v-model="attachFiles" biz-type="work_order" :biz-id="form.id" camera @busy="attachmentBusy = $event" /></el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="dialog.visible = false">取消</el-button>
-        <el-button type="primary" @click="submit">确定</el-button>
+        <el-button type="primary" :loading="saving" :disabled="attachmentBusy || locationBusy" @click="submit">确定</el-button>
       </template>
     </el-dialog>
 
@@ -285,6 +288,17 @@
           >查看来源记录</el-button>
         </el-descriptions-item>
       </el-descriptions>
+
+      <p v-if="detail.floor">楼层：{{ detail.building?.name }} / {{ detail.floor.name }}</p>
+      <FloorPlanViewer v-if="detail.order?.floorPlanFileId" :file-id="detail.order.floorPlanFileId" :point="{ x: Number(detail.order.planX), y: Number(detail.order.planY) }" />
+      <div v-if="detailFiles.length" class="detail-files">
+        <div class="detail-files-hd">报修照片 / 附件</div>
+        <div class="detail-files-list">
+          <el-button v-for="f in detailFiles" :key="f.id" link type="primary" @click="downloadFile(f)">
+            {{ f.originalName }}
+          </el-button>
+        </div>
+      </div>
       <el-divider content-position="left">流转记录</el-divider>
       <el-timeline v-if="detail.logs?.length">
         <el-timeline-item v-for="log in detail.logs" :key="log.id"
@@ -307,8 +321,11 @@ import { ChatDotRound } from '@element-plus/icons-vue'
 import { workOrderApi } from '@/api/property'
 import { supplierApi } from '@/api/supplier'
 import { fileApi } from '@/api/file'
+import { startFileDownload } from '@/utils/fileDownload'
 import { userApi } from '@/api/system'
 import FileUpload from '@/components/FileUpload.vue'
+import WorkOrderLocation from '@/components/WorkOrderLocation.vue'
+import FloorPlanViewer from '@/components/FloorPlanViewer.vue'
 import HighlightNotice from '@/components/HighlightNotice.vue'
 import MobileRecordList from '@/components/MobileRecordList.vue'
 import { SOURCE_ROUTES, useHighlightFilter } from '@/composables/useSourceLink'
@@ -405,38 +422,69 @@ async function loadUnitOptions() {
 }
 const form = reactive(defaultForm())
 const attachFiles = ref([])
+const attachmentBusy = ref(false)
+const locationBusy = ref(false)
+const saving = ref(false)
+const locationKey = ref(0)
+const floorLocation = ref({ buildingId: null, floorId: null, planFileId: null, x: null, y: null })
+const locationChanged = ref(false)
+function setFloorLocation(value) { floorLocation.value = value; locationChanged.value = true }
+function resetLocation(row = {}) {
+  locationKey.value++
+  locationChanged.value = false
+  attachmentBusy.value = false
+  locationBusy.value = false
+  floorLocation.value = { buildingId: row.buildingId || null, floorId: row.floorId || null, planFileId: row.floorPlanFileId || null,
+    x: row.planX == null ? null : Number(row.planX), y: row.planY == null ? null : Number(row.planY) }
+}
 const rules = {
   title: [{ required: true, message: '请输入标题', trigger: 'blur' }]
 }
 function openDialog() {
   dialog.visible = true
   dialog.title = '新增工单'
+  Object.keys(form).forEach(key => delete form[key])
   Object.assign(form, defaultForm())
+  resetLocation()
   attachFiles.value = []
 }
-function openEdit(row) {
+async function openEdit(row) {
   dialog.visible = true
   dialog.title = '修改工单'
+  Object.keys(form).forEach(key => delete form[key])
   Object.assign(form, defaultForm(), row)
+  resetLocation(row)
   attachFiles.value = []
+  try { const files = await fileApi.list('work_order', row.id); if (form.id === row.id) attachFiles.value = files } catch { /* 页面仍可编辑 */ }
 }
 async function submit() {
+  if (saving.value || attachmentBusy.value || locationBusy.value) return
   await formRef.value.validate()
-  if (form.id) {
-    await workOrderApi.update(form)
-    ElMessage.success('修改成功')
+  saving.value = true
+  try {
+    const payload = { ...form, ...(locationChanged.value ? { floorLocation: floorLocation.value } : {}) }
+    if (form.id) await workOrderApi.update(payload)
+    else {
+      // Keep the new ID if attachment linking fails; retry must not create another order.
+      form.id = await workOrderApi.add(payload)
+    }
+    const pendingIds = attachFiles.value.filter(f => f?.id && !f.bizId).map(f => f.id)
+    if (pendingIds.length) {
+      await fileApi.attach('work_order', form.id, pendingIds)
+      const linked = await fileApi.list('work_order', form.id)
+      const linkedById = new Map(linked.map(file => [file.id, file]))
+      attachFiles.value = attachFiles.value.map(file => linkedById.get(file.id) || file)
+      if (pendingIds.some(id => !linkedById.has(id))) {
+        ElMessage.warning('工单已保存，部分照片未关联，请检查附件后重试')
+        return
+      }
+    }
+    ElMessage.success('保存成功')
     dialog.visible = false
     refresh()
-    return
-  }
-  const newId = await workOrderApi.add(form)
-  const pendingIds = (attachFiles.value || []).filter(f => f && f.id && !f.bizId).map(f => f.id)
-  if (newId && pendingIds.length) {
-    try { await fileApi.attach('work_order', newId, pendingIds) } catch (e) { /* 忽略,不阻断保存 */ }
-  }
-  ElMessage.success('保存成功')
-  dialog.visible = false
-  refresh()
+  } catch {
+    ElMessage.error(form.id ? '工单或附件保存未完成，请重试；不会重复建单' : '保存失败，请重试')
+  } finally { saving.value = false }
 }
 
 // 派单
@@ -509,11 +557,19 @@ async function submitVerify() {
 // 详情
 const detailDialog = reactive({ visible: false })
 const detail = reactive({ order: null, logs: [] })
+const detailFiles = ref([])
 async function openDetail(row) {
   const res = await workOrderApi.get(row.id)
   detail.order = res.order
   detail.logs = res.logs || []
+  detail.building = res.building
+  detail.floor = res.floor
   detailDialog.visible = true
+  // 手机自助报修传的照片也走通用附件表,这里一并列出来
+  try { detailFiles.value = await fileApi.list('work_order', row.id) } catch { detailFiles.value = [] }
+}
+function downloadFile(f) {
+  startFileDownload(f.id, f.originalName)
 }
 
 // 企业微信群机器人:地址存在后端 biz_setting,这里只做读写与测试
@@ -565,6 +621,9 @@ onMounted(() => {
 </script>
 
 <style scoped>
+.detail-files { margin-bottom: 16px; }
+.detail-files-hd { font-size: 13px; color: var(--text-secondary, #909399); margin-bottom: 6px; }
+.detail-files-list { display: flex; flex-wrap: wrap; gap: 12px; }
 .wecom-tip { color: var(--text-secondary, #909399); font-size: 13px; line-height: 1.6; }
 .stat-row { display: flex; gap: 16px; margin-bottom: 16px; }
 .stat-card {
