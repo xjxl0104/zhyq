@@ -179,9 +179,9 @@ const routes = [
       // 系统管理
       { path: 'system/user', meta: { title: '用户管理' }, component: () => import('@/views/system/User.vue') },
       { path: 'system/role', meta: { title: '角色管理' }, component: () => import('@/views/system/Role.vue') },
-      { path: 'system/dept', meta: { title: '部门管理' }, component: () => import('@/views/system/Dept.vue') },
+      { path: 'system/dept', redirect: '/system/user' },
       { path: 'system/menu', meta: { title: '菜单管理' }, component: () => import('@/views/system/Menu.vue') },
-      { path: 'system/post', meta: { title: '岗位管理' }, component: () => import('@/views/system/Post.vue') },
+      { path: 'system/post', redirect: '/system/role' },
       { path: 'system/dict', meta: { title: '字典管理' }, component: () => import('@/views/system/Dict.vue') },
       { path: 'system/resource', meta: { title: '运营资源' }, component: () => import('@/views/system/Resource.vue') },
       { path: 'system/message', meta: { title: '消息中心' }, component: () => import('@/views/system/MessageCenter.vue') }
