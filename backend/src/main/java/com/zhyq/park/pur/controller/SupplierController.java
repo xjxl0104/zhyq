@@ -13,6 +13,8 @@ import com.zhyq.park.pur.mapper.SupplierContractMapper;
 import com.zhyq.park.pur.entity.SupplierContract;
 import com.zhyq.park.pur.mapper.SupplierMapper;
 import com.zhyq.park.pur.service.SupplierImportService;
+import com.zhyq.park.property.entity.WorkOrder;
+import com.zhyq.park.property.mapper.WorkOrderMapper;
 import org.springframework.web.multipart.MultipartFile;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -46,6 +48,7 @@ public class SupplierController {
     private final SupplierMapper supplierMapper;
     private final SupplierContractMapper contractMapper;
     private final SupplierImportService supplierImportService;
+    private final WorkOrderMapper workOrderMapper;
 
     @Operation(summary = "分页查询供应商")
     @PreAuthorize("hasAuthority('pur:supplier:query')")
@@ -137,6 +140,10 @@ public class SupplierController {
         if (contracts > 0) {
             throw new BizException("该供应商下还有 " + contracts + " 份合同,不能删除;如需停用请改状态");
         }
+        if (workOrderMapper.selectCount(new LambdaQueryWrapper<WorkOrder>()
+                .eq(WorkOrder::getSupplierId, id)) > 0) {
+            throw new BizException("该供应商已关联物业工单，不能删除；请停用或归档");
+        }
         supplierMapper.deleteById(id);
         return Result.ok();
     }
@@ -162,12 +169,25 @@ public class SupplierController {
     }
 
     @Operation(summary = "全部供应商(下拉,仅正常)")
-    @PreAuthorize("hasAuthority('pur:supplier:query')")
+    @PreAuthorize("hasAnyAuthority('pur:supplier:query', 'property:workorder:query', 'pur:supplierContract:query')")
     @GetMapping("/list")
     public Result<List<Supplier>> list() {
         return Result.ok(supplierMapper.selectList(new LambdaQueryWrapper<Supplier>()
                 .eq(Supplier::getStatus, ST_NORMAL)
+                .select(Supplier::getId, Supplier::getName, Supplier::getContact,
+                        Supplier::getPhone, Supplier::getServiceScope, Supplier::getProjectId)
                 .orderByDesc(Supplier::getId)));
+    }
+
+    @Operation(summary = "工单供应商选项（含停用历史档案，不含敏感信息）")
+    @PreAuthorize("hasAnyAuthority('pur:supplier:query', 'property:workorder:query')")
+    @GetMapping("/options")
+    public Result<List<Supplier>> options() {
+        return Result.ok(supplierMapper.selectList(new LambdaQueryWrapper<Supplier>()
+                .select(Supplier::getId, Supplier::getName, Supplier::getContact,
+                        Supplier::getPhone, Supplier::getServiceScope,
+                        Supplier::getProjectId, Supplier::getStatus)
+                .orderByAsc(Supplier::getName)));
     }
 
     /** 目标状态允许的前置状态 */

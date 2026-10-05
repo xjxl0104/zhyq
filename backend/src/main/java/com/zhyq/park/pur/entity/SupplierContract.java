@@ -27,6 +27,9 @@ public class SupplierContract extends BaseEntity {
 
     private Long supplierId;
 
+    /** 为空表示主合同；非空表示关联到主合同的补充协议。 */
+    private Long parentContractId;
+
     /** 合同名称,如 2026年度保洁服务合同 */
     private String name;
 
@@ -55,4 +58,7 @@ public class SupplierContract extends BaseEntity {
     /** 列表展示用:供应商名称,由控制器回填,不落库 */
     @TableField(exist = false)
     private String supplierName;
+
+    @TableField(exist = false)
+    private String parentContractName;
 }

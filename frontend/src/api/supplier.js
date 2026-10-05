@@ -9,6 +9,7 @@ export const supplierApi = {
   remove: (id) => request.delete(`/pur/supplier/${id}`),
   changeStatus: (id, status) => request.post(`/pur/supplier/${id}/status`, null, { params: { status } }),
   list: () => request.get('/pur/supplier/list'),
+  options: () => request.get('/pur/supplier/options'),
   // 导入供应商档案,formData 里带 file
   importFile: (formData) => request.post('/pur/supplier/import', formData, {
     headers: { 'Content-Type': 'multipart/form-data' }
@@ -17,7 +18,7 @@ export const supplierApi = {
 
 export const supplierContractApi = {
   page: (params) => request.get('/pur/supplier-contract/page', { params }),
-  stats: () => request.get('/pur/supplier-contract/stats'),
+  stats: (params) => request.get('/pur/supplier-contract/stats', { params }),
   get: (id) => request.get(`/pur/supplier-contract/${id}`),
   add: (data) => request.post('/pur/supplier-contract', data),
   importFile: (formData) => request.post('/pur/supplier-contract/import', formData, {
