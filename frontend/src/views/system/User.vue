@@ -67,7 +67,7 @@
     </div>
 
     <!-- 表单弹窗 -->
-    <el-dialog v-model="dialog.visible" :title="dialog.title" width="760px" top="5vh">
+    <el-dialog v-model="dialog.visible" :title="dialog.title" width="min(980px, 96vw)" top="5vh" destroy-on-close>
       <el-form v-loading="dialog.loading" :model="form" label-width="90px" ref="formRef" :rules="rules">
         <el-form-item label="账号" prop="username">
           <el-input v-model="form.username" :disabled="!!form.id" />
@@ -81,34 +81,16 @@
         <el-form-item label="邮箱"><el-input v-model="form.email" /></el-form-item>
         <el-form-item label="角色权限">
           <el-select v-model="form.roleIds" multiple collapse-tags collapse-tags-tooltip
-                     placeholder="先选择岗位角色" style="width: 100%">
+                     placeholder="先选择角色" style="width: 100%">
             <el-option v-for="role in roles" :key="role.id" :value="role.id"
                        :label="role.code === 'admin' ? `${role.name}（超级管理员）` : role.name" />
           </el-select>
           <div class="form-tip">角色自动赋予 {{ inheritedMenuIds.length }} 项权限；调整角色时，用户权限会同步更新。</div>
         </el-form-item>
         <el-form-item label="额外授权" prop="menuIds">
-          <div class="menu-tree-container">
-            <div class="menu-tree-toolbar">
-              <el-input v-model="permissionKeyword" placeholder="搜索模块或操作" clearable style="width: 220px" />
-              <el-button link type="primary" size="small" @click="selectAllMenus">全选</el-button>
-              <el-button link size="small" @click="clearMenus">清空</el-button>
-            </div>
-            <el-scrollbar max-height="320px">
-              <el-tree ref="menuTreeRef" :data="permissionTree" node-key="id" show-checkbox
-                       :filter-node-method="filterPermission"
-                       :props="{ label: 'name', children: 'children' }">
-                <template #default="{ data }">
-                  <span :class="{ 'locked-menu': isLockedMenu(data.id) }">
-                    {{ data.name }}
-                    <el-tag v-if="isLockedMenu(data.id)" size="small" type="info" class="lock-tag">默认</el-tag>
-                    <el-tag v-else-if="inheritedMenuIds.includes(data.id)" size="small" type="success" class="lock-tag">角色已授予</el-tag>
-                  </span>
-                </template>
-              </el-tree>
-            </el-scrollbar>
-          </div>
-          <div class="form-tip">按业务模块展开设置额外权限。角色已授予的权限无需重复勾选；要收回角色权限，请调整上方角色或角色配置。“建议与反馈”默认开放。</div>
+          <PermissionSelector v-model="form.menuIds" :menus="menuFlat"
+                              :locked-ids="lockedMenuIds" :inherited-ids="inheritedMenuIds" />
+          <div class="form-tip">按左侧 01–10 目录添加额外权限。绿色标签表示角色已授予，无需重复勾选；要收回角色权限，请调整角色配置。“我的建议”默认开放。</div>
         </el-form-item>
         <el-form-item label="状态">
           <el-radio-group v-model="form.status">
@@ -119,7 +101,7 @@
       </el-form>
       <template #footer>
         <el-button @click="dialog.visible = false">取消</el-button>
-        <el-button type="primary" @click="submit">确定</el-button>
+        <el-button type="primary" :disabled="dialog.loading || !dialog.ready || !menusReady" @click="submit">确定</el-button>
       </template>
     </el-dialog>
   </div>
@@ -129,38 +111,24 @@
 import { computed, nextTick, reactive, ref, onMounted, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { userApi, roleApi, menuApi } from '@/api/system'
-import { buildPermissionTree, filterPermission } from '@/utils/permissionTree'
+import PermissionSelector from '@/components/PermissionSelector.vue'
+import { normalizePermissionSelection } from '@/utils/permissionTree'
 
 const loading = ref(false)
 const list = ref([])
 const roles = ref([])
 const menuFlat = ref([])
-const permissionKeyword = ref('')
+const menusReady = ref(false)
 const inheritedMenuIds = ref([])
 let roleRequest = 0
+let userRequest = 0
 const total = ref(0)
 const query = reactive({ pageNo: 1, pageSize: 10, username: '', nickname: '', status: null })
 
-// "建议与反馈" locked menu IDs (resolved from menuFlat)
-const lockedMenuIds = computed(() => {
-  const suggestion = menuFlat.value.find(m => m.name === '建议与反馈' && m.parentId === 0)
-  if (!suggestion) return []
-  const ids = [suggestion.id]
-  menuFlat.value.filter(m => m.parentId === suggestion.id).forEach(m => ids.push(m.id))
-  return ids
-})
-
-function isLockedMenu(id) {
-  return lockedMenuIds.value.includes(id)
-}
-
-const permissionTree = computed(() => {
-  const markLocked = nodes => nodes.map(node => ({
-    ...node, disabled: isLockedMenu(node.id),
-    ...(node.children ? { children: markLocked(node.children) } : {})
-  }))
-  return markLocked(buildPermissionTree(menuFlat.value))
-})
+// Only personal feedback is public; management remains an explicit grant.
+const lockedMenuIds = computed(() => menuFlat.value.filter(menu =>
+  menu.status === 1 && /^(\/)?suggestion\/mine$/.test(menu.path || '')
+).map(menu => menu.id))
 
 async function load() {
   loading.value = true
@@ -178,8 +146,7 @@ function reset() {
 }
 
 const formRef = ref()
-const menuTreeRef = ref()
-const dialog = reactive({ visible: false, title: '', loading: false })
+const dialog = reactive({ visible: false, title: '', loading: false, ready: false })
 const emptyForm = {
   id: null, username: '', password: '', nickname: '', phone: '', email: '', status: 1, roleIds: [], menuIds: []
 }
@@ -193,7 +160,6 @@ watch(() => [...form.roleIds], async (ids) => {
     if (request === roleRequest) inheritedMenuIds.value = []
   }
 })
-watch(permissionKeyword, value => menuTreeRef.value?.filter(value))
 const rules = {
   username: [{ required: true, message: '请输入账号', trigger: 'blur' }],
   password: [{
@@ -212,49 +178,42 @@ async function loadRoles() {
 
 async function loadMenus() {
   menuFlat.value = await menuApi.list()
-}
-
-function selectAllMenus() {
-  const allIds = menuFlat.value.filter(m => m.status === 1).map(m => m.id)
-  menuTreeRef.value?.setCheckedKeys(allIds, false)
-}
-
-function clearMenus() {
-  // Keep locked menus checked
-  menuTreeRef.value?.setCheckedKeys(lockedMenuIds.value, false)
+  menusReady.value = true
 }
 
 async function openDialog(row) {
+  const request = ++userRequest
+  dialog.loading = false
   dialog.visible = true
+  dialog.ready = false
   dialog.title = row ? '编辑用户' : '新增用户'
   formRef.value?.clearValidate()
   Object.assign(form, emptyForm, { roleIds: [], menuIds: [] })
-  permissionKeyword.value = ''
   await nextTick()
   if (!row) {
     // New user: default check locked menus
-    menuTreeRef.value?.setCheckedKeys(lockedMenuIds.value, false)
+    form.menuIds = [...lockedMenuIds.value]
+    dialog.ready = true
     return
   }
   dialog.loading = true
   try {
     const detail = await userApi.get(row.id)
+    if (request !== userRequest) return
     Object.assign(form, detail.user, { password: '', roleIds: detail.roleIds || [], menuIds: detail.menuIds || [] })
     await nextTick()
     const checkedIds = [...new Set([...detail.menuIds || [], ...lockedMenuIds.value])]
-    menuTreeRef.value?.setCheckedKeys(checkedIds, false)
+    form.menuIds = checkedIds
+    dialog.ready = true
   } finally {
-    dialog.loading = false
+    if (request === userRequest) dialog.loading = false
   }
 }
 
 async function submit() {
+  if (dialog.loading || !dialog.ready || !menusReady.value) return
   await formRef.value.validate()
-  // Collect checked menu IDs from tree (ensure locked menus are included)
-  const validIds = new Set(menuFlat.value.filter(menu => menu.status === 1).map(menu => menu.id))
-  const treeChecked = (menuTreeRef.value?.getCheckedKeys(false) || []).filter(id => validIds.has(id))
-  const finalMenuIds = [...new Set([...treeChecked, ...lockedMenuIds.value])]
-  form.menuIds = finalMenuIds
+  form.menuIds = normalizePermissionSelection(menuFlat.value, [...form.menuIds, ...lockedMenuIds.value])
   if (form.id) await userApi.update(form)
   else await userApi.add(form)
   ElMessage.success('保存成功')
@@ -277,20 +236,4 @@ onMounted(() => Promise.all([load(), loadRoles(), loadMenus()]))
 .muted { color: var(--el-text-color-secondary); }
 .admin-tag { margin-left: 8px; }
 .form-tip { margin-top: 6px; color: var(--el-text-color-secondary); font-size: 12px; line-height: 1.4; }
-.menu-tree-container {
-  width: 100%;
-  border: 1px solid var(--el-border-color);
-  border-radius: 4px;
-  padding: 8px;
-}
-.menu-tree-toolbar {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  margin-bottom: 8px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid var(--el-border-color-lighter);
-}
-.locked-menu { color: var(--el-text-color-secondary); }
-.lock-tag { margin-left: 6px; }
 </style>

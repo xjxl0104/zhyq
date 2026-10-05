@@ -88,6 +88,7 @@
 import { reactive, ref, onMounted, computed } from 'vue'
 import { ElMessage } from 'element-plus'
 import { menuApi } from '@/api/system'
+import { isRetiredPermission } from '@/utils/permissionTree'
 
 const typeMap = {
   1: { label: '目录', color: 'warning' },
@@ -109,7 +110,7 @@ function buildTree(arr, pid) {
 
 async function load() {
   loading.value = true
-  try { flat.value = await menuApi.list() } finally { loading.value = false }
+  try { flat.value = (await menuApi.list()).filter(menu => !isRetiredPermission(menu)) } finally { loading.value = false }
 }
 
 const formRef = ref()

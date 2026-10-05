@@ -65,42 +65,25 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="permission.visible" :title="`配置权限：${permission.roleName}`" width="680px">
-      <div class="permission-toolbar">
-        <span class="permission-tip">按业务模块勾选权限；保存后，相关用户重新登录即可生效。</span>
-        <div>
-          <el-button link type="primary" @click="selectAllPermissions">全选</el-button>
-          <el-button link @click="clearPermissions">清空</el-button>
-        </div>
-      </div>
-      <el-input v-model="permissionKeyword" placeholder="搜索模块、功能或操作" clearable style="margin-bottom: 12px" />
-      <div v-loading="permission.loading" class="permission-tree-wrap">
-        <el-tree ref="permissionTreeRef" :data="menuTree" node-key="id" show-checkbox
-                 :filter-node-method="filterPermission"
-                 :props="{ label: 'name', children: 'children', disabled: 'disabled' }">
-          <template #default="{ data }">
-            <div class="permission-node">
-              <span>{{ data.name }}</span>
-              <el-tag v-if="data.type" size="small" :type="menuTypeMap[data.type]?.color || 'info'">
-                {{ menuTypeMap[data.type]?.label || '未知' }}
-              </el-tag>
-            </div>
-          </template>
-        </el-tree>
+    <el-dialog v-model="permission.visible" :title="`配置权限：${permission.roleName}`" width="min(900px, 96vw)" destroy-on-close>
+      <p class="permission-tip">按左侧 01–10 目录配置权限。保存后，相关用户重新登录即可生效。</p>
+      <div v-loading="permission.loading">
+        <PermissionSelector v-model="selectedMenuIds" :menus="menuFlat" />
       </div>
       <template #footer>
         <el-button @click="permission.visible = false">取消</el-button>
-        <el-button type="primary" :loading="permission.saving" @click="savePermissions">保存权限</el-button>
+        <el-button type="primary" :loading="permission.saving" :disabled="permission.loading || !permission.ready" @click="savePermissions">保存权限</el-button>
       </template>
     </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { computed, nextTick, reactive, ref, onMounted, watch } from 'vue'
+import { reactive, ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { menuApi, roleApi } from '@/api/system'
-import { buildPermissionTree, filterPermission } from '@/utils/permissionTree'
+import PermissionSelector from '@/components/PermissionSelector.vue'
+import { normalizePermissionSelection } from '@/utils/permissionTree'
 
 const loading = ref(false)
 const list = ref([])
@@ -139,53 +122,40 @@ async function submit() {
 }
 async function remove(id) { await roleApi.remove(id); ElMessage.success('删除成功'); load() }
 
-const menuTypeMap = {
-  1: { label: '目录', color: 'warning' },
-  2: { label: '菜单', color: 'primary' },
-  3: { label: '按钮', color: 'info' }
-}
+let permissionRequest = 0
 const menuFlat = ref([])
-const permissionTreeRef = ref()
+const selectedMenuIds = ref([])
 const permission = reactive({
   visible: false,
   loading: false,
+  ready: false,
   saving: false,
   roleId: null,
   roleName: ''
 })
-const menuTree = computed(() => buildPermissionTree(menuFlat.value))
-const permissionKeyword = ref('')
-watch(permissionKeyword, value => permissionTreeRef.value?.filter(value))
-const enabledMenuIds = computed(() => menuFlat.value.filter(menu => menu.status === 1).map(menu => menu.id))
-
 async function openPermission(role) {
   if (isProtected(role)) return
-  permissionKeyword.value = ''
+  const request = ++permissionRequest
+  selectedMenuIds.value = []
   permission.visible = true
   permission.loading = true
+  permission.ready = false
   permission.roleId = role.id
   permission.roleName = role.name
   try {
     const [menus, selectedIds] = await Promise.all([menuApi.list(), roleApi.menuIds(role.id)])
+    if (request !== permissionRequest) return
     menuFlat.value = menus
-    await nextTick()
-    permissionTreeRef.value?.setCheckedKeys(selectedIds || [], false)
+    selectedMenuIds.value = normalizePermissionSelection(menus, selectedIds || [])
+    permission.ready = true
   } finally {
-    permission.loading = false
+    if (request === permissionRequest) permission.loading = false
   }
 }
 
-function selectAllPermissions() {
-  permissionTreeRef.value?.setCheckedKeys(enabledMenuIds.value, false)
-}
-
-function clearPermissions() {
-  permissionTreeRef.value?.setCheckedKeys([], false)
-}
-
 async function savePermissions() {
-  const enabled = new Set(enabledMenuIds.value)
-  const menuIds = (permissionTreeRef.value?.getCheckedKeys(false) || []).filter(id => enabled.has(id))
+  if (permission.loading || !permission.ready || permission.saving) return
+  const menuIds = normalizePermissionSelection(menuFlat.value, selectedMenuIds.value)
   permission.saving = true
   try {
     await roleApi.saveMenuIds(permission.roleId, menuIds)
@@ -200,9 +170,5 @@ onMounted(load)
 <style scoped>
 .pager { margin-top: 16px; justify-content: flex-end; }
 .protected-tag { margin-left: 8px; }
-.permission-toolbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
-.permission-tip { color: var(--el-text-color-secondary); font-size: 13px; }
-.permission-tree-wrap { min-height: 280px; max-height: 520px; padding: 12px; overflow: auto; border: 1px solid var(--el-border-color); border-radius: 6px; }
-.permission-node { display: flex; align-items: center; gap: 8px; }
-.permission-code { color: var(--el-text-color-secondary); font-family: monospace; font-size: 12px; }
+.permission-tip { color: var(--el-text-color-secondary); font-size: 13px; margin-bottom: 12px; }
 </style>
