@@ -1,19 +1,39 @@
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { computed, ref, watch, onBeforeUnmount } from 'vue'
 import { ElMessage } from 'element-plus'
 import { uploadUrl, fileApi } from '@/api/file'
 import { startFileDownload } from '@/utils/fileDownload'
+import PhotoCapture from '@/components/PhotoCapture.vue'
 import GlassSurface from '@/components/GlassSurface.vue'
 
 const props = defineProps({
   modelValue: { type: Array, default: () => [] },
   bizType: { type: String, default: '' },
   bizId: { type: [Number, String], default: null },
-  accept: { type: String, default: '' }
+  accept: { type: String, default: '' },
+  camera: Boolean
 })
-const emit = defineEmits(['update:modelValue'])
+const emit = defineEmits(['update:modelValue', 'busy'])
 
 const fileList = ref([])
+const pending = ref(0)
+const cameraUploading = ref(false)
+let disposed = false
+onBeforeUnmount(() => { disposed = true; emit('busy', false) })
+watch(() => pending.value > 0 || cameraUploading.value, busy => emit('busy', busy))
+async function uploadPhoto(file) {
+  if (!beforeUpload(file)) return
+  cameraUploading.value = true
+  const data = new FormData()
+  data.append('file', file)
+  Object.entries(uploadData.value).forEach(([key, value]) => data.append(key, value))
+  try {
+    const uploaded = await fileApi.upload(data)
+    onSuccess({ code: 0, data: uploaded })
+    ElMessage.success('照片已上传')
+  } catch { onError() }
+  finally { cameraUploading.value = false }
+}
 
 // 把外部传入的附件记录映射成 el-upload 需要的结构
 watch(() => props.modelValue, (val) => {
@@ -34,6 +54,8 @@ const uploadData = computed(() => {
 })
 
 function onSuccess(res) {
+  pending.value = Math.max(0, pending.value - 1)
+  if (disposed) return
   // 后端 Result 结构 { code, message, data }
   if (res.code === 0 && res.data) {
     const next = [...props.modelValue, res.data]
@@ -44,12 +66,14 @@ function onSuccess(res) {
 }
 
 function onError() {
+  pending.value = Math.max(0, pending.value - 1)
   ElMessage.error('上传失败')
 }
 
 function beforeUpload(file) {
   const is100M = file.size / 1024 / 1024 <= 100
   if (!is100M) ElMessage.error('文件不能超过 100MB')
+  if (is100M) pending.value++
   return is100M
 }
 
@@ -81,6 +105,10 @@ async function onPreview(uploadFile) {
 
 <template>
   <GlassSurface variant="upload">
+    <div v-if="camera" style="margin-bottom: 10px">
+      <PhotoCapture :disabled="pending > 0 || cameraUploading" @capture="uploadPhoto" />
+      <span v-if="cameraUploading" style="margin-left: 10px">照片上传中…</span>
+    </div>
     <el-upload
       :action="uploadUrl"
       :headers="headers"

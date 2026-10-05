@@ -1,6 +1,9 @@
 package com.zhyq.park.property.controller;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.zhyq.park.common.config.MyMetaObjectHandler;
+import com.zhyq.park.property.service.WorkOrderLocationService;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.zhyq.park.common.event.DomainEvent;
@@ -45,6 +48,7 @@ public class WorkOrderController {
     private static final int MAX_ORDERS_PER_SOURCE = 500;
 
     private final WorkOrderMapper workOrderMapper;
+    private final WorkOrderLocationService locations;
     private final WorkOrderLogMapper workOrderLogMapper;
     private final WorkOrderService workOrderService;
     private final SlaEscalationJob slaEscalationJob;
@@ -84,6 +88,10 @@ public class WorkOrderController {
                         .orderByAsc(WorkOrderLog::getId));
         Map<String, Object> m = new HashMap<>();
         m.put("order", wo);
+        if (wo != null) {
+            m.put("building", locations.building(wo.getBuildingId()));
+            m.put("floor", locations.floor(wo.getFloorId()));
+        }
         m.put("logs", logs);
         return Result.ok(m);
     }
@@ -91,6 +99,18 @@ public class WorkOrderController {
     @Operation(summary = "新增工单")
     @PostMapping
     public Result<Long> add(@RequestBody WorkOrder wo) {
+        if (wo.getFloorLocation() != null) {
+            var point = locations.resolve(wo.getFloorLocation(), wo.getProjectId(), MyMetaObjectHandler.DEFAULT_TENANT_ID);
+            wo.setTenantId(MyMetaObjectHandler.DEFAULT_TENANT_ID);
+            wo.setProjectId(point.projectId());
+            wo.setBuildingId(point.buildingId());
+            wo.setFloorId(point.floorId());
+            wo.setFloorPlanFileId(point.planFileId());
+            wo.setPlanX(point.x());
+            wo.setPlanY(point.y());
+            wo.setRoomId(null);
+            wo.setSpaceId(null);
+        }
         if (!StringUtils.hasText(wo.getCode())) {
             wo.setCode("WO" + System.currentTimeMillis());
         }
@@ -131,7 +151,29 @@ public class WorkOrderController {
     @Operation(summary = "修改工单")
     @PutMapping
     public Result<Void> update(@RequestBody WorkOrder wo) {
-        workOrderMapper.updateById(wo);
+        if (wo.getId() == null) throw new BizException("缺少工单编号");
+        WorkOrder existing = workOrderMapper.selectById(wo.getId());
+        if (existing == null) throw new BizException("工单不存在");
+        if (wo.getFloorLocation() != null) {
+            var point = locations.resolve(wo.getFloorLocation(), existing.getProjectId(), existing.getTenantId());
+            // Explicit SET permits clearing a point without affecting partial status updates elsewhere.
+            wo.setProjectId(null);
+            wo.setBuildingId(null);
+            wo.setRoomId(null);
+            wo.setSpaceId(null);
+            workOrderMapper.update(wo, new LambdaUpdateWrapper<WorkOrder>().eq(WorkOrder::getId, wo.getId())
+                    .set(WorkOrder::getProjectId, point.projectId()).set(WorkOrder::getBuildingId, point.buildingId())
+                    .set(WorkOrder::getFloorId, point.floorId()).set(WorkOrder::getFloorPlanFileId, point.planFileId())
+                    .set(WorkOrder::getPlanX, point.x()).set(WorkOrder::getPlanY, point.y())
+                    .set(WorkOrder::getRoomId, null).set(WorkOrder::getSpaceId, null));
+        } else {
+            if (existing.getFloorId() != null && ((wo.getBuildingId() != null && !wo.getBuildingId().equals(existing.getBuildingId()))
+                    || (wo.getProjectId() != null && !wo.getProjectId().equals(existing.getProjectId()))
+                    || (wo.getRoomId() != null && !wo.getRoomId().equals(existing.getRoomId())))) {
+                throw new BizException("修改维修位置时请重新选择楼宇和楼层");
+            }
+            workOrderMapper.updateById(wo);
+        }
         return Result.ok();
     }
 

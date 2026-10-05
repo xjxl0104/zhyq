@@ -26,7 +26,9 @@
       <el-table :data="list" v-loading="loading" border stripe>
         <el-table-column type="index" label="序号" width="70" />
         <el-table-column prop="code" label="楼宇编码" min-width="110" />
-        <el-table-column prop="name" label="楼宇名称" min-width="140" />
+        <el-table-column prop="name" label="楼宇名称" min-width="140">
+          <template #default="{ row }"><el-button link type="primary" @click="planBuilding = row">{{ row.name }}</el-button></template>
+        </el-table-column>
         <el-table-column label="所属项目" min-width="150">
           <template #default="{ row }">{{ projectMap[row.projectId] || row.projectId }}</template>
         </el-table-column>
@@ -42,8 +44,9 @@
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="150" fixed="right">
+        <el-table-column label="操作" width="250" fixed="right">
           <template #default="{ row }">
+            <el-button link type="primary" @click="planBuilding = row">楼层平面图</el-button>
             <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
             <el-button link type="danger" @click="remove(row)">删除</el-button>
           </template>
@@ -53,6 +56,10 @@
                      :total="total" v-model:current-page="query.pageNo"
                      v-model:page-size="query.pageSize" :page-sizes="[10,20,50]" @change="load" />
     </div>
+
+    <el-dialog :model-value="!!planBuilding" :title="`${planBuilding?.name || ''} · 楼层平面图`" width="min(960px, 94vw)" destroy-on-close @close="planBuilding = null">
+      <BuildingFloorPlans v-if="planBuilding" :key="planBuilding.id" :building="planBuilding" />
+    </el-dialog>
 
     <!-- 表单弹窗 -->
     <el-dialog v-model="dialogVisible" :title="dialogTitle" width="520px">
@@ -98,8 +105,10 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { buildingApi, projectApi } from '@/api/building'
+import BuildingFloorPlans from '@/components/BuildingFloorPlans.vue'
 import { useCrudPage } from '@/composables/useCrudPage'
 
+const planBuilding = ref(null)
 const projects = ref([])
 const projectMap = computed(() => Object.fromEntries(projects.value.map((p) => [p.id, p.name])))
 

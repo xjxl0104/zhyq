@@ -22,6 +22,8 @@ export const buildingApi = {
 
 // 楼层
 export const floorApi = {
+  plan: (id) => request.get(`/building/floor/${id}/plan`),
+  uploadPlan: (id, data) => request.post(`/building/floor/${id}/plan`, data, { timeout: 120000 }),
   list: (buildingId) => request.get('/building/floor/list', { params: { buildingId } }),
   // 楼宇无楼层时按层数自动生成,返回楼层列表
   ensure: (buildingId) => request.post('/building/floor/ensure', null, { params: { buildingId } }),
