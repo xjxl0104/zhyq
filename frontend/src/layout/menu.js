@@ -203,11 +203,9 @@ export const menuTree = [
   },
   {
     title: '系统管理', icon: 'Setting', children: [
-      { title: '用户管理', path: '/system/user' },
       { title: '角色管理', path: '/system/role' },
-      { title: '部门管理', path: '/system/dept' },
+      { title: '用户管理', path: '/system/user' },
       { title: '菜单管理', path: '/system/menu' },
-      { title: '岗位管理', path: '/system/post' },
       { title: '字典管理', path: '/system/dict' },
       { title: '运营资源', path: '/system/resource' },
       { title: '消息中心', path: '/system/message' }
