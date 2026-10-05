@@ -67,7 +67,7 @@
     </div>
 
     <!-- 表单弹窗 -->
-    <el-dialog v-model="dialog.visible" :title="dialog.title" width="680px" top="5vh">
+    <el-dialog v-model="dialog.visible" :title="dialog.title" width="760px" top="5vh">
       <el-form v-loading="dialog.loading" :model="form" label-width="90px" ref="formRef" :rules="rules">
         <el-form-item label="账号" prop="username">
           <el-input v-model="form.username" :disabled="!!form.id" />
@@ -79,34 +79,36 @@
         <el-form-item label="昵称" prop="nickname"><el-input v-model="form.nickname" /></el-form-item>
         <el-form-item label="手机号"><el-input v-model="form.phone" /></el-form-item>
         <el-form-item label="邮箱"><el-input v-model="form.email" /></el-form-item>
-        <el-form-item label="快速模板">
+        <el-form-item label="角色权限">
           <el-select v-model="form.roleIds" multiple collapse-tags collapse-tags-tooltip
-                     placeholder="可选：选角色模板快速填充菜单" style="width: 100%"
-                     @change="onRoleTemplateChange">
+                     placeholder="先选择岗位角色" style="width: 100%">
             <el-option v-for="role in roles" :key="role.id" :value="role.id"
                        :label="role.code === 'admin' ? `${role.name}（超级管理员）` : role.name" />
           </el-select>
-          <div class="form-tip">选择角色模板可快速填充菜单权限，也可直接在下方勾选。</div>
+          <div class="form-tip">角色自动赋予 {{ inheritedMenuIds.length }} 项权限；调整角色时，用户权限会同步更新。</div>
         </el-form-item>
-        <el-form-item label="菜单权限" prop="menuIds">
+        <el-form-item label="额外授权" prop="menuIds">
           <div class="menu-tree-container">
             <div class="menu-tree-toolbar">
+              <el-input v-model="permissionKeyword" placeholder="搜索模块或操作" clearable style="width: 220px" />
               <el-button link type="primary" size="small" @click="selectAllMenus">全选</el-button>
               <el-button link size="small" @click="clearMenus">清空</el-button>
             </div>
             <el-scrollbar max-height="320px">
-              <el-tree ref="menuTreeRef" :data="menuTree" node-key="id" show-checkbox
-                       default-expand-all :props="{ label: 'name', children: 'children' }">
+              <el-tree ref="menuTreeRef" :data="permissionTree" node-key="id" show-checkbox
+                       :filter-node-method="filterPermission"
+                       :props="{ label: 'name', children: 'children' }">
                 <template #default="{ data }">
                   <span :class="{ 'locked-menu': isLockedMenu(data.id) }">
                     {{ data.name }}
                     <el-tag v-if="isLockedMenu(data.id)" size="small" type="info" class="lock-tag">默认</el-tag>
+                    <el-tag v-else-if="inheritedMenuIds.includes(data.id)" size="small" type="success" class="lock-tag">角色已授予</el-tag>
                   </span>
                 </template>
               </el-tree>
             </el-scrollbar>
           </div>
-          <div class="form-tip">"建议与反馈"所有用户默认拥有，无法取消。勾选一级目录自动包含其下全部子菜单。</div>
+          <div class="form-tip">按业务模块展开设置额外权限。角色已授予的权限无需重复勾选；要收回角色权限，请调整上方角色或角色配置。“建议与反馈”默认开放。</div>
         </el-form-item>
         <el-form-item label="状态">
           <el-radio-group v-model="form.status">
@@ -124,16 +126,18 @@
 </template>
 
 <script setup>
-import { computed, nextTick, reactive, ref, onMounted } from 'vue'
+import { computed, nextTick, reactive, ref, onMounted, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { userApi, roleApi, menuApi } from '@/api/system'
-
-const LOCKED_MENU_PARENT_ID = 160 // "建议与反馈"一级菜单 parent row — will match by name instead
+import { buildPermissionTree, filterPermission } from '@/utils/permissionTree'
 
 const loading = ref(false)
 const list = ref([])
 const roles = ref([])
 const menuFlat = ref([])
+const permissionKeyword = ref('')
+const inheritedMenuIds = ref([])
+let roleRequest = 0
 const total = ref(0)
 const query = reactive({ pageNo: 1, pageSize: 10, username: '', nickname: '', status: null })
 
@@ -150,14 +154,13 @@ function isLockedMenu(id) {
   return lockedMenuIds.value.includes(id)
 }
 
-const menuTree = computed(() => buildMenuTree(menuFlat.value, 0))
-
-function buildMenuTree(menus, parentId) {
-  return menus.filter(m => m.parentId === parentId).map(m => {
-    const children = buildMenuTree(menus, m.id)
-    return children.length ? { ...m, children } : { ...m }
-  })
-}
+const permissionTree = computed(() => {
+  const markLocked = nodes => nodes.map(node => ({
+    ...node, disabled: isLockedMenu(node.id),
+    ...(node.children ? { children: markLocked(node.children) } : {})
+  }))
+  return markLocked(buildPermissionTree(menuFlat.value))
+})
 
 async function load() {
   loading.value = true
@@ -181,6 +184,16 @@ const emptyForm = {
   id: null, username: '', password: '', nickname: '', phone: '', email: '', status: 1, roleIds: [], menuIds: []
 }
 const form = reactive({ ...emptyForm })
+watch(() => [...form.roleIds], async (ids) => {
+  const request = ++roleRequest
+  try {
+    const menus = await Promise.all(ids.map(id => roleApi.menuIds(id)))
+    if (request === roleRequest) inheritedMenuIds.value = [...new Set(menus.flat())]
+  } catch {
+    if (request === roleRequest) inheritedMenuIds.value = []
+  }
+})
+watch(permissionKeyword, value => menuTreeRef.value?.filter(value))
 const rules = {
   username: [{ required: true, message: '请输入账号', trigger: 'blur' }],
   password: [{
@@ -201,18 +214,6 @@ async function loadMenus() {
   menuFlat.value = await menuApi.list()
 }
 
-async function onRoleTemplateChange(roleIds) {
-  if (!roleIds || roleIds.length === 0) return
-  // Fetch menu IDs for all selected roles and merge them into the tree
-  const allMenuIds = new Set(lockedMenuIds.value)
-  for (const roleId of roleIds) {
-    const ids = await roleApi.menuIds(roleId)
-    ids.forEach(id => allMenuIds.add(id))
-  }
-  await nextTick()
-  menuTreeRef.value?.setCheckedKeys([...allMenuIds], false)
-}
-
 function selectAllMenus() {
   const allIds = menuFlat.value.filter(m => m.status === 1).map(m => m.id)
   menuTreeRef.value?.setCheckedKeys(allIds, false)
@@ -228,6 +229,7 @@ async function openDialog(row) {
   dialog.title = row ? '编辑用户' : '新增用户'
   formRef.value?.clearValidate()
   Object.assign(form, emptyForm, { roleIds: [], menuIds: [] })
+  permissionKeyword.value = ''
   await nextTick()
   if (!row) {
     // New user: default check locked menus
@@ -249,7 +251,8 @@ async function openDialog(row) {
 async function submit() {
   await formRef.value.validate()
   // Collect checked menu IDs from tree (ensure locked menus are included)
-  const treeChecked = menuTreeRef.value?.getCheckedKeys(false) || []
+  const validIds = new Set(menuFlat.value.filter(menu => menu.status === 1).map(menu => menu.id))
+  const treeChecked = (menuTreeRef.value?.getCheckedKeys(false) || []).filter(id => validIds.has(id))
   const finalMenuIds = [...new Set([...treeChecked, ...lockedMenuIds.value])]
   form.menuIds = finalMenuIds
   if (form.id) await userApi.update(form)

@@ -47,6 +47,9 @@ public class WorkOrder extends BaseEntity {
     private String assignee;
     /** 责任单位 id,引用 pm_responsible_unit */
     private Long responsibleUnitId;
+
+    /** 统一供应商档案 ID，历史责任单位关联保留用于追溯。 */
+    private Long supplierId;
     /** 响应SLA(分钟) */
     private Integer slaRespondMin;
     /** 解决SLA(分钟) */

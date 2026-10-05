@@ -59,7 +59,9 @@
       <el-table :data="list" v-loading="loading" border stripe>
         <el-table-column type="index" label="序号" width="70" />
         <el-table-column prop="code" label="供应商编号" width="120" />
-        <el-table-column prop="name" label="供应商名称" min-width="180" show-overflow-tooltip />
+        <el-table-column label="供应商名称" min-width="180" show-overflow-tooltip>
+          <template #default="{ row }"><el-button link type="primary" @click="openDetail(row)">{{ row.name }}</el-button></template>
+        </el-table-column>
         <el-table-column label="类别" width="110">
           <template #default="{ row }">
             <el-tag v-if="row.category" :type="categoryColor(row.category)">
@@ -76,8 +78,9 @@
             <el-tag :type="statusColor(row.status)">{{ statusText(row.status) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="240" fixed="right">
+        <el-table-column label="操作" width="300" fixed="right">
           <template #default="{ row }">
+            <el-button link type="primary" @click="openDetail(row)">详情/合同</el-button>
             <el-button link type="primary" @click="openDialog(row)">编辑</el-button>
             <el-button v-if="row.status === 1" link type="warning" @click="changeStatus(row, 2)">停用</el-button>
             <el-button v-else link type="success" @click="changeStatus(row, 1)">启用</el-button>
@@ -94,6 +97,40 @@
                      :total="total" v-model:current-page="query.pageNo"
                      v-model:page-size="query.pageSize" :page-sizes="[10,20,50]" @change="load" />
     </div>
+
+    <el-drawer v-model="detailVisible" :title="selectedSupplier?.name || '供应商详情'" size="720px">
+      <template v-if="selectedSupplier">
+        <el-descriptions :column="2" border>
+          <el-descriptions-item label="编号">{{ selectedSupplier.code }}</el-descriptions-item>
+          <el-descriptions-item label="类别">{{ categoryLabel(selectedSupplier.category) }}</el-descriptions-item>
+          <el-descriptions-item label="联系人">{{ selectedSupplier.contact || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="电话">{{ selectedSupplier.phone || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="所属园区" :span="2">{{ projectName(selectedSupplier.projectId) }}</el-descriptions-item>
+          <el-descriptions-item label="服务范围" :span="2">{{ selectedSupplier.serviceScope || '-' }}</el-descriptions-item>
+        </el-descriptions>
+        <div class="contract-header">
+          <strong>合同与补充协议（{{ contractTotal }}）</strong>
+          <el-button v-if="canAddContract && canQueryContracts" type="primary" @click="goContract()">新增合同</el-button>
+        </div>
+        <el-alert v-if="!canQueryContracts" type="info" :closable="false" title="当前角色尚未获得供应商合同查询权限" />
+        <el-table v-else :data="contracts" v-loading="contractsLoading" border stripe>
+          <el-table-column prop="code" label="编号" width="160" />
+          <el-table-column label="名称" min-width="190">
+            <template #default="{ row }">
+              <el-button v-if="canEditContract" link type="primary" @click="goContract(row.id)">{{ row.name }}</el-button>
+              <span v-else>{{ row.name }}</span>
+              <el-tag v-if="row.parentContractId" size="small" class="agreement-tag">补充协议 · {{ row.parentContractName || row.parentContractId }}</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="金额" width="115"><template #default="{ row }">{{ row.amount == null ? '-' : `¥${row.amount}` }}</template></el-table-column>
+          <el-table-column label="操作" width="110">
+            <template #default="{ row }"><el-button v-if="canAddContract && !row.parentContractId" link type="primary" @click="goContract(null, row.id)">加补充协议</el-button></template>
+          </el-table-column>
+        </el-table>
+        <el-pagination v-if="canQueryContracts" class="pager" background layout="total, prev, pager, next"
+                       :total="contractTotal" v-model:current-page="contractPage" :page-size="10" @change="loadContracts" />
+      </template>
+    </el-drawer>
 
     <!-- 表单弹窗 -->
     <el-dialog v-model="dialog.visible" :title="dialog.title" width="680px">
@@ -117,6 +154,13 @@
         <el-form-item label="银行账号"><el-input v-model="form.bankAccount" /></el-form-item>
         <el-form-item label="经营范围">
           <el-input v-model="form.businessScope" type="textarea" :rows="2" />
+        </el-form-item>
+        <el-form-item label="服务范围"><el-input v-model="form.serviceScope" placeholder="如电梯、消防、空调" /></el-form-item>
+        <el-form-item label="单位类型"><el-input v-model="form.unitType" placeholder="如物业、施工方" /></el-form-item>
+        <el-form-item label="所属园区">
+          <el-select v-model="form.projectId" clearable filterable placeholder="全局通用" style="width: 100%">
+            <el-option v-for="project in projects" :key="project.id" :value="project.id" :label="project.name" />
+          </el-select>
         </el-form-item>
         <el-form-item label="资质说明">
           <el-input v-model="form.qualification" type="textarea" :rows="2"
@@ -172,13 +216,58 @@
 <script setup>
 import { reactive, ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { supplierApi } from '@/api/supplier'
+import { supplierApi, supplierContractApi } from '@/api/supplier'
+import { useRouter } from 'vue-router'
+import { projectApi } from '@/api/building'
 import { dictApi } from '@/api/system'
 import { fileApi } from '@/api/file'
 import FileUpload from '@/components/FileUpload.vue'
+import { hasPermission } from '@/utils/permission'
 
 // 类别字典:使用方可在「系统管理→字典管理」自行增删,这里不写死
 const categories = ref([])
+const projects = ref([])
+const projectName = id => id ? projects.value.find(p => p.id === id)?.name || `园区 #${id}` : '全局通用'
+const router = useRouter()
+const canQueryContracts = hasPermission('pur:supplierContract:query')
+const canAddContract = hasPermission('pur:supplierContract:add')
+const canEditContract = hasPermission('pur:supplierContract:edit')
+const detailVisible = ref(false)
+const selectedSupplier = ref(null)
+const contracts = ref([])
+const contractsLoading = ref(false)
+const contractTotal = ref(0)
+const contractPage = ref(1)
+let contractRequest = 0
+
+async function loadContracts() {
+  if (!selectedSupplier.value) return
+  const request = ++contractRequest
+  const supplierId = selectedSupplier.value.id
+  contractsLoading.value = true
+  try {
+    const res = await supplierContractApi.page({ supplierId, pageNo: contractPage.value, pageSize: 10 })
+    if (request === contractRequest) {
+      contracts.value = res.records
+      contractTotal.value = res.total
+    }
+  } finally { if (request === contractRequest) contractsLoading.value = false }
+}
+function openDetail(row) {
+  selectedSupplier.value = row
+  contracts.value = []
+  contractTotal.value = 0
+  contractPage.value = 1
+  detailVisible.value = true
+  if (canQueryContracts) loadContracts()
+}
+function goContract(editId = null, parentContractId = null) {
+  router.push({ path: '/budget/supplier-contract', query: {
+    supplierId: String(selectedSupplier.value.id),
+    ...(editId ? { editId: String(editId) } : { create: '1' }),
+    ...(parentContractId ? { parentContractId: String(parentContractId) } : {})
+  } })
+}
 const categoryLabel = (v) => categories.value.find(c => c.value === v)?.label ?? v
 const categoryColor = (v) => categories.value.find(c => c.value === v)?.color || 'primary'
 
@@ -227,7 +316,7 @@ const dialog = reactive({ visible: false, title: '' })
 const defaultForm = () => ({
   id: null, code: '', name: '', category: null, creditCode: '', legalPerson: '',
   contact: '', phone: '', email: '', regAddress: '', bankName: '', bankAccount: '',
-  businessScope: '', qualification: '', status: 1, remark: ''
+  businessScope: '', serviceScope: '', unitType: '', projectId: null, qualification: '', status: 1, remark: ''
 })
 const form = reactive(defaultForm())
 const attachFiles = ref([])
@@ -309,6 +398,7 @@ function downloadTemplate() {
 }
 
 onMounted(() => {
+  projectApi.list().then(rows => { projects.value = rows || [] }).catch(() => {})
   loadCategories()
   loadStats()
   load()
@@ -324,6 +414,8 @@ onMounted(() => {
 .stat-value { font-size: 26px; font-weight: 600; margin-top: 8px; }
 .toolbar-tip { margin-left: 12px; color: var(--text-secondary); font-size: 12px; }
 .pager { margin-top: 16px; justify-content: flex-end; }
+.contract-header { display: flex; justify-content: space-between; align-items: center; margin: 24px 0 12px; }
+.agreement-tag { margin-left: 8px; }
 .picked { margin-top: 10px; font-size: 13px; color: #606266; }
 .import-result { margin-top: 14px; }
 .err-list { margin: 10px 0 0; padding-left: 18px; color: #f56c6c; font-size: 13px; max-height: 160px; overflow: auto; }
