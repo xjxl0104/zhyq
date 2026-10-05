@@ -6,6 +6,7 @@ import com.zhyq.park.common.exception.BizException;
 import com.zhyq.park.common.result.Result;
 import com.zhyq.park.system.entity.SysUser;
 import com.zhyq.park.system.mapper.SysUserMapper;
+import com.zhyq.park.system.entity.SysMenu;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
@@ -82,6 +83,30 @@ public class AuthController {
         if (roleCodes.contains("admin")) {
             return Result.ok(List.of(-1L));
         }
-        return Result.ok(authQueryMapper.selectMenuIdsByUserId(user.getId()));
+        return Result.ok(authQueryMapper.selectGrantedMenusByUserId(user.getId()).stream()
+                .map(SysMenu::getId).toList());
+    }
+
+    public record GrantedMenu(Long id, Long parentId, String name, Integer type,
+                              String path, String perm, Integer status) {
+        static GrantedMenu of(SysMenu menu) {
+            return new GrantedMenu(menu.getId(), menu.getParentId(), menu.getName(),
+                    menu.getType(), menu.getPath(), menu.getPerm(), menu.getStatus());
+        }
+    }
+    public record MyAccess(boolean admin, List<GrantedMenu> menus) {}
+
+    @Operation(summary = "当前用户的有效导航与操作权限")
+    @GetMapping("/my-access")
+    public Result<MyAccess> myAccess() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        SysUser user = userMapper.selectOne(new LambdaQueryWrapper<SysUser>()
+                .eq(SysUser::getUsername, auth.getName()).last("limit 1"));
+        if (user == null) throw new BizException(401, "登录状态已失效");
+        boolean admin = auth.getAuthorities().stream()
+                .anyMatch(authority -> "ROLE_admin".equals(authority.getAuthority()));
+        return Result.ok(new MyAccess(admin, admin ? List.of()
+                : authQueryMapper.selectGrantedMenusByUserId(user.getId()).stream()
+                        .map(GrantedMenu::of).toList()));
     }
 }

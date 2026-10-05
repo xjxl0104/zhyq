@@ -5,6 +5,7 @@ import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
 
 import java.util.List;
+import com.zhyq.park.system.entity.SysMenu;
 
 /**
  * 认证/鉴权查询:用户 → 角色 → 菜单权限标识。
@@ -57,4 +58,18 @@ public interface AuthQueryMapper {
             ) combined
             """)
     List<Long> selectMenuIdsByUserId(@Param("userId") Long userId);
+
+    /** Only active grants are used for navigation and API access. */
+    @Select("""
+            SELECT DISTINCT m.id, m.parent_id, m.name, m.type, m.path, m.perm, m.status
+            FROM (
+                SELECT rm.menu_id FROM sys_user_role ur
+                JOIN sys_role r ON r.id=ur.role_id AND r.deleted=0 AND r.status=1
+                JOIN sys_role_menu rm ON rm.role_id=r.id WHERE ur.user_id=#{userId}
+                UNION
+                SELECT um.menu_id FROM sys_user_menu um WHERE um.user_id=#{userId}
+            ) combined
+            JOIN sys_menu m ON m.id=combined.menu_id AND m.deleted=0 AND m.status=1
+            """)
+    List<SysMenu> selectGrantedMenusByUserId(@Param("userId") Long userId);
 }

@@ -14,6 +14,9 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.authorization.AuthorizationDecision;
+import org.springframework.security.authentication.AnonymousAuthenticationToken;
+import java.util.stream.Collectors;
 import com.zhyq.park.common.accesslog.AccessLogFilter;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
@@ -69,7 +72,19 @@ public class SecurityConfig {
                 // 仅浏览器下载交接入口免 Bearer；控制器仍须验证绑定文件的一次性凭证。
                 .requestMatchers(HttpMethod.GET, "/file/browser-download/*").permitAll()
                 // 凭证签发、原始文件读取与上传等接口仍须登录，/uploads 不静态放行。
-                .anyRequest().authenticated()
+                .anyRequest().access((authentication, context) -> {
+                    var current = authentication.get();
+                    if (current == null || !current.isAuthenticated()
+                            || current instanceof AnonymousAuthenticationToken) {
+                        return new AuthorizationDecision(false);
+                    }
+                    var grants = current.getAuthorities().stream()
+                            .map(authority -> authority.getAuthority()).collect(Collectors.toSet());
+                    String path = context.getRequest().getRequestURI()
+                            .substring(context.getRequest().getContextPath().length());
+                    return new AuthorizationDecision(BusinessRouteAccess.allowed(
+                            path, context.getRequest().getMethod(), grants));
+                })
             )
             .exceptionHandling(e -> e
                 .authenticationEntryPoint(authEntryPoint)

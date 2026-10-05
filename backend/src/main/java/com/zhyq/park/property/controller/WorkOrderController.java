@@ -18,6 +18,8 @@ import com.zhyq.park.property.mapper.WorkOrderMapper;
 import com.zhyq.park.property.service.SlaEscalationJob;
 import com.zhyq.park.property.service.WorkOrderService;
 import com.zhyq.park.property.service.WorkOrderSummaryService;
+import com.zhyq.park.system.entity.SysUser;
+import com.zhyq.park.system.mapper.SysUserMapper;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
@@ -48,6 +50,7 @@ public class WorkOrderController {
     private static final int MAX_ORDERS_PER_SOURCE = 500;
 
     private final WorkOrderMapper workOrderMapper;
+    private final SysUserMapper userMapper;
     private final WorkOrderLocationService locations;
     private final WorkOrderLogMapper workOrderLogMapper;
     private final WorkOrderService workOrderService;
@@ -55,6 +58,17 @@ public class WorkOrderController {
     private final WorkOrderSummaryService summaryService;
     private final ApplicationEventPublisher eventPublisher;
     private final WeComBotNotifier weComBotNotifier;
+
+    public record AssigneeOption(Long id, String username, String nickname) {}
+
+    @Operation(summary = "报修工单派单人员选项")
+    @GetMapping("/assignees")
+    public Result<List<AssigneeOption>> assignees() {
+        return Result.ok(userMapper.selectList(new LambdaQueryWrapper<SysUser>()
+                        .eq(SysUser::getStatus, 1).orderByAsc(SysUser::getId)).stream()
+                .map(user -> new AssigneeOption(user.getId(), user.getUsername(), user.getNickname()))
+                .toList());
+    }
 
     @Operation(summary = "分页查询工单")
     @GetMapping("/page")

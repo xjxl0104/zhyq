@@ -5,6 +5,7 @@ export const workOrderApi = {
   page: (params) => request.get('/property/workorder/page', { params }),
   get: (id) => request.get(`/property/workorder/${id}`),
   stats: (params) => request.get('/property/workorder/stats', { params }),
+  assignees: () => request.get('/property/workorder/assignees'),
   // 汇总总览:按状态/来源/分类/紧急度聚合 + SLA 达成率 + 近 N 天趋势
   summary: (params) => request.get('/property/workorder/summary', { params }),
   // 按来源反查:源记录(巡检/巡更/三检/投诉/告警) → 派生工单列表。
