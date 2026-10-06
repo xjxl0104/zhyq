@@ -128,9 +128,9 @@ public class WorkOrderController {
         if (!StringUtils.hasText(wo.getCode())) {
             wo.setCode("WO" + System.currentTimeMillis());
         }
-        if (wo.getStatus() == null) {
-            wo.setStatus(WorkOrderService.ST_PENDING_DISPATCH);
-        }
+        wo.setStatus(WorkOrderService.ST_PENDING_DISPATCH);
+        wo.setFinishTime(null);
+        wo.setResolutionCode(null);
         workOrderMapper.insert(wo);
         eventPublisher.publishEvent(new DomainEvent.WorkOrderCreated(
                 wo.getId(), wo.getOrderType(), null, LocalDateTime.now()));
@@ -168,6 +168,12 @@ public class WorkOrderController {
         if (wo.getId() == null) throw new BizException("缺少工单编号");
         WorkOrder existing = workOrderMapper.selectById(wo.getId());
         if (existing == null) throw new BizException("工单不存在");
+        if (wo.getStatus() != null && !wo.getStatus().equals(existing.getStatus()))
+            throw new BizException("请通过工单流转操作修改状态，处理完成须上传现场照片");
+        // 编辑基础资料不能写入流程状态或完成凭据，也不能用旧表单覆盖刚完成的状态。
+        wo.setStatus(null);
+        wo.setFinishTime(null);
+        wo.setResolutionCode(null);
         if (wo.getFloorLocation() != null) {
             var point = locations.resolve(wo.getFloorLocation(), existing.getProjectId(), existing.getTenantId());
             // Explicit SET permits clearing a point without affecting partial status updates elsewhere.
@@ -220,12 +226,14 @@ public class WorkOrderController {
         return Result.ok();
     }
 
-    @Operation(summary = "处理完成")
+    public record FinishRequest(String content, String resolutionCode, List<Long> photoIds) {}
+
+    @Operation(summary = "处理完成（必须上传处理现场照片）")
     @PostMapping("/{id}/finish")
-    public Result<Void> finish(@PathVariable Long id, @RequestBody(required = false) Map<String, Object> body) {
-        String content = body == null ? null : strOf(body.get("content"));
-        String resolutionCode = body == null ? null : strOf(body.get("resolutionCode"));
-        workOrderService.finish(id, operatorOf(body), content, resolutionCode);
+    public Result<Void> finish(@PathVariable Long id, @RequestBody(required = false) FinishRequest body) {
+        workOrderService.finish(id, MyMetaObjectHandler.currentOperator(),
+                body == null ? null : body.content(), body == null ? null : body.resolutionCode(),
+                body == null ? null : body.photoIds());
         return Result.ok();
     }
 

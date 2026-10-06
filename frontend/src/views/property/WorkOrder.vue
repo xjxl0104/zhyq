@@ -244,6 +244,29 @@
       </template>
     </el-dialog>
 
+    <!-- 处理照片与流转在服务端一次提交，上传未完成时禁止流转。 -->
+    <el-dialog v-model="finishDialog.visible" title="处理完成" width="640px" destroy-on-close
+               :close-on-click-modal="false" :close-on-press-escape="!finishBusy && !finishSaving"
+               :show-close="!finishBusy && !finishSaving">
+      <el-form label-width="100px">
+        <el-form-item label="工单号"><el-input :model-value="finishDialog.row?.code" disabled /></el-form-item>
+        <el-form-item label="处理结果">
+          <el-input v-model="finishForm.content" type="textarea" :rows="3" :disabled="finishSaving" placeholder="请填写维修处理情况" />
+        </el-form-item>
+        <el-form-item label="处理现场照片" required>
+          <div>
+            <p class="completion-photo-tip">请至少拍照或上传一张处理现场照片，上传成功后才能提交验收。</p>
+            <FileUpload v-if="finishDialog.visible" :key="finishDialog.row?.id" v-model="finishForm.files"
+                        biz-type="work_order_finish" camera photos-only :disabled="finishSaving" @busy="finishBusy = $event" />
+          </div>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button :disabled="finishBusy || finishSaving" @click="finishDialog.visible = false">取消</el-button>
+        <el-button type="primary" :loading="finishSaving" :disabled="finishBusy || !finishForm.files.length" @click="submitFinish">提交验收</el-button>
+      </template>
+    </el-dialog>
+
     <!-- 验收弹窗 -->
     <el-dialog v-model="verifyDialog.visible" title="验收" width="420px">
       <el-form :model="verifyForm" label-width="90px">
@@ -306,6 +329,12 @@
           <span style="font-weight: 600">{{ log.action }}</span>
           <span v-if="log.operator" style="color: var(--text-secondary)"> · {{ log.operator }}</span>
           <div style="color: #606266; margin-top: 4px">{{ log.content }}</div>
+          <div v-if="log.action === '处理' && detailCompletionFiles.length" class="completion-photos">
+            <div class="detail-files-hd">处理现场照片（{{ detailCompletionFiles.length }}张）</div>
+            <div class="detail-files-list">
+              <el-button v-for="photo in detailCompletionFiles" :key="photo.id" link type="primary" @click="downloadFile(photo)">{{ photo.originalName }}</el-button>
+            </div>
+          </div>
         </el-timeline-item>
       </el-timeline>
       <el-empty v-else description="暂无流转记录" :image-size="80" />
@@ -519,14 +548,32 @@ async function doArrive(row) {
   ElMessage.success('已登记到场')
   refresh()
 }
-async function doFinish(row) {
-  const { value } = await ElMessageBox.prompt('请输入处理结果', '处理完成', {
-    confirmButtonText: '确定', cancelButtonText: '取消', inputType: 'textarea'
-  }).catch(() => ({ value: undefined }))
-  if (value === undefined) return
-  await workOrderApi.finish(row.id, { content: value })
-  ElMessage.success('已提交完成')
-  refresh()
+const finishDialog = reactive({ visible: false, row: null })
+const finishForm = ref({ content: '', files: [] })
+const finishDrafts = new Map()
+const finishBusy = ref(false)
+const finishSaving = ref(false)
+function doFinish(row) {
+  finishDialog.row = row
+  if (!finishDrafts.has(row.id)) finishDrafts.set(row.id, reactive({ content: '', files: [] }))
+  finishForm.value = finishDrafts.get(row.id)
+  finishBusy.value = false
+  finishDialog.visible = true
+}
+async function submitFinish() {
+  if (finishBusy.value || finishSaving.value) return
+  const photoIds = finishForm.value.files.map(file => file.id).filter(Boolean)
+  if (!photoIds.length) { ElMessage.warning('请至少拍照或上传一张处理现场照片'); return }
+  finishSaving.value = true
+  try {
+    await workOrderApi.finish(finishDialog.row.id, { content: finishForm.value.content, photoIds })
+    finishDrafts.delete(finishDialog.row.id)
+    finishDialog.visible = false
+    ElMessage.success('处理照片已保存，工单已提交验收')
+    await refresh()
+  } catch {
+    // 保留文字与已上传照片，允许网络失败后重试。
+  } finally { finishSaving.value = false }
 }
 async function doClose(row) {
   await ElMessageBox.confirm('确认关闭该工单?', '提示', { type: 'warning' }).catch(() => 'cancel')
@@ -557,13 +604,17 @@ async function submitVerify() {
 const detailDialog = reactive({ visible: false })
 const detail = reactive({ order: null, logs: [] })
 const detailFiles = ref([])
+const detailCompletionFiles = ref([])
 async function openDetail(row) {
   const res = await workOrderApi.get(row.id)
   detail.order = res.order
   detail.logs = res.logs || []
   detail.building = res.building
   detail.floor = res.floor
+  detailFiles.value = []
+  detailCompletionFiles.value = []
   detailDialog.visible = true
+  try { detailCompletionFiles.value = await fileApi.list('work_order_finish', row.id) } catch { ElMessage.warning('处理照片加载失败，请重新打开详情') }
   // 手机自助报修传的照片也走通用附件表,这里一并列出来
   try { detailFiles.value = await fileApi.list('work_order', row.id) } catch { detailFiles.value = [] }
 }
@@ -620,6 +671,8 @@ onMounted(() => {
 </script>
 
 <style scoped>
+.completion-photo-tip { margin: 0 0 10px; color: var(--text-secondary); line-height: 1.6; }
+.completion-photos { margin-top: 10px; }
 .detail-files { margin-bottom: 16px; }
 .detail-files-hd { font-size: 13px; color: var(--text-secondary, #909399); margin-bottom: 6px; }
 .detail-files-list { display: flex; flex-wrap: wrap; gap: 12px; }

@@ -11,7 +11,9 @@ const props = defineProps({
   bizType: { type: String, default: '' },
   bizId: { type: [Number, String], default: null },
   accept: { type: String, default: '' },
-  camera: Boolean
+  camera: Boolean,
+  photosOnly: Boolean,
+  disabled: Boolean
 })
 const emit = defineEmits(['update:modelValue', 'busy'])
 
@@ -71,6 +73,12 @@ function onError() {
 }
 
 function beforeUpload(file) {
+  if (props.disabled) return false
+  if (props.photosOnly) {
+    if (!/\.(jpe?g|png)$/i.test(file.name || '')) { ElMessage.error('处理照片仅支持 JPG、PNG 格式'); return false }
+    if (file.size > 20 * 1024 * 1024) { ElMessage.error('处理照片不能超过20MB'); return false }
+    if (props.modelValue.length + pending.value >= 20) { ElMessage.error('最多上传20张处理照片'); return false }
+  }
   const is100M = file.size / 1024 / 1024 <= 100
   if (!is100M) ElMessage.error('文件不能超过 100MB')
   if (is100M) pending.value++
@@ -106,7 +114,7 @@ async function onPreview(uploadFile) {
 <template>
   <GlassSurface variant="upload">
     <div v-if="camera" style="margin-bottom: 10px">
-      <PhotoCapture :disabled="pending > 0 || cameraUploading" @capture="uploadPhoto" />
+      <PhotoCapture :disabled="disabled || pending > 0 || cameraUploading" @capture="uploadPhoto" />
       <span v-if="cameraUploading" style="margin-left: 10px">照片上传中…</span>
     </div>
     <el-upload
@@ -114,7 +122,8 @@ async function onPreview(uploadFile) {
       :headers="headers"
       :data="uploadData"
       :file-list="fileList"
-      :accept="accept"
+      :accept="photosOnly ? 'image/jpeg,image/png' : accept"
+      :disabled="disabled"
       :on-success="onSuccess"
       :on-error="onError"
       :before-upload="beforeUpload"
@@ -122,11 +131,12 @@ async function onPreview(uploadFile) {
       :on-preview="onPreview"
       multiple
     >
-      <el-button type="primary">选择文件</el-button>
+      <el-button type="primary" :disabled="disabled">{{ photosOnly ? '上传照片' : '选择文件' }}</el-button>
       <template #tip>
         <div class="el-upload__tip">
-          支持各种格式(文档/表格/图片/图纸/压缩包/音视频等),可执行与脚本类文件除外;
-          单个不超过 100MB;点击文件名下载
+          <template v-if="photosOnly">支持 JPG、PNG；单张不超过20MB，最多20张。点击文件名查看。</template>
+          <template v-else>支持各种格式(文档/表格/图片/图纸/压缩包/音视频等),可执行与脚本类文件除外;
+          单个不超过 100MB;点击文件名下载</template>
         </div>
       </template>
     </el-upload>
