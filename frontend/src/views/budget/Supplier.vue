@@ -104,15 +104,20 @@
         <span>租客联系人可在新增物业工单时选择租客并自动带出。</span>
         <el-button v-if="canEditTenantContacts" type="primary" @click="openTenantContactDialog()">新增联系人</el-button>
       </div>
-      <el-table :data="tenantContacts" v-loading="tenantContactsLoading" border stripe>
+      <el-table :data="savedTenantContacts" v-loading="tenantContactsLoading" border stripe empty-text="暂无租客联系人">
         <el-table-column prop="name" label="租客" min-width="150" show-overflow-tooltip />
         <el-table-column label="所属园区" min-width="130" show-overflow-tooltip>
           <template #default="{ row }">{{ projectName(row.projectId) }}</template>
         </el-table-column>
         <el-table-column prop="contact" label="联系人" min-width="100" />
         <el-table-column prop="phone" label="联系电话" min-width="135" />
-        <el-table-column v-if="canEditTenantContacts" label="操作" width="80">
-          <template #default="{ row }"><el-button link type="primary" @click="openTenantContactDialog(row)">编辑</el-button></template>
+        <el-table-column v-if="canEditTenantContacts" label="操作" width="120">
+          <template #default="{ row }">
+            <el-button link type="primary" @click="openTenantContactDialog(row)">编辑</el-button>
+            <el-popconfirm title="删除此联系人？租客档案和历史工单会保留。" @confirm="removeTenantContact(row.id)">
+              <template #reference><el-button link type="danger">删除</el-button></template>
+            </el-popconfirm>
+          </template>
         </el-table-column>
       </el-table>
     </el-drawer>
@@ -249,7 +254,7 @@
 </template>
 
 <script setup>
-import { reactive, ref, onMounted } from 'vue'
+import { computed, reactive, ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { supplierApi, supplierContractApi } from '@/api/supplier'
 import { useRouter } from 'vue-router'
@@ -271,6 +276,7 @@ const canEditTenantContacts = hasPermission('pur:supplier:edit')
 const tenantContactsVisible = ref(false)
 const tenantContactsLoading = ref(false)
 const tenantContacts = ref([])
+const savedTenantContacts = computed(() => tenantContacts.value.filter(t => t.contact?.trim()))
 const tenantContactDialog = ref(false)
 const savingTenantContact = ref(false)
 const tenantContactForm = reactive({ tenantRefId: null, contact: '', phone: '' })
@@ -304,6 +310,11 @@ async function saveTenantContact() {
     tenantContactDialog.value = false
     ElMessage.success('租客联系人已保存')
   } finally { savingTenantContact.value = false }
+}
+async function removeTenantContact(id) {
+  await supplierApi.removeTenantContact(id)
+  await loadTenantContacts()
+  ElMessage.success('联系人已删除')
 }
 const detailVisible = ref(false)
 const selectedSupplier = ref(null)

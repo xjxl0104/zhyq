@@ -50,6 +50,8 @@ public class WorkOrderController {
 
     /** 单条源记录反查工单的返回上限, 防脏数据把整表拉进内存 */
     private static final int MAX_ORDERS_PER_SOURCE = 500;
+    private static final List<Integer> RECTIFICATION_MINUTES = List.of(3, 7, 15, 30).stream()
+            .map(days -> days * 24 * 60).toList();
 
     private final WorkOrderMapper workOrderMapper;
     private final BizTenantMapper tenantMapper;
@@ -125,6 +127,7 @@ public class WorkOrderController {
     @Operation(summary = "新增工单")
     @PostMapping
     public Result<Long> add(@RequestBody WorkOrder wo) {
+        wo.setSlaResolveMin(rectificationMinutes(wo.getSlaResolveMin(), true));
         if (wo.getFloorLocation() != null) {
             var point = locations.resolve(wo.getFloorLocation(), wo.getProjectId(), MyMetaObjectHandler.DEFAULT_TENANT_ID);
             wo.setTenantId(MyMetaObjectHandler.DEFAULT_TENANT_ID);
@@ -180,6 +183,7 @@ public class WorkOrderController {
     @PutMapping
     public Result<Void> update(@RequestBody WorkOrder wo) {
         if (wo.getId() == null) throw new BizException("缺少工单编号");
+        rectificationMinutes(wo.getSlaResolveMin(), false);
         WorkOrder existing = workOrderMapper.selectById(wo.getId());
         if (existing == null) throw new BizException("工单不存在");
         if (wo.getStatus() != null && !wo.getStatus().equals(existing.getStatus()))
@@ -240,6 +244,12 @@ public class WorkOrderController {
         if (projectId != null && tenant.getProjectId() != null && !projectId.equals(tenant.getProjectId())) {
             throw new BizException("租客不属于工单所在园区");
         }
+    }
+
+    private static Integer rectificationMinutes(Integer minutes, boolean create) {
+        if (minutes == null) return create ? 7 * 24 * 60 : null;
+        if (!RECTIFICATION_MINUTES.contains(minutes)) throw new BizException("整改时限只能选择3天、7天、15天或30天");
+        return minutes;
     }
 
     @Operation(summary = "删除工单")
