@@ -54,3 +54,25 @@ describe('FileUpload 的 bizId 上传参数', () => {
     expect(data.bizId).toBe(0)
   })
 })
+
+describe('处理现场照片', () => {
+  it('offers camera and photo upload and rejects documents or oversized photos', () => {
+    const wrapper = mountUpload({ bizType: 'work_order_finish', photosOnly: true, camera: true })
+    const upload = wrapper.findComponent({ name: 'ElUpload' })
+    expect(upload.props('accept')).toBe('image/jpeg,image/png')
+    expect(wrapper.text()).toContain('上传照片')
+    expect(wrapper.text()).toContain('直接拍照')
+    const before = upload.props('beforeUpload')
+    expect(before({ name: '说明.pdf', size: 10 })).toBe(false)
+    expect(before({ name: '现场.jpg', size: 21 * 1024 * 1024 })).toBe(false)
+    expect(before({ name: '现场.JPG', size: 1024 })).toBe(true)
+    wrapper.unmount()
+  })
+  it('prevents new uploads while the completion request is submitting', () => {
+    const wrapper = mountUpload({ photosOnly: true, camera: true, disabled: true })
+    const upload = wrapper.findComponent({ name: 'ElUpload' })
+    expect(upload.props('disabled')).toBe(true)
+    expect(upload.props('beforeUpload')({ name: '现场.jpg', size: 10 })).toBe(false)
+    wrapper.unmount()
+  })
+})

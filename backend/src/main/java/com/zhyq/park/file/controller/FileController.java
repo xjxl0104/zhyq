@@ -6,6 +6,7 @@ import com.zhyq.park.common.config.MyMetaObjectHandler;
 import com.zhyq.park.common.exception.BizException;
 import com.zhyq.park.common.result.Result;
 import com.zhyq.park.file.FileAccessRule;
+import com.zhyq.park.property.service.WorkOrderPhotoService;
 import com.zhyq.park.file.FileAttachRule;
 import com.zhyq.park.file.entity.SysFile;
 import com.zhyq.park.file.mapper.SysFileMapper;
@@ -84,7 +85,15 @@ public class FileController {
             }
             marketingAccess.write(f.getBizType());
             marketingRetention.assertDeletable(f);
-            fileMapper.deleteById(id);          // 逻辑删除
+            if (WorkOrderPhotoService.BIZ_TYPE.equals(f.getBizType())) {
+                // 与提交照片的条件关联互斥，避免提交后并发删除验收凭据。
+                int removed = fileMapper.delete(new LambdaQueryWrapper<SysFile>()
+                        .eq(SysFile::getId, id).eq(SysFile::getBizType, WorkOrderPhotoService.BIZ_TYPE)
+                        .isNull(SysFile::getBizId));
+                if (removed != 1) throw new BizException("已提交的处理照片需保留，不可删除");
+            } else {
+                fileMapper.deleteById(id);          // 逻辑删除
+            }
             storageService.deletePhysical(f.getStorePath());
         }
         return Result.ok();
@@ -161,6 +170,8 @@ public class FileController {
                 || req.getBizId() == null || req.getFileIds() == null || req.getFileIds().isEmpty()) {
             return Result.ok(0);
         }
+        if (WorkOrderPhotoService.BIZ_TYPE.equals(req.getBizType()))
+            throw new BizException("处理照片请随处理完成一并提交");
         marketingAccess.write(req.getBizType());
         int attached = 0;
         for (Long fileId : req.getFileIds()) {
@@ -168,6 +179,8 @@ public class FileController {
             if (f == null || !FileAttachRule.canAttach(f)) {
                 continue;                    // 不存在或已关联 → 跳过,防越权覆盖
             }
+            if (WorkOrderPhotoService.BIZ_TYPE.equals(f.getBizType()))
+                throw new BizException("处理照片不可转为其他业务附件");
             marketingAccess.attach(f, req.getBizType());
             attached += fileMapper.update(null, new LambdaUpdateWrapper<SysFile>()
                     .eq(SysFile::getId, f.getId()).isNull(SysFile::getBizId)
@@ -194,6 +207,11 @@ public class FileController {
         if ((bizType == null || bizType.isBlank()) && bizId != null)
             throw new BizException("未指定业务类型的附件不能关联业务对象");
         marketingAccess.write(bizType);
+        String photoMime = null;
+        if (WorkOrderPhotoService.BIZ_TYPE.equals(bizType)) {
+            if (bizId != null) throw new BizException("处理照片请随处理完成一并提交");
+            photoMime = WorkOrderPhotoService.validateUpload(file);
+        }
         FileStorageService.StoredResult r = storageService.store(file);
         SysFile sf = new SysFile();
         sf.setBizType(bizType);
@@ -202,7 +220,7 @@ public class FileController {
         sf.setStorePath(r.storePath());
         sf.setUrl(r.url());
         sf.setFileSize(r.size());
-        sf.setContentType(r.contentType());
+        sf.setContentType(photoMime == null ? r.contentType() : photoMime);
         sf.setExt(r.ext());
         fileMapper.insert(sf);
         return sf;
