@@ -182,7 +182,7 @@
 
     <!-- 新增工单弹窗 -->
     <el-dialog v-model="dialog.visible" :title="dialog.title" width="min(820px, 94vw)" destroy-on-close :close-on-click-modal="false">
-      <el-form :model="form" label-width="80px" ref="formRef" :rules="rules">
+      <el-form :model="form" label-width="112px" ref="formRef" :rules="rules">
         <el-form-item label="标题" prop="title"><el-input v-model="form.title" /></el-form-item>
         <el-form-item label="类型">
           <el-select v-model="form.orderType" style="width: 100%">
@@ -192,7 +192,7 @@
         <el-form-item label="楼层定位">
           <WorkOrderLocation v-if="dialog.visible" :key="locationKey" :model-value="floorLocation" :project-id="form.projectId" @update:model-value="setFloorLocation" @busy="locationBusy = $event" />
         </el-form-item>
-        <el-form-item label="位置说明"><el-input v-model="form.location" placeholder="如东侧电梯口、消防通道，未上传平面图时可直接填写" /></el-form-item>
+        <el-form-item label="备注说明"><el-input v-model="form.location" placeholder="可补充维修位置等说明，如东侧电梯口、消防通道" /></el-form-item>
         <el-form-item label="分类"><el-input v-model="form.category" placeholder="如:水电/空调/门窗" /></el-form-item>
         <el-form-item label="紧急度">
           <el-radio-group v-model="form.urgency">
@@ -223,9 +223,15 @@
             />
           </el-select>
         </el-form-item>
+        <el-form-item label="供应商联系人">
+          <el-input v-model="form.contact" placeholder="选供应商后自动带出，可改" />
+        </el-form-item>
+        <el-form-item label="供应商电话">
+          <el-input v-model="form.contactPhone" placeholder="选供应商后自动带出，可改" />
+        </el-form-item>
         <el-form-item label="报修租客">
-          <el-select v-model="form.tenantContactRefId" clearable filterable placeholder="选择已录入的租客联系人（可不填）" style="width: 100%" @change="onTenantChange">
-            <el-option v-for="t in tenantOptions" :key="t.id" :label="`${t.name} · ${t.contact}`" :value="t.id" />
+          <el-select v-model="form.tenantContactRefId" clearable filterable placeholder="选择租客公司（可不填）" style="width: 100%" @change="onTenantChange">
+            <el-option v-for="t in tenantOptions" :key="t.id" :label="t.name" :value="t.id" />
           </el-select>
         </el-form-item>
         <el-form-item v-if="form.tenantContactRefId || form.tenantRefId" label="租客联系人">
@@ -234,13 +240,7 @@
         <el-form-item v-if="form.tenantContactRefId || form.tenantRefId" label="租客电话">
           <el-input v-model="form.tenantContactPhone" placeholder="选联系人后自动带出" :readonly="!!form.tenantContactRefId" />
         </el-form-item>
-        <el-form-item label="供应商联系人">
-          <el-input v-model="form.contact" placeholder="选供应商后自动带出，可改" />
-        </el-form-item>
-        <el-form-item label="供应商电话">
-          <el-input v-model="form.contactPhone" placeholder="选供应商后自动带出，可改" />
-        </el-form-item>
-        <el-form-item label="备注"><el-input v-model="form.remark" type="textarea" /></el-form-item>
+        <el-form-item label="其他备注"><el-input v-model="form.remark" type="textarea" /></el-form-item>
         <el-form-item label="附件"><FileUpload :key="locationKey" v-model="attachFiles" biz-type="work_order" :biz-id="form.id" camera @busy="attachmentBusy = $event" /></el-form-item>
       </el-form>
       <template #footer>
