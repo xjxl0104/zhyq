@@ -107,6 +107,22 @@ class WorkOrderCompletionTest {
         verify(files, never()).update(any(), any(Wrapper.class));
         verifyNoInteractions(logs);
     }
+    @Test void verificationBindsOnlyItsOwnPhotosBeforeCompletingOrder() {
+        order.setStatus(4);
+        photo.setBizType(WorkOrderPhotoService.VERIFY_BIZ_TYPE);
+        service.verify(1L, "repair", 5, List.of(7L));
+        verify(files).update(isNull(), argThat(w -> w.getSqlSegment().contains("biz_id IS NULL")));
+        verify(orders).update(argThat(change -> change.getStatus() == 5 && change.getScore() == 5),
+                argThat(w -> w.getSqlSegment().contains("status =")));
+        verify(logs).insert(argThat((WorkOrderLog log) -> "验收".equals(log.getAction())));
+    }
+    @Test void verificationRejectsProcessingPhotoAndKeepsOrderPending() {
+        order.setStatus(4);
+        assertThatThrownBy(() -> service.verify(1L, "repair", 5, List.of(7L)))
+                .hasMessageContaining("验收照片不可用");
+        verify(orders, never()).update(any(), any(Wrapper.class));
+        verifyNoInteractions(logs);
+    }
     @Test void uploadValidatesActualImageBytesInsteadOfTrustingFilenameOrMime() throws Exception {
         byte[] fake = "not an image".getBytes();
         assertThatThrownBy(() -> WorkOrderPhotoService.validateUpload(new MockMultipartFile("file", "fake.jpg", "image/jpeg", fake)))

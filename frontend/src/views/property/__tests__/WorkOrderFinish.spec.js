@@ -4,7 +4,7 @@ import WorkOrder from '../WorkOrder.vue'
 import { workOrderApi } from '@/api/property'
 import { fileApi } from '@/api/file'
 vi.mock('vue-router', () => ({ useRoute: () => ({ path: '/property/workorder', query: {} }), useRouter: () => ({ push: vi.fn(), replace: vi.fn() }) }))
-vi.mock('@/api/property', () => ({ workOrderApi: { page: vi.fn().mockResolvedValue({ records: [], total: 0 }), stats: vi.fn().mockResolvedValue({}), finish: vi.fn(), get: vi.fn() } }))
+vi.mock('@/api/property', () => ({ workOrderApi: { page: vi.fn().mockResolvedValue({ records: [], total: 0 }), stats: vi.fn().mockResolvedValue({}), finish: vi.fn(), verify: vi.fn(), get: vi.fn() } }))
 vi.mock('@/api/supplier', () => ({ supplierApi: { options: vi.fn().mockResolvedValue([]), tenantContacts: vi.fn().mockResolvedValue([]) } }))
 vi.mock('@/api/file', () => ({ fileApi: { list: vi.fn().mockResolvedValue([]) } }))
 const row = { id: 42, code: 'WO42', status: 3 }
@@ -72,5 +72,18 @@ it('loads completion photos separately for the processing timeline', async () =>
   await w.vm.openDetail(row)
   expect(w.vm.detailCompletionFiles).toEqual([{ id: 7, originalName: '处理照片.jpg' }])
   expect(w.vm.detailFiles).toEqual([{ id: 1 }])
+  w.unmount()
+})
+it('waits for verification uploads and submits their photo IDs with the rating', async () => {
+  const w = await page()
+  w.vm.openVerify({ id: 42, code: 'WO42' })
+  w.vm.verifyForm.files = [{ id: 11 }]
+  w.vm.verifyBusy = true
+  await w.vm.submitVerify()
+  expect(workOrderApi.verify).not.toHaveBeenCalled()
+  w.vm.verifyBusy = false
+  workOrderApi.verify.mockResolvedValue()
+  await w.vm.submitVerify()
+  expect(workOrderApi.verify).toHaveBeenCalledWith(42, { score: 5, photoIds: [11] })
   w.unmount()
 })

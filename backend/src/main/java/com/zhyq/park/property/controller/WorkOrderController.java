@@ -301,7 +301,13 @@ public class WorkOrderController {
         if (body != null && body.get("score") != null) {
             score = Integer.valueOf(String.valueOf(body.get("score")));
         }
-        workOrderService.verify(id, operatorOf(body), score);
+        List<Long> photoIds = null;
+        if (body != null && body.get("photoIds") != null) {
+            if (!(body.get("photoIds") instanceof List<?> raw)) throw new BizException("验收照片编号格式错误");
+            try { photoIds = raw.stream().map(value -> Long.valueOf(String.valueOf(value))).toList(); }
+            catch (NumberFormatException e) { throw new BizException("验收照片编号格式错误"); }
+        }
+        workOrderService.verify(id, MyMetaObjectHandler.currentOperator(), score, photoIds);
         return Result.ok();
     }
 

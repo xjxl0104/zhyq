@@ -180,7 +180,7 @@ public class WorkOrderService {
 
     /** 验收:待验收(4)→已完成(5),记录满意度评分 */
     @Transactional(rollbackFor = Exception.class)
-    public void verify(Long id, String operator, Integer score) {
+    public void verify(Long id, String operator, Integer score, List<Long> photoIds) {
         WorkOrder wo = require(id);
         if (wo.getStatus() == null || wo.getStatus() != ST_PENDING_VERIFY) {
             throw new BizException("仅待验收状态的工单可验收");
@@ -188,11 +188,14 @@ public class WorkOrderService {
         if (score != null && (score < 1 || score > 5)) {
             throw new BizException("满意度评分需在 1-5 之间");
         }
+        completionPhotos.attachForVerify(wo, operator, photoIds);
         WorkOrder upd = new WorkOrder();
         upd.setId(id);
         upd.setStatus(ST_DONE);
         upd.setScore(score);
-        workOrderMapper.updateById(upd);
+        int changed = workOrderMapper.update(upd, new LambdaUpdateWrapper<WorkOrder>()
+                .eq(WorkOrder::getId, id).eq(WorkOrder::getStatus, ST_PENDING_VERIFY));
+        if (changed != 1) throw new BizException("工单状态已变化，请刷新后重试");
         log(id, "验收", operator, "验收通过,满意度评分:" + (score == null ? "-" : score));
         eventPublisher.publishEvent(new DomainEvent.WorkOrderClosed(id, LocalDateTime.now()));
     }
