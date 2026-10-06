@@ -59,8 +59,8 @@
           </el-select>
         </el-form-item>
         <el-form-item label="租客">
-          <el-select v-model="query.tenantRefId" placeholder="全部租客" clearable filterable style="width: 180px">
-            <el-option v-for="t in tenantOptions" :key="t.id" :label="t.name" :value="t.id" />
+          <el-select v-model="query.tenantName" placeholder="全部租客 / 输入名称" clearable filterable allow-create default-first-option style="width: 180px">
+            <el-option v-for="name in tenantFilterNames" :key="name" :label="name" :value="name" />
           </el-select>
         </el-form-item>
         <el-form-item>
@@ -224,15 +224,15 @@
           </el-select>
         </el-form-item>
         <el-form-item label="报修租客">
-          <el-select v-model="form.tenantRefId" clearable filterable placeholder="选择租客（可不填）" style="width: 100%" @change="onTenantChange">
-            <el-option v-for="t in tenantOptions" :key="t.id" :label="t.name" :value="t.id" />
+          <el-select v-model="form.tenantContactRefId" clearable filterable placeholder="选择已录入的租客联系人（可不填）" style="width: 100%" @change="onTenantChange">
+            <el-option v-for="t in tenantOptions" :key="t.id" :label="`${t.name} · ${t.contact}`" :value="t.id" />
           </el-select>
         </el-form-item>
-        <el-form-item v-if="form.tenantRefId" label="租客联系人">
-          <el-input v-model="form.tenantContact" placeholder="选租客后自动带出，可修改" />
+        <el-form-item v-if="form.tenantContactRefId || form.tenantRefId" label="租客联系人">
+          <el-input v-model="form.tenantContact" placeholder="选联系人后自动带出" :readonly="!!form.tenantContactRefId" />
         </el-form-item>
-        <el-form-item v-if="form.tenantRefId" label="租客电话">
-          <el-input v-model="form.tenantContactPhone" placeholder="选租客后自动带出，可修改" />
+        <el-form-item v-if="form.tenantContactRefId || form.tenantRefId" label="租客电话">
+          <el-input v-model="form.tenantContactPhone" placeholder="选联系人后自动带出" :readonly="!!form.tenantContactRefId" />
         </el-form-item>
         <el-form-item label="供应商联系人">
           <el-input v-model="form.contact" placeholder="选供应商后自动带出，可改" />
@@ -353,7 +353,7 @@
           <el-tag v-if="isRectificationOverdue(detail.order)" type="danger" size="small" style="margin-left: 6px">超时</el-tag>
         </el-descriptions-item>
         <el-descriptions-item label="供应商">{{ unitName(detail.order?.supplierId) }}</el-descriptions-item>
-        <el-descriptions-item label="报修租客">{{ tenantName(detail.order?.tenantRefId) }}</el-descriptions-item>
+        <el-descriptions-item label="报修租客">{{ tenantName(detail.order) }}</el-descriptions-item>
         <el-descriptions-item label="租客联系人">{{ detail.order?.tenantContact || '-' }}</el-descriptions-item>
         <el-descriptions-item label="租客电话">{{ detail.order?.tenantContactPhone || '-' }}</el-descriptions-item>
         <el-descriptions-item label="来源">
@@ -446,7 +446,10 @@ let clockTimer
 const filterBuildings = ref([])
 const filterFloors = ref([])
 const tenantOptions = ref([])
-const tenantName = id => id ? tenantOptions.value.find(t => t.id === id)?.name || `租客 #${id}` : '-'
+const legacyTenants = ref([])
+const tenantFilterNames = computed(() => [...new Set([...tenantOptions.value, ...legacyTenants.value].map(t => t.name).filter(Boolean))])
+const tenantName = order => order?.tenantName ||
+  (order?.tenantRefId ? legacyTenants.value.find(t => t.id === order.tenantRefId)?.name || `租客 #${order.tenantRefId}` : '-')
 async function changeFilterBuilding(id) {
   query.floorId = null
   query.zone = null
@@ -460,7 +463,7 @@ const list = ref([])
 const total = ref(0)
 const stats = reactive({ pending: 0, processing: 0, done: 0, total: 0 })
 const query = reactive({ pageNo: 1, pageSize: 10, code: '', orderType: null, status: null, urgency: null,
-  buildingId: null, floorId: null, zone: null, tenantRefId: null, id: null })
+  buildingId: null, floorId: null, zone: null, tenantName: null, id: null })
 
 async function load() {
   loading.value = true
@@ -486,7 +489,7 @@ async function refresh() {
 function reset() {
   // id 一并清掉,否则从源记录跳来后点重置会仍被定位条件锁住
   Object.assign(query, { pageNo: 1, code: '', orderType: null, status: null, urgency: null,
-    buildingId: null, floorId: null, zone: null, tenantRefId: null, id: null })
+    buildingId: null, floorId: null, zone: null, tenantName: null, id: null })
   filterFloors.value = []
   highlightId.value = null
   load()
@@ -496,9 +499,12 @@ function reset() {
 const formRef = ref()
 const dialog = reactive({ visible: false, title: '' })
 const defaultForm = () => ({ id: null, title: '', orderType: '报修', location: '', category: '', urgency: 2,
-  slaResolveMin: 7 * 24 * 60, contact: '', contactPhone: '', tenantContact: '', tenantContactPhone: '', remark: '', supplierId: null, tenantRefId: null })
+  slaResolveMin: 7 * 24 * 60, contact: '', contactPhone: '', tenantName: '', tenantContact: '', tenantContactPhone: '',
+  tenantContactRefId: null, remark: '', supplierId: null, tenantRefId: null })
 function onTenantChange(id) {
   const tenant = tenantOptions.value.find(t => t.id === id)
+  form.tenantRefId = null
+  form.tenantName = tenant?.name || ''
   form.tenantContact = tenant?.contact || ''
   form.tenantContactPhone = tenant?.phone || ''
 }
@@ -577,7 +583,7 @@ async function submit() {
   await formRef.value.validate()
   saving.value = true
   try {
-    const payload = { ...form, ...(form.id && !form.tenantRefId ? { clearTenantRef: true } : {}),
+    const payload = { ...form, ...(form.id && !form.tenantRefId && !form.tenantContactRefId ? { clearTenantRef: true } : {}),
       ...(locationChanged.value ? { floorLocation: floorLocation.value } : {}) }
     if (form.id) await workOrderApi.update(payload)
     else {
@@ -769,6 +775,7 @@ onMounted(() => {
   loadWecom()
   buildingApi.list().then(rows => { filterBuildings.value = rows || [] }).catch(() => { filterBuildings.value = [] })
   supplierApi.tenantContacts().then(rows => { tenantOptions.value = rows || [] }).catch(() => { tenantOptions.value = [] })
+  supplierApi.tenantDirectory().then(rows => { legacyTenants.value = rows || [] }).catch(() => { legacyTenants.value = [] })
 })
 onUnmounted(() => window.clearInterval(clockTimer))
 </script>

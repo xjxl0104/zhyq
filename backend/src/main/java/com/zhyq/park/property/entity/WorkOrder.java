@@ -68,6 +68,9 @@ public class WorkOrder extends BaseEntity {
     private Long supplierId;
     /** 报修关联的租客档案，区别于 BaseEntity.tenantId（平台租户）。 */
     private Long tenantRefId;
+    /** 自由维护的租客联系人 ID，以及建单时的租客名称快照。 */
+    private Long tenantContactRefId;
+    private String tenantName;
     /** 建单时的租客联系人快照，避免档案更新后历史工单失真。 */
     private String tenantContact;
     private String tenantContactPhone;
