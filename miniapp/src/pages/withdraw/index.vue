@@ -1,6 +1,6 @@
 <template>
   <view>
-    <view v-if="error" class="card"><view class="muted">{{error}}</view><button class="btn" @click="load">重试</button></view>
+    <view v-if="error" class="card"><view class="muted">{{error}}</view><button class="btn" :disabled="loading" @click="load">重试</button></view>
     <view v-if="!b && !error" class="card muted">正在加载可提现余额…</view>
     <template v-if="b">
     <view class="card">
@@ -49,10 +49,10 @@ const history=reactive({}),pager=createPager(bizApi.withdrawals,history),list=co
 const tax = computed(() => (Number(amount.value || 0) * (b.value?.taxMode === 1 ? Number(b.value.taxRate) : 0)).toFixed(2))
 const net = computed(() => (Number(amount.value || 0) - Number(tax.value)).toFixed(2))
 const cashAvailable = computed(() => withdrawalBalanceView(b.value))
-const validAmount = computed(() => b.value && Number(b.value.idVerified) === 1 && isValidWithdrawal(amount.value, b.value.balance, b.value.minWithdraw ?? 0))
+const validAmount = computed(() => !!b.value && Number(b.value.idVerified) === 1 && !!cashAvailable.value && isValidWithdrawal(amount.value, cashAvailable.value.amount, b.value.minWithdraw ?? 0))
 function fillAll() { if (!loading.value && cashAvailable.value?.cents) amount.value = cashAvailable.value.amount }
 let balanceRequest=0
-async function load() { const request=++balanceRequest;error.value='';const records=pager.load();try{const balance=await bizApi.balance();if(request===balanceRequest)b.value=balance}catch(e){if(request===balanceRequest)error.value=e.message||'余额加载失败，请重试'}await records }
+async function load() { const request=++balanceRequest;b.value=null;error.value='';const records=pager.load();try{const balance=await bizApi.balance();if(request===balanceRequest)b.value=balance}catch(e){if(request===balanceRequest)error.value=e.message||'余额加载失败，请重试'}await records }
 async function submit() {
   if(loading.value || !validAmount.value)return
   loading.value = true

@@ -30,7 +30,7 @@ import { computed, reactive, ref, watch } from 'vue'
 import { authApi } from '@/api'
 import { warehouseAuthApi } from '@/api/warehouse'
 const props = defineProps({ warehouse: Boolean, inviteCode: { type: String, default: '' } })
-const emit = defineEmits(['authenticated'])
+const emit = defineEmits(['authenticated', 'busy'])
 const registering = ref(false)
 const busy = ref(false)
 const error = ref('')
@@ -51,6 +51,7 @@ async function submit() {
     if (!props.warehouse && !/^[A-Z2-9]{8}$/.test(form.inviteCode.trim().toUpperCase())) { error.value = '请输入有效的 8 位上级邀请码'; return }
   }
   busy.value = true
+  emit('busy', true)
   try {
     const api = props.warehouse ? warehouseAuthApi : authApi
     const result = registering.value
@@ -60,7 +61,7 @@ async function submit() {
     form.password = ''; showPassword.value = false
     emit('authenticated', result.token, registering.value)
   } catch (e) { error.value = e.message || '登录未完成，请稍后重试' }
-  finally { busy.value = false }
+  finally { busy.value = false; emit('busy', false) }
 }
 </script>
 

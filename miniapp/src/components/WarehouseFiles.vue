@@ -16,7 +16,7 @@ const props = defineProps({ modelValue: { type: Array, default: () => [] }, read
 const emit = defineEmits(['update:modelValue', 'busy'])
 const busy = ref(false); const error = ref('')
 async function choose() {
-  if (busy.value) return
+  if (busy.value || props.readonly || props.modelValue.length >= props.max) return
   error.value = ''; busy.value = true; emit('busy', true)
   try {
     let result
@@ -28,12 +28,13 @@ async function choose() {
     // #endif
     const selected = result.tempFiles?.[0]; const path = selected?.path || result.tempFilePaths?.[0]
     if (!path) return
+    if (selected?.size > 20 * 1024 * 1024) throw new Error('文件不能超过 20MB')
     const stored = await warehouseApi.uploadFile(path, selected?.name || '附件')
     emit('update:modelValue', [...props.modelValue, stored])
   } catch (e) { if (!/cancel/i.test(e.errMsg || e.message || '')) error.value = e.message || '上传失败，请重新选择文件' }
   finally { busy.value = false; emit('busy', false) }
 }
-function remove(id) { emit('update:modelValue', props.modelValue.filter(f => f.id !== id)) }
+function remove(id) { if (busy.value || props.readonly) return; emit('update:modelValue', props.modelValue.filter(f => f.id !== id)) }
 async function open(file) { error.value = ''; try { await warehouseApi.openFile(file.id, file.name || file.originalName) } catch(e) { error.value = e.message || '文件打开失败，请重试' } }
 </script>
 <style scoped>

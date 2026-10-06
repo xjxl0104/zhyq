@@ -1,6 +1,8 @@
 <template>
   <view class="page-wrap home-page">
-    <view class="card hero-card">
+    <view v-if="error" class="card"><view class="muted">{{ error }}</view><button class="btn" :disabled="loading" @click="load">重新加载</button></view>
+    <view v-if="loading" class="card muted">正在读取收益…</view>
+    <view v-if="home" class="card hero-card">
       <view class="hero-title">全民营销</view>
       <view class="hero-subtitle">连接客户、空间与云仓服务，让每一次推荐都有回响</view>
       <view class="hero-label">累计收益（元）</view>
@@ -24,7 +26,7 @@
         <view class="quick-icon">团</view><view><view class="quick-title">我的团队</view><view class="quick-desc">查看直属成员</view></view>
       </view>
       <view class="quick-card pressable" @click="go('/pages/withdraw/index')">
-        <view class="quick-icon">提</view><view><view class="quick-title">申请提现</view><view class="quick-desc">可提 {{ fmt(home.withdrawable) }}</view></view>
+        <view class="quick-icon">提</view><view><view class="quick-title">申请提现</view><view class="quick-desc">可提 {{ fmt(home?.withdrawable) }}</view></view>
       </view>
       <view v-if="me.positionCode === 'P4' && Number(me.status) === 1" class="quick-card pressable" @click="go('/pages/allocation/index')">
         <view class="quick-icon">价</view><view><view class="quick-title">客户定价与分佣</view><view class="quick-desc">按客户自定义每单金额</view></view>
@@ -33,7 +35,7 @@
     <view class="card"><view class="muted">积分及礼品兑换规则待配置，当前收益按金额展示。</view></view>
 
     <view class="section-head"><text class="section-title">最近动态</text><text class="caption" @click="uni.navigateTo({url:'/pages/notices/index'})">消息通知 ›</text></view>
-    <view class="card activity-card">
+    <view v-if="home" class="card activity-card">
       <view v-if="!home.recent?.length" class="list-empty">还没有收益记录，去推荐第一位客户吧</view>
       <view class="row" v-for="(r, i) in home.recent" :key="i">
         <view><view>{{ STATUS[r.status] }}</view><view class="caption">{{ r.time?.slice(0, 16) }}</view></view>
@@ -44,21 +46,40 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, onUnmounted } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import { meApi } from '@/api'
 import { token } from '@/utils/request'
 
 const STATUS = { 1: '冻结', 2: '可结算', 3: '已结算', 4: '已提现', 5: '作废' }
-const home = ref({})
+const home = ref(null)
 const me = ref({})
-const fmt = (v) => Number(v || 0).toFixed(3)
+const error = ref(''), loading = ref(false)
+const fmt = (v) => v == null ? '—' : Number(v).toFixed(3)
 const go = (url) => uni.navigateTo({ url })
+let requestNo = 0
 
-onShow(async () => {
+async function load() {
+  const request = ++requestNo
+  home.value = null
+  me.value = {}
+  error.value = ''
+  loading.value = false
   if (!token.get()) return uni.reLaunch({ url: '/pages/login/index' })
-  ;[home.value, me.value] = await Promise.all([meApi.home(), meApi.me()])
-})
+  loading.value = true
+  try {
+    const [summary, profile] = await Promise.all([meApi.home(), meApi.me()])
+    if (request !== requestNo) return
+    home.value = summary
+    me.value = profile
+  } catch (failure) {
+    if (request === requestNo) error.value = failure.message || '收益读取失败，请重新加载'
+  } finally {
+    if (request === requestNo) loading.value = false
+  }
+}
+onShow(load)
+onUnmounted(() => { requestNo++ })
 </script>
 
 <style scoped>

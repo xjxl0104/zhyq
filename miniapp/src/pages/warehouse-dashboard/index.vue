@@ -77,7 +77,7 @@ function go(page) {
 
 function logout() {
   warehouseToken.clear()
-  uni.reLaunch({ url: '/pages/warehouse-login/index' })
+  uni.reLaunch({ url: '/pages/entry/index?select=1' })
 }
 
 onShow(load)
