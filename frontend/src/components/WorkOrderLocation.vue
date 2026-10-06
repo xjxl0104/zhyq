@@ -33,7 +33,7 @@ async function changeBuilding(id) {
   const run = ++request
   floors.value = []
   planId.value = null
-  update({ buildingId: id || null, floorId: null, planFileId: null, x: null, y: null })
+  update({ buildingId: id || null, floorId: null, zone: null, planFileId: null, x: null, y: null })
   error.value = ''
   loading.value = true
   emit('busy', true)
@@ -46,7 +46,7 @@ async function changeBuilding(id) {
   finally { if (run === request) { loading.value = false; emit('busy', false) } }
 }
 function changeFloor(id) {
-  update({ floorId: id || null, planFileId: null, x: null, y: null })
+  update({ floorId: id || null, zone: null, planFileId: null, x: null, y: null })
   loadPlan(id)
 }
 function mark(value) {
@@ -80,6 +80,9 @@ onBeforeUnmount(() => { request++; emit('busy', false) })
       <el-select :model-value="modelValue.floorId" placeholder="选择楼层" clearable :disabled="!modelValue.buildingId || loading" aria-label="报修楼层" @change="changeFloor">
         <el-option v-for="floor in floors" :key="floor.id" :value="floor.id" :label="floor.name" />
       </el-select>
+      <el-select :model-value="modelValue.zone" placeholder="整层 / 选择分区" clearable :disabled="!modelValue.floorId" aria-label="报修楼层分区" @change="update({ zone: $event || null })">
+        <el-option v-for="zone in ['A', 'B', 'C']" :key="zone" :value="zone" :label="`${zone}区`" />
+      </el-select>
     </div>
     <el-alert v-if="error" :title="error" type="warning" :closable="false" />
     <p v-else-if="modelValue.buildingId && !loading && !floors.length" class="hint">该楼宇尚未维护楼层，请先在建筑管理中维护。</p>
@@ -89,7 +92,7 @@ onBeforeUnmount(() => { request++; emit('busy', false) })
 
 <style scoped>
 .work-order-location { width: 100%; }
-.location-selects { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 10px; margin-bottom: 12px; }
+.location-selects { display: grid; grid-template-columns: minmax(0, 2fr) repeat(2, minmax(0, 1fr)); gap: 10px; margin-bottom: 12px; }
 .hint { color: var(--text-secondary); font-size: 13px; }
 @media (max-width: 600px) { .location-selects { grid-template-columns: minmax(0, 1fr); } }
 </style>

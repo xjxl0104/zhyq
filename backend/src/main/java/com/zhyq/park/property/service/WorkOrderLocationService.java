@@ -22,15 +22,15 @@ public class WorkOrderLocationService {
     private final FloorMapper floors;
     private final SysFileMapper files;
 
-    public record Location(Long projectId, Long buildingId, Long floorId, Long planFileId,
+    public record Location(Long projectId, Long buildingId, Long floorId, String zone, Long planFileId,
                            BigDecimal x, BigDecimal y) {}
 
     public Location resolve(FloorLocationSelection input, Long projectId, Long tenantId) {
         if (input == null) throw new BizException("缺少楼层定位信息");
         boolean hasPoint = input.x() != null || input.y() != null || input.planFileId() != null;
         if (input.buildingId() == null) {
-            if (input.floorId() != null || hasPoint) throw new BizException("请先选择楼宇");
-            return new Location(projectId, null, null, null, null, null);
+            if (input.floorId() != null || input.zone() != null || hasPoint) throw new BizException("请先选择楼宇");
+            return new Location(projectId, null, null, null, null, null, null);
         }
         Building building = buildings.selectById(input.buildingId());
         if (building == null || !Objects.equals(tenantId, building.getTenantId())) throw new BizException("楼宇不存在或不可用");
@@ -39,6 +39,9 @@ public class WorkOrderLocationService {
         if (input.floorId() != null && (floor == null || !input.buildingId().equals(floor.getBuildingId())
                 || !Objects.equals(building.getProjectId(), floor.getProjectId())
                 || !Objects.equals(tenantId, floor.getTenantId()))) throw new BizException("楼层不属于所选楼宇");
+        if (input.zone() != null && (floor == null || !java.util.Set.of("A", "B", "C").contains(input.zone()))) {
+            throw new BizException("请先选择楼层和有效的A/B/C分区");
+        }
         if (hasPoint) {
             if (floor == null || input.planFileId() == null || !coordinate(input.x()) || !coordinate(input.y())) {
                 throw new BizException("请选择楼层平面图并标记有效位置");
@@ -49,7 +52,7 @@ public class WorkOrderLocationService {
                 throw new BizException("平面图不属于所选楼层，请重新选择");
             }
         }
-        return new Location(building.getProjectId(), building.getId(), input.floorId(),
+        return new Location(building.getProjectId(), building.getId(), input.floorId(), input.zone(),
                 input.planFileId(), input.x(), input.y());
     }
 

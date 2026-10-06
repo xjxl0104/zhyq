@@ -27,7 +27,7 @@ class WorkOrderLocationServiceTest {
         when(files.selectById(5L)).thenReturn(plan);
     }
     FloorLocationSelection selection(String x, String y) {
-        return new FloorLocationSelection(2L, 4L, 5L, x == null ? null : new BigDecimal(x), y == null ? null : new BigDecimal(y));
+        return new FloorLocationSelection(2L, 4L, "A", 5L, x == null ? null : new BigDecimal(x), y == null ? null : new BigDecimal(y));
     }
     @Test void retainsExactFileVersionAndCoordinatesIncludingImageEdges() {
         var location = service.resolve(selection("0", "1"), 3L, 1L);
@@ -35,6 +35,7 @@ class WorkOrderLocationServiceTest {
         assertThat(location.x()).isEqualByComparingTo("0");
         assertThat(location.y()).isEqualByComparingTo("1");
         assertThat(location.projectId()).isEqualTo(3L);
+        assertThat(location.zone()).isEqualTo("A");
     }
     @Test void rejectsIncompleteAndOutOfBoundsCoordinates() {
         assertThatThrownBy(() -> service.resolve(selection(null, "0.5"), 3L, 1L)).isInstanceOf(BizException.class);
@@ -49,11 +50,17 @@ class WorkOrderLocationServiceTest {
         assertThatThrownBy(() -> service.resolve(selection("0.5", "0.5"), 3L, 9L)).hasMessageContaining("不可用");
     }
     @Test void supportsFloorWithoutPlanAndExplicitClear() {
-        var noPlan = service.resolve(new FloorLocationSelection(2L, 4L, null, null, null), 3L, 1L);
+        var noPlan = service.resolve(new FloorLocationSelection(2L, 4L, null, null, null, null), 3L, 1L);
         assertThat(noPlan.floorId()).isEqualTo(4L);
         assertThat(noPlan.planFileId()).isNull();
-        var clear = service.resolve(new FloorLocationSelection(null, null, null, null, null), 3L, 1L);
+        var clear = service.resolve(new FloorLocationSelection(null, null, null, null, null, null), 3L, 1L);
         assertThat(clear.buildingId()).isNull();
         assertThat(clear.projectId()).isEqualTo(3L);
+    }
+    @Test void zoneRequiresMatchingFloorAndKnownArea() {
+        assertThatThrownBy(() -> service.resolve(new FloorLocationSelection(2L, null, "A", null, null, null), 3L, 1L))
+                .hasMessageContaining("分区");
+        assertThatThrownBy(() -> service.resolve(new FloorLocationSelection(2L, 4L, "D", null, null, null), 3L, 1L))
+                .hasMessageContaining("分区");
     }
 }
