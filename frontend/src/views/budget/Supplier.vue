@@ -101,10 +101,10 @@
 
     <el-drawer v-model="tenantContactsVisible" title="租客联系人" size="min(680px, 95vw)">
       <div class="contract-header">
-        <span>租客联系人可在新增物业工单时选择租客并自动带出。</span>
+        <span>租客名称和联系人可自行填写，新增物业工单时可直接选用。</span>
         <el-button v-if="canEditTenantContacts" type="primary" @click="openTenantContactDialog()">新增联系人</el-button>
       </div>
-      <el-table :data="savedTenantContacts" v-loading="tenantContactsLoading" border stripe empty-text="暂无租客联系人">
+      <el-table :data="tenantContacts" v-loading="tenantContactsLoading" border stripe empty-text="暂无租客联系人">
         <el-table-column prop="name" label="租客" min-width="150" show-overflow-tooltip />
         <el-table-column label="所属园区" min-width="130" show-overflow-tooltip>
           <template #default="{ row }">{{ projectName(row.projectId) }}</template>
@@ -114,7 +114,7 @@
         <el-table-column v-if="canEditTenantContacts" label="操作" width="120">
           <template #default="{ row }">
             <el-button link type="primary" @click="openTenantContactDialog(row)">编辑</el-button>
-            <el-popconfirm title="删除此联系人？租客档案和历史工单会保留。" @confirm="removeTenantContact(row.id)">
+            <el-popconfirm title="删除此联系人？历史工单会保留原有记录。" @confirm="removeTenantContact(row.id)">
               <template #reference><el-button link type="danger">删除</el-button></template>
             </el-popconfirm>
           </template>
@@ -125,9 +125,7 @@
     <el-dialog v-model="tenantContactDialog" title="租客联系人" width="480px" append-to-body>
       <el-form label-width="90px">
         <el-form-item label="租客" required>
-          <el-select v-model="tenantContactForm.tenantRefId" filterable placeholder="请选择租客" style="width: 100%" @change="onContactTenantChange">
-            <el-option v-for="t in tenantContacts" :key="t.id" :label="t.name" :value="t.id" />
-          </el-select>
+          <el-input v-model="tenantContactForm.name" maxlength="128" placeholder="自行填写租客名称" />
         </el-form-item>
         <el-form-item label="联系人" required><el-input v-model="tenantContactForm.contact" maxlength="64" /></el-form-item>
         <el-form-item label="联系电话"><el-input v-model="tenantContactForm.phone" maxlength="20" /></el-form-item>
@@ -254,7 +252,7 @@
 </template>
 
 <script setup>
-import { computed, reactive, ref, onMounted } from 'vue'
+import { reactive, ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { supplierApi, supplierContractApi } from '@/api/supplier'
 import { useRouter } from 'vue-router'
@@ -276,10 +274,9 @@ const canEditTenantContacts = hasPermission('pur:supplier:edit')
 const tenantContactsVisible = ref(false)
 const tenantContactsLoading = ref(false)
 const tenantContacts = ref([])
-const savedTenantContacts = computed(() => tenantContacts.value.filter(t => t.contact?.trim()))
 const tenantContactDialog = ref(false)
 const savingTenantContact = ref(false)
-const tenantContactForm = reactive({ tenantRefId: null, contact: '', phone: '' })
+const tenantContactForm = reactive({ id: null, name: '', projectId: null, contact: '', phone: '' })
 async function openTenantContacts() {
   tenantContactsVisible.value = true
   await loadTenantContacts()
@@ -290,22 +287,19 @@ async function loadTenantContacts() {
   finally { tenantContactsLoading.value = false }
 }
 function openTenantContactDialog(row = null) {
-  Object.assign(tenantContactForm, { tenantRefId: row?.id || null, contact: row?.contact || '', phone: row?.phone || '' })
+  Object.assign(tenantContactForm, { id: row?.id || null, name: row?.name || '', projectId: row?.projectId || null,
+    contact: row?.contact || '', phone: row?.phone || '' })
   tenantContactDialog.value = true
 }
-function onContactTenantChange(id) {
-  const tenant = tenantContacts.value.find(t => t.id === id)
-  tenantContactForm.contact = tenant?.contact || ''
-  tenantContactForm.phone = tenant?.phone || ''
-}
 async function saveTenantContact() {
-  if (!tenantContactForm.tenantRefId || !tenantContactForm.contact.trim()) {
-    ElMessage.warning('请选择租客并填写联系人')
+  if (!tenantContactForm.name.trim() || !tenantContactForm.contact.trim()) {
+    ElMessage.warning('请填写租客名称和联系人')
     return
   }
   savingTenantContact.value = true
   try {
-    await supplierApi.updateTenantContact(tenantContactForm)
+    if (tenantContactForm.id) await supplierApi.updateTenantContact(tenantContactForm)
+    else await supplierApi.addTenantContact(tenantContactForm)
     await loadTenantContacts()
     tenantContactDialog.value = false
     ElMessage.success('租客联系人已保存')
