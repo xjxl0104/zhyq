@@ -9,6 +9,7 @@ import com.zhyq.park.marketing.entity.MktPromoter;
 import com.zhyq.park.marketing.entity.MktWarehouse;
 import com.zhyq.park.marketing.mapper.*;
 import com.zhyq.park.system.entity.SysUser;
+import com.zhyq.park.system.entity.SysMenu;
 import com.zhyq.park.system.mapper.SysUserMapper;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
@@ -22,6 +23,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import java.nio.charset.StandardCharsets;
 import java.util.Date;
 import java.util.List;
+import java.util.stream.IntStream;
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
@@ -58,6 +60,39 @@ class JwtLiveIdentityTest {
         when(permissions.selectRoleCodesByUserId(1L)).thenReturn(List.of());
         when(permissions.selectPermsByUserId(1L)).thenReturn(List.of());
         assertThat(authenticate(token, "/system/user/page").getAuthorities()).isEmpty();
+    }
+
+    @Test void thousandsOfGrantsKeepTokenCompactAndCurrentPermissionsAuthoritative() throws Exception {
+        List<String> operations = IntStream.range(0, 2000)
+                .mapToObj(i -> "business:resource" + i + ":query").toList();
+        List<SysMenu> menus = IntStream.range(0, 1000).mapToObj(i -> {
+            SysMenu menu = new SysMenu(); menu.setPath("/business/resource" + i); return menu;
+        }).toList();
+        when(permissions.selectPermsByUserId(1L)).thenReturn(operations);
+        when(permissions.selectGrantedMenusByUserId(1L)).thenReturn(menus);
+        String token = jwt.issueForIdentity("admin", 1L);
+        assertThat(token.getBytes(StandardCharsets.US_ASCII)).hasSizeLessThan(1024);
+        assertThat(jwt.parse(token)).doesNotContainKey("auth");
+        assertThat(authenticate(token, "/system/user/page").getAuthorities())
+                .extracting(Object::toString).hasSize(3001)
+                .contains("ROLE_admin", "business:resource1999:query", "MENU:/business/resource999");
+
+        when(permissions.selectRoleCodesByUserId(1L)).thenReturn(List.of());
+        when(permissions.selectPermsByUserId(1L)).thenReturn(List.of("property:workorder:query"));
+        when(permissions.selectGrantedMenusByUserId(1L)).thenReturn(List.of());
+        assertThat(authenticate(token, "/property/workorder/page").getAuthorities())
+                .extracting(Object::toString).containsExactly("property:workorder:query");
+    }
+
+    @Test void existingSignedTokenWithPermissionSnapshotStillUsesCurrentDatabasePermissions() throws Exception {
+        var claims = jwt.parse(jwt.issueForIdentity("admin", 1L));
+        String oldToken = Jwts.builder().claims(claims)
+                .claim("auth", List.of("ROLE_admin", "finance:bill:query"))
+                .signWith(Keys.hmacShaKeyFor(SECRET.getBytes(StandardCharsets.UTF_8))).compact();
+        when(permissions.selectRoleCodesByUserId(1L)).thenReturn(List.of());
+        when(permissions.selectPermsByUserId(1L)).thenReturn(List.of("property:workorder:query"));
+        assertThat(authenticate(oldToken, "/property/workorder/page").getAuthorities())
+                .extracting(Object::toString).containsExactly("property:workorder:query");
     }
 
     @Test void passwordResetInvalidatesPreviousJwtWithoutExposingHashInClaims() throws Exception {

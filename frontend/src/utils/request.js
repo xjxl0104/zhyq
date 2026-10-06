@@ -12,10 +12,17 @@ const NO_PROJECT_PREFIXES = ['/auth', '/building/project']
 
 // 请求带 token + 按当前项目自动注入 projectId
 request.interceptors.request.use((config) => {
-  const token = localStorage.getItem('zhyq_token')
-  if (token) config.headers.Authorization = `Bearer ${token}`
-
   const url = config.url || ''
+  const token = localStorage.getItem('zhyq_token')
+  // A stale or oversized credential must never prevent a new password login.
+  if (url.split('?')[0].replace(/\/+$/, '') === '/auth/login') {
+    if (typeof config.headers.delete === 'function') config.headers.delete('Authorization')
+    else {
+      delete config.headers.Authorization
+      delete config.headers.authorization
+    }
+  } else if (token) config.headers.Authorization = `Bearer ${token}`
+
   const excluded = NO_PROJECT_PREFIXES.some((p) => url.startsWith(p))
   if (!excluded) {
     const pid = useProjectStore().currentProjectId

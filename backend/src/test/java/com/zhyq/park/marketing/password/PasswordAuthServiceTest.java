@@ -113,7 +113,10 @@ class PasswordAuthServiceTest {
         assertThat(profile.getValue().getRemark()).contains("未经手机验证");
         assertThat(((Map<?, ?>) result.get("warehouse")).get("joinStatus")).isEqualTo(2);
         assertThat(jwt.parse((String) result.get("token")).getSubject()).isEqualTo("wh:41");
-        assertThat(jwt.parse((String) result.get("token")).get("auth")).isEqualTo(List.of("ROLE_WH"));
+        var claims = jwt.parse((String) result.get("token"));
+        assertThat(claims).doesNotContainKey("auth");
+        assertThat(claims.get("subjectType")).isEqualTo("wh");
+        assertThat(jwt.authenticate(claims).authorities()).containsExactly("ROLE_WH");
     }
 
     @ParameterizedTest

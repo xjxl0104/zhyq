@@ -18,7 +18,7 @@ import java.util.Date;
 import java.util.List;
 import java.util.Map;
 
-/** Signed identity type + current account validation; password hashes never appear in claims. */
+/** Compact signed identity + current account validation; permissions stay on the server. */
 @Service
 public class JwtService {
     private final SecretKey key;
@@ -45,7 +45,9 @@ public class JwtService {
     private String issue(JwtAccountService.Account account) {
         Date now = new Date();
         return Jwts.builder().subject(account.subject())
-                .claims(Map.of("uid", account.id(), "subjectType", account.type(), "auth", account.authorities(),
+                // Every request reloads authorities from the database. Copying them into the token
+                // can exceed HTTP header limits for administrators and adds no authorization value.
+                .claims(Map.of("uid", account.id(), "subjectType", account.type(),
                         "credentialVersion", credentialVersion(account.credentialState())))
                 .issuedAt(now).expiration(new Date(now.getTime() + expireSeconds * 1000L)).signWith(key).compact();
     }
