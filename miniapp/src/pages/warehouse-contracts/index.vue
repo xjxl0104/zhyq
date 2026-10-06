@@ -24,6 +24,12 @@
     <button v-if="error" class="wh-secondary" :disabled="loading" @click="load(page)">刷新重试</button>
   </view><view class="wh-actions wh-pager"><button class="wh-secondary" :disabled="page===1||loading" @click="load(page-1)">上一页</button><view class="wh-note">第 {{page}} 页 · 共 {{total}} 条</view><button class="wh-secondary" :disabled="page*20>=total||loading" @click="load(page+1)">下一页</button></view>
 </view></template>
+<script>
+import { appShareMixin } from '@/utils/share'
+
+export default { mixins: [appShareMixin] }
+</script>
+
 <script setup>
 import {reactive,ref,computed} from 'vue';import {onLoad,onShow} from '@dcloudio/uni-app';import {warehouseApi} from '@/api/warehouse';import WarehouseFiles from '@/components/WarehouseFiles.vue';import {CONTRACT,parseFiles,money} from '@/utils/warehouse-ui'
 const rows=ref([]),page=ref(1),total=ref(0),loading=ref(false),busy=ref(false),agreementFileBusy=ref(false),contractFileBusy=ref(false),error=ref(''),editing=ref(false),preselected=ref(false),unitPrice=ref(''),contractFiles=ref([]),agreementFiles=ref([]),acceptedCustomers=ref([]),selectedName=ref('')

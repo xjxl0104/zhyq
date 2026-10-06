@@ -21,6 +21,7 @@ import {ref,getCurrentInstance} from 'vue'
 import {onLoad,onShareAppMessage} from '@dcloudio/uni-app'
 import {meApi} from '@/api'
 import {downloadInvitationCode} from '@/utils/request'
+import {createAppShare} from '@/utils/share'
 const info=ref({}),error=ref(''),busy=ref(false),poster=ref('');const instance=getCurrentInstance()
 const infoError=ref(''),infoLoading=ref(false)
 async function loadInfo(){
@@ -29,7 +30,7 @@ async function loadInfo(){
   try{info.value=await meApi.poster()}catch(e){infoError.value=e.message||'邀请码读取失败，请重试'}finally{infoLoading.value=false}
 }
 onLoad(loadInfo)
-onShareAppMessage(()=>({title:'邀请你成为园区伙伴',path:info.value.path ? '/'+info.value.path.replace(/^\//,'') : '/pages/login/index'}))
+onShareAppMessage(()=>({...createAppShare(),title:'邀请你成为园区伙伴',path:info.value.path ? '/'+info.value.path.replace(/^\//,'') : '/pages/login/index'}))
 const copy=()=>{if(info.value.inviteCode)uni.setClipboardData({data:info.value.inviteCode})}
 const preview=()=>uni.previewImage({urls:[poster.value]})
 async function makePoster(){
