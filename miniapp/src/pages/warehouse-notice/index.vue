@@ -13,36 +13,61 @@
         </view>
         <text class="tag" :class="n.readAt ? 'ok' : 'warn'">{{ n.readAt ? '已读' : '未读' }}</text>
       </view>
-      <view v-if="!rows.length && loaded" class="muted empty">暂无通知</view>
+      <view v-if="loading" class="muted empty">正在读取通知…</view>
+      <view v-if="error" class="notice-error" role="alert">{{ error }}</view>
+      <button v-if="error" :disabled="loading" @click="retry">重试</button>
+      <view v-if="!rows.length && loaded && !error" class="muted empty">暂无通知</view>
+      <button v-if="rows.length < state.total" :disabled="loading" :loading="loading" @click="pager.load(false)">加载更多</button>
     </view>
   </view>
 </template>
 
 <script setup>
-import { ref } from 'vue'
-import { onShow } from '@dcloudio/uni-app'
+import { computed, reactive, ref } from 'vue'
+import { onShow, onReachBottom } from '@dcloudio/uni-app'
 import { warehouseApi } from '@/api/warehouse'
+import { createPager } from '@/utils/pagination.mjs'
 
-const rows = ref([])
+const state = reactive({})
+const pager = createPager(params => warehouseApi.notices(params), state)
+const rows = computed(() => state.records)
+const loaded = computed(() => state.loaded)
+const loading = computed(() => state.loading)
 const unread = ref(0)
-const loaded = ref(false)
+const readError = ref('')
+const error = computed(() => state.error || readError.value)
+const reading = new Set()
+let refreshNo = 0
 
 async function load() {
-  const r = await warehouseApi.notices({ pageNo: 1, pageSize: 50 })
-  rows.value = r.records || []
-  const u = await warehouseApi.noticeUnread()
-  unread.value = Number(u) || 0
-  loaded.value = true
+  const current = ++refreshNo
+  readError.value = ''
+  await Promise.all([pager.load(true), (async () => {
+    try {
+      const count = await warehouseApi.noticeUnread()
+      if (current === refreshNo) unread.value = Number(count) || 0
+    } catch (e) { if (current === refreshNo) readError.value = e.message || '未读数读取失败，请重试' }
+  })()])
 }
-
+async function retry() {
+  if (state.error) await pager.retry()
+  else await load()
+}
 async function open(n) {
-  if (!n.readAt) {
-    await warehouseApi.noticeRead(n.id)
-    n.readAt = new Date().toISOString()
-    unread.value = Math.max(0, unread.value - 1)
-  }
-  if (n.bizType === 'settlement') uni.navigateTo({ url: '/pages/warehouse-settlement/index' })
-  else if (n.bizType === 'bill') uni.navigateTo({ url: '/pages/warehouse-settlement/index' })
+  if (reading.has(n.id)) return
+  reading.add(n.id)
+  readError.value = ''
+  try {
+    if (!n.readAt) {
+      await warehouseApi.noticeRead(n.id)
+      n.readAt = new Date().toISOString()
+      unread.value = Math.max(0, unread.value - 1)
+    }
+    if (n.bizType === 'settlement' || n.bizType === 'bill') {
+      uni.navigateTo({ url: '/pages/warehouse-settlement/index?kind=' + n.bizType })
+    }
+  } catch (e) { readError.value = e.message || '通知读取失败，请重试' }
+  finally { reading.delete(n.id) }
 }
 
 function formatTime(t) {
@@ -51,9 +76,11 @@ function formatTime(t) {
 }
 
 onShow(load)
+onReachBottom(() => pager.load(false))
 </script>
 
 <style scoped>
+.notice-error { color: #a03424; margin: 20rpx 0; }
 .notice-page { padding: 12rpx; }
 .card { background: #fff; border-radius: 12rpx; padding: 20rpx; }
 .head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16rpx; }

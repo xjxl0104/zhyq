@@ -1,6 +1,8 @@
 <template><view class="page-wrap">
   <view class="card"><view class="title">邀请伙伴加入</view><view class="muted">分享给朋友，注册时使用您的邀请码即可建立团队关系。</view>
-    <view class="invite-code">{{ info.inviteCode || '正在读取…' }}</view>
+    <view class="invite-code">{{ info.inviteCode || (infoLoading ? '正在读取…' : '暂未读取') }}</view>
+    <view v-if="infoError" class="error">{{ infoError }}</view>
+    <button v-if="infoError" class="btn ghost" :disabled="infoLoading" @click="loadInfo">重新读取邀请码</button>
     <button class="btn" :disabled="!info.inviteCode" @click="copy">复制邀请码</button>
     <!-- #ifdef MP-WEIXIN -->
     <button class="btn ghost" open-type="share" :disabled="!info.inviteCode">分享给微信好友</button>
@@ -20,12 +22,18 @@ import {onLoad,onShareAppMessage} from '@dcloudio/uni-app'
 import {meApi} from '@/api'
 import {downloadInvitationCode} from '@/utils/request'
 const info=ref({}),error=ref(''),busy=ref(false),poster=ref('');const instance=getCurrentInstance()
-onLoad(async()=>{try{info.value=await meApi.poster()}catch(e){error.value=e.message}})
-onShareAppMessage(()=>({title:'邀请你成为园区伙伴',path:'/'+info.value.path}))
-const copy=()=>uni.setClipboardData({data:info.value.inviteCode})
+const infoError=ref(''),infoLoading=ref(false)
+async function loadInfo(){
+  if(infoLoading.value)return
+  infoLoading.value=true;infoError.value=''
+  try{info.value=await meApi.poster()}catch(e){infoError.value=e.message||'邀请码读取失败，请重试'}finally{infoLoading.value=false}
+}
+onLoad(loadInfo)
+onShareAppMessage(()=>({title:'邀请你成为园区伙伴',path:info.value.path ? '/'+info.value.path.replace(/^\//,'') : '/pages/login/index'}))
+const copy=()=>{if(info.value.inviteCode)uni.setClipboardData({data:info.value.inviteCode})}
 const preview=()=>uni.previewImage({urls:[poster.value]})
 async function makePoster(){
-  if(busy.value)return;busy.value=true;error.value='';let code
+  if(busy.value||!info.value.inviteCode)return;busy.value=true;error.value='';let code
   try{
     let env='release'
     // #ifdef MP-WEIXIN

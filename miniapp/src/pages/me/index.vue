@@ -82,7 +82,7 @@ async function saveAccount() {
     acc.idNo = ''; acc.accountNo = ''; await load()
   } catch (e) { formError.value = e.message } finally { busy.value = false }
 }
-function logout() { token.clear(); uni.reLaunch({url:'/pages/entry/index'}) }
+function logout() { token.clear(); uni.reLaunch({url:'/pages/entry/index?select=1'}) }
 </script>
 <style scoped>
 .error{color:#a3293e;line-height:1.6;margin:18rpx 0}.review-note{margin:20rpx 0;line-height:1.6;overflow-wrap:anywhere}.menu-row{display:flex;justify-content:space-between;gap:20rpx;background:transparent;padding:26rpx 0;text-align:left;font-size:30rpx;line-height:1.5;border-bottom:1rpx solid #e2e7f1;border-radius:0}.menu-row text{color:#58617d}.menu-row:last-child{border-bottom:0}.input{font-size:32rpx}.row{flex-wrap:wrap;gap:12rpx}

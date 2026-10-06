@@ -86,3 +86,34 @@ test('不足一分或收款资料未审核不能提交；服务端拒绝时保�
   assert.equal(vm.runInContext('loading.value', context), false)
   assert.deepEqual(calls, ['100.00'])
 })
+
+test('余额刷新失败后不能使用过期余额再次申请，重试成功后恢复', async () => {
+  const { context, calls } = harness()
+  await vm.runInContext('load()', context)
+  vm.runInContext('fillAll()', context)
+  const readBalance = context.bizApi.balance
+  context.bizApi.balance = async () => { throw new Error('余额刷新失败') }
+  await vm.runInContext('load()', context)
+  assert.equal(vm.runInContext('b.value', context), null)
+  assert.equal(vm.runInContext('validAmount.value', context), false)
+  await vm.runInContext('submit()', context)
+  assert.deepEqual(calls, [])
+  assert.equal(vm.runInContext('amount.value', context), '100.00')
+  context.bizApi.balance = readBalance
+  await vm.runInContext('load()', context)
+  assert.equal(vm.runInContext('validAmount.value', context), true)
+})
+
+test('手工输入提现金额同样遵守服务端可提上限', async () => {
+  const { context, calls } = harness({ balance: '200.009' })
+  const readBalance = context.bizApi.balance
+  context.bizApi.balance = async () => ({ ...await readBalance(), cashableBalance: '100.00' })
+  await vm.runInContext('load()', context)
+  vm.runInContext("amount.value = '150.00'", context)
+  assert.equal(vm.runInContext('validAmount.value', context), false)
+  await vm.runInContext('submit()', context)
+  assert.deepEqual(calls, [])
+  vm.runInContext('fillAll()', context)
+  assert.equal(vm.runInContext('amount.value', context), '100.00')
+  assert.equal(vm.runInContext('validAmount.value', context), true)
+})
