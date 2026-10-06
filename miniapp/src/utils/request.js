@@ -35,7 +35,9 @@ function requestWith(base, auth, loginPath, method, url, data = {}) {
     uni.request({
       url: base + url,
       method,
-      data,
+      // 微信 GET 会把 undefined/null 序列化为文字，导致 Integer 等后端参数绑定失败。
+      data: method === 'GET' ? Object.fromEntries(Object.entries(data || {}).filter(([, value]) => value != null)) : data,
+      timeout: 15000,
       header: { 'Content-Type': 'application/json', Authorization: sentToken ? 'Bearer ' + sentToken : '' },
       success: ({ statusCode, data: body }) => {
         const authError = !publicAuth && sessionError(auth, sentToken, loginPath, statusCode, body?.code)
