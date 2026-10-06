@@ -91,6 +91,23 @@ public class SupplierController {
         return Result.ok();
     }
 
+    @Operation(summary = "删除租客联系人（保留租客档案和历史工单）")
+    @PreAuthorize("hasAuthority('pur:supplier:edit')")
+    @DeleteMapping("/tenant-contacts/{tenantRefId}")
+    public Result<Void> removeTenantContact(@PathVariable Long tenantRefId) {
+        int updated = tenantMapper.update(null, new LambdaUpdateWrapper<BizTenant>()
+                .eq(BizTenant::getId, tenantRefId)
+                .eq(BizTenant::getStatus, 1)
+                .eq(BizTenant::getTenantId, MyMetaObjectHandler.DEFAULT_TENANT_ID)
+                .isNotNull(BizTenant::getContact)
+                .set(BizTenant::getContact, null)
+                .set(BizTenant::getPhone, null)
+                .set(BizTenant::getUpdateTime, LocalDateTime.now())
+                .set(BizTenant::getUpdateBy, MyMetaObjectHandler.currentOperator()));
+        if (updated == 0) throw new BizException("租客联系人不存在或已删除");
+        return Result.ok();
+    }
+
     @Operation(summary = "分页查询供应商")
     @PreAuthorize("hasAuthority('pur:supplier:query')")
     @GetMapping("/page")

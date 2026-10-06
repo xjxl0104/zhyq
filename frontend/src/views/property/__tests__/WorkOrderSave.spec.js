@@ -21,6 +21,7 @@ it('retries a failed photo association on the saved order without duplicating it
   wrapper.vm.form.title = '漏水'
   wrapper.vm.attachFiles = [{ id: 51, bizId: null }]
   await wrapper.vm.submit()
+  expect(workOrderApi.add).toHaveBeenCalledWith(expect.objectContaining({ slaResolveMin: 7 * 24 * 60 }))
   expect(wrapper.vm.form.id).toBe(42)
   expect(wrapper.vm.dialog.visible).toBe(true)
   await wrapper.vm.submit()
