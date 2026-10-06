@@ -77,4 +77,21 @@ describe('request 拦截器的 projectId 注入', () => {
     const config = runInterceptor({ url: '/budget/page', method: 'get', params: {}, headers: {} })
     expect(config.headers.Authorization).toBe('Bearer test-token')
   })
+
+  it('重新登录时不发送旧的大尺寸凭证，但权限查询仍携带凭证', async () => {
+    const oversized = 'old-token'.repeat(1000)
+    localStorage.setItem('zhyq_token', oversized)
+    const requests = []
+    const adapter = async config => {
+      requests.push(config)
+      return { data: { code: 0, data: {} }, status: 200, statusText: 'OK', headers: {}, config }
+    }
+    await request.post('/auth/login', { username: 'login-test', password: 'test-only' }, {
+      adapter, headers: { Authorization: `Bearer ${oversized}` }
+    })
+    expect(requests[0].headers.get('Authorization')).toBeUndefined()
+    expect(JSON.parse(requests[0].data)).toEqual({ username: 'login-test', password: 'test-only' })
+    await request.get('/auth/my-access', { adapter })
+    expect(requests[1].headers.get('Authorization')).toBe(`Bearer ${oversized}`)
+  })
 })

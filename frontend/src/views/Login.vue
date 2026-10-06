@@ -30,8 +30,11 @@ import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { User, Lock } from '@element-plus/icons-vue'
 import request from '@/utils/request'
+import { useAccessStore } from '@/stores/access'
+import { firstNavigationPath } from '@/utils/navigationAccess'
 
 const router = useRouter()
+const access = useAccessStore()
 const formRef = ref()
 const loading = ref(false)
 const form = reactive({ username: '', password: '' })
@@ -45,12 +48,20 @@ async function submit() {
   loading.value = true
   try {
     const data = await request.post('/auth/login', form)
+    access.reset()
     localStorage.setItem('zhyq_token', data.token)
     localStorage.setItem('zhyq_user', data.nickname || data.username)
     // 审批待办按 wf_task.assignee(用户名)过滤,需要原始登录名而非昵称
     localStorage.setItem('zhyq_username', data.username || '')
+    await access.load()
+    await router.replace(firstNavigationPath(access.paths, access.admin))
     ElMessage.success('欢迎回来,' + (data.nickname || data.username))
-    router.push('/dashboard')
+  } catch (_) {
+    // request.js reports API failures. Do not leave a half-complete login behind.
+    localStorage.removeItem('zhyq_token')
+    localStorage.removeItem('zhyq_user')
+    localStorage.removeItem('zhyq_username')
+    access.reset()
   } finally {
     loading.value = false
   }

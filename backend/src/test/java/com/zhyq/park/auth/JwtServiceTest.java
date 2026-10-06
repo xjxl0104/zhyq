@@ -9,7 +9,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * JwtService 纯单元测试:无需 Spring 上下文/数据库。
- * 覆盖签发-解析往返、权限 claim、过期、错误密钥。
+ * 覆盖紧凑身份令牌往返、过期、错误密钥。
  */
 class JwtServiceTest {
 
@@ -22,8 +22,10 @@ class JwtServiceTest {
         Claims c = svc.parse(token);
         assertEquals("alice", c.getSubject());
         assertEquals(42, ((Number) c.get("uid")).intValue());
-        assertTrue(((List<?>) c.get("auth")).contains("ROLE_admin"));
-        assertTrue(((List<?>) c.get("auth")).contains("file:upload"));
+        assertEquals("admin", c.get("subjectType"));
+        assertNotNull(c.get("credentialVersion"));
+        assertFalse(c.containsKey("auth"));
+        assertTrue(token.length() < 1024);
     }
 
     @Test
