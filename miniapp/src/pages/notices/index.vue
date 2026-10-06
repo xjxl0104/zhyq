@@ -9,6 +9,12 @@
   </view>
   <button v-if="rows.length < total" class="btn ghost" :disabled="loading" @click="load(false)">加载更多</button>
 </view></template>
+<script>
+import { appShareMixin } from '@/utils/share'
+
+export default { mixins: [appShareMixin] }
+</script>
+
 <script setup>
 import {ref} from 'vue'
 import {onShow} from '@dcloudio/uni-app'

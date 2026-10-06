@@ -3,6 +3,9 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import vm from 'node:vm'
 
+const shareSource = readFileSync(new URL('../src/utils/share.js', import.meta.url), 'utf8')
+const { createAppShare } = await import(`data:text/javascript;base64,${Buffer.from(shareSource).toString('base64')}`)
+
 const script = page => readFileSync(new URL(`../src/pages/${page}/index.vue`, import.meta.url), 'utf8')
   .split('<script setup>')[1].split('</script>')[0].replace(/^import .*$/gm, '')
 const pending = () => {
@@ -15,7 +18,7 @@ function harness(page, api) {
   const context = vm.createContext({
     ref: value => ({ value }), onShow: callback => { events.show = callback },
     onLoad: callback => { events.load = callback }, onUnmounted: callback => { events.unmount = callback },
-    onShareAppMessage: callback => { events.share = callback }, getCurrentInstance: () => ({ proxy: {} }),
+    onShareAppMessage: callback => { events.share = callback }, createAppShare, getCurrentInstance: () => ({ proxy: {} }),
     token: { get: () => 'current-token' }, meApi: api,
     uni: { reLaunch: options => calls.push(options.url), setClipboardData: options => calls.push(options.data) }
   })
@@ -90,6 +93,8 @@ test('邀请码加载失败可重新读取，未加载前分享不会生成 unde
   fail = false
   await vm.runInContext('loadInfo()', context)
   assert.equal(events.share().path, '/pages/login/index?invite=ABC123')
+  assert.equal(events.share().title, '邀请你成为园区伙伴')
+  assert.equal(events.share().imageUrl, '/static/share/app-card.png')
   assert.equal(vm.runInContext('infoError.value', context), '')
   vm.runInContext('copy()', context)
   assert.deepEqual(calls, ['ABC123'])

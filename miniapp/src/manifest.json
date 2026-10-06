@@ -2,18 +2,25 @@
   "name": "园区伙伴",
   "appid": "",
   "description": "园区全民营销 · 推荐客户 · 园区伙伴",
-  "versionName": "1.7.0",
-  "versionCode": "17",
+  "versionName": "1.8.1",
+  "versionCode": "181",
   "vueVersion": "3",
   "mp-weixin": {
     "appid": "wxc01f4ad2297319a0",
-    "setting": { "urlCheck": true, "es6": true, "minified": true },
+    "setting": {
+      "urlCheck": true,
+      "es6": true,
+      "minified": true
+    },
     "usingComponents": true,
     "permission": {},
     "requiredPrivateInfos": []
   },
   "h5": {
-    "router": { "mode": "hash", "base": "/mp/" },
+    "router": {
+      "mode": "hash",
+      "base": "/mp/"
+    },
     "title": "园区伙伴"
   }
 }

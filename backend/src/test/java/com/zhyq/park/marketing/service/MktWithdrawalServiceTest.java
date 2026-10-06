@@ -16,6 +16,8 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -23,6 +25,7 @@ import java.math.BigDecimal;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
@@ -52,6 +55,56 @@ class MktWithdrawalServiceTest {
         var account=new com.zhyq.park.marketing.entity.MktPromoterAccount();account.setId(2L);account.setPromoterId(1L);account.setReviewStatus(1);
         account.setVerifiedAt(java.time.LocalDateTime.now());account.setAccountNoEnc("encrypted-original");account.setRealName("张某");account.setAccountTail("1234");
         lenient().when(accountMapper.selectOne(any())).thenReturn(account);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = { "0.01", "1.00", "99.99" })
+    void positiveCentApplicationsIgnoreLegacyHundredYuanMinimum(String amount) {
+        // Production may retain the old setting: it must not silently reintroduce the review-blocking threshold.
+        when(commissionMapper.selectList(any(Wrapper.class))).thenReturn(List.of(row(1L, "100.00")));
+        when(commissionMapper.update(isNull(), any(Wrapper.class))).thenReturn(1);
+        var withdrawal = service.apply(1L, new BigDecimal(amount));
+        assertThat(withdrawal.getAmount()).isEqualByComparingTo(amount);
+        assertThat(withdrawal.getTaxAmount()).isEqualByComparingTo("0");
+        assertThat(withdrawal.getNetAmount()).isEqualByComparingTo(amount);
+        assertThat(withdrawal.getStatus()).isEqualTo(MktWithdrawalService.WS_PENDING);
+        verify(bizSettings, never()).getDecimal(eq("marketing"), eq("min_withdraw"), any());
+        verifyNoInteractions(proofs);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = { "0", "-0.01", "0.001", "0.009", "1.001" })
+    void applicationRejectsNonPositiveAndSubcentAmountsBeforeCreatingWithdrawal(String amount) {
+        assertThatThrownBy(() -> service.apply(1L, new BigDecimal(amount)))
+                .isInstanceOf(BizException.class).hasMessageContaining("最多两位小数");
+        verify(withdrawalMapper, never()).insert(any(MktWithdrawal.class));
+        verifyNoInteractions(commissionMapper);
+    }
+
+    @Test void centApplicationStillCannotExceedTheAvailableBalance() {
+        when(commissionMapper.selectList(any(Wrapper.class))).thenReturn(List.of(row(1L, "0.009")));
+        assertThatThrownBy(() -> service.apply(1L, new BigDecimal("0.01")))
+                .isInstanceOf(BizException.class).hasMessageContaining("余额不足");
+        verify(withdrawalMapper, never()).insert(any(MktWithdrawal.class));
+    }
+
+    @Test void publishedRulesDescribeTheManualFlowWithoutAnInventedArrivalPromise() {
+        when(bizSettings.getString(eq("marketing"), eq("withdraw_arrival_time"), anyString()))
+                .thenAnswer(call -> call.getArgument(2));
+        var rules = service.withdrawalRules();
+        assertThat(rules).containsEntry("minimumAmount", new BigDecimal("0.01"))
+                .containsEntry("dailyLimit", 0)
+                .containsEntry("feeAmount", BigDecimal.ZERO)
+                .containsEntry("applicationTime", "全天 24 小时可提交申请")
+                .containsEntry("payoutMethod", "人工审核后转账至已审核的收款账户")
+                .containsEntry("arrivalTime", MktWithdrawalService.DEFAULT_ARRIVAL_TIME);
+        verify(bizSettings, never()).getDecimal(eq("marketing"), eq("min_withdraw"), any());
+    }
+
+    @Test void publishedArrivalTimeUsesTheConfiguredOperationalPolicy() {
+        when(bizSettings.getString(eq("marketing"), eq("withdraw_arrival_time"), anyString()))
+                .thenReturn("测试配置的实际处理时效");
+        assertThat(service.withdrawalRules()).containsEntry("arrivalTime", "测试配置的实际处理时效");
     }
 
     @Test void thousandthsAccumulateIntoExactCentWithoutTruncation() {

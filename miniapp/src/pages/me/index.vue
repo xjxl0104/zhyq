@@ -47,6 +47,12 @@
     </template>
   </view>
 </template>
+<script>
+import { appShareMixin } from '@/utils/share'
+
+export default { mixins: [appShareMixin] }
+</script>
+
 <script setup>
 import { ref, reactive, computed } from 'vue'
 import { onShow } from '@dcloudio/uni-app'

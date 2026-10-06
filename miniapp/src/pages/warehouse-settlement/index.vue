@@ -19,6 +19,12 @@
     <view v-if="rows.length" class="footer"><button v-if="rows.length<total" :loading="loading" :disabled="loading" @click="load(false)">加载更多</button><text v-else class="muted">共 {{total}} 笔，已全部显示</text></view>
   </view>
 </template>
+<script>
+import { appShareMixin } from '@/utils/share'
+
+export default { mixins: [appShareMixin] }
+</script>
+
 <script setup>
 import {computed,ref} from 'vue'
 import {onLoad,onShow,onPullDownRefresh} from '@dcloudio/uni-app'

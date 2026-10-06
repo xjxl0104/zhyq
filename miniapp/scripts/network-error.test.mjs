@@ -42,6 +42,27 @@ const mp = await adapter('MP-WEIXIN')
 const h5 = await adapter('H5')
 const runtime = (overrides = {}) => ({ getStorageSync: () => 'test-token', showToast: () => {}, ...overrides })
 
+test('WeChat GET omits absent filters while preserving zero, false and empty strings', async () => {
+  const params = { status: undefined, warehouseId: null, pageNo: 1, zero: 0, flag: false, keyword: '' }
+  globalThis.uni = runtime({ request: options => {
+    assert.deepEqual(options.data, { pageNo: 1, zero: 0, flag: false, keyword: '' })
+    assert.equal(options.timeout, 15000)
+    options.success({ statusCode: 200, data: { code: 0, data: { total: 0, records: [] } } })
+  } })
+  await mp.get('/commission/page', params)
+  await mp.whGet('/orders/page', params)
+  assert.ok(Object.hasOwn(params, 'status'), 'request must not mutate caller filters')
+})
+
+test('write requests retain explicit null values used to clear fields', async () => {
+  const body = { name: '新名称', phone: null }
+  globalThis.uni = runtime({ request: options => {
+    assert.deepEqual(options.data, body)
+    options.success({ statusCode: 200, data: { code: 0, data: null } })
+  } })
+  await mp.put('/me', body)
+})
+
 test('request exposes diagnostic cause and shows only the friendly message', async () => {
   const cause = { errMsg: 'request:fail url not in domain list' }
   let toast
