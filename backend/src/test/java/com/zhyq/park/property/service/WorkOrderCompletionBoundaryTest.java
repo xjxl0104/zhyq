@@ -104,6 +104,17 @@ class WorkOrderCompletionBoundaryTest {
         assertThatThrownBy(() -> fileController.attach(req)).isInstanceOf(BizException.class);
         verifyNoInteractions(storage);
     }
+    @Test void verificationPhotosCannotBePreBoundOrReattachedAsReportFiles() {
+        assertThatThrownBy(() -> fileController.upload(new MockMultipartFile("file", "x.jpg", "image/jpeg", new byte[]{1}),
+                WorkOrderPhotoService.VERIFY_BIZ_TYPE, 1L)).isInstanceOf(BizException.class);
+        FileController.AttachRequest req = new FileController.AttachRequest();
+        req.setBizType(WorkOrderPhotoService.VERIFY_BIZ_TYPE); req.setBizId(1L); req.setFileIds(List.of(7L));
+        assertThatThrownBy(() -> fileController.attach(req)).isInstanceOf(BizException.class);
+        SysFile file = new SysFile(); file.setId(7L); file.setBizType(WorkOrderPhotoService.VERIFY_BIZ_TYPE);
+        when(files.selectById(7L)).thenReturn(file);
+        req.setBizType("work_order");
+        assertThatThrownBy(() -> fileController.attach(req)).isInstanceOf(BizException.class);
+    }
     @Test void deletionIsConditionalSoSubmittedOrConcurrentlySubmittedPhotosRemain() {
         SysFile file = new SysFile(); file.setId(7L); file.setCreateBy("repair"); file.setBizType(WorkOrderPhotoService.BIZ_TYPE); file.setStorePath("x.jpg");
         when(files.selectById(7L)).thenReturn(file);

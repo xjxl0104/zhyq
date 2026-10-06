@@ -299,7 +299,7 @@
     </el-dialog>
 
     <!-- 验收弹窗 -->
-    <el-dialog v-model="verifyDialog.visible" title="验收" width="420px">
+    <el-dialog v-model="verifyDialog.visible" title="验收" width="min(640px, 94vw)" destroy-on-close :close-on-click-modal="false">
       <el-form :model="verifyForm" label-width="90px">
         <el-form-item label="工单号">
           <el-input :model-value="verifyDialog.row?.code" disabled />
@@ -307,15 +307,19 @@
         <el-form-item label="满意度">
           <el-rate v-model="verifyForm.score" :max="5" show-score />
         </el-form-item>
+        <el-form-item label="验收照片">
+          <FileUpload v-if="verifyDialog.visible" :key="verifyDialog.row?.id" v-model="verifyForm.files"
+                      biz-type="work_order_verify" camera photos-only :disabled="verifySaving" @busy="verifyBusy = $event" />
+        </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="verifyDialog.visible = false">取消</el-button>
-        <el-button type="primary" @click="submitVerify">确认验收</el-button>
+        <el-button :disabled="verifyBusy || verifySaving" @click="verifyDialog.visible = false">取消</el-button>
+        <el-button type="primary" :loading="verifySaving" :disabled="verifyBusy" @click="submitVerify">确认验收</el-button>
       </template>
     </el-dialog>
 
     <!-- 详情弹窗(流转时间线) -->
-    <el-dialog v-model="detailDialog.visible" title="工单详情" width="640px">
+    <el-dialog v-model="detailDialog.visible" title="工单详情" width="min(720px, 94vw)" destroy-on-close>
       <el-descriptions :column="isMobile ? 1 : 2" border size="small" style="margin-bottom: 16px">
         <el-descriptions-item label="工单号">{{ detail.order?.code }}</el-descriptions-item>
         <el-descriptions-item label="标题">{{ detail.order?.title }}</el-descriptions-item>
@@ -350,11 +354,7 @@
       <FloorPlanViewer v-if="detail.order?.floorPlanFileId" :file-id="detail.order.floorPlanFileId" :point="{ x: Number(detail.order.planX), y: Number(detail.order.planY) }" />
       <div v-if="detailFiles.length" class="detail-files">
         <div class="detail-files-hd">报修照片 / 附件</div>
-        <div class="detail-files-list">
-          <el-button v-for="f in detailFiles" :key="f.id" link type="primary" @click="downloadFile(f)">
-            {{ f.originalName }}
-          </el-button>
-        </div>
+        <WorkOrderPhotoGallery :files="detailFiles" />
       </div>
       <el-divider content-position="left">流转记录</el-divider>
       <el-timeline v-if="detail.logs?.length">
@@ -365,9 +365,11 @@
           <div style="color: #606266; margin-top: 4px">{{ log.content }}</div>
           <div v-if="log.action === '处理' && detailCompletionFiles.length" class="completion-photos">
             <div class="detail-files-hd">处理现场照片（{{ detailCompletionFiles.length }}张）</div>
-            <div class="detail-files-list">
-              <el-button v-for="photo in detailCompletionFiles" :key="photo.id" link type="primary" @click="downloadFile(photo)">{{ photo.originalName }}</el-button>
-            </div>
+            <WorkOrderPhotoGallery :files="detailCompletionFiles" />
+          </div>
+          <div v-if="log.action === '验收' && detailVerifyFiles.length" class="completion-photos">
+            <div class="detail-files-hd">验收现场照片（{{ detailVerifyFiles.length }}张）</div>
+            <WorkOrderPhotoGallery :files="detailVerifyFiles" />
           </div>
         </el-timeline-item>
       </el-timeline>
@@ -385,10 +387,10 @@ import { workOrderApi } from '@/api/property'
 import { supplierApi } from '@/api/supplier'
 import { buildingApi, floorApi } from '@/api/building'
 import { fileApi } from '@/api/file'
-import { startFileDownload } from '@/utils/fileDownload'
 import FileUpload from '@/components/FileUpload.vue'
 import WorkOrderLocation from '@/components/WorkOrderLocation.vue'
 import FloorPlanViewer from '@/components/FloorPlanViewer.vue'
+import WorkOrderPhotoGallery from '@/components/WorkOrderPhotoGallery.vue'
 import HighlightNotice from '@/components/HighlightNotice.vue'
 import MobileRecordList from '@/components/MobileRecordList.vue'
 import { SOURCE_ROUTES, useHighlightFilter } from '@/composables/useSourceLink'
@@ -643,17 +645,28 @@ async function doClose(row) {
 
 // 验收
 const verifyDialog = reactive({ visible: false, row: null })
-const verifyForm = reactive({ score: 5 })
+const verifyForm = reactive({ score: 5, files: [] })
+const verifyBusy = ref(false)
+const verifySaving = ref(false)
 function openVerify(row) {
   verifyDialog.visible = true
   verifyDialog.row = row
   verifyForm.score = 5
+  verifyForm.files = []
+  verifyBusy.value = false
 }
 async function submitVerify() {
-  await workOrderApi.verify(verifyDialog.row.id, { score: verifyForm.score })
-  ElMessage.success('验收完成')
-  verifyDialog.visible = false
-  refresh()
+  if (verifyBusy.value || verifySaving.value) return
+  verifySaving.value = true
+  try {
+    await workOrderApi.verify(verifyDialog.row.id, { score: verifyForm.score,
+      photoIds: verifyForm.files.map(file => file.id).filter(Boolean) })
+    ElMessage.success('验收完成')
+    verifyDialog.visible = false
+    await refresh()
+  } catch {
+    // 保留验收照片，避免请求失败后重新上传。
+  } finally { verifySaving.value = false }
 }
 
 // 详情
@@ -661,6 +674,7 @@ const detailDialog = reactive({ visible: false })
 const detail = reactive({ order: null, logs: [] })
 const detailFiles = ref([])
 const detailCompletionFiles = ref([])
+const detailVerifyFiles = ref([])
 async function openDetail(row) {
   const res = await workOrderApi.get(row.id)
   detail.order = res.order
@@ -669,13 +683,12 @@ async function openDetail(row) {
   detail.floor = res.floor
   detailFiles.value = []
   detailCompletionFiles.value = []
+  detailVerifyFiles.value = []
   detailDialog.visible = true
   try { detailCompletionFiles.value = await fileApi.list('work_order_finish', row.id) } catch { ElMessage.warning('处理照片加载失败，请重新打开详情') }
+  try { detailVerifyFiles.value = await fileApi.list('work_order_verify', row.id) } catch { ElMessage.warning('验收照片加载失败，请重新打开详情') }
   // 手机自助报修传的照片也走通用附件表,这里一并列出来
   try { detailFiles.value = await fileApi.list('work_order', row.id) } catch { detailFiles.value = [] }
-}
-function downloadFile(f) {
-  startFileDownload(f.id, f.originalName)
 }
 
 // 企业微信群机器人:地址存在后端 biz_setting,这里只做读写与测试
@@ -733,7 +746,6 @@ onMounted(() => {
 .completion-photos { margin-top: 10px; }
 .detail-files { margin-bottom: 16px; }
 .detail-files-hd { font-size: 13px; color: var(--text-secondary, #909399); margin-bottom: 6px; }
-.detail-files-list { display: flex; flex-wrap: wrap; gap: 12px; }
 .wecom-tip { color: var(--text-secondary, #909399); font-size: 13px; line-height: 1.6; }
 .stat-row { display: flex; gap: 16px; margin-bottom: 16px; }
 .stat-card {

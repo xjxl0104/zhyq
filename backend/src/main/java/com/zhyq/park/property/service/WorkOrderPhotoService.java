@@ -19,6 +19,7 @@ import java.util.Set;
 @RequiredArgsConstructor
 public class WorkOrderPhotoService {
     public static final String BIZ_TYPE = "work_order_finish";
+    public static final String VERIFY_BIZ_TYPE = "work_order_verify";
     private final SysFileMapper files;
     private final FileStorageService storage;
 
@@ -52,19 +53,29 @@ public class WorkOrderPhotoService {
     /** 调用者必须与工单状态更新处于同一事务。 */
     public void attachForFinish(WorkOrder order, String username, List<Long> photoIds) {
         if (photoIds == null || photoIds.isEmpty()) throw new BizException("请至少拍照或上传一张处理现场照片后再提交完成");
+        attach(order, username, photoIds, BIZ_TYPE, "处理");
+    }
+
+    /** 验收照片可选，但提交的每一张必须由当前验收人上传并在同一事务内关联。 */
+    public void attachForVerify(WorkOrder order, String username, List<Long> photoIds) {
+        if (photoIds == null || photoIds.isEmpty()) return;
+        attach(order, username, photoIds, VERIFY_BIZ_TYPE, "验收");
+    }
+
+    private void attach(WorkOrder order, String username, List<Long> photoIds, String bizType, String stage) {
         if (photoIds.size() > 20 || photoIds.stream().anyMatch(Objects::isNull))
-            throw new BizException("处理照片数量须为1至20张");
+            throw new BizException(stage + "照片最多20张");
         for (Long id : photoIds.stream().distinct().sorted().toList()) {
             SysFile file = files.selectById(id);
-            if (file == null || !BIZ_TYPE.equals(file.getBizType()) || file.getBizId() != null
+            if (file == null || !bizType.equals(file.getBizType()) || file.getBizId() != null
                     || !Objects.equals(order.getTenantId(), file.getTenantId())
                     || username == null || !username.equals(file.getCreateBy())
                     || !Set.of("image/jpeg", "image/png").contains(Objects.toString(file.getContentType(), ""))) {
-                throw new BizException("处理照片不可用，请重新上传；不能使用报修附件或其他工单的照片");
+                throw new BizException(stage + "照片不可用，请重新上传；不能使用其他工单的照片");
             }
             storage.resolveExisting(file.getStorePath());
             int changed = files.update(null, new LambdaUpdateWrapper<SysFile>()
-                    .eq(SysFile::getId, id).eq(SysFile::getBizType, BIZ_TYPE)
+                    .eq(SysFile::getId, id).eq(SysFile::getBizType, bizType)
                     .eq(SysFile::getCreateBy, username).isNull(SysFile::getBizId)
                     .set(SysFile::getBizId, order.getId()));
             if (changed != 1) throw new BizException("照片已被删除或提交，请刷新后重试");

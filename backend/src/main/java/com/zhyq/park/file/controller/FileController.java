@@ -85,12 +85,12 @@ public class FileController {
             }
             marketingAccess.write(f.getBizType());
             marketingRetention.assertDeletable(f);
-            if (WorkOrderPhotoService.BIZ_TYPE.equals(f.getBizType())) {
+            if (isWorkOrderEvidence(f.getBizType())) {
                 // 与提交照片的条件关联互斥，避免提交后并发删除验收凭据。
                 int removed = fileMapper.delete(new LambdaQueryWrapper<SysFile>()
-                        .eq(SysFile::getId, id).eq(SysFile::getBizType, WorkOrderPhotoService.BIZ_TYPE)
+                        .eq(SysFile::getId, id).eq(SysFile::getBizType, f.getBizType())
                         .isNull(SysFile::getBizId));
-                if (removed != 1) throw new BizException("已提交的处理照片需保留，不可删除");
+                if (removed != 1) throw new BizException("已提交的工单照片需保留，不可删除");
             } else {
                 fileMapper.deleteById(id);          // 逻辑删除
             }
@@ -170,8 +170,8 @@ public class FileController {
                 || req.getBizId() == null || req.getFileIds() == null || req.getFileIds().isEmpty()) {
             return Result.ok(0);
         }
-        if (WorkOrderPhotoService.BIZ_TYPE.equals(req.getBizType()))
-            throw new BizException("处理照片请随处理完成一并提交");
+        if (isWorkOrderEvidence(req.getBizType()))
+            throw new BizException("工单现场照片请随对应流程一并提交");
         marketingAccess.write(req.getBizType());
         int attached = 0;
         for (Long fileId : req.getFileIds()) {
@@ -179,8 +179,8 @@ public class FileController {
             if (f == null || !FileAttachRule.canAttach(f)) {
                 continue;                    // 不存在或已关联 → 跳过,防越权覆盖
             }
-            if (WorkOrderPhotoService.BIZ_TYPE.equals(f.getBizType()))
-                throw new BizException("处理照片不可转为其他业务附件");
+            if (isWorkOrderEvidence(f.getBizType()))
+                throw new BizException("工单现场照片不可转为其他业务附件");
             marketingAccess.attach(f, req.getBizType());
             attached += fileMapper.update(null, new LambdaUpdateWrapper<SysFile>()
                     .eq(SysFile::getId, f.getId()).isNull(SysFile::getBizId)
@@ -208,8 +208,8 @@ public class FileController {
             throw new BizException("未指定业务类型的附件不能关联业务对象");
         marketingAccess.write(bizType);
         String photoMime = null;
-        if (WorkOrderPhotoService.BIZ_TYPE.equals(bizType)) {
-            if (bizId != null) throw new BizException("处理照片请随处理完成一并提交");
+        if (isWorkOrderEvidence(bizType)) {
+            if (bizId != null) throw new BizException("工单现场照片请随对应流程一并提交");
             photoMime = WorkOrderPhotoService.validateUpload(file);
         }
         FileStorageService.StoredResult r = storageService.store(file);
@@ -224,5 +224,10 @@ public class FileController {
         sf.setExt(r.ext());
         fileMapper.insert(sf);
         return sf;
+    }
+
+    private static boolean isWorkOrderEvidence(String bizType) {
+        return WorkOrderPhotoService.BIZ_TYPE.equals(bizType)
+                || WorkOrderPhotoService.VERIFY_BIZ_TYPE.equals(bizType);
     }
 }
