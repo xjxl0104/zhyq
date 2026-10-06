@@ -22,6 +22,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -40,6 +41,10 @@ public class MktWithdrawalService {
     public static final int WS_PAID = 3;
     public static final int WS_REJECTED = 4;
 
+    /** Cash precision, not an accumulated-earnings threshold; legacy min_withdraw settings are retired. */
+    public static final BigDecimal MIN_WITHDRAWAL = new BigDecimal("0.01");
+    public static final String DEFAULT_ARRIVAL_TIME = "人工审核后安排转账，实际到账以收款渠道处理为准";
+
     private static final String MODULE = "marketing";
     private static final String BIZ_TYPE = "withdrawal";
     private static final DateTimeFormatter DAY = DateTimeFormatter.ofPattern("yyyyMMdd");
@@ -52,6 +57,18 @@ public class MktWithdrawalService {
     private final com.zhyq.park.marketing.mapper.MktPromoterAccountMapper accountMapper;
     private final MktPaymentProofService proofService;
 
+    /** These rules describe the actual application flow; submitting an application does not transfer money. */
+    public Map<String, Object> withdrawalRules() {
+        return Map.of(
+                "minimumAmount", MIN_WITHDRAWAL,
+                "dailyLimit", 0, // No daily application-count gate exists. Reserved funds cannot be claimed twice.
+                "applicationTime", "全天 24 小时可提交申请",
+                "applicationNotice", "收款资料审核通过且可提现余额达到 0.01 元即可提交申请，提交后进入人工审核。",
+                "payoutMethod", "人工审核后转账至已审核的收款账户",
+                "arrivalTime", bizSettings.getString(MODULE, "withdraw_arrival_time", DEFAULT_ARRIVAL_TIME),
+                "feeAmount", BigDecimal.ZERO); // No withdrawal fee is deducted; configured tax remains separate.
+    }
+
     /** 可提现余额:已结算正向 − 可结算负向(扣回);不含已锁进提现单的行。 */
     public BigDecimal balance(Long promoterId) {
         List<MktPromoterCommission> rows = commissionMapper.selectList(new LambdaQueryWrapper<MktPromoterCommission>()
@@ -62,7 +79,7 @@ public class MktWithdrawalService {
         return rows.stream().map(MktWithdrawalService::remainingAmount).reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 
-    /** 申请提现:校验伙伴正常、最低金额、余额;锁定流水(按时间先后凑够金额);算税。 */
+    /** 申请提现:校验伙伴正常、按分提交、余额;锁定流水(按时间先后凑够金额);算税。 */
     @Transactional
     public MktWithdrawal apply(Long promoterId, BigDecimal amount) {
         MktPromoter p = promoterMapper.selectForUpdate(promoterId);
@@ -74,13 +91,9 @@ public class MktWithdrawalService {
                 .eq(com.zhyq.park.marketing.entity.MktPromoterAccount::getPromoterId, promoterId));
         if (account == null || !Integer.valueOf(1).equals(account.getReviewStatus()) || account.getVerifiedAt() == null
                 || !StringUtils.hasText(account.getAccountNoEnc())) throw new BizException("请先提交收款资料并等待园区审核通过");
-        if (amount == null || amount.signum() <= 0 || amount.stripTrailingZeros().scale() > 2)
+        if (amount == null || amount.compareTo(MIN_WITHDRAWAL) < 0 || amount.stripTrailingZeros().scale() > 2)
             throw new BizException("提现金额须大于0且最多两位小数");
         amount = amount.setScale(2);
-        BigDecimal min = bizSettings.getDecimal(MODULE, "min_withdraw", new BigDecimal("100"));
-        if (amount == null || amount.compareTo(min) < 0) {
-            throw new BizException("提现金额不能低于 " + min + " 元");
-        }
         BigDecimal balance = balance(promoterId);
         if (balance.compareTo(amount) < 0) {
             throw new BizException("可提现余额不足,当前 " + balance);

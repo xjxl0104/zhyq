@@ -18,6 +18,10 @@ import com.zhyq.park.property.mapper.WorkOrderMapper;
 import com.zhyq.park.property.service.SlaEscalationJob;
 import com.zhyq.park.property.service.WorkOrderService;
 import com.zhyq.park.property.service.WorkOrderSummaryService;
+import com.zhyq.park.system.entity.SysUser;
+import com.zhyq.park.system.mapper.SysUserMapper;
+import com.zhyq.park.tenant.entity.BizTenant;
+import com.zhyq.park.tenant.mapper.BizTenantMapper;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
@@ -48,6 +52,8 @@ public class WorkOrderController {
     private static final int MAX_ORDERS_PER_SOURCE = 500;
 
     private final WorkOrderMapper workOrderMapper;
+    private final BizTenantMapper tenantMapper;
+    private final SysUserMapper userMapper;
     private final WorkOrderLocationService locations;
     private final WorkOrderLogMapper workOrderLogMapper;
     private final WorkOrderService workOrderService;
@@ -55,6 +61,17 @@ public class WorkOrderController {
     private final WorkOrderSummaryService summaryService;
     private final ApplicationEventPublisher eventPublisher;
     private final WeComBotNotifier weComBotNotifier;
+
+    public record AssigneeOption(Long id, String username, String nickname) {}
+
+    @Operation(summary = "报修工单派单人员选项")
+    @GetMapping("/assignees")
+    public Result<List<AssigneeOption>> assignees() {
+        return Result.ok(userMapper.selectList(new LambdaQueryWrapper<SysUser>()
+                        .eq(SysUser::getStatus, 1).orderByAsc(SysUser::getId)).stream()
+                .map(user -> new AssigneeOption(user.getId(), user.getUsername(), user.getNickname()))
+                .toList());
+    }
 
     @Operation(summary = "分页查询工单")
     @GetMapping("/page")
@@ -65,7 +82,12 @@ public class WorkOrderController {
                                               @RequestParam(required = false) Integer status,
                                               @RequestParam(required = false) Integer urgency,
                                               @RequestParam(required = false) Long projectId,
+                                              @RequestParam(required = false) Long buildingId,
+                                              @RequestParam(required = false) Long floorId,
+                                              @RequestParam(required = false) String zone,
+                                              @RequestParam(required = false) Long tenantRefId,
                                               @RequestParam(required = false) Long id) {
+        if (StringUtils.hasText(zone) && !List.of("A", "B", "C").contains(zone)) throw new BizException("无效的楼层分区");
         LambdaQueryWrapper<WorkOrder> qw = new LambdaQueryWrapper<>();
         qw.eq(id != null, WorkOrder::getId, id)
           .like(StringUtils.hasText(code), WorkOrder::getCode, code)
@@ -73,6 +95,10 @@ public class WorkOrderController {
           .eq(status != null, WorkOrder::getStatus, status)
           .eq(urgency != null, WorkOrder::getUrgency, urgency)
           .eq(projectId != null, WorkOrder::getProjectId, projectId)
+          .eq(buildingId != null, WorkOrder::getBuildingId, buildingId)
+          .eq(floorId != null, WorkOrder::getFloorId, floorId)
+          .eq(StringUtils.hasText(zone), WorkOrder::getZone, zone)
+          .eq(tenantRefId != null, WorkOrder::getTenantRefId, tenantRefId)
           .orderByDesc(WorkOrder::getId);
         IPage<WorkOrder> p = workOrderMapper.selectPage(new Page<>(pageNo, pageSize), qw);
         return Result.ok(PageResult.of(p.getTotal(), p.getRecords()));
@@ -105,18 +131,20 @@ public class WorkOrderController {
             wo.setProjectId(point.projectId());
             wo.setBuildingId(point.buildingId());
             wo.setFloorId(point.floorId());
+            wo.setZone(point.zone());
             wo.setFloorPlanFileId(point.planFileId());
             wo.setPlanX(point.x());
             wo.setPlanY(point.y());
             wo.setRoomId(null);
             wo.setSpaceId(null);
         }
+        validateTenant(wo.getTenantRefId(), wo.getProjectId(), MyMetaObjectHandler.DEFAULT_TENANT_ID);
         if (!StringUtils.hasText(wo.getCode())) {
             wo.setCode("WO" + System.currentTimeMillis());
         }
-        if (wo.getStatus() == null) {
-            wo.setStatus(WorkOrderService.ST_PENDING_DISPATCH);
-        }
+        wo.setStatus(WorkOrderService.ST_PENDING_DISPATCH);
+        wo.setFinishTime(null);
+        wo.setResolutionCode(null);
         workOrderMapper.insert(wo);
         eventPublisher.publishEvent(new DomainEvent.WorkOrderCreated(
                 wo.getId(), wo.getOrderType(), null, LocalDateTime.now()));
@@ -154,6 +182,21 @@ public class WorkOrderController {
         if (wo.getId() == null) throw new BizException("缺少工单编号");
         WorkOrder existing = workOrderMapper.selectById(wo.getId());
         if (existing == null) throw new BizException("工单不存在");
+        if (wo.getStatus() != null && !wo.getStatus().equals(existing.getStatus()))
+            throw new BizException("请通过工单流转操作修改状态，处理完成须上传现场照片");
+        // 编辑基础资料不能写入流程状态或完成凭据，也不能用旧表单覆盖刚完成的状态。
+        wo.setStatus(null);
+        wo.setFinishTime(null);
+        wo.setResolutionCode(null);
+        boolean clearTenantRef = Boolean.TRUE.equals(wo.getClearTenantRef());
+        if (clearTenantRef && wo.getTenantRefId() != null) throw new BizException("解除租客关联时不能同时选择租客");
+        if (clearTenantRef) {
+            wo.setTenantContact(null);
+            wo.setTenantContactPhone(null);
+        }
+        if (wo.getTenantRefId() != null && !wo.getTenantRefId().equals(existing.getTenantRefId())) {
+            validateTenant(wo.getTenantRefId(), existing.getProjectId(), existing.getTenantId());
+        }
         if (wo.getFloorLocation() != null) {
             var point = locations.resolve(wo.getFloorLocation(), existing.getProjectId(), existing.getTenantId());
             // Explicit SET permits clearing a point without affecting partial status updates elsewhere.
@@ -161,20 +204,42 @@ public class WorkOrderController {
             wo.setBuildingId(null);
             wo.setRoomId(null);
             wo.setSpaceId(null);
-            workOrderMapper.update(wo, new LambdaUpdateWrapper<WorkOrder>().eq(WorkOrder::getId, wo.getId())
+            LambdaUpdateWrapper<WorkOrder> update = new LambdaUpdateWrapper<WorkOrder>().eq(WorkOrder::getId, wo.getId())
                     .set(WorkOrder::getProjectId, point.projectId()).set(WorkOrder::getBuildingId, point.buildingId())
                     .set(WorkOrder::getFloorId, point.floorId()).set(WorkOrder::getFloorPlanFileId, point.planFileId())
+                    .set(WorkOrder::getZone, point.zone())
                     .set(WorkOrder::getPlanX, point.x()).set(WorkOrder::getPlanY, point.y())
-                    .set(WorkOrder::getRoomId, null).set(WorkOrder::getSpaceId, null));
+                    .set(WorkOrder::getRoomId, null).set(WorkOrder::getSpaceId, null);
+            if (clearTenantRef) update.set(WorkOrder::getTenantRefId, null)
+                    .set(WorkOrder::getTenantContact, null).set(WorkOrder::getTenantContactPhone, null);
+            workOrderMapper.update(wo, update);
         } else {
             if (existing.getFloorId() != null && ((wo.getBuildingId() != null && !wo.getBuildingId().equals(existing.getBuildingId()))
                     || (wo.getProjectId() != null && !wo.getProjectId().equals(existing.getProjectId()))
                     || (wo.getRoomId() != null && !wo.getRoomId().equals(existing.getRoomId())))) {
                 throw new BizException("修改维修位置时请重新选择楼宇和楼层");
             }
-            workOrderMapper.updateById(wo);
+            if (clearTenantRef) {
+                workOrderMapper.update(wo, new LambdaUpdateWrapper<WorkOrder>().eq(WorkOrder::getId, wo.getId())
+                        .set(WorkOrder::getTenantRefId, null)
+                        .set(WorkOrder::getTenantContact, null).set(WorkOrder::getTenantContactPhone, null));
+            } else {
+                workOrderMapper.updateById(wo);
+            }
         }
         return Result.ok();
+    }
+
+    private void validateTenant(Long tenantRefId, Long projectId, Long platformTenantId) {
+        if (tenantRefId == null) return;
+        BizTenant tenant = tenantMapper.selectById(tenantRefId);
+        if (tenant == null || !java.util.Objects.equals(tenant.getTenantId(), platformTenantId)
+                || !Integer.valueOf(1).equals(tenant.getStatus())) {
+            throw new BizException("所选租客不存在或已归档");
+        }
+        if (projectId != null && tenant.getProjectId() != null && !projectId.equals(tenant.getProjectId())) {
+            throw new BizException("租客不属于工单所在园区");
+        }
     }
 
     @Operation(summary = "删除工单")
@@ -206,12 +271,14 @@ public class WorkOrderController {
         return Result.ok();
     }
 
-    @Operation(summary = "处理完成")
+    public record FinishRequest(String content, String resolutionCode, List<Long> photoIds) {}
+
+    @Operation(summary = "处理完成（必须上传处理现场照片）")
     @PostMapping("/{id}/finish")
-    public Result<Void> finish(@PathVariable Long id, @RequestBody(required = false) Map<String, Object> body) {
-        String content = body == null ? null : strOf(body.get("content"));
-        String resolutionCode = body == null ? null : strOf(body.get("resolutionCode"));
-        workOrderService.finish(id, operatorOf(body), content, resolutionCode);
+    public Result<Void> finish(@PathVariable Long id, @RequestBody(required = false) FinishRequest body) {
+        workOrderService.finish(id, MyMetaObjectHandler.currentOperator(),
+                body == null ? null : body.content(), body == null ? null : body.resolutionCode(),
+                body == null ? null : body.photoIds());
         return Result.ok();
     }
 
@@ -234,7 +301,13 @@ public class WorkOrderController {
         if (body != null && body.get("score") != null) {
             score = Integer.valueOf(String.valueOf(body.get("score")));
         }
-        workOrderService.verify(id, operatorOf(body), score);
+        List<Long> photoIds = null;
+        if (body != null && body.get("photoIds") != null) {
+            if (!(body.get("photoIds") instanceof List<?> raw)) throw new BizException("验收照片编号格式错误");
+            try { photoIds = raw.stream().map(value -> Long.valueOf(String.valueOf(value))).toList(); }
+            catch (NumberFormatException e) { throw new BizException("验收照片编号格式错误"); }
+        }
+        workOrderService.verify(id, MyMetaObjectHandler.currentOperator(), score, photoIds);
         return Result.ok();
     }
 

@@ -7,18 +7,38 @@ const component = readFileSync(new URL('../src/components/PasswordAuthForm.vue',
 const source = component.split('<script setup>')[1].split('</script>')[0].replace(/^import .*$/gm, '')
 
 function harness({ warehouse = false, registering = false, username = '123', password = '123', agreed = true, inviteCode = 'ABCD2345' } = {}) {
-  const calls = []
+  const calls = [], events = []
   const api = role => ({
     passwordLogin: async data => { calls.push({ role, action: 'login', data }); return { token: 'ok' } },
     passwordRegister: async data => { calls.push({ role, action: 'register', data }); return { token: 'ok' } },
   })
   const context = vm.createContext({
-    defineProps: () => ({ warehouse, inviteCode: '' }), defineEmits: () => (...args) => calls.push({ emitted: args }),
+    defineProps: () => ({ warehouse, inviteCode: '' }), defineEmits: () => (...args) => { events.push(args); if (args[0] === 'authenticated') calls.push({ emitted: args }) },
     ref: value => ({ value }), reactive: value => value, computed: get => ({ get value() { return get() } }), watch: () => {},
     authApi: api('mp'), warehouseAuthApi: api('wh'), values: { username, password, agreed, inviteCode },
   })
   vm.runInContext(source + `\nregistering.value=${registering};Object.assign(form,values);`, context)
-  return { calls, context }
+  return { calls, context, events }
+}
+
+for (const warehouse of [false, true]) {
+  test(`${warehouse ? '云仓' : '伙伴'}密码请求期间同步父页忙状态，成功和失败都恢复`, async () => {
+    for (const fails of [false, true]) {
+      const { context, events } = harness({ warehouse })
+      let settle
+      const pending = new Promise((resolve, reject) => { settle = fails ? () => reject(new Error('账号或密码错误')) : () => resolve({ token: 'ok' }) })
+      context.pending = pending
+      vm.runInContext(`${warehouse ? 'warehouseAuthApi' : 'authApi'}.passwordLogin = () => pending`, context)
+      const submission = vm.runInContext('submit()', context)
+      assert.deepEqual(events, [['busy', true]])
+      assert.equal(vm.runInContext('busy.value', context), true)
+      settle()
+      await submission
+      assert.deepEqual(events.filter(event => event[0] === 'busy'), [['busy', true], ['busy', false]])
+      assert.equal(events.some(event => event[0] === 'authenticated'), !fails)
+      assert.equal(vm.runInContext('busy.value', context), false)
+    }
+  })
 }
 
 for (const warehouse of [false, true]) {

@@ -34,6 +34,12 @@
   </view>
 </template>
 
+<script>
+import { appShareMixin } from '@/utils/share'
+
+export default { mixins: [appShareMixin] }
+</script>
+
 <script setup>
 import { reactive, ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
@@ -77,7 +83,7 @@ function go(page) {
 
 function logout() {
   warehouseToken.clear()
-  uni.reLaunch({ url: '/pages/warehouse-login/index' })
+  uni.reLaunch({ url: '/pages/entry/index?select=1' })
 }
 
 onShow(load)

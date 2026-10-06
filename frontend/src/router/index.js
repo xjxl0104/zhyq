@@ -1,5 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import Layout from '@/layout/Layout.vue'
+import { useAccessStore } from '@/stores/access'
+import { canAccessNavigation, firstNavigationPath } from '@/utils/navigationAccess'
 
 const routes = [
   // Local photo/model demo has no backend access and is excluded from production.
@@ -194,11 +196,22 @@ const router = createRouter({
   routes
 })
 
-// 登录守卫:无 token 一律送去登录页
-router.beforeEach((to) => {
+// Route access is loaded from the active role and direct grants, never from a JWT snapshot.
+router.beforeEach(async (to) => {
   if (to.meta.public) return true
   if (!localStorage.getItem('zhyq_token')) {
     return { path: '/login' }
+  }
+  const access = useAccessStore()
+  try {
+    await access.load()
+  } catch (error) {
+    console.error('加载权限失败', error)
+    return { path: '/login' }
+  }
+  if (!canAccessNavigation(to.path, access.paths, access.admin)) {
+    const fallback = firstNavigationPath(access.paths, access.admin)
+    if (fallback !== to.path) return { path: fallback, replace: true }
   }
   return true
 })

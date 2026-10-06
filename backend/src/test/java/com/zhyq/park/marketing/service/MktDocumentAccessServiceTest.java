@@ -70,5 +70,18 @@ class MktDocumentAccessServiceTest {
         login("crm:customer:query");
         assertThatThrownBy(() -> access.read("floor_plan")).isInstanceOf(BizException.class);
     }
+    @Test void completionPhotosUseWorkOrderPermissionsAndRemainUnavailableToOtherModules() {
+        login("property:workorder:edit"); access.write("work_order_finish");
+        access.write("work_order_verify");
+        login("property:workorder:query"); access.read("work_order_finish");
+        access.read("work_order_verify");
+        assertThatThrownBy(() -> access.write("work_order_finish")).isInstanceOf(BizException.class);
+        assertThatThrownBy(() -> access.write("work_order_verify")).isInstanceOf(BizException.class);
+        login("ROLE_admin"); access.write("work_order_finish"); access.read("work_order_finish");
+        login("crm:customer:edit");
+        assertThatThrownBy(() -> access.write("work_order_finish")).isInstanceOf(BizException.class);
+        assertThatThrownBy(() -> access.read("work_order_finish")).isInstanceOf(BizException.class);
+        assertThatThrownBy(() -> access.read("work_order_verify")).isInstanceOf(BizException.class);
+    }
     private void login(String permission){SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken("ops",null,List.of(new SimpleGrantedAuthority(permission))));}
 }

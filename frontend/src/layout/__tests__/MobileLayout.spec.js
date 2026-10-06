@@ -10,6 +10,10 @@ vi.mock('vue-router', () => ({
   useRouter: () => ({ push: vi.fn(), back: vi.fn(), resolve: path => ({ href: path }) })
 }))
 vi.mock('@/stores/project', () => ({ useProjectStore: () => ({ init: async () => {}, reset() {} }) }))
+vi.mock('@/stores/access', async () => {
+  const { menuTree } = await import('@/layout/menu')
+  return { useAccessStore: () => ({ navigation: menuTree, reset() {} }) }
+})
 vi.mock('@/utils/request', () => ({ default: { post: vi.fn() } }))
 let wrapper
 let media

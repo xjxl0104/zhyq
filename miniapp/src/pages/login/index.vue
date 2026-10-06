@@ -7,13 +7,19 @@
     </view>
     <view class="card login-card">
       <WechatAuthForm v-if="method === 'wechat'" :invite-code="inviteCode" @authenticated="done" @busy="busy = $event" />
-      <PasswordAuthForm v-else :invite-code="inviteCode" @authenticated="done" />
+      <PasswordAuthForm v-else :invite-code="inviteCode" @authenticated="done" @busy="busy = $event" />
       <button v-if="canUseWechat" class="method-link" :disabled="busy" @click="choose(method === 'wechat' ? 'password' : 'wechat')">{{ method === 'wechat' ? '账号密码登录（备用）' : '返回一键登录' }}</button>
     </view>
     <button class="demo-link" :disabled="busy" @click="goDemo">无需登录，进入测试体验</button>
     <button class="identity-link" :disabled="busy" @click="chooseIdentity">切换身份</button>
   </view>
 </template>
+
+<script>
+import { appShareMixin } from '@/utils/share'
+
+export default { mixins: [appShareMixin] }
+</script>
 
 <script setup>
 import { ref } from 'vue'
@@ -37,8 +43,8 @@ onLoad(q => {
 })
 function choose(value) { if (!busy.value) method.value = value }
 function done(t) { token.set(t); uni.switchTab({ url: '/pages/home/index' }) }
-function chooseIdentity() { uni.reLaunch({ url: '/pages/entry/index' }) }
-function goDemo() { uni.navigateTo({ url: '/pages/demo/index' }) }
+function chooseIdentity() { if (!busy.value) uni.reLaunch({ url: '/pages/entry/index?select=1' }) }
+function goDemo() { if (!busy.value) uni.navigateTo({ url: '/pages/demo/index' }) }
 </script>
 
 <style scoped>

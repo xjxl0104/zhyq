@@ -1,4 +1,10 @@
 <template><view class="page-wrap"><view class="card"><view class="wh-title">加盟进度</view><view class="wh-note">{{ profile.orderMode === 'manual' ? '当前采用人工导入出库单，无需外部 ERP 接入。' : '资质审核后，由园区确认订单接入方式。' }}</view><view v-if="loading" class="wh-note">正在读取进度…</view><view v-if="error" class="wh-error">{{ error }}</view><view v-for="s in steps" :key="s.step" class="wh-item"><view class="wh-item-title">{{ names[s.step] || '办理步骤' }}</view><view class="wh-status">{{ labels[s.status] || '待处理' }}</view><view v-if="s.rejectReason" class="wh-error">驳回原因：{{ s.rejectReason }}</view><view v-if="s.doneTime" class="wh-note">完成于 {{ s.doneTime.replace('T', ' ') }}</view></view><view v-if="!loading && !error && !steps.length" class="wh-note">暂无进度，请联系园区确认申请记录。</view><view class="wh-actions"><button class="wh-secondary" :disabled="loading" @click="load">刷新进度</button><button class="wh-secondary" @click="go">{{ profile.joinStatus === 4 ? '提交加盟协议' : '查看申请资料' }}</button></view></view></view></template>
+<script>
+import { appShareMixin } from '@/utils/share'
+
+export default { mixins: [appShareMixin] }
+</script>
+
 <script setup>
 import { ref } from 'vue'; import { onShow } from '@dcloudio/uni-app'; import { warehouseApi } from '@/api/warehouse'
 const steps = ref([]); const profile = ref({}); const loading = ref(false); const error = ref('')

@@ -54,6 +54,7 @@
       <div class="toolbar">
         <el-button type="primary" @click="openDialog()"><el-icon><Plus /></el-icon>新增供应商</el-button>
         <el-button @click="importVisible = true"><el-icon><Upload /></el-icon>表格导入</el-button>
+        <el-button @click="openTenantContacts">租客联系人</el-button>
         <span class="toolbar-tip">类别不够用?到「系统管理 → 字典管理 → 供应商类别」里自己加</span>
       </div>
       <el-table :data="list" v-loading="loading" border stripe>
@@ -97,6 +98,40 @@
                      :total="total" v-model:current-page="query.pageNo"
                      v-model:page-size="query.pageSize" :page-sizes="[10,20,50]" @change="load" />
     </div>
+
+    <el-drawer v-model="tenantContactsVisible" title="租客联系人" size="min(680px, 95vw)">
+      <div class="contract-header">
+        <span>租客联系人可在新增物业工单时选择租客并自动带出。</span>
+        <el-button v-if="canEditTenantContacts" type="primary" @click="openTenantContactDialog()">新增联系人</el-button>
+      </div>
+      <el-table :data="tenantContacts" v-loading="tenantContactsLoading" border stripe>
+        <el-table-column prop="name" label="租客" min-width="150" show-overflow-tooltip />
+        <el-table-column label="所属园区" min-width="130" show-overflow-tooltip>
+          <template #default="{ row }">{{ projectName(row.projectId) }}</template>
+        </el-table-column>
+        <el-table-column prop="contact" label="联系人" min-width="100" />
+        <el-table-column prop="phone" label="联系电话" min-width="135" />
+        <el-table-column v-if="canEditTenantContacts" label="操作" width="80">
+          <template #default="{ row }"><el-button link type="primary" @click="openTenantContactDialog(row)">编辑</el-button></template>
+        </el-table-column>
+      </el-table>
+    </el-drawer>
+
+    <el-dialog v-model="tenantContactDialog" title="租客联系人" width="480px" append-to-body>
+      <el-form label-width="90px">
+        <el-form-item label="租客" required>
+          <el-select v-model="tenantContactForm.tenantRefId" filterable placeholder="请选择租客" style="width: 100%" @change="onContactTenantChange">
+            <el-option v-for="t in tenantContacts" :key="t.id" :label="t.name" :value="t.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="联系人" required><el-input v-model="tenantContactForm.contact" maxlength="64" /></el-form-item>
+        <el-form-item label="联系电话"><el-input v-model="tenantContactForm.phone" maxlength="20" /></el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="tenantContactDialog = false">取消</el-button>
+        <el-button type="primary" :loading="savingTenantContact" @click="saveTenantContact">保存</el-button>
+      </template>
+    </el-dialog>
 
     <el-drawer v-model="detailVisible" :title="selectedSupplier?.name || '供应商详情'" size="720px">
       <template v-if="selectedSupplier">
@@ -232,6 +267,44 @@ const router = useRouter()
 const canQueryContracts = hasPermission('pur:supplierContract:query')
 const canAddContract = hasPermission('pur:supplierContract:add')
 const canEditContract = hasPermission('pur:supplierContract:edit')
+const canEditTenantContacts = hasPermission('pur:supplier:edit')
+const tenantContactsVisible = ref(false)
+const tenantContactsLoading = ref(false)
+const tenantContacts = ref([])
+const tenantContactDialog = ref(false)
+const savingTenantContact = ref(false)
+const tenantContactForm = reactive({ tenantRefId: null, contact: '', phone: '' })
+async function openTenantContacts() {
+  tenantContactsVisible.value = true
+  await loadTenantContacts()
+}
+async function loadTenantContacts() {
+  tenantContactsLoading.value = true
+  try { tenantContacts.value = await supplierApi.tenantContacts() || [] }
+  finally { tenantContactsLoading.value = false }
+}
+function openTenantContactDialog(row = null) {
+  Object.assign(tenantContactForm, { tenantRefId: row?.id || null, contact: row?.contact || '', phone: row?.phone || '' })
+  tenantContactDialog.value = true
+}
+function onContactTenantChange(id) {
+  const tenant = tenantContacts.value.find(t => t.id === id)
+  tenantContactForm.contact = tenant?.contact || ''
+  tenantContactForm.phone = tenant?.phone || ''
+}
+async function saveTenantContact() {
+  if (!tenantContactForm.tenantRefId || !tenantContactForm.contact.trim()) {
+    ElMessage.warning('请选择租客并填写联系人')
+    return
+  }
+  savingTenantContact.value = true
+  try {
+    await supplierApi.updateTenantContact(tenantContactForm)
+    await loadTenantContacts()
+    tenantContactDialog.value = false
+    ElMessage.success('租客联系人已保存')
+  } finally { savingTenantContact.value = false }
+}
 const detailVisible = ref(false)
 const selectedSupplier = ref(null)
 const contracts = ref([])

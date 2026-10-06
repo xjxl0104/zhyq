@@ -9,6 +9,10 @@ const projectStore = {
 }
 
 vi.mock('@/stores/project', () => ({ useProjectStore: () => projectStore }))
+vi.mock('@/stores/access', async () => {
+  const { menuTree } = await import('@/layout/menu')
+  return { useAccessStore: () => ({ navigation: menuTree, reset: vi.fn() }) }
+})
 vi.mock('@/utils/request', () => ({ default: { post: vi.fn() } }))
 vi.mock('vue-router', () => ({
   useRoute: () => ({ path: '/dashboard', fullPath: '/dashboard', meta: { title: '工作台' } }),

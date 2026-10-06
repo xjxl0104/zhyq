@@ -13,6 +13,7 @@
         <el-table-column prop="remark" label="说明" min-width="300" />
       </el-table>
       <p class="hint">云仓按单佣金由 P4 在小程序按客户 / 品牌自定义，可在「客户管理 › 按单佣金」查看。此处管理业务参数，已生成流水与锁定记录不受影响。</p>
+      <p class="hint">提现按分申请，不设累计金额门槛或每日次数限制；已申请金额在处理期间不可重复申请。收款资料须通过审核。</p>
     </div>
   </div>
 </template>

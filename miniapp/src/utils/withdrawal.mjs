@@ -50,3 +50,23 @@ export function isValidWithdrawal(amount, balance, minimum = 0) {
   return cents !== null && cents > 0 && balanceMills !== null && minimumMills !== null
     && cents * 10 >= minimumMills && cents * 10 <= balanceMills
 }
+
+export function withdrawalRuleRows(data) {
+  const cash = withdrawalBalanceView(data)
+  const policy = data?.withdrawalRules || {}
+  const minimum = cashToCents(data?.minWithdraw)
+  const amountRule = cash && minimum !== null
+    ? `本次最多可申请 ${cash.amount} 元；${formatCents(Math.max(1, minimum))} 元起，支持部分或全部提现。`
+    : '以加载成功后显示的可提现金额为准，金额精确到分。'
+  return [
+    { label: '可提现额度', value: amountRule },
+    { label: '每日提现次数', value: Number(policy.dailyLimit || 0) > 0 ? `每日最多 ${policy.dailyLimit} 次。` : '不限制每日申请次数；已申请的金额在处理期间暂不可重复申请。' },
+    { label: '提现时间', value: policy.applicationTime || '全天 24 小时可提交申请。' },
+    { label: '到账时间', value: policy.arrivalTime || '人工审核后安排转账，实际到账以收款渠道处理为准。' },
+    { label: '收款方式', value: policy.payoutMethod || '人工审核后转账至已审核的收款账户。' },
+    { label: '费用与代扣', value: Number(data?.taxMode) === 1 && Number.isFinite(Number(data?.taxRate))
+      ? `平台不收取提现手续费；按当前配置预估代扣 ${(Number(data.taxRate) * 100).toFixed(0)}%，最终代扣和到账金额以财务审核为准。`
+      : '平台不收取提现手续费；当前申请不预扣税额，实际到账以结算结果为准。' },
+    { label: '余额说明', value: '仅已结算且未申请提现的佣金可提，扣回款优先抵扣。冻结中、待结算的佣金不计入可提现额度；不足 1 分的余额保留累计。' }
+  ]
+}

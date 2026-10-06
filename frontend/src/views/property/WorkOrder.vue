@@ -43,6 +43,26 @@
             <el-option v-for="(v, k) in urgencyMap" :key="k" :label="v.label" :value="Number(k)" />
           </el-select>
         </el-form-item>
+        <el-form-item label="楼宇">
+          <el-select v-model="query.buildingId" placeholder="全部楼宇" clearable filterable style="width: 170px" @change="changeFilterBuilding">
+            <el-option v-for="b in filterBuildings" :key="b.id" :label="b.name" :value="b.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="楼层">
+          <el-select v-model="query.floorId" placeholder="全部楼层" clearable :disabled="!query.buildingId" style="width: 120px" @change="changeFilterFloor">
+            <el-option v-for="f in filterFloors" :key="f.id" :label="f.name" :value="f.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="分区">
+          <el-select v-model="query.zone" placeholder="整层 / 所有分区" clearable :disabled="!query.floorId" style="width: 145px">
+            <el-option v-for="z in ['A', 'B', 'C']" :key="z" :label="`${z}区`" :value="z" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="租客">
+          <el-select v-model="query.tenantRefId" placeholder="全部租客" clearable filterable style="width: 180px">
+            <el-option v-for="t in tenantOptions" :key="t.id" :label="t.name" :value="t.id" />
+          </el-select>
+        </el-form-item>
         <el-form-item>
           <el-button type="primary" @click="search"><el-icon><Search /></el-icon>查询</el-button>
           <el-button @click="reset">重置</el-button>
@@ -189,10 +209,21 @@
             />
           </el-select>
         </el-form-item>
-        <el-form-item label="联系人">
+        <el-form-item label="报修租客">
+          <el-select v-model="form.tenantRefId" clearable filterable placeholder="选择租客（可不填）" style="width: 100%" @change="onTenantChange">
+            <el-option v-for="t in tenantOptions" :key="t.id" :label="t.name" :value="t.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item v-if="form.tenantRefId" label="租客联系人">
+          <el-input v-model="form.tenantContact" placeholder="选租客后自动带出，可修改" />
+        </el-form-item>
+        <el-form-item v-if="form.tenantRefId" label="租客电话">
+          <el-input v-model="form.tenantContactPhone" placeholder="选租客后自动带出，可修改" />
+        </el-form-item>
+        <el-form-item label="供应商联系人">
           <el-input v-model="form.contact" placeholder="选供应商后自动带出，可改" />
         </el-form-item>
-        <el-form-item label="联系电话">
+        <el-form-item label="供应商电话">
           <el-input v-model="form.contactPhone" placeholder="选供应商后自动带出，可改" />
         </el-form-item>
         <el-form-item label="备注"><el-input v-model="form.remark" type="textarea" /></el-form-item>
@@ -244,8 +275,31 @@
       </template>
     </el-dialog>
 
+    <!-- 处理照片与流转在服务端一次提交，上传未完成时禁止流转。 -->
+    <el-dialog v-model="finishDialog.visible" title="处理完成" width="640px" destroy-on-close
+               :close-on-click-modal="false" :close-on-press-escape="!finishBusy && !finishSaving"
+               :show-close="!finishBusy && !finishSaving">
+      <el-form label-width="100px">
+        <el-form-item label="工单号"><el-input :model-value="finishDialog.row?.code" disabled /></el-form-item>
+        <el-form-item label="处理结果">
+          <el-input v-model="finishForm.content" type="textarea" :rows="3" :disabled="finishSaving" placeholder="请填写维修处理情况" />
+        </el-form-item>
+        <el-form-item label="处理现场照片" required>
+          <div>
+            <p class="completion-photo-tip">请至少拍照或上传一张处理现场照片，上传成功后才能提交验收。</p>
+            <FileUpload v-if="finishDialog.visible" :key="finishDialog.row?.id" v-model="finishForm.files"
+                        biz-type="work_order_finish" camera photos-only :disabled="finishSaving" @busy="finishBusy = $event" />
+          </div>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button :disabled="finishBusy || finishSaving" @click="finishDialog.visible = false">取消</el-button>
+        <el-button type="primary" :loading="finishSaving" :disabled="finishBusy || !finishForm.files.length" @click="submitFinish">提交验收</el-button>
+      </template>
+    </el-dialog>
+
     <!-- 验收弹窗 -->
-    <el-dialog v-model="verifyDialog.visible" title="验收" width="420px">
+    <el-dialog v-model="verifyDialog.visible" title="验收" width="min(640px, 94vw)" destroy-on-close :close-on-click-modal="false">
       <el-form :model="verifyForm" label-width="90px">
         <el-form-item label="工单号">
           <el-input :model-value="verifyDialog.row?.code" disabled />
@@ -253,15 +307,19 @@
         <el-form-item label="满意度">
           <el-rate v-model="verifyForm.score" :max="5" show-score />
         </el-form-item>
+        <el-form-item label="验收照片">
+          <FileUpload v-if="verifyDialog.visible" :key="verifyDialog.row?.id" v-model="verifyForm.files"
+                      biz-type="work_order_verify" camera photos-only :disabled="verifySaving" @busy="verifyBusy = $event" />
+        </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="verifyDialog.visible = false">取消</el-button>
-        <el-button type="primary" @click="submitVerify">确认验收</el-button>
+        <el-button :disabled="verifyBusy || verifySaving" @click="verifyDialog.visible = false">取消</el-button>
+        <el-button type="primary" :loading="verifySaving" :disabled="verifyBusy" @click="submitVerify">确认验收</el-button>
       </template>
     </el-dialog>
 
     <!-- 详情弹窗(流转时间线) -->
-    <el-dialog v-model="detailDialog.visible" title="工单详情" width="640px">
+    <el-dialog v-model="detailDialog.visible" title="工单详情" width="min(720px, 94vw)" destroy-on-close>
       <el-descriptions :column="isMobile ? 1 : 2" border size="small" style="margin-bottom: 16px">
         <el-descriptions-item label="工单号">{{ detail.order?.code }}</el-descriptions-item>
         <el-descriptions-item label="标题">{{ detail.order?.title }}</el-descriptions-item>
@@ -276,6 +334,9 @@
         <el-descriptions-item label="到场时间">{{ detail.order?.arriveTime || '-' }}</el-descriptions-item>
         <el-descriptions-item label="完成时间">{{ detail.order?.finishTime || '-' }}</el-descriptions-item>
         <el-descriptions-item label="供应商">{{ unitName(detail.order?.supplierId) }}</el-descriptions-item>
+        <el-descriptions-item label="报修租客">{{ tenantName(detail.order?.tenantRefId) }}</el-descriptions-item>
+        <el-descriptions-item label="租客联系人">{{ detail.order?.tenantContact || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="租客电话">{{ detail.order?.tenantContactPhone || '-' }}</el-descriptions-item>
         <el-descriptions-item label="来源">
           <span>{{ detail.order?.source || '手工新建' }}</span>
           <!-- sourceType+sourceId 打通后才能反查源记录;存量数据只有类型没有 id -->
@@ -289,15 +350,11 @@
         </el-descriptions-item>
       </el-descriptions>
 
-      <p v-if="detail.floor">楼层：{{ detail.building?.name }} / {{ detail.floor.name }}</p>
+      <p v-if="detail.floor">楼层：{{ detail.building?.name }} / {{ detail.floor.name }}{{ detail.order?.zone ? ` / ${detail.order.zone}区` : '' }}</p>
       <FloorPlanViewer v-if="detail.order?.floorPlanFileId" :file-id="detail.order.floorPlanFileId" :point="{ x: Number(detail.order.planX), y: Number(detail.order.planY) }" />
       <div v-if="detailFiles.length" class="detail-files">
         <div class="detail-files-hd">报修照片 / 附件</div>
-        <div class="detail-files-list">
-          <el-button v-for="f in detailFiles" :key="f.id" link type="primary" @click="downloadFile(f)">
-            {{ f.originalName }}
-          </el-button>
-        </div>
+        <WorkOrderPhotoGallery :files="detailFiles" />
       </div>
       <el-divider content-position="left">流转记录</el-divider>
       <el-timeline v-if="detail.logs?.length">
@@ -306,6 +363,14 @@
           <span style="font-weight: 600">{{ log.action }}</span>
           <span v-if="log.operator" style="color: var(--text-secondary)"> · {{ log.operator }}</span>
           <div style="color: #606266; margin-top: 4px">{{ log.content }}</div>
+          <div v-if="log.action === '处理' && detailCompletionFiles.length" class="completion-photos">
+            <div class="detail-files-hd">处理现场照片（{{ detailCompletionFiles.length }}张）</div>
+            <WorkOrderPhotoGallery :files="detailCompletionFiles" />
+          </div>
+          <div v-if="log.action === '验收' && detailVerifyFiles.length" class="completion-photos">
+            <div class="detail-files-hd">验收现场照片（{{ detailVerifyFiles.length }}张）</div>
+            <WorkOrderPhotoGallery :files="detailVerifyFiles" />
+          </div>
         </el-timeline-item>
       </el-timeline>
       <el-empty v-else description="暂无流转记录" :image-size="80" />
@@ -320,12 +385,12 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { ChatDotRound } from '@element-plus/icons-vue'
 import { workOrderApi } from '@/api/property'
 import { supplierApi } from '@/api/supplier'
+import { buildingApi, floorApi } from '@/api/building'
 import { fileApi } from '@/api/file'
-import { startFileDownload } from '@/utils/fileDownload'
-import { userApi } from '@/api/system'
 import FileUpload from '@/components/FileUpload.vue'
 import WorkOrderLocation from '@/components/WorkOrderLocation.vue'
 import FloorPlanViewer from '@/components/FloorPlanViewer.vue'
+import WorkOrderPhotoGallery from '@/components/WorkOrderPhotoGallery.vue'
 import HighlightNotice from '@/components/HighlightNotice.vue'
 import MobileRecordList from '@/components/MobileRecordList.vue'
 import { SOURCE_ROUTES, useHighlightFilter } from '@/composables/useSourceLink'
@@ -350,12 +415,24 @@ const statusMap = {
   6: { label: '已关闭', type: 'info' },
   7: { label: '已超时', type: 'danger' }
 }
+const filterBuildings = ref([])
+const filterFloors = ref([])
+const tenantOptions = ref([])
+const tenantName = id => id ? tenantOptions.value.find(t => t.id === id)?.name || `租客 #${id}` : '-'
+async function changeFilterBuilding(id) {
+  query.floorId = null
+  query.zone = null
+  filterFloors.value = []
+  if (id) filterFloors.value = await floorApi.list(id)
+}
+function changeFilterFloor() { query.zone = null }
 
 const loading = ref(false)
 const list = ref([])
 const total = ref(0)
 const stats = reactive({ pending: 0, processing: 0, done: 0, total: 0 })
-const query = reactive({ pageNo: 1, pageSize: 10, code: '', orderType: null, status: null, urgency: null, id: null })
+const query = reactive({ pageNo: 1, pageSize: 10, code: '', orderType: null, status: null, urgency: null,
+  buildingId: null, floorId: null, zone: null, tenantRefId: null, id: null })
 
 async function load() {
   loading.value = true
@@ -380,7 +457,9 @@ async function refresh() {
 }
 function reset() {
   // id 一并清掉,否则从源记录跳来后点重置会仍被定位条件锁住
-  Object.assign(query, { pageNo: 1, code: '', orderType: null, status: null, urgency: null, id: null })
+  Object.assign(query, { pageNo: 1, code: '', orderType: null, status: null, urgency: null,
+    buildingId: null, floorId: null, zone: null, tenantRefId: null, id: null })
+  filterFloors.value = []
   highlightId.value = null
   load()
 }
@@ -388,7 +467,13 @@ function reset() {
 // 新增工单
 const formRef = ref()
 const dialog = reactive({ visible: false, title: '' })
-const defaultForm = () => ({ id: null, title: '', orderType: '报修', location: '', category: '', urgency: 2, contact: '', contactPhone: '', remark: '', supplierId: null })
+const defaultForm = () => ({ id: null, title: '', orderType: '报修', location: '', category: '', urgency: 2,
+  contact: '', contactPhone: '', tenantContact: '', tenantContactPhone: '', remark: '', supplierId: null, tenantRefId: null })
+function onTenantChange(id) {
+  const tenant = tenantOptions.value.find(t => t.id === id)
+  form.tenantContact = tenant?.contact || ''
+  form.tenantContactPhone = tenant?.phone || ''
+}
 // 责任单位下拉:只取启用中的
 const unitOptions = ref([])
 const selectableUnits = computed(() => unitOptions.value.filter(u => u.status === 1))
@@ -426,7 +511,7 @@ const attachmentBusy = ref(false)
 const locationBusy = ref(false)
 const saving = ref(false)
 const locationKey = ref(0)
-const floorLocation = ref({ buildingId: null, floorId: null, planFileId: null, x: null, y: null })
+const floorLocation = ref({ buildingId: null, floorId: null, zone: null, planFileId: null, x: null, y: null })
 const locationChanged = ref(false)
 function setFloorLocation(value) { floorLocation.value = value; locationChanged.value = true }
 function resetLocation(row = {}) {
@@ -434,7 +519,7 @@ function resetLocation(row = {}) {
   locationChanged.value = false
   attachmentBusy.value = false
   locationBusy.value = false
-  floorLocation.value = { buildingId: row.buildingId || null, floorId: row.floorId || null, planFileId: row.floorPlanFileId || null,
+  floorLocation.value = { buildingId: row.buildingId || null, floorId: row.floorId || null, zone: row.zone || null, planFileId: row.floorPlanFileId || null,
     x: row.planX == null ? null : Number(row.planX), y: row.planY == null ? null : Number(row.planY) }
 }
 const rules = {
@@ -462,7 +547,8 @@ async function submit() {
   await formRef.value.validate()
   saving.value = true
   try {
-    const payload = { ...form, ...(locationChanged.value ? { floorLocation: floorLocation.value } : {}) }
+    const payload = { ...form, ...(form.id && !form.tenantRefId ? { clearTenantRef: true } : {}),
+      ...(locationChanged.value ? { floorLocation: floorLocation.value } : {}) }
     if (form.id) await workOrderApi.update(payload)
     else {
       // Keep the new ID if attachment linking fails; retry must not create another order.
@@ -494,7 +580,7 @@ const dispatchForm = reactive({ assignee: '' })
 const dispatchRules = { assignee: [{ required: true, message: '请选择责任人', trigger: 'change' }] }
 const staffList = ref([])
 async function loadStaff() {
-  try { staffList.value = await userApi.list() || [] } catch (e) { /* 无权限或失败则下拉为空,不阻断 */ }
+  try { staffList.value = await workOrderApi.assignees() || [] } catch (e) { /* 失败时下拉为空,不阻断 */ }
 }
 function openDispatch(row) {
   dispatchDialog.visible = true
@@ -520,14 +606,32 @@ async function doArrive(row) {
   ElMessage.success('已登记到场')
   refresh()
 }
-async function doFinish(row) {
-  const { value } = await ElMessageBox.prompt('请输入处理结果', '处理完成', {
-    confirmButtonText: '确定', cancelButtonText: '取消', inputType: 'textarea'
-  }).catch(() => ({ value: undefined }))
-  if (value === undefined) return
-  await workOrderApi.finish(row.id, { content: value })
-  ElMessage.success('已提交完成')
-  refresh()
+const finishDialog = reactive({ visible: false, row: null })
+const finishForm = ref({ content: '', files: [] })
+const finishDrafts = new Map()
+const finishBusy = ref(false)
+const finishSaving = ref(false)
+function doFinish(row) {
+  finishDialog.row = row
+  if (!finishDrafts.has(row.id)) finishDrafts.set(row.id, reactive({ content: '', files: [] }))
+  finishForm.value = finishDrafts.get(row.id)
+  finishBusy.value = false
+  finishDialog.visible = true
+}
+async function submitFinish() {
+  if (finishBusy.value || finishSaving.value) return
+  const photoIds = finishForm.value.files.map(file => file.id).filter(Boolean)
+  if (!photoIds.length) { ElMessage.warning('请至少拍照或上传一张处理现场照片'); return }
+  finishSaving.value = true
+  try {
+    await workOrderApi.finish(finishDialog.row.id, { content: finishForm.value.content, photoIds })
+    finishDrafts.delete(finishDialog.row.id)
+    finishDialog.visible = false
+    ElMessage.success('处理照片已保存，工单已提交验收')
+    await refresh()
+  } catch {
+    // 保留文字与已上传照片，允许网络失败后重试。
+  } finally { finishSaving.value = false }
 }
 async function doClose(row) {
   await ElMessageBox.confirm('确认关闭该工单?', '提示', { type: 'warning' }).catch(() => 'cancel')
@@ -541,35 +645,50 @@ async function doClose(row) {
 
 // 验收
 const verifyDialog = reactive({ visible: false, row: null })
-const verifyForm = reactive({ score: 5 })
+const verifyForm = reactive({ score: 5, files: [] })
+const verifyBusy = ref(false)
+const verifySaving = ref(false)
 function openVerify(row) {
   verifyDialog.visible = true
   verifyDialog.row = row
   verifyForm.score = 5
+  verifyForm.files = []
+  verifyBusy.value = false
 }
 async function submitVerify() {
-  await workOrderApi.verify(verifyDialog.row.id, { score: verifyForm.score })
-  ElMessage.success('验收完成')
-  verifyDialog.visible = false
-  refresh()
+  if (verifyBusy.value || verifySaving.value) return
+  verifySaving.value = true
+  try {
+    await workOrderApi.verify(verifyDialog.row.id, { score: verifyForm.score,
+      photoIds: verifyForm.files.map(file => file.id).filter(Boolean) })
+    ElMessage.success('验收完成')
+    verifyDialog.visible = false
+    await refresh()
+  } catch {
+    // 保留验收照片，避免请求失败后重新上传。
+  } finally { verifySaving.value = false }
 }
 
 // 详情
 const detailDialog = reactive({ visible: false })
 const detail = reactive({ order: null, logs: [] })
 const detailFiles = ref([])
+const detailCompletionFiles = ref([])
+const detailVerifyFiles = ref([])
 async function openDetail(row) {
   const res = await workOrderApi.get(row.id)
   detail.order = res.order
   detail.logs = res.logs || []
   detail.building = res.building
   detail.floor = res.floor
+  detailFiles.value = []
+  detailCompletionFiles.value = []
+  detailVerifyFiles.value = []
   detailDialog.visible = true
+  try { detailCompletionFiles.value = await fileApi.list('work_order_finish', row.id) } catch { ElMessage.warning('处理照片加载失败，请重新打开详情') }
+  try { detailVerifyFiles.value = await fileApi.list('work_order_verify', row.id) } catch { ElMessage.warning('验收照片加载失败，请重新打开详情') }
   // 手机自助报修传的照片也走通用附件表,这里一并列出来
   try { detailFiles.value = await fileApi.list('work_order', row.id) } catch { detailFiles.value = [] }
-}
-function downloadFile(f) {
-  startFileDownload(f.id, f.originalName)
 }
 
 // 企业微信群机器人:地址存在后端 biz_setting,这里只做读写与测试
@@ -617,13 +736,16 @@ onMounted(() => {
   loadStaff()
   loadUnitOptions()
   loadWecom()
+  buildingApi.list().then(rows => { filterBuildings.value = rows || [] }).catch(() => { filterBuildings.value = [] })
+  supplierApi.tenantContacts().then(rows => { tenantOptions.value = rows || [] }).catch(() => { tenantOptions.value = [] })
 })
 </script>
 
 <style scoped>
+.completion-photo-tip { margin: 0 0 10px; color: var(--text-secondary); line-height: 1.6; }
+.completion-photos { margin-top: 10px; }
 .detail-files { margin-bottom: 16px; }
 .detail-files-hd { font-size: 13px; color: var(--text-secondary, #909399); margin-bottom: 6px; }
-.detail-files-list { display: flex; flex-wrap: wrap; gap: 12px; }
 .wecom-tip { color: var(--text-secondary, #909399); font-size: 13px; line-height: 1.6; }
 .stat-row { display: flex; gap: 16px; margin-bottom: 16px; }
 .stat-card {

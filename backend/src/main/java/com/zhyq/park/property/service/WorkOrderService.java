@@ -14,6 +14,8 @@ import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
 import java.util.Set;
+import java.util.List;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 
 /**
  * 工单状态流转:每步写一条 pm_work_order_log(action/operator/content),整体事务。
@@ -26,6 +28,7 @@ public class WorkOrderService {
     private final WorkOrderMapper workOrderMapper;
     private final WorkOrderLogMapper workOrderLogMapper;
     private final ApplicationEventPublisher eventPublisher;
+    private final WorkOrderPhotoService completionPhotos;
 
     public static final int ST_PENDING_DISPATCH = 1; // 待派单
     public static final int ST_PENDING_ACCEPT = 2;    // 待接单
@@ -122,12 +125,17 @@ public class WorkOrderService {
     /** 处理完成:处理中(3)→待验收(4),记录完成时间。兼容老调用,不带解决代码 */
     @Transactional(rollbackFor = Exception.class)
     public void finish(Long id, String operator, String content) {
-        finish(id, operator, content, null);
+        finish(id, operator, content, null, null);
     }
 
     /** 处理完成:处理中(3)→待验收(4),记录完成时间 + 可选标准化解决代码 */
     @Transactional(rollbackFor = Exception.class)
     public void finish(Long id, String operator, String content, String resolutionCode) {
+        finish(id, operator, content, resolutionCode, null);
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public void finish(Long id, String operator, String content, String resolutionCode, List<Long> photoIds) {
         WorkOrder wo = require(id);
         if (wo.getStatus() == null || wo.getStatus() != ST_PROCESSING) {
             throw new BizException("仅处理中的工单可提交完成");
@@ -141,7 +149,10 @@ public class WorkOrderService {
         upd.setStatus(ST_PENDING_VERIFY);
         upd.setFinishTime(now);
         upd.setResolutionCode(resolutionCode);
-        workOrderMapper.updateById(upd);
+        completionPhotos.attachForFinish(wo, operator, photoIds);
+        int changed = workOrderMapper.update(upd, new LambdaUpdateWrapper<WorkOrder>()
+                .eq(WorkOrder::getId, id).eq(WorkOrder::getStatus, ST_PROCESSING));
+        if (changed != 1) throw new BizException("工单状态已变化，请刷新后重试");
         log(id, "处理", operator, StringUtils.hasText(content) ? content : "处理完成");
     }
 
@@ -169,7 +180,7 @@ public class WorkOrderService {
 
     /** 验收:待验收(4)→已完成(5),记录满意度评分 */
     @Transactional(rollbackFor = Exception.class)
-    public void verify(Long id, String operator, Integer score) {
+    public void verify(Long id, String operator, Integer score, List<Long> photoIds) {
         WorkOrder wo = require(id);
         if (wo.getStatus() == null || wo.getStatus() != ST_PENDING_VERIFY) {
             throw new BizException("仅待验收状态的工单可验收");
@@ -177,11 +188,14 @@ public class WorkOrderService {
         if (score != null && (score < 1 || score > 5)) {
             throw new BizException("满意度评分需在 1-5 之间");
         }
+        completionPhotos.attachForVerify(wo, operator, photoIds);
         WorkOrder upd = new WorkOrder();
         upd.setId(id);
         upd.setStatus(ST_DONE);
         upd.setScore(score);
-        workOrderMapper.updateById(upd);
+        int changed = workOrderMapper.update(upd, new LambdaUpdateWrapper<WorkOrder>()
+                .eq(WorkOrder::getId, id).eq(WorkOrder::getStatus, ST_PENDING_VERIFY));
+        if (changed != 1) throw new BizException("工单状态已变化，请刷新后重试");
         log(id, "验收", operator, "验收通过,满意度评分:" + (score == null ? "-" : score));
         eventPublisher.publishEvent(new DomainEvent.WorkOrderClosed(id, LocalDateTime.now()));
     }

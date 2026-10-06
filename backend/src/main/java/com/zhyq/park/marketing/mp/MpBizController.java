@@ -203,7 +203,7 @@ public class MpBizController {
         return Result.ok(PageResult.of(p.getTotal(), rows));
     }
 
-    @Operation(summary = "可提现余额 + 最低提现") @GetMapping("/withdrawal/balance")
+    @Operation(summary = "可提现余额与提现规则") @GetMapping("/withdrawal/balance")
     public Result<Map<String, Object>> balance() {
         Long pid = MpAuthService.currentPromoterId();
         MktPromoter me = promoterMapper.selectById(pid);
@@ -212,7 +212,8 @@ public class MpBizController {
         BigDecimal cashable = balance.max(BigDecimal.ZERO).setScale(2, java.math.RoundingMode.DOWN);
         m.put("balance", balance); m.put("cashableBalance", cashable);
         m.put("fractionalBalance", balance.max(BigDecimal.ZERO).subtract(cashable));
-        m.put("minWithdraw", bizSettings.getDecimal(MODULE, "min_withdraw", new BigDecimal("100")));
+        m.put("minWithdraw", MktWithdrawalService.MIN_WITHDRAWAL);
+        m.put("withdrawalRules", withdrawalService.withdrawalRules());
         m.put("idVerified", me.getIdVerified());
         m.put("taxMode", bizSettings.getInt(MODULE, "tax_mode", 1));
         m.put("taxRate", bizSettings.getDecimal(MODULE, "tax_rate", new BigDecimal("0.20")));

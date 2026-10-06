@@ -145,4 +145,59 @@ class FileBrowserDownloadTest {
         verify(storage, never()).resolveExisting(file.getStorePath());
         verify(files, never()).selectList(any());
     }
+    private void workOrderPrincipal(String... permissions) {
+        var authorities = List.of(permissions);
+        when(accounts.load("admin", 1L)).thenReturn(new JwtAccountService.Account("admin", 1L, "reader", authorities, "test-version"));
+    }
+
+    @Test
+    void repairOperatorAndAdminCanUploadRealProcessingPhotoThroughActualPermissionGate() throws Exception {
+        var bytes = new java.io.ByteArrayOutputStream();
+        javax.imageio.ImageIO.write(new java.awt.image.BufferedImage(2, 2, java.awt.image.BufferedImage.TYPE_INT_RGB), "png", bytes);
+        var upload = new org.springframework.mock.web.MockMultipartFile("file", "现场.png", "image/png", bytes.toByteArray());
+        when(storage.store(any())).thenReturn(new FileStorageService.StoredResult("photo.png", "/uploads/photo.png", "png", "image/png", (long)bytes.size(), "现场.png"));
+        doAnswer(invocation -> {
+            SysFile file = invocation.getArgument(0); file.setId(70L); file.setCreateBy("reader");
+            when(files.selectById(70L)).thenReturn(file);
+            when(files.selectList(any())).thenReturn(List.of(file));
+            return 1;
+        }).when(files).insert(any(SysFile.class));
+        for (String role : List.of("property:workorder:edit", "ROLE_admin")) {
+            workOrderPrincipal(role, "property:workorder:query");
+            mvc.perform(multipart("/file/upload").file(upload).param("bizType", "work_order_finish")
+                    .header("Authorization", bearer))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.id").value(70)).andExpect(jsonPath("$.data.contentType").value("image/png"));
+            mvc.perform(get("/file/list").param("bizType", "work_order_finish").param("bizId", "1").header("Authorization", bearer))
+                .andExpect(jsonPath("$.code").value(0));
+            Path photo = directory.resolve("photo.png"); Files.write(photo, bytes.toByteArray());
+            when(storage.resolveExisting("photo.png")).thenReturn(photo);
+            mvc.perform(get("/file/download/70").header("Authorization", bearer))
+                .andExpect(status().isOk()).andExpect(content().bytes(bytes.toByteArray()));
+        }
+    }
+
+    @Test
+    void authorizedProcessingPhotoUploadRejectsEmptyOrFakeImagesBeforeStorage() throws Exception {
+        workOrderPrincipal("property:workorder:edit");
+        var empty = new org.springframework.mock.web.MockMultipartFile("file", "empty.jpg", "image/jpeg", new byte[0]);
+        mvc.perform(multipart("/file/upload").file(empty).param("bizType", "work_order_finish").header("Authorization", bearer))
+            .andExpect(jsonPath("$.message").value("请选择处理现场照片"));
+        var fake = new org.springframework.mock.web.MockMultipartFile("file", "fake.jpg", "image/jpeg", "not an image".getBytes());
+        mvc.perform(multipart("/file/upload").file(fake).param("bizType", "work_order_finish").header("Authorization", bearer))
+            .andExpect(jsonPath("$.message").value("请上传有效的处理照片"));
+        verify(storage, never()).store(any());
+    }
+
+    @Test
+    void queryOnlyAndUnrelatedRolesCannotUploadProcessingEvidence() throws Exception {
+        for (String role : List.of("property:workorder:query", "crm:customer:edit")) {
+            workOrderPrincipal(role);
+            var upload = new org.springframework.mock.web.MockMultipartFile("file", "photo.jpg", "image/jpeg", new byte[]{1});
+            mvc.perform(multipart("/file/upload").file(upload).param("bizType", "work_order_finish").header("Authorization", bearer))
+                .andExpect(jsonPath("$.code").value(403));
+        }
+        verify(storage, never()).store(any());
+    }
+
 }

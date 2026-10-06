@@ -36,18 +36,30 @@
   </view>
 </template>
 
+<script>
+import { appShareMixin } from '@/utils/share'
+
+export default { mixins: [appShareMixin] }
+</script>
+
 <script setup>
 import { onLoad } from '@dcloudio/uni-app'
 import { token, warehouseToken } from '@/utils/request'
 
 // 已登录直接进对应工作台;未登录停留在此页让用户选身份
-onLoad(() => {
+onLoad(q => {
+  if (q?.select === '1') return
   if (token.get()) return uni.switchTab({ url: '/pages/home/index' })
   if (warehouseToken.get()) return uni.reLaunch({ url: '/pages/warehouse-dashboard/index' })
 })
 
-function goPartner() { uni.reLaunch({ url: '/pages/login/index' }) }
-function goWarehouse() { uni.reLaunch({ url: '/pages/warehouse-login/index' }) }
+function goPartner() {
+  if (token.get()) return uni.switchTab({ url: '/pages/home/index' })
+  uni.reLaunch({ url: '/pages/login/index' })
+}
+function goWarehouse() {
+  uni.reLaunch({ url: warehouseToken.get() ? '/pages/warehouse-dashboard/index' : '/pages/warehouse-login/index' })
+}
 function goDemo() { uni.navigateTo({ url: '/pages/demo/index' }) }
 </script>
 

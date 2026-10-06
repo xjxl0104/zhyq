@@ -17,6 +17,12 @@
     <view v-if="error" class="wh-error" role="alert">{{ error }}</view><button v-if="!ready && !loading" class="wh-secondary" @click="load">重新读取</button>
   </view></view>
 </template>
+<script>
+import { appShareMixin } from '@/utils/share'
+
+export default { mixins: [appShareMixin] }
+</script>
+
 <script setup>
 import { reactive, ref, computed } from 'vue'
 import { onShow } from '@dcloudio/uni-app'

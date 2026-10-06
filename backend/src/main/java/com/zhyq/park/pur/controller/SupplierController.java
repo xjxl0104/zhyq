@@ -15,6 +15,8 @@ import com.zhyq.park.pur.mapper.SupplierMapper;
 import com.zhyq.park.pur.service.SupplierImportService;
 import com.zhyq.park.property.entity.WorkOrder;
 import com.zhyq.park.property.mapper.WorkOrderMapper;
+import com.zhyq.park.tenant.entity.BizTenant;
+import com.zhyq.park.tenant.mapper.BizTenantMapper;
 import org.springframework.web.multipart.MultipartFile;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -49,6 +51,45 @@ public class SupplierController {
     private final SupplierContractMapper contractMapper;
     private final SupplierImportService supplierImportService;
     private final WorkOrderMapper workOrderMapper;
+    private final BizTenantMapper tenantMapper;
+
+    public record TenantContactOption(Long id, String name, Long projectId, String contact, String phone) {}
+    public record TenantContactRequest(Long tenantRefId, String contact, String phone) {}
+
+    @Operation(summary = "租客联系人选项（供应商档案维护，工单关联）")
+    @PreAuthorize("hasAnyAuthority('pur:supplier:query', 'property:workorder:query')")
+    @GetMapping("/tenant-contacts")
+    public Result<List<TenantContactOption>> tenantContacts() {
+        return Result.ok(tenantMapper.selectList(new LambdaQueryWrapper<BizTenant>()
+                .eq(BizTenant::getStatus, 1)
+                .eq(BizTenant::getTenantId, MyMetaObjectHandler.DEFAULT_TENANT_ID)
+                .select(BizTenant::getId, BizTenant::getName, BizTenant::getProjectId,
+                        BizTenant::getContact, BizTenant::getPhone)
+                .orderByAsc(BizTenant::getName)).stream()
+                .map(t -> new TenantContactOption(t.getId(), t.getName(), t.getProjectId(), t.getContact(), t.getPhone()))
+                .toList());
+    }
+
+    @Operation(summary = "维护租客联系人")
+    @PreAuthorize("hasAuthority('pur:supplier:edit')")
+    @PutMapping("/tenant-contacts")
+    public Result<Void> updateTenantContact(@RequestBody TenantContactRequest req) {
+        if (req == null || req.tenantRefId() == null) throw new BizException("请选择租客");
+        if (!StringUtils.hasText(req.contact())) throw new BizException("请填写租客联系人");
+        if (req.contact().length() > 64 || (req.phone() != null && req.phone().length() > 20)) {
+            throw new BizException("租客联系人或电话超过长度限制");
+        }
+        int updated = tenantMapper.update(null, new LambdaUpdateWrapper<BizTenant>()
+                .eq(BizTenant::getId, req.tenantRefId())
+                .eq(BizTenant::getStatus, 1)
+                .eq(BizTenant::getTenantId, MyMetaObjectHandler.DEFAULT_TENANT_ID)
+                .set(BizTenant::getContact, req.contact().trim())
+                .set(BizTenant::getPhone, req.phone() == null ? null : req.phone().trim())
+                .set(BizTenant::getUpdateTime, LocalDateTime.now())
+                .set(BizTenant::getUpdateBy, MyMetaObjectHandler.currentOperator()));
+        if (updated == 0) throw new BizException("租客不存在或已归档");
+        return Result.ok();
+    }
 
     @Operation(summary = "分页查询供应商")
     @PreAuthorize("hasAuthority('pur:supplier:query')")
