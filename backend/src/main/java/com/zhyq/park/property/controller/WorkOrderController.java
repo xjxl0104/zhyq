@@ -20,6 +20,8 @@ import com.zhyq.park.property.service.WorkOrderService;
 import com.zhyq.park.property.service.WorkOrderSummaryService;
 import com.zhyq.park.system.entity.SysUser;
 import com.zhyq.park.system.mapper.SysUserMapper;
+import com.zhyq.park.tenant.entity.BizTenant;
+import com.zhyq.park.tenant.mapper.BizTenantMapper;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
@@ -50,6 +52,7 @@ public class WorkOrderController {
     private static final int MAX_ORDERS_PER_SOURCE = 500;
 
     private final WorkOrderMapper workOrderMapper;
+    private final BizTenantMapper tenantMapper;
     private final SysUserMapper userMapper;
     private final WorkOrderLocationService locations;
     private final WorkOrderLogMapper workOrderLogMapper;
@@ -79,7 +82,12 @@ public class WorkOrderController {
                                               @RequestParam(required = false) Integer status,
                                               @RequestParam(required = false) Integer urgency,
                                               @RequestParam(required = false) Long projectId,
+                                              @RequestParam(required = false) Long buildingId,
+                                              @RequestParam(required = false) Long floorId,
+                                              @RequestParam(required = false) String zone,
+                                              @RequestParam(required = false) Long tenantRefId,
                                               @RequestParam(required = false) Long id) {
+        if (StringUtils.hasText(zone) && !List.of("A", "B", "C").contains(zone)) throw new BizException("无效的楼层分区");
         LambdaQueryWrapper<WorkOrder> qw = new LambdaQueryWrapper<>();
         qw.eq(id != null, WorkOrder::getId, id)
           .like(StringUtils.hasText(code), WorkOrder::getCode, code)
@@ -87,6 +95,10 @@ public class WorkOrderController {
           .eq(status != null, WorkOrder::getStatus, status)
           .eq(urgency != null, WorkOrder::getUrgency, urgency)
           .eq(projectId != null, WorkOrder::getProjectId, projectId)
+          .eq(buildingId != null, WorkOrder::getBuildingId, buildingId)
+          .eq(floorId != null, WorkOrder::getFloorId, floorId)
+          .eq(StringUtils.hasText(zone), WorkOrder::getZone, zone)
+          .eq(tenantRefId != null, WorkOrder::getTenantRefId, tenantRefId)
           .orderByDesc(WorkOrder::getId);
         IPage<WorkOrder> p = workOrderMapper.selectPage(new Page<>(pageNo, pageSize), qw);
         return Result.ok(PageResult.of(p.getTotal(), p.getRecords()));
@@ -119,12 +131,14 @@ public class WorkOrderController {
             wo.setProjectId(point.projectId());
             wo.setBuildingId(point.buildingId());
             wo.setFloorId(point.floorId());
+            wo.setZone(point.zone());
             wo.setFloorPlanFileId(point.planFileId());
             wo.setPlanX(point.x());
             wo.setPlanY(point.y());
             wo.setRoomId(null);
             wo.setSpaceId(null);
         }
+        validateTenant(wo.getTenantRefId(), wo.getProjectId(), MyMetaObjectHandler.DEFAULT_TENANT_ID);
         if (!StringUtils.hasText(wo.getCode())) {
             wo.setCode("WO" + System.currentTimeMillis());
         }
@@ -174,6 +188,15 @@ public class WorkOrderController {
         wo.setStatus(null);
         wo.setFinishTime(null);
         wo.setResolutionCode(null);
+        boolean clearTenantRef = Boolean.TRUE.equals(wo.getClearTenantRef());
+        if (clearTenantRef && wo.getTenantRefId() != null) throw new BizException("解除租客关联时不能同时选择租客");
+        if (clearTenantRef) {
+            wo.setTenantContact(null);
+            wo.setTenantContactPhone(null);
+        }
+        if (wo.getTenantRefId() != null && !wo.getTenantRefId().equals(existing.getTenantRefId())) {
+            validateTenant(wo.getTenantRefId(), existing.getProjectId(), existing.getTenantId());
+        }
         if (wo.getFloorLocation() != null) {
             var point = locations.resolve(wo.getFloorLocation(), existing.getProjectId(), existing.getTenantId());
             // Explicit SET permits clearing a point without affecting partial status updates elsewhere.
@@ -181,20 +204,42 @@ public class WorkOrderController {
             wo.setBuildingId(null);
             wo.setRoomId(null);
             wo.setSpaceId(null);
-            workOrderMapper.update(wo, new LambdaUpdateWrapper<WorkOrder>().eq(WorkOrder::getId, wo.getId())
+            LambdaUpdateWrapper<WorkOrder> update = new LambdaUpdateWrapper<WorkOrder>().eq(WorkOrder::getId, wo.getId())
                     .set(WorkOrder::getProjectId, point.projectId()).set(WorkOrder::getBuildingId, point.buildingId())
                     .set(WorkOrder::getFloorId, point.floorId()).set(WorkOrder::getFloorPlanFileId, point.planFileId())
+                    .set(WorkOrder::getZone, point.zone())
                     .set(WorkOrder::getPlanX, point.x()).set(WorkOrder::getPlanY, point.y())
-                    .set(WorkOrder::getRoomId, null).set(WorkOrder::getSpaceId, null));
+                    .set(WorkOrder::getRoomId, null).set(WorkOrder::getSpaceId, null);
+            if (clearTenantRef) update.set(WorkOrder::getTenantRefId, null)
+                    .set(WorkOrder::getTenantContact, null).set(WorkOrder::getTenantContactPhone, null);
+            workOrderMapper.update(wo, update);
         } else {
             if (existing.getFloorId() != null && ((wo.getBuildingId() != null && !wo.getBuildingId().equals(existing.getBuildingId()))
                     || (wo.getProjectId() != null && !wo.getProjectId().equals(existing.getProjectId()))
                     || (wo.getRoomId() != null && !wo.getRoomId().equals(existing.getRoomId())))) {
                 throw new BizException("修改维修位置时请重新选择楼宇和楼层");
             }
-            workOrderMapper.updateById(wo);
+            if (clearTenantRef) {
+                workOrderMapper.update(wo, new LambdaUpdateWrapper<WorkOrder>().eq(WorkOrder::getId, wo.getId())
+                        .set(WorkOrder::getTenantRefId, null)
+                        .set(WorkOrder::getTenantContact, null).set(WorkOrder::getTenantContactPhone, null));
+            } else {
+                workOrderMapper.updateById(wo);
+            }
         }
         return Result.ok();
+    }
+
+    private void validateTenant(Long tenantRefId, Long projectId, Long platformTenantId) {
+        if (tenantRefId == null) return;
+        BizTenant tenant = tenantMapper.selectById(tenantRefId);
+        if (tenant == null || !java.util.Objects.equals(tenant.getTenantId(), platformTenantId)
+                || !Integer.valueOf(1).equals(tenant.getStatus())) {
+            throw new BizException("所选租客不存在或已归档");
+        }
+        if (projectId != null && tenant.getProjectId() != null && !projectId.equals(tenant.getProjectId())) {
+            throw new BizException("租客不属于工单所在园区");
+        }
     }
 
     @Operation(summary = "删除工单")

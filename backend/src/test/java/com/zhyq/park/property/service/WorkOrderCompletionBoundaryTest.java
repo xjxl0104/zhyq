@@ -11,6 +11,8 @@ import com.zhyq.park.file.service.FileStorageService;
 import com.zhyq.park.property.controller.WorkOrderController;
 import com.zhyq.park.property.entity.WorkOrder;
 import com.zhyq.park.property.mapper.WorkOrderMapper;
+import com.zhyq.park.tenant.entity.BizTenant;
+import com.zhyq.park.tenant.mapper.BizTenantMapper;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.junit.jupiter.api.*;
 import org.mockito.*;
@@ -23,6 +25,7 @@ import static org.mockito.Mockito.*;
 
 class WorkOrderCompletionBoundaryTest {
     @Mock WorkOrderMapper orders;
+    @Mock BizTenantMapper tenants;
     @Mock WorkOrderService workOrderService;
     @Mock SysFileMapper files;
     @Mock FileStorageService storage;
@@ -35,6 +38,7 @@ class WorkOrderCompletionBoundaryTest {
         mocks = MockitoAnnotations.openMocks(this);
         var assistant = new MapperBuilderAssistant(new MybatisConfiguration(), "test");
         TableInfoHelper.initTableInfo(assistant, SysFile.class);
+        TableInfoHelper.initTableInfo(assistant, WorkOrder.class);
         SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken("repair", "ignored", List.of()));
     }
     @AfterEach void cleanup() throws Exception { SecurityContextHolder.clearContext(); mocks.close(); }
@@ -54,6 +58,33 @@ class WorkOrderCompletionBoundaryTest {
         assertThat(patch.getStatus()).isNull();
         assertThat(patch.getFinishTime()).isNull();
         assertThat(patch.getResolutionCode()).isNull();
+    }
+    @Test void rejectsTenantFromAnotherParkOrPlatform() {
+        BizTenant tenant = new BizTenant();
+        tenant.setId(9L); tenant.setTenantId(1L); tenant.setProjectId(8L); tenant.setStatus(1);
+        when(tenants.selectById(9L)).thenReturn(tenant);
+        WorkOrder order = new WorkOrder(); order.setTitle("漏水"); order.setProjectId(3L); order.setTenantRefId(9L);
+        assertThatThrownBy(() -> controller.add(order)).hasMessageContaining("不属于工单所在园区");
+        tenant.setProjectId(3L); tenant.setTenantId(2L);
+        assertThatThrownBy(() -> controller.add(order)).hasMessageContaining("不存在或已归档");
+        verify(orders, never()).insert(any(WorkOrder.class));
+    }
+    @Test void editingHistoricalOrderDoesNotRejectItsNowArchivedTenant() {
+        WorkOrder existing = new WorkOrder(); existing.setId(1L); existing.setStatus(3); existing.setTenantRefId(9L);
+        when(orders.selectById(1L)).thenReturn(existing);
+        WorkOrder patch = new WorkOrder(); patch.setId(1L); patch.setTenantRefId(9L); patch.setTitle("换灯");
+        controller.update(patch);
+        verifyNoInteractions(tenants);
+        verify(orders).updateById(patch);
+    }
+    @Test void explicitClearRemovesTenantContactWithoutAffectingPartialUpdates() {
+        WorkOrder existing = new WorkOrder(); existing.setId(1L); existing.setStatus(3); existing.setTenantRefId(9L);
+        when(orders.selectById(1L)).thenReturn(existing);
+        WorkOrder patch = new WorkOrder(); patch.setId(1L); patch.setClearTenantRef(true);
+        patch.setTenantContact("旧联系人");
+        controller.update(patch);
+        assertThat(patch.getTenantContact()).isNull();
+        verify(orders).update(eq(patch), any(Wrapper.class));
     }
     @Test void finishUsesAuthenticatedUploaderAndPassesMissingPhotosToMandatoryValidation() {
         controller.finish(1L, new WorkOrderController.FinishRequest("已处理", null, List.of(7L)));

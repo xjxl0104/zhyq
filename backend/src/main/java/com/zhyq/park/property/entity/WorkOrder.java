@@ -31,6 +31,8 @@ public class WorkOrder extends BaseEntity {
     @JsonProperty(access = JsonProperty.Access.READ_ONLY)
     private Long floorId;
     @JsonProperty(access = JsonProperty.Access.READ_ONLY)
+    private String zone;
+    @JsonProperty(access = JsonProperty.Access.READ_ONLY)
     private Long floorPlanFileId;
     @JsonProperty(access = JsonProperty.Access.READ_ONLY)
     private BigDecimal planX;
@@ -64,6 +66,14 @@ public class WorkOrder extends BaseEntity {
 
     /** 统一供应商档案 ID，历史责任单位关联保留用于追溯。 */
     private Long supplierId;
+    /** 报修关联的租客档案，区别于 BaseEntity.tenantId（平台租户）。 */
+    private Long tenantRefId;
+    /** 建单时的租客联系人快照，避免档案更新后历史工单失真。 */
+    private String tenantContact;
+    private String tenantContactPhone;
+    /** 编辑时显式解除租客关联，避免普通局部更新误清空。 */
+    @TableField(exist = false)
+    private Boolean clearTenantRef;
     /** 响应SLA(分钟) */
     private Integer slaRespondMin;
     /** 解决SLA(分钟) */
