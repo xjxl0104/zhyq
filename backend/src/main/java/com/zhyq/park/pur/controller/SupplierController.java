@@ -9,9 +9,11 @@ import com.zhyq.park.common.exception.BizException;
 import com.zhyq.park.common.result.PageResult;
 import com.zhyq.park.common.result.Result;
 import com.zhyq.park.pur.entity.Supplier;
+import com.zhyq.park.pur.entity.TenantContact;
 import com.zhyq.park.pur.mapper.SupplierContractMapper;
 import com.zhyq.park.pur.entity.SupplierContract;
 import com.zhyq.park.pur.mapper.SupplierMapper;
+import com.zhyq.park.pur.mapper.TenantContactMapper;
 import com.zhyq.park.pur.service.SupplierImportService;
 import com.zhyq.park.property.entity.WorkOrder;
 import com.zhyq.park.property.mapper.WorkOrderMapper;
@@ -51,43 +53,91 @@ public class SupplierController {
     private final SupplierContractMapper contractMapper;
     private final SupplierImportService supplierImportService;
     private final WorkOrderMapper workOrderMapper;
+    private final TenantContactMapper tenantContactMapper;
     private final BizTenantMapper tenantMapper;
 
-    public record TenantContactOption(Long id, String name, Long projectId, String contact, String phone) {}
-    public record TenantContactRequest(Long tenantRefId, String contact, String phone) {}
+    public record TenantContactRequest(Long id, String name, Long projectId, String contact, String phone) {}
+    public record TenantContactOption(Long id, String name, Long projectId, Long tenantRefId, String contact, String phone) {}
+    public record TenantNameOption(Long id, String name) {}
 
     @Operation(summary = "租客联系人选项（供应商档案维护，工单关联）")
     @PreAuthorize("hasAnyAuthority('pur:supplier:query', 'property:workorder:query')")
     @GetMapping("/tenant-contacts")
     public Result<List<TenantContactOption>> tenantContacts() {
-        return Result.ok(tenantMapper.selectList(new LambdaQueryWrapper<BizTenant>()
-                .eq(BizTenant::getStatus, 1)
-                .eq(BizTenant::getTenantId, MyMetaObjectHandler.DEFAULT_TENANT_ID)
-                .select(BizTenant::getId, BizTenant::getName, BizTenant::getProjectId,
-                        BizTenant::getContact, BizTenant::getPhone)
-                .orderByAsc(BizTenant::getName)).stream()
-                .map(t -> new TenantContactOption(t.getId(), t.getName(), t.getProjectId(), t.getContact(), t.getPhone()))
-                .toList());
+        return Result.ok(tenantContactMapper.selectList(new LambdaQueryWrapper<TenantContact>()
+                .eq(TenantContact::getTenantId, MyMetaObjectHandler.DEFAULT_TENANT_ID)
+                .orderByDesc(TenantContact::getId)).stream()
+                .map(c -> new TenantContactOption(c.getId(), c.getName(), c.getProjectId(),
+                        c.getTenantRefId(), c.getContact(), c.getPhone())).toList());
     }
 
-    @Operation(summary = "维护租客联系人")
+    @Operation(summary = "历史租客名称（供工单筛选和历史记录展示）")
+    @PreAuthorize("hasAnyAuthority('pur:supplier:query', 'property:workorder:query')")
+    @GetMapping("/tenant-directory")
+    public Result<List<TenantNameOption>> tenantDirectory() {
+        return Result.ok(tenantMapper.selectList(new LambdaQueryWrapper<BizTenant>()
+                        .eq(BizTenant::getTenantId, MyMetaObjectHandler.DEFAULT_TENANT_ID)
+                        .select(BizTenant::getId, BizTenant::getName)
+                        .orderByAsc(BizTenant::getName)).stream()
+                .map(t -> new TenantNameOption(t.getId(), t.getName())).toList());
+    }
+
+    @Operation(summary = "新增自由填写的租客联系人")
+    @PreAuthorize("hasAuthority('pur:supplier:edit')")
+    @PostMapping("/tenant-contacts")
+    public Result<Long> addTenantContact(@RequestBody TenantContactRequest req) {
+        validateTenantContact(req);
+        TenantContact contact = new TenantContact();
+        contact.setName(req.name().trim());
+        contact.setProjectId(req.projectId());
+        contact.setContact(req.contact().trim());
+        contact.setPhone(phoneOf(req.phone()));
+        contact.setTenantId(MyMetaObjectHandler.DEFAULT_TENANT_ID);
+        tenantContactMapper.insert(contact);
+        return Result.ok(contact.getId());
+    }
+
+    @Operation(summary = "编辑租客联系人")
     @PreAuthorize("hasAuthority('pur:supplier:edit')")
     @PutMapping("/tenant-contacts")
     public Result<Void> updateTenantContact(@RequestBody TenantContactRequest req) {
-        if (req == null || req.tenantRefId() == null) throw new BizException("请选择租客");
-        if (!StringUtils.hasText(req.contact())) throw new BizException("请填写租客联系人");
-        if (req.contact().length() > 64 || (req.phone() != null && req.phone().length() > 20)) {
-            throw new BizException("租客联系人或电话超过长度限制");
-        }
-        int updated = tenantMapper.update(null, new LambdaUpdateWrapper<BizTenant>()
-                .eq(BizTenant::getId, req.tenantRefId())
-                .eq(BizTenant::getStatus, 1)
-                .eq(BizTenant::getTenantId, MyMetaObjectHandler.DEFAULT_TENANT_ID)
-                .set(BizTenant::getContact, req.contact().trim())
-                .set(BizTenant::getPhone, req.phone() == null ? null : req.phone().trim())
-                .set(BizTenant::getUpdateTime, LocalDateTime.now())
-                .set(BizTenant::getUpdateBy, MyMetaObjectHandler.currentOperator()));
-        if (updated == 0) throw new BizException("租客不存在或已归档");
+        validateTenantContact(req);
+        if (req.id() == null) throw new BizException("缺少联系人编号");
+        TenantContact existing = tenantContactMapper.selectById(req.id());
+        if (existing == null || !MyMetaObjectHandler.DEFAULT_TENANT_ID.equals(existing.getTenantId()))
+            throw new BizException("租客联系人不存在");
+        LambdaUpdateWrapper<TenantContact> update = new LambdaUpdateWrapper<TenantContact>()
+                .eq(TenantContact::getId, req.id())
+                .eq(TenantContact::getTenantId, MyMetaObjectHandler.DEFAULT_TENANT_ID)
+                .set(TenantContact::getName, req.name().trim())
+                .set(TenantContact::getProjectId, req.projectId())
+                .set(TenantContact::getContact, req.contact().trim())
+                .set(TenantContact::getPhone, phoneOf(req.phone()))
+                .set(TenantContact::getUpdateTime, LocalDateTime.now())
+                .set(TenantContact::getUpdateBy, MyMetaObjectHandler.currentOperator());
+        if (!req.name().trim().equals(existing.getName())) update.set(TenantContact::getTenantRefId, null);
+        if (tenantContactMapper.update(null, update) == 0) throw new BizException("租客联系人不存在");
+        return Result.ok();
+    }
+
+    private static void validateTenantContact(TenantContactRequest req) {
+        if (req == null || !StringUtils.hasText(req.name()) || !StringUtils.hasText(req.contact()))
+            throw new BizException("请填写租客名称和联系人");
+        if (req.name().trim().length() > 128 || req.contact().trim().length() > 64
+                || (req.phone() != null && req.phone().trim().length() > 20))
+            throw new BizException("租客名称、联系人或电话超过长度限制");
+    }
+
+    private static String phoneOf(String phone) { return StringUtils.hasText(phone) ? phone.trim() : null; }
+
+    @Operation(summary = "删除租客联系人（保留租客档案和历史工单）")
+    @PreAuthorize("hasAuthority('pur:supplier:edit')")
+    @DeleteMapping("/tenant-contacts/{id}")
+    public Result<Void> removeTenantContact(@PathVariable Long id) {
+        int deleted = tenantContactMapper.delete(new LambdaQueryWrapper<TenantContact>()
+                .eq(TenantContact::getId, id)
+                .eq(TenantContact::getTenantId, MyMetaObjectHandler.DEFAULT_TENANT_ID));
+        if (deleted == 0) throw new BizException("租客联系人不存在或已删除");
         return Result.ok();
     }
 

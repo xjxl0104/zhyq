@@ -11,7 +11,10 @@ export const supplierApi = {
   list: () => request.get('/pur/supplier/list'),
   options: () => request.get('/pur/supplier/options'),
   tenantContacts: () => request.get('/pur/supplier/tenant-contacts'),
+  tenantDirectory: () => request.get('/pur/supplier/tenant-directory'),
+  addTenantContact: (data) => request.post('/pur/supplier/tenant-contacts', data),
   updateTenantContact: (data) => request.put('/pur/supplier/tenant-contacts', data),
+  removeTenantContact: (tenantRefId) => request.delete(`/pur/supplier/tenant-contacts/${tenantRefId}`),
   // 导入供应商档案,formData 里带 file
   importFile: (formData) => request.post('/pur/supplier/import', formData, {
     headers: { 'Content-Type': 'multipart/form-data' }

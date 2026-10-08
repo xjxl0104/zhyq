@@ -59,8 +59,8 @@
           </el-select>
         </el-form-item>
         <el-form-item label="租客">
-          <el-select v-model="query.tenantRefId" placeholder="全部租客" clearable filterable style="width: 180px">
-            <el-option v-for="t in tenantOptions" :key="t.id" :label="t.name" :value="t.id" />
+          <el-select v-model="query.tenantName" placeholder="全部租客 / 输入名称" clearable filterable allow-create default-first-option style="width: 180px">
+            <el-option v-for="name in tenantFilterNames" :key="name" :label="name" :value="name" />
           </el-select>
         </el-form-item>
         <el-form-item>
@@ -97,6 +97,7 @@
           <el-tag :type="statusMap[row.status]?.type || 'info'">
             {{ statusMap[row.status]?.label || row.status }}
           </el-tag>
+          <el-tag v-if="isRectificationOverdue(row)" type="danger">整改超时</el-tag>
         </template>
         <template #default="{ row }">
           <div class="mobile-record-summary">
@@ -114,6 +115,8 @@
               <div class="mobile-record-field"><dt>位置</dt><dd>{{ row.location || '-' }}</dd></div>
               <div class="mobile-record-field"><dt>分类</dt><dd>{{ row.category || '-' }}</dd></div>
               <div class="mobile-record-field"><dt>紧急度</dt><dd>{{ urgencyMap[row.urgency]?.label || row.urgency || '-' }}</dd></div>
+              <div class="mobile-record-field"><dt>整改时限</dt><dd>{{ rectificationLabel(row) }}</dd></div>
+              <div class="mobile-record-field"><dt>整改截止</dt><dd>{{ formatRectificationDeadline(row) }}</dd></div>
               <div class="mobile-record-field"><dt>状态</dt><dd>{{ statusMap[row.status]?.label || row.status || '-' }}</dd></div>
               <div class="mobile-record-field"><dt>处理人</dt><dd>{{ row.assignee || '-' }}</dd></div>
               <div class="mobile-record-field mobile-record-field--wide"><dt>创建时间</dt><dd>{{ row.createTime || '-' }}</dd></div>
@@ -151,6 +154,12 @@
             </el-tag>
           </template>
         </el-table-column>
+        <el-table-column label="整改截止" min-width="175">
+          <template #default="{ row }">
+            <span>{{ formatRectificationDeadline(row) }}</span>
+            <el-tag v-if="isRectificationOverdue(row)" type="danger" size="small" style="margin-left: 6px">超时</el-tag>
+          </template>
+        </el-table-column>
         <el-table-column prop="assignee" label="处理人" width="100" />
         <el-table-column prop="createTime" label="创建时间" width="170" />
         <el-table-column label="操作" width="260" fixed="right">
@@ -173,7 +182,7 @@
 
     <!-- 新增工单弹窗 -->
     <el-dialog v-model="dialog.visible" :title="dialog.title" width="min(820px, 94vw)" destroy-on-close :close-on-click-modal="false">
-      <el-form :model="form" label-width="80px" ref="formRef" :rules="rules">
+      <el-form :model="form" label-width="112px" ref="formRef" :rules="rules">
         <el-form-item label="标题" prop="title"><el-input v-model="form.title" /></el-form-item>
         <el-form-item label="类型">
           <el-select v-model="form.orderType" style="width: 100%">
@@ -183,7 +192,7 @@
         <el-form-item label="楼层定位">
           <WorkOrderLocation v-if="dialog.visible" :key="locationKey" :model-value="floorLocation" :project-id="form.projectId" @update:model-value="setFloorLocation" @busy="locationBusy = $event" />
         </el-form-item>
-        <el-form-item label="位置说明"><el-input v-model="form.location" placeholder="如东侧电梯口、消防通道，未上传平面图时可直接填写" /></el-form-item>
+        <el-form-item label="备注说明"><el-input v-model="form.location" placeholder="可补充维修位置等说明，如东侧电梯口、消防通道" /></el-form-item>
         <el-form-item label="分类"><el-input v-model="form.category" placeholder="如:水电/空调/门窗" /></el-form-item>
         <el-form-item label="紧急度">
           <el-radio-group v-model="form.urgency">
@@ -191,6 +200,11 @@
             <el-radio :value="2">中</el-radio>
             <el-radio :value="3">高</el-radio>
           </el-radio-group>
+        </el-form-item>
+        <el-form-item label="整改时限" prop="slaResolveMin">
+          <el-select v-model="form.slaResolveMin" placeholder="请选择整改时限" style="width: 100%">
+            <el-option v-for="option in rectificationOptions" :key="option.value" :label="option.label" :value="option.value" />
+          </el-select>
         </el-form-item>
         <el-form-item label="供应商">
           <el-select
@@ -209,24 +223,24 @@
             />
           </el-select>
         </el-form-item>
-        <el-form-item label="报修租客">
-          <el-select v-model="form.tenantRefId" clearable filterable placeholder="选择租客（可不填）" style="width: 100%" @change="onTenantChange">
-            <el-option v-for="t in tenantOptions" :key="t.id" :label="t.name" :value="t.id" />
-          </el-select>
-        </el-form-item>
-        <el-form-item v-if="form.tenantRefId" label="租客联系人">
-          <el-input v-model="form.tenantContact" placeholder="选租客后自动带出，可修改" />
-        </el-form-item>
-        <el-form-item v-if="form.tenantRefId" label="租客电话">
-          <el-input v-model="form.tenantContactPhone" placeholder="选租客后自动带出，可修改" />
-        </el-form-item>
         <el-form-item label="供应商联系人">
           <el-input v-model="form.contact" placeholder="选供应商后自动带出，可改" />
         </el-form-item>
         <el-form-item label="供应商电话">
           <el-input v-model="form.contactPhone" placeholder="选供应商后自动带出，可改" />
         </el-form-item>
-        <el-form-item label="备注"><el-input v-model="form.remark" type="textarea" /></el-form-item>
+        <el-form-item label="报修租客">
+          <el-select v-model="form.tenantContactRefId" clearable filterable placeholder="选择租客公司（可不填）" style="width: 100%" @change="onTenantChange">
+            <el-option v-for="t in tenantOptions" :key="t.id" :label="t.name" :value="t.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item v-if="form.tenantContactRefId || form.tenantRefId" label="租客联系人">
+          <el-input v-model="form.tenantContact" placeholder="选联系人后自动带出" :readonly="!!form.tenantContactRefId" />
+        </el-form-item>
+        <el-form-item v-if="form.tenantContactRefId || form.tenantRefId" label="租客电话">
+          <el-input v-model="form.tenantContactPhone" placeholder="选联系人后自动带出" :readonly="!!form.tenantContactRefId" />
+        </el-form-item>
+        <el-form-item label="其他备注"><el-input v-model="form.remark" type="textarea" /></el-form-item>
         <el-form-item label="附件"><FileUpload :key="locationKey" v-model="attachFiles" biz-type="work_order" :biz-id="form.id" camera @busy="attachmentBusy = $event" /></el-form-item>
       </el-form>
       <template #footer>
@@ -333,8 +347,13 @@
         </el-descriptions-item>
         <el-descriptions-item label="到场时间">{{ detail.order?.arriveTime || '-' }}</el-descriptions-item>
         <el-descriptions-item label="完成时间">{{ detail.order?.finishTime || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="整改时限">{{ rectificationLabel(detail.order) }}</el-descriptions-item>
+        <el-descriptions-item label="整改截止">
+          {{ formatRectificationDeadline(detail.order) }}
+          <el-tag v-if="isRectificationOverdue(detail.order)" type="danger" size="small" style="margin-left: 6px">超时</el-tag>
+        </el-descriptions-item>
         <el-descriptions-item label="供应商">{{ unitName(detail.order?.supplierId) }}</el-descriptions-item>
-        <el-descriptions-item label="报修租客">{{ tenantName(detail.order?.tenantRefId) }}</el-descriptions-item>
+        <el-descriptions-item label="报修租客">{{ tenantName(detail.order) }}</el-descriptions-item>
         <el-descriptions-item label="租客联系人">{{ detail.order?.tenantContact || '-' }}</el-descriptions-item>
         <el-descriptions-item label="租客电话">{{ detail.order?.tenantContactPhone || '-' }}</el-descriptions-item>
         <el-descriptions-item label="来源">
@@ -350,6 +369,7 @@
         </el-descriptions-item>
       </el-descriptions>
 
+      <el-button v-if="detail.order && canLocateOrder(detail.order)" type="primary" plain @click="router.push({ path: '/dashboard', query: { floor: String(spatialWorkOrder(detail.order).floor), workOrderId: String(detail.order.id) } })">在 3D 中定位</el-button>
       <p v-if="detail.floor">楼层：{{ detail.building?.name }} / {{ detail.floor.name }}{{ detail.order?.zone ? ` / ${detail.order.zone}区` : '' }}</p>
       <FloorPlanViewer v-if="detail.order?.floorPlanFileId" :file-id="detail.order.floorPlanFileId" :point="{ x: Number(detail.order.planX), y: Number(detail.order.planY) }" />
       <div v-if="detailFiles.length" class="detail-files">
@@ -379,7 +399,8 @@
 </template>
 
 <script setup>
-import { computed, reactive, ref, onMounted } from 'vue'
+import { canLocateOrder, spatialWorkOrder } from '@/views/twin/workOrderSpatial'
+import { computed, reactive, ref, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ChatDotRound } from '@element-plus/icons-vue'
@@ -395,6 +416,7 @@ import HighlightNotice from '@/components/HighlightNotice.vue'
 import MobileRecordList from '@/components/MobileRecordList.vue'
 import { SOURCE_ROUTES, useHighlightFilter } from '@/composables/useSourceLink'
 import { useResponsive } from '@/composables/useResponsive'
+import { rectificationOptions, rectificationOverdue, formatRectificationDeadline } from '@/utils/workOrderDeadline'
 
 const router = useRouter()
 const route = useRoute()
@@ -415,10 +437,21 @@ const statusMap = {
   6: { label: '已关闭', type: 'info' },
   7: { label: '已超时', type: 'danger' }
 }
+const clock = ref(Date.now())
+const isRectificationOverdue = order => rectificationOverdue(order, new Date(clock.value))
+const rectificationLabel = order => {
+  const minutes = Number(order?.slaResolveMin)
+  if (!minutes) return '未设置'
+  return minutes % 1440 === 0 ? `${minutes / 1440}天` : `${minutes}分钟`
+}
+let clockTimer
 const filterBuildings = ref([])
 const filterFloors = ref([])
 const tenantOptions = ref([])
-const tenantName = id => id ? tenantOptions.value.find(t => t.id === id)?.name || `租客 #${id}` : '-'
+const legacyTenants = ref([])
+const tenantFilterNames = computed(() => [...new Set([...tenantOptions.value, ...legacyTenants.value].map(t => t.name).filter(Boolean))])
+const tenantName = order => order?.tenantName ||
+  (order?.tenantRefId ? legacyTenants.value.find(t => t.id === order.tenantRefId)?.name || `租客 #${order.tenantRefId}` : '-')
 async function changeFilterBuilding(id) {
   query.floorId = null
   query.zone = null
@@ -432,7 +465,7 @@ const list = ref([])
 const total = ref(0)
 const stats = reactive({ pending: 0, processing: 0, done: 0, total: 0 })
 const query = reactive({ pageNo: 1, pageSize: 10, code: '', orderType: null, status: null, urgency: null,
-  buildingId: null, floorId: null, zone: null, tenantRefId: null, id: null })
+  buildingId: null, floorId: null, zone: null, tenantName: null, id: null })
 
 async function load() {
   loading.value = true
@@ -458,7 +491,7 @@ async function refresh() {
 function reset() {
   // id 一并清掉,否则从源记录跳来后点重置会仍被定位条件锁住
   Object.assign(query, { pageNo: 1, code: '', orderType: null, status: null, urgency: null,
-    buildingId: null, floorId: null, zone: null, tenantRefId: null, id: null })
+    buildingId: null, floorId: null, zone: null, tenantName: null, id: null })
   filterFloors.value = []
   highlightId.value = null
   load()
@@ -468,9 +501,12 @@ function reset() {
 const formRef = ref()
 const dialog = reactive({ visible: false, title: '' })
 const defaultForm = () => ({ id: null, title: '', orderType: '报修', location: '', category: '', urgency: 2,
-  contact: '', contactPhone: '', tenantContact: '', tenantContactPhone: '', remark: '', supplierId: null, tenantRefId: null })
+  slaResolveMin: 7 * 24 * 60, contact: '', contactPhone: '', tenantName: '', tenantContact: '', tenantContactPhone: '',
+  tenantContactRefId: null, remark: '', supplierId: null, tenantRefId: null })
 function onTenantChange(id) {
   const tenant = tenantOptions.value.find(t => t.id === id)
+  form.tenantRefId = null
+  form.tenantName = tenant?.name || ''
   form.tenantContact = tenant?.contact || ''
   form.tenantContactPhone = tenant?.phone || ''
 }
@@ -523,7 +559,8 @@ function resetLocation(row = {}) {
     x: row.planX == null ? null : Number(row.planX), y: row.planY == null ? null : Number(row.planY) }
 }
 const rules = {
-  title: [{ required: true, message: '请输入标题', trigger: 'blur' }]
+  title: [{ required: true, message: '请输入标题', trigger: 'blur' }],
+  slaResolveMin: [{ required: true, message: '请选择整改时限', trigger: 'change' }]
 }
 function openDialog() {
   dialog.visible = true
@@ -538,6 +575,7 @@ async function openEdit(row) {
   dialog.title = '修改工单'
   Object.keys(form).forEach(key => delete form[key])
   Object.assign(form, defaultForm(), row)
+  if (!rectificationOptions.some(option => option.value === form.slaResolveMin)) form.slaResolveMin = null
   resetLocation(row)
   attachFiles.value = []
   try { const files = await fileApi.list('work_order', row.id); if (form.id === row.id) attachFiles.value = files } catch { /* 页面仍可编辑 */ }
@@ -547,7 +585,7 @@ async function submit() {
   await formRef.value.validate()
   saving.value = true
   try {
-    const payload = { ...form, ...(form.id && !form.tenantRefId ? { clearTenantRef: true } : {}),
+    const payload = { ...form, ...(form.id && !form.tenantRefId && !form.tenantContactRefId ? { clearTenantRef: true } : {}),
       ...(locationChanged.value ? { floorLocation: floorLocation.value } : {}) }
     if (form.id) await workOrderApi.update(payload)
     else {
@@ -727,6 +765,7 @@ async function testWecom() {
 }
 
 onMounted(() => {
+  clockTimer = window.setInterval(() => { clock.value = Date.now() }, 60_000)
   // 支持从工单汇总页点状态卡片跳进来时带上筛选
   const s = Number(route.query.status)
   if (s >= 1 && s <= 7) query.status = s
@@ -738,7 +777,9 @@ onMounted(() => {
   loadWecom()
   buildingApi.list().then(rows => { filterBuildings.value = rows || [] }).catch(() => { filterBuildings.value = [] })
   supplierApi.tenantContacts().then(rows => { tenantOptions.value = rows || [] }).catch(() => { tenantOptions.value = [] })
+  supplierApi.tenantDirectory().then(rows => { legacyTenants.value = rows || [] }).catch(() => { legacyTenants.value = [] })
 })
+onUnmounted(() => window.clearInterval(clockTimer))
 </script>
 
 <style scoped>

@@ -26,7 +26,9 @@ import static org.mockito.Mockito.*;
 class WorkOrderCompletionBoundaryTest {
     @Mock WorkOrderMapper orders;
     @Mock BizTenantMapper tenants;
+    @Mock com.zhyq.park.pur.mapper.TenantContactMapper tenantContacts;
     @Mock WorkOrderService workOrderService;
+    @Mock org.springframework.context.ApplicationEventPublisher eventPublisher;
     @Mock SysFileMapper files;
     @Mock FileStorageService storage;
     @Mock com.zhyq.park.marketing.service.MktDocumentRetentionService retention;
@@ -48,6 +50,50 @@ class WorkOrderCompletionBoundaryTest {
         WorkOrder patch = new WorkOrder(); patch.setId(1L); patch.setStatus(4);
         assertThatThrownBy(() -> controller.update(patch)).hasMessageContaining("处理完成须上传");
         verify(orders, never()).updateById(any(WorkOrder.class));
+    }
+    @Test void newWorkOrderDefaultsToSevenDaysAndRejectsUnsupportedDeadline() {
+        WorkOrder order = new WorkOrder(); order.setTitle("漏水");
+        controller.add(order);
+        assertThat(order.getSlaResolveMin()).isEqualTo(7 * 24 * 60);
+        verify(orders).insert(order);
+        WorkOrder invalid = new WorkOrder(); invalid.setSlaResolveMin(2 * 24 * 60);
+        assertThatThrownBy(() -> controller.add(invalid)).hasMessageContaining("只能选择3天");
+        verify(orders, times(1)).insert(any(WorkOrder.class));
+    }
+    @Test void freeformContactCanBeSelectedWithoutASystemTenantRecord() {
+        var contact = new com.zhyq.park.pur.entity.TenantContact();
+        contact.setId(7L); contact.setTenantId(1L); contact.setName("手填租客");
+        contact.setContact("张三"); contact.setPhone("13800000000");
+        when(tenantContacts.selectById(7L)).thenReturn(contact);
+        WorkOrder order = new WorkOrder(); order.setTitle("漏水"); order.setTenantContactRefId(7L);
+        controller.add(order);
+        assertThat(order.getTenantName()).isEqualTo("手填租客");
+        assertThat(order.getTenantContact()).isEqualTo("张三");
+        assertThat(order.getTenantRefId()).isNull();
+        verifyNoInteractions(tenants);
+    }
+    @Test void switchingToFreeformContactReplacesLegacyTenantLinkAndSnapshotsName() {
+        WorkOrder existing = new WorkOrder(); existing.setId(1L); existing.setStatus(1);
+        existing.setTenantId(1L); existing.setTenantRefId(19L);
+        when(orders.selectById(1L)).thenReturn(existing);
+        var contact = new com.zhyq.park.pur.entity.TenantContact();
+        contact.setId(7L); contact.setTenantId(1L); contact.setName("手填租客"); contact.setContact("李四");
+        when(tenantContacts.selectById(7L)).thenReturn(contact);
+        WorkOrder patch = new WorkOrder(); patch.setId(1L); patch.setTenantContactRefId(7L);
+        controller.update(patch);
+        assertThat(patch.getTenantName()).isEqualTo("手填租客");
+        assertThat(patch.getTenantContact()).isEqualTo("李四");
+        assertThat(patch.getTenantRefId()).isNull();
+        verify(orders).update(eq(patch), argThat((Wrapper<WorkOrder> w) -> w.getSqlSegment().contains("id =")));
+    }
+    @Test void editingDeadlineAcceptsOnlyTheFourChoices() {
+        WorkOrder existing = new WorkOrder(); existing.setId(1L); existing.setStatus(1);
+        when(orders.selectById(1L)).thenReturn(existing);
+        WorkOrder patch = new WorkOrder(); patch.setId(1L); patch.setSlaResolveMin(30 * 24 * 60);
+        controller.update(patch);
+        verify(orders).updateById(patch);
+        patch.setSlaResolveMin(5 * 24 * 60);
+        assertThatThrownBy(() -> controller.update(patch)).hasMessageContaining("只能选择3天");
     }
     @Test void basicEditDoesNotReplayStaleWorkflowFields() {
         WorkOrder existing = new WorkOrder(); existing.setId(1L); existing.setStatus(3);
