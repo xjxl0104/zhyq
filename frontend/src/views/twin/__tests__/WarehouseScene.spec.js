@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import WarehouseScene from '../WarehouseScene.vue'
 
 const state = vi.hoisted(() => ({
-  render: vi.fn(), frames: new Map(), nextFrame: 0, renderer: null, modelRoot: null, controls: null,
+  render: vi.fn(), frames: new Map(), nextFrame: 0, renderer: null, modelRoot: null, controls: null, loadGate: null,
   animeRendering: vi.fn(), originalRendering: vi.fn(), applyStyle: vi.fn(), weather: vi.fn(),
   styleDispose: vi.fn(), weatherDispose: vi.fn(), modelDispose: vi.fn(),
   prepareExport: vi.fn(), exportSnapshot: vi.fn(async () => new ArrayBuffer(8)),
@@ -27,7 +27,7 @@ vi.mock('three/addons/controls/OrbitControls.js', async () => {
 })
 vi.mock('../warehouseAsset', async () => {
   const { Group } = await import('three')
-  return { loadWarehouse: async () => ({ root: (state.modelRoot = new Group()), floors: [], update: () => false, setState() {}, dispose: state.modelDispose, localPointPosition: () => ({ project: () => ({ x: 0, y: 0, z: 0 }) }), pointPosition: () => ({ project: () => ({ x: 0, y: 0, z: 0 }) }) }) }
+  return { loadWarehouse: async () => { await state.loadGate; return { root: (state.modelRoot = new Group()), floors: [], update: () => false, setState() {}, dispose: state.modelDispose, localPointPosition: () => ({ project: () => ({ x: 0, y: 0, z: 0 }) }), pointPosition: () => ({ project: () => ({ x: 0, y: 0, z: 0 }) }) } } }
 })
 vi.mock('../sceneWeather', () => ({ createSceneWeather: options => {
   state.weather(options)
@@ -58,9 +58,42 @@ function mountScene(options) {
   vi.stubGlobal('cancelAnimationFrame', id => state.frames.delete(id))
   return mount(WarehouseScene, options)
 }
-afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); vi.restoreAllMocks(); vi.clearAllMocks(); state.frames.clear() })
+afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); vi.restoreAllMocks(); vi.clearAllMocks(); state.frames.clear(); state.loadGate = null })
 
 describe('warehouse render demand', () => {
+  it('keeps the overview clear with many work orders and only shows the selected interior point', async () => {
+    const orders = Array.from({ length: 20 }, (_, index) => ({ id: 'workorder-' + index, orderId: index + 1, floor: 4, module: 'property', name: 'Order ' + index, localPosition: [index, .45, 0] }))
+    const wrapper = mountScene({ props: { workOrders: orders } })
+    await flushPromises()
+    expect(wrapper.findAll('.scene-pin')).toHaveLength(0)
+    await wrapper.setProps({ selectedPoint: orders[0], floor: 4 })
+    expect(wrapper.findAll('.scene-pin')).toHaveLength(0)
+    await wrapper.setProps({ mode: 'interior' })
+    expect(wrapper.findAll('.scene-pin')).toHaveLength(1)
+    expect(wrapper.get('.scene-pin').text()).toContain('Order 0')
+    await wrapper.setProps({ selectedPoint: orders[1] })
+    expect(wrapper.findAll('.scene-pin')).toHaveLength(1)
+    expect(wrapper.get('.scene-pin').text()).toContain('Order 1')
+    await wrapper.setProps({ selectedPoint: null })
+    expect(wrapper.findAll('.scene-pin')).toHaveLength(0)
+    await wrapper.setProps({ mode: 'exploded', selectedPoint: orders[1] })
+    expect(wrapper.findAll('.scene-pin')).toHaveLength(0)
+    wrapper.unmount()
+  })
+
+  it('cancels a queued order location when the user closes it before the model loads', async () => {
+    let finishLoading
+    state.loadGate = new Promise(resolve => { finishLoading = resolve })
+    const selected = { id: 'workorder-1', orderId: 1, floor: 4, module: 'property', localPosition: [20, .45, -10] }
+    const wrapper = mountScene({ props: { mode: 'interior', floor: 4, selectedPoint: selected } })
+    wrapper.vm.focusPoint(selected)
+    await wrapper.setProps({ selectedPoint: null, mode: 'exterior', floor: null })
+    finishLoading(); await flushPromises(); framesUntil(2000)
+    state.controls.target.toArray().forEach((value, index) => expect(value).toBeCloseTo([0, 24, 0][index]))
+    expect(wrapper.findAll('.scene-pin')).toHaveLength(0)
+    wrapper.unmount()
+  })
+
   it('honours an order selected before loading and flies again to another point on the same floor', async () => {
     const wrapper = mountScene({ props: { mode: 'interior', floor: 4 } })
     wrapper.vm.focusPoint({ floor: 4, localPosition: [20, .45, -10] })

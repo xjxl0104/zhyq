@@ -10,10 +10,10 @@ import { createParkLandscape } from './parkLandscape'
 import { createSceneRendering, createAnimeSceneRendering } from './sceneRendering'
 import { floorLandmarks } from './floorPlanGeometry'
 import { PLAN_BUILDING } from './floorPlanData'
-import { MODULES, POINTS, visiblePoints } from './twinData'
+import { MODULES } from './twinData'
 import TwinIcon from './TwinIcon.vue'
 
-const props = defineProps({ mode: { type: String, default: 'exterior' }, floor: { type: Number, default: null }, layer: { type: String, default: 'all' }, weather: { type: String, default: 'sunny' }, viewpoint: { type: String, default: 'overview' }, focused: Boolean, rotating: Boolean, markers: { type: Boolean, default: true }, workOrders: { type: Array, default: () => [] }, planLabels: { type: Boolean, default: true } })
+const props = defineProps({ mode: { type: String, default: 'exterior' }, floor: { type: Number, default: null }, layer: { type: String, default: 'all' }, weather: { type: String, default: 'sunny' }, viewpoint: { type: String, default: 'overview' }, focused: Boolean, rotating: Boolean, markers: { type: Boolean, default: true }, selectedPoint: { type: Object, default: null }, workOrders: { type: Array, default: () => [] }, planLabels: { type: Boolean, default: true } })
 const emit = defineEmits(['select-floor', 'select-point', 'open-module', 'ready', 'error'])
 // The approved anime finish is the homepage default. Only the local comparison
 // page can opt into the previous renderer or collect diagnostic measurements.
@@ -21,9 +21,12 @@ const demoProfile = import.meta.env.DEV ? inject('warehouse-scene-demo', null) :
 const anime = import.meta.env.DEV ? demoProfile?.style !== 'original' : true
 const host = ref(null), canvasHost = ref(null), ready = ref(false), error = ref('')
 const pins = computed(() => {
-  const orders = props.workOrders.filter(point => (props.layer === 'all' || props.layer === 'property') && (props.floor == null || point.floor === props.floor) && (point.floor > 0 || props.mode === 'interior'))
-  const illustrative = props.mode === 'interior' ? [] : visiblePoints(props.layer, props.floor, props.mode).filter(point => point.module !== 'property')
-  return [...illustrative, ...orders]
+  const point = props.selectedPoint
+  if (!point || point.floor !== props.floor) return []
+  // Problems live in the corner dock. The model shows only the chosen location,
+  // and real drawing coordinates are shown in their corresponding interior.
+  if (point.orderId) return props.mode === 'interior' ? [point] : []
+  return props.mode !== 'interior' && (props.layer === 'all' || props.layer === point.module) ? [point] : []
 })
 const landmarks = computed(() => props.mode === 'interior' && props.planLabels ? floorLandmarks(props.floor || 3) : [])
 const landmarkElements = new Map()
@@ -237,7 +240,14 @@ watch(() => [props.mode, props.floor, props.layer], () => {
 })
 watch(() => props.mode, reset)
 watch(() => props.floor, (value, previous) => { if (value === -1 || previous === -1) reset() })
-watch(() => [props.workOrders, props.planLabels, props.floor, props.layer], () => { needsRender = true }, { deep: true, flush: 'post' })
+watch(() => props.selectedPoint, point => {
+  if (!point || point.id !== pendingPoint?.id) pendingPoint = null
+  if (!point) tween = null
+}, { flush: 'sync' })
+watch(() => [props.mode, props.floor], () => {
+  if (pendingPoint && (props.mode !== 'interior' || props.floor !== pendingPoint.floor)) pendingPoint = null
+}, { flush: 'sync' })
+watch(() => [props.selectedPoint, props.planLabels, props.floor, props.layer], () => { needsRender = true }, { deep: true, flush: 'post' })
 watch(() => props.focused, reset)
 watch(() => props.viewpoint, reset)
 watch(() => props.weather, value => {
@@ -287,8 +297,8 @@ defineExpose({ reset, zoom, focusPoint, exportModel })
       <span v-for="point in landmarks" :key="point.id" :ref="element => element ? landmarkElements.set(point.id, element) : landmarkElements.delete(point.id)" class="plan-landmark">{{ point.name }}</span>
     </div>
     <div v-show="ready && markers && !error" class="scene-pins">
-      <div v-for="point in pins" :key="point.id" :ref="element => element ? markerElements.set(point.id, element) : markerElements.delete(point.id)" class="scene-pin" :class="{ 'pin-building': point.module === 'park', 'pin-workorder': point.orderId, 'pin-urgent': point.urgent }" :style="{ '--pin-color': point.urgent ? '#b44234' : moduleFor(point.module).color }">
-        <span class="pin-card"><button class="pin-info" :aria-label="(point.orderId ? '查看工单：' : '查看') + point.name" @click.stop="emit('select-point', point)"><span class="pin-icon"><TwinIcon :name="moduleFor(point.module).icon" :size="15" /></span><span class="pin-label"><span class="pin-short-name">{{ point.orderId ? point.status : moduleFor(point.module).short }}</span><span class="pin-full-name">{{ point.name }}</span></span></button><button class="pin-enter" :aria-label="'直接进入' + moduleFor(point.module).name" :title="'直接进入' + moduleFor(point.module).name" @click.stop="emit('open-module', point)"><TwinIcon name="chevron" :size="12" /></button></span>
+      <div v-for="point in pins" :key="point.id" :ref="element => element ? markerElements.set(point.id, element) : markerElements.delete(point.id)" class="scene-pin" :class="{ 'pin-building': point.module === 'park', 'pin-workorder': point.orderId, 'pin-urgent': point.urgent }" :style="{ '--pin-color': point.orderId ? point.urgent ? '#b44234' : '#94651a' : moduleFor(point.module).color }">
+        <span class="pin-card"><button class="pin-info" :aria-label="(point.orderId ? '查看工单：' : '查看') + point.name" @click.stop="emit('select-point', point)"><span class="pin-icon"><TwinIcon :name="point.orderId ? 'alert' : moduleFor(point.module).icon" :size="15" /></span><span class="pin-label"><span class="pin-short-name">{{ point.orderId ? point.status : moduleFor(point.module).short }}</span><span class="pin-full-name">{{ point.name }}</span></span></button><button class="pin-enter" :aria-label="'直接进入' + moduleFor(point.module).name" :title="'直接进入' + moduleFor(point.module).name" @click.stop="emit('open-module', point)"><TwinIcon name="chevron" :size="12" /></button></span>
         <span class="pin-stem" /><span class="pin-dot" />
       </div>
     </div>
@@ -298,7 +308,11 @@ defineExpose({ reset, zoom, focusPoint, exportModel })
 <style scoped>
 .plan-landmarks { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
 .plan-landmark { position: absolute; left: 0; top: 0; visibility: hidden; padding: 3px 6px; border-radius: 3px; background: rgba(250, 250, 242, .92); color: #31514d; font-size: 11px; white-space: nowrap; }
-.pin-workorder .pin-card { border-color: var(--pin-color); }
+.pin-workorder .pin-card { border-color: var(--pin-color); border-radius: 6px; animation: locate-alert 1.2s ease-out 2; }
+.pin-workorder .pin-icon { color: var(--pin-color); }
+.pin-workorder .pin-dot { background: var(--pin-color); }
 .pin-workorder .pin-short-name { display: none; }
 .pin-workorder .pin-full-name { display: inline; max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@keyframes locate-alert { from { outline: 2px solid var(--pin-color); outline-offset: 1px; } to { outline: 2px solid transparent; outline-offset: 8px; } }
+@media (prefers-reduced-motion: reduce) { .pin-workorder .pin-card { animation: none; } }
 </style>
