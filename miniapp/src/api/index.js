@@ -44,3 +44,11 @@ export const bizApi = {
   noticeRead: (id) => post(`/notice/${id}/read`),
   notices: (params) => get('/notice/page', params)
 }
+
+export const accountAdminApi = {
+  page: params => get('/admin/accounts', params),
+  create: data => post('/admin/accounts', data),
+  invite: (id, data) => put(`/admin/accounts/mp/${id}/invite-code`, data),
+  status: (type, id, data) => put(`/admin/accounts/${type}/${id}/login-status`, data),
+  remove: (type, id, reason) => request('DELETE', `/admin/accounts/${type}/${id}`, { reason })
+}

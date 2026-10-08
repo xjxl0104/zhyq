@@ -53,7 +53,7 @@ class MktPromoterDeletionServiceTest {
 
     @ParameterizedTest
     @CsvSource({"crm_promoter,下级", "crm_lead,推荐线索", "crm_customer,推荐客户", "crm_customer_lock,锁定记录",
-            "crm_service_contract,关联合同", "crm_referral_order,业务订单", "crm_promoter_commission,佣金流水", "crm_withdrawal,提现记录"})
+            "crm_service_contract,关联合同", "crm_referral_order,业务订单", "crm_promoter_commission,佣金流水", "crm_withdrawal,提现记录", "crm_customer_pricing,分佣配置"})
     void everyBusinessDependencyStopsDeletionBeforeAnyMutation(String table, String hint) {
         when(jdbc.queryForList(startsWith("SELECT id FROM " + table + " WHERE"), eq(Long.class), any(Object[].class)))
                 .thenReturn(List.of(99L));
@@ -65,9 +65,9 @@ class MktPromoterDeletionServiceTest {
     @Test void softDeletedBusinessHistoryAlsoBlocksButDeletedChildrenDoNot() {
         service.delete(7L, "清理测试");
         ArgumentCaptor<String> sql = ArgumentCaptor.forClass(String.class);
-        verify(jdbc, times(8)).queryForList(sql.capture(), eq(Long.class), any(Object[].class));
+        verify(jdbc, times(9)).queryForList(sql.capture(), eq(Long.class), any(Object[].class));
         assertThat(sql.getAllValues().get(0)).contains("deleted=0", "parent_id=?", "path LIKE ?");
-        assertThat(sql.getAllValues().subList(1, 8)).allSatisfy(query -> assertThat(query).doesNotContain("deleted="));
+        assertThat(sql.getAllValues().subList(1, 9)).allSatisfy(query -> assertThat(query).doesNotContain("deleted="));
     }
 
     @Test void missingAndRepeatedDeletionDoNotTouchCredentialsOrAudit() {

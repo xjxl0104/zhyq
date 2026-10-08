@@ -43,6 +43,9 @@ public class MktPromoterDeletionService {
         block("SELECT id FROM crm_promoter_commission WHERE promoter_id=? LIMIT 1 FOR UPDATE", "该伙伴已有佣金流水，不能删除，请使用冻结或退出", id);
         block("SELECT id FROM crm_withdrawal WHERE promoter_id=? LIMIT 1 FOR UPDATE", "该伙伴已有提现记录，不能删除，请使用冻结或退出", id);
 
+        block("SELECT id FROM crm_customer_pricing WHERE owner_promoter_id=? OR JSON_CONTAINS(beneficiaries_json, JSON_OBJECT('promoterId', ?)) LIMIT 1 FOR UPDATE",
+                "该伙伴已有客户定价或分佣配置，不能删除，请使用停用登录", id, id);
+
         String operator = MktAuditService.currentOperator();
         // Tombstones cannot be valid registration values. They remain unique even though the
         // existing unique indexes intentionally cover deleted rows as well as active records.

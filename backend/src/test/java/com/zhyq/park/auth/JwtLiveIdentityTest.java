@@ -34,11 +34,13 @@ class JwtLiveIdentityTest {
     MktPromoterMapper promoters = mock(MktPromoterMapper.class);
     MktWarehouseMapper warehouses = mock(MktWarehouseMapper.class);
     MktCredentialMapper credentials = mock(MktCredentialMapper.class);
-    JwtAccountService accounts = new JwtAccountService(users, permissions, promoters, warehouses, credentials);
+    com.zhyq.park.marketing.admin.MktAccountControl control = mock(com.zhyq.park.marketing.admin.MktAccountControl.class);
+    JwtAccountService accounts = new JwtAccountService(users, permissions, promoters, warehouses, credentials, control);
     JwtService jwt = new JwtService(SECRET, 3600, accounts);
     SysUser user;
 
     @BeforeEach void setup() {
+        when(control.state(anyString(), anyLong())).thenReturn(new com.zhyq.park.marketing.admin.MktAccountControl.State(false, false, 0));
         TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new MybatisConfiguration(), "test"), MktCredential.class);
         user = new SysUser(); user.setId(1L); user.setUsername("ops"); user.setStatus(1); user.setPassword("hash-before-reset");
         when(users.selectById(1L)).thenReturn(user);
@@ -46,6 +48,18 @@ class JwtLiveIdentityTest {
         when(permissions.selectPermsByUserId(1L)).thenReturn(List.of("system:user:edit"));
     }
     @AfterEach void clear() { SecurityContextHolder.clearContext(); }
+
+    @Test void marketingDisableAndRestoreNeverReviveOldTokens() {
+        MktPromoter p = new MktPromoter(); p.setId(7L); p.setStatus(1);
+        when(promoters.selectById(7L)).thenReturn(p);
+        String old = jwt.issueForIdentity("mp", 7L);
+        assertThat(jwt.authenticate(jwt.parse(old))).isNotNull();
+        when(control.state("mp",7L)).thenReturn(new com.zhyq.park.marketing.admin.MktAccountControl.State(false,true,1));
+        assertThatThrownBy(() -> jwt.authenticate(jwt.parse(old))).isInstanceOf(BizException.class);
+        when(control.state("mp",7L)).thenReturn(new com.zhyq.park.marketing.admin.MktAccountControl.State(false,false,2));
+        assertThatThrownBy(() -> jwt.authenticate(jwt.parse(old))).isInstanceOf(BizException.class);
+        assertThat(jwt.authenticate(jwt.parse(jwt.issueForIdentity("mp",7L)))).isNotNull();
+    }
 
     @Test void disablingAnAccountImmediatelyInvalidatesAnAlreadyIssuedJwt() throws Exception {
         String token = jwt.issueForIdentity("admin", 1L);
