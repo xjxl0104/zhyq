@@ -9,7 +9,8 @@ const props = defineProps({
   compact: { type: Boolean, default: false },
 })
 const emit = defineEmits(['open-module', 'select-floor', 'select-point'])
-const occupancy = (FLOORS.reduce((sum, floor) => sum + floor.occupancy, 0) / FLOORS.length).toFixed(1)
+const rentableFloors = FLOORS.filter(item => item.id > 0)
+const occupancy = (rentableFloors.reduce((sum, floor) => sum + floor.occupancy, 0) / rentableFloors.length).toFixed(1)
 const referenceArea = Number(PARK_REFERENCE.totalArea.replace(/,/g, '')) / 10000
 const rent = [
   { month: '4月', billed: 69, collected: 64 },
@@ -34,14 +35,14 @@ const pendingPoints = computed(() => POINTS
           <button class="ops-link" type="button" aria-label="进入园区空间" @click="emit('open-module', 'park')"><TwinIcon name="chevron" :size="15" /></button>
         </header>
         <div class="ops-occupancy-overview">
-          <div class="ops-occupancy-metric"><strong>{{ occupancy }}<small>%</small></strong><span>{{ FLOORS.length }} 层平均出租率 · 演示</span></div>
+          <div class="ops-occupancy-metric"><strong>{{ occupancy }}<small>%</small></strong><span>{{ rentableFloors.length }} 层平均出租率 · 演示</span></div>
           <svg class="ops-occupancy-ring" viewBox="0 0 48 48" aria-hidden="true">
             <circle class="ops-ring-track" cx="24" cy="24" r="18" fill="none" stroke-width="5" />
             <circle class="ops-ring-value" cx="24" cy="24" r="18" fill="none" stroke-width="5" stroke-linecap="round" pathLength="100" :stroke-dasharray="`${occupancy} 100`" transform="rotate(-90 24 24)" />
           </svg>
         </div>
         <div class="ops-floor-list" aria-label="点击楼层定位模型">
-          <button v-for="item in [...FLOORS].reverse()" :key="item.id" class="ops-floor-row" :class="{ 'is-selected': floor === item.id }" type="button" :aria-label="`定位 ${item.label}，演示出租率 ${item.occupancy}%`" :aria-pressed="floor === item.id" @click="emit('select-floor', item.id)">
+          <button v-for="item in [...rentableFloors].reverse()" :key="item.id" class="ops-floor-row" :class="{ 'is-selected': floor === item.id }" type="button" :aria-label="`定位 ${item.label}，演示出租率 ${item.occupancy}%`" :aria-pressed="floor === item.id" @click="emit('select-floor', item.id)">
             <b>{{ item.label }}</b><span class="ops-floor-track"><span :style="{ width: item.occupancy + '%' }" /></span><span>{{ item.occupancy }}<small>%</small></span>
           </button>
         </div>

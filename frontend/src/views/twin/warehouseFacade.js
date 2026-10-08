@@ -194,7 +194,18 @@ export function addReferenceFacade(group, options) {
   }
 }
 
-export function addReferenceRoof(group, { box, materials }) {
+export function addReferenceRoof(group, { box: drawBox, materials, opening }) {
+  // The seventh-floor terrace remains open to the sky, including roof service volumes.
+  const box = (parent, material, x, y, z, w, h, d) => {
+    if (!opening) return drawBox(parent, material, x, y, z, w, h, d)
+    const [left, top, right, bottom] = opening, x1 = x - w / 2, x2 = x + w / 2, z1 = z - d / 2, z2 = z + d / 2
+    if (x2 <= left || x1 >= right || z2 <= top || z1 >= bottom) return drawBox(parent, material, x, y, z, w, h, d)
+    const part = (a, b, c, e) => { if (c > a && e > b) drawBox(parent, material, (a + c) / 2, y, (b + e) / 2, c - a, h, e - b) }
+    part(x1, z1, Math.min(x2, left), z2)
+    part(Math.max(x1, right), z1, x2, z2)
+    part(Math.max(x1, left), z1, Math.min(x2, right), Math.min(z2, top))
+    part(Math.max(x1, left), Math.max(z1, bottom), Math.min(x2, right), z2)
+  }
   group.userData.referenceStyle = 'photo-flat-roof-service-blocks'
   box(group, 'facadeIvory', 0, 0, 0, 97, .5, 55)
   box(group, 'facadeRib', 0, .29, 0, 95.4, .08, 53.4)

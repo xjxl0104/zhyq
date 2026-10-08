@@ -4,7 +4,7 @@ import { FLOORS, MODEL, POINTS, floorBase, floorHeight, moduleDestination, visib
 describe('warehouse model business contracts', () => {
   it('uses the seven storeys and unequal heights supplied in the park brochure', () => {
     expect(MODEL.floors).toBe(7)
-    expect(FLOORS.map(floor => floorHeight(floor.id))).toEqual([12, 9.5, 6.6, 6.6, 6.6, 6.6, 6.6])
+    expect(FLOORS.filter(floor => floor.id > 0).map(floor => floorHeight(floor.id))).toEqual([12, 9.5, 6.6, 6.6, 6.6, 6.6, 6.6])
     expect(floorBase(3)).toBeCloseTo(21.5)
     expect(floorBase(7) + floorHeight(7)).toBeCloseTo(54.5)
   })
@@ -16,7 +16,7 @@ describe('warehouse model business contracts', () => {
     expect(moduleDestination('unknown', true)).toBeNull()
   })
   it('uses contiguous floor elevations and keeps every point on a modeled floor', () => {
-    FLOORS.slice(0, -1).forEach(floor => expect(floorBase(floor.id) + floorHeight(floor.id)).toBeCloseTo(floorBase(floor.id + 1)))
+    FLOORS.filter(floor => floor.id > 0 && floor.id < 7).forEach(floor => expect(floorBase(floor.id) + floorHeight(floor.id)).toBeCloseTo(floorBase(floor.id + 1)))
     POINTS.forEach(point => expect(point.floor).toBeGreaterThanOrEqual(1))
     POINTS.forEach(point => expect(point.floor).toBeLessThanOrEqual(MODEL.floors))
   })

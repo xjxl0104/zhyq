@@ -85,7 +85,21 @@ describe('warehouse workspace interactions', () => {
     expect(localStorage.getItem('zhyq_token')).toBeNull()
     wrapper.unmount()
   })
-  it('uses the existing protected business module on the real homepage', async () => {
+  it('opens a real order on its floor, preserves it in plan view, and links back to the order', async () => {
+    route.meta = {}
+    const wrapper = mount(TwinHome)
+    const scene = wrapper.findComponent({ name: 'WarehouseScene' })
+    scene.vm.$emit('select-point', { id: 'workorder-123', orderId: 123, module: 'property', floor: 4, name: '测试工单', values: [] })
+    await wrapper.vm.$nextTick()
+    expect(scene.props()).toMatchObject({ floor: 4, layer: 'property', mode: 'interior', rotating: false, focused: true })
+    await wrapper.get('.plan-tools-bar button').trigger('click')
+    expect(scene.props('viewpoint')).toBe('plan')
+    expect(wrapper.get('[aria-label="空间点位详情"]').text()).toContain('真实工单')
+    await wrapper.get('[data-testid="point-open-module"]').trigger('click')
+    expect(push).toHaveBeenCalledWith({ path: '/property/workorder', query: { highlightId: '123' } })
+    wrapper.unmount()
+  })
+  it('uses the existing protected business module on the real homepage' , async () => {
     route.meta = {}
     const wrapper = mount(TwinHome)
     expect(wrapper.find('.twin-sidebar').exists()).toBe(false)

@@ -27,7 +27,7 @@ vi.mock('three/addons/controls/OrbitControls.js', async () => {
 })
 vi.mock('../warehouseAsset', async () => {
   const { Group } = await import('three')
-  return { loadWarehouse: async () => ({ root: (state.modelRoot = new Group()), floors: [], update: () => false, setState() {}, dispose: state.modelDispose, pointPosition: () => ({ project: () => ({ x: 0, y: 0, z: 0 }) }) }) }
+  return { loadWarehouse: async () => ({ root: (state.modelRoot = new Group()), floors: [], update: () => false, setState() {}, dispose: state.modelDispose, localPointPosition: () => ({ project: () => ({ x: 0, y: 0, z: 0 }) }), pointPosition: () => ({ project: () => ({ x: 0, y: 0, z: 0 }) }) }) }
 })
 vi.mock('../sceneWeather', () => ({ createSceneWeather: options => {
   state.weather(options)

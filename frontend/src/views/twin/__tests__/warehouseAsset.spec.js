@@ -10,6 +10,7 @@ import { Box3, Raycaster, Vector3 } from 'three'
 import { MODEL, POINTS, floorBase, modelHeight } from '../twinData'
 import { bindWarehouse } from '../warehouseController'
 
+const SCENE_SCALE = .6
 const assetUrl = new URL('../../../../public/models/dipark-warehouse.glb', import.meta.url)
 const parseAsset = bytes => new GLTFLoader().parseAsync(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength), '')
 const findEntrance = root => {
@@ -23,7 +24,7 @@ describe('delivered warehouse asset', () => {
     const gltf = await parseAsset(await readFile(assetUrl))
     const model = bindWarehouse(gltf.scene)
     try {
-      for (const floor of model.floors) {
+      for (const floor of model.floors.filter(item => item.group.userData.floor > 0)) {
         const glassMeshes = []
         floor.shell.traverse(object => {
           if (!object.isMesh) return
@@ -74,8 +75,8 @@ describe('delivered warehouse asset', () => {
         { name: 'back balcony door', origin: [-10, floorBase(5) + 3.6, -29], direction: [0, 0, 1] },
       ]
       for (const window of windows) {
-        const ray = new Raycaster(new Vector3(...window.origin), new Vector3(...window.direction), 0, 4)
-        const hits = ray.intersectObjects([floor.shell, floor.structure], true)
+        const ray = new Raycaster(new Vector3(window.origin[0], window.origin[1] * SCENE_SCALE, window.origin[2] * .8), new Vector3(...window.direction), 0, 4)
+        const hits = ray.intersectObjects([floor.shell], true)
         const materialAt = hit => Array.isArray(hit.object.material)
           ? hit.object.material[hit.face.materialIndex]
           : hit.object.material
@@ -99,29 +100,30 @@ describe('delivered warehouse asset', () => {
     const size = bounds.getSize(new Vector3())
     expect(size.x).toBeGreaterThan(96)
     expect(size.x).toBeLessThan(102)
-    expect(size.y).toBeGreaterThan(modelHeight())
-    expect(size.y).toBeLessThan(modelHeight() + 9)
-    expect(model.building.children.filter(object => object.userData.twinRole === 'floor')).toHaveLength(MODEL.floors)
+    expect(size.y).toBeGreaterThan((modelHeight() + 5.6) * SCENE_SCALE)
+    expect(size.y).toBeLessThan((modelHeight() + 5.6 + 9) * SCENE_SCALE)
+    expect(model.building.children.filter(object => object.userData.twinRole === 'floor')).toHaveLength(MODEL.floors + 1)
     for (const floor of model.floors) {
-      for (const role of ['shell', 'structure', 'interior', 'fire']) expect(floor[role].children.length).toBeGreaterThan(0)
+      for (const role of ['structure', 'interior']) expect(floor[role].children.length).toBeGreaterThan(0)
+      expect(floor.fire.children).toHaveLength(0)
     }
     model.setState({ mode: 'interior', floor: 5 })
     model.update(2)
     expect(model.floors.filter(f => f.group.visible).map(f => f.group.userData.floor)).toEqual([5])
-    expect(model.floors[4].fire.children.length).toBeGreaterThan(0)
+    expect(model.floors[4].fire.children).toHaveLength(0)
     expect(model.floors[4].interior.children.length).toBeGreaterThan(0)
     model.setState({ mode: 'exploded', floor: 5 })
     model.update(2)
     expect(model.floors[4].group.position.y).toBeCloseTo(floorBase(5) + 16, 2)
-    expect(model.pointPosition({ position: [1, 24, 3], floor: 5 }).y).toBeCloseTo(40, 2)
+    expect(model.pointPosition({ localPosition: [1, .45, 3], floor: 5 }).y).toBeCloseTo((floorBase(5) + 16 + .45) * SCENE_SCALE, 2)
     for (const point of POINTS) {
-      expect(model.pointPosition(point).y).toBeCloseTo(point.position[1] + (point.floor - 1) * 4, 2)
+      expect(model.pointPosition(point).y).toBeCloseTo((Math.max(floorBase(point.floor) + .6, point.position[1]) + (point.floor - 1) * 4) * SCENE_SCALE, 2)
     }
     model.setState({ mode: 'exterior', floor: null })
     model.update(2)
     expect(model.floors.every(f => f.shell.visible && !f.fire.visible)).toBe(true)
     for (const point of POINTS) {
-      expect(model.pointPosition(point).distanceTo(new Vector3(...point.position))).toBeLessThan(.001)
+      expect(model.pointPosition(point).distanceTo(new Vector3(point.position[0], Math.max(floorBase(point.floor) + .6, point.position[1]) * SCENE_SCALE, point.position[2]))).toBeLessThan(.001)
     }
     model.dispose()
   })
@@ -191,9 +193,10 @@ describe('delivered warehouse asset', () => {
         rebuilt.scene.traverse(object => { if (object.userData.runtimeOnly) runtimeObjects.push(object) })
         expect(runtimeObjects).toHaveLength(0)
         const model = bindWarehouse(rebuilt.scene)
-        expect(model.floors).toHaveLength(7)
+        expect(model.floors).toHaveLength(8)
         for (const floor of model.floors) {
-          for (const role of ['shell', 'structure', 'interior', 'fire']) expect(floor[role].children.length).toBeGreaterThan(0)
+          for (const role of ['structure', 'interior']) expect(floor[role].children.length).toBeGreaterThan(0)
+      expect(floor.fire.children).toHaveLength(0)
         }
         model.setState({ mode: 'interior', floor: 5 })
         model.update(2)

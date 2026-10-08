@@ -8,23 +8,28 @@ import { disposeSceneExtras } from './sceneResources'
 import { createSceneWeather } from './sceneWeather'
 import { createParkLandscape } from './parkLandscape'
 import { createSceneRendering, createAnimeSceneRendering } from './sceneRendering'
+import { floorLandmarks } from './floorPlanGeometry'
 import { MODULES, POINTS, visiblePoints } from './twinData'
 import TwinIcon from './TwinIcon.vue'
 
-const props = defineProps({ mode: { type: String, default: 'exterior' }, floor: { type: Number, default: null }, layer: { type: String, default: 'all' }, weather: { type: String, default: 'sunny' }, viewpoint: { type: String, default: 'overview' }, focused: Boolean, rotating: Boolean, markers: { type: Boolean, default: true } })
+const props = defineProps({ mode: { type: String, default: 'exterior' }, floor: { type: Number, default: null }, layer: { type: String, default: 'all' }, weather: { type: String, default: 'sunny' }, viewpoint: { type: String, default: 'overview' }, focused: Boolean, rotating: Boolean, markers: { type: Boolean, default: true }, workOrders: { type: Array, default: () => [] }, planLabels: { type: Boolean, default: true } })
 const emit = defineEmits(['select-floor', 'select-point', 'open-module', 'ready', 'error'])
 // The approved anime finish is the homepage default. Only the local comparison
 // page can opt into the previous renderer or collect diagnostic measurements.
 const demoProfile = import.meta.env.DEV ? inject('warehouse-scene-demo', null) : null
 const anime = import.meta.env.DEV ? demoProfile?.style !== 'original' : true
 const host = ref(null), canvasHost = ref(null), ready = ref(false), error = ref('')
-const pins = computed(() => props.mode === 'interior'
-  ? POINTS.filter(point => props.layer === 'all' || props.layer === point.module).filter(point => point.module !== 'park' && point.module !== 'energy').map(point => ({ ...point, floor: props.floor || 3, name: point.module === 'fire' ? '消防管网与消火栓' : point.module === 'contract' ? 'A 区 · 租赁空间' : point.module === 'property' ? '仓内设备 · 物业巡检' : '室内安防点位', location: '云仓 01 / ' + (props.floor || 3) + 'F / 示意点位' }))
-  : visiblePoints(props.layer, props.floor, props.mode))
+const pins = computed(() => {
+  const orders = props.workOrders.filter(point => (props.layer === 'all' || props.layer === 'property') && (props.floor == null || point.floor === props.floor) && (point.floor > 0 || props.mode === 'interior'))
+  const illustrative = props.mode === 'interior' ? [] : visiblePoints(props.layer, props.floor, props.mode).filter(point => point.module !== 'property')
+  return [...illustrative, ...orders]
+})
+const landmarks = computed(() => props.mode === 'interior' && props.planLabels ? floorLandmarks(props.floor || 3) : [])
+const landmarkElements = new Map()
 const moduleFor = id => MODULES.find(item => item.id === id)
 const markerElements = new Map()
 // Keep the first frame and reset at the same close overview, with room for the entrance.
-const overviewCamera = { position: [86, 58, 174], target: [0, 24, 0] }
+const overviewCamera = { position: [86, 58, 174], target: [0, 17, 0] }
 let renderer, scene, camera, controls, model, observer, environmentTarget, weatherEffects, landscape, rendering, stylization, metrics, frame = 0, lastTime = 0, disposed = false, tween = null, width = 1, height = 1, needsRender = true
 const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
 const raycaster = new THREE.Raycaster(), pointer = new THREE.Vector2()
@@ -49,8 +54,11 @@ function reset() {
   if (!camera) return
   const inside = props.mode === 'interior', exploded = props.mode === 'exploded'
   const entrance = props.viewpoint === 'entrance' && !inside && !exploded
-  const destination = entrance ? [44, 7, 96] : inside ? [113, 126, 133] : exploded ? [181, 137, 193] : overviewCamera.position
-  const target = entrance ? [22, 5, 56] : inside ? [0, 1, 0] : exploded ? [0, 38, 0] : overviewCamera.target
+  const basement = inside && props.floor === -1
+  const center = basement ? [37, 1, -14.4] : [0, 1, 0]
+  const top = inside && props.viewpoint === 'plan'
+  const destination = entrance ? [44, 7, 96] : inside ? top ? [center[0], basement ? 46 : 112, center[2] + .1] : basement ? [66, 35, 22] : [48, 60, 70] : exploded ? [141, 108, 161] : overviewCamera.position
+  const target = entrance ? [22, 5, 56] : inside ? center : exploded ? [0, 25, 0] : overviewCamera.target
   tween = {
     from: camera.position.clone(), to: new THREE.Vector3(...destination),
     targetFrom: controls.target.clone(), targetTo: new THREE.Vector3(...target), start: performance.now(),
@@ -92,7 +100,7 @@ function animate(time) {
   const delta = Math.min((time - (lastTime || time)) / 1000, .05); lastTime = time
   const modelChanged = model.update(delta)
   const cameraTweening = Boolean(tween)
-  controls.autoRotate = props.rotating && !reducedMotion
+  controls.autoRotate = props.rotating && !reducedMotion && props.viewpoint !== 'plan'
   if (tween) {
     const progress = reducedMotion ? 1 : Math.min((time - tween.start) / 850, 1)
     const ease = 1 - Math.pow(1 - progress, 3)
@@ -119,11 +127,24 @@ function animate(time) {
   for (const point of pins.value) {
     const element = markerElements.get(point.id)
     if (!element) continue
-    const projected = model.pointPosition(point).project(camera)
+    const position = model.pointPosition(point)
+    if (!position) { element.style.visibility = 'hidden'; continue }
+    const projected = position.project(camera)
     const x = (projected.x + 1) / 2 * width, y = (1 - projected.y) / 2 * height
     element.style.transform = 'translate3d(' + Math.round(x) + 'px,' + Math.round(y) + 'px,0) translate(-50%,-100%)'
     element.style.visibility = projected.z < 1 && projected.z > -1 && x > 20 && x < width - 20 && y > 50 && y < height - 35 ? 'visible' : 'hidden'
   }
+  for (const point of landmarks.value) {
+    const element = landmarkElements.get(point.id)
+    if (!element) continue
+    const position = model.localPointPosition(props.floor || 3, point.position)
+    if (!position) continue
+    const projected = position.project(camera)
+    const x = (projected.x + 1) / 2 * width, y = (1 - projected.y) / 2 * height
+    element.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px) translate(-50%, -50%)`
+    element.style.visibility = projected.z > -1 && projected.z < 1 && x > 25 && x < width - 25 && y > 65 && y < height - 70 ? 'visible' : 'hidden'
+  }
+
 }
 onMounted(async () => {
   try {
@@ -149,7 +170,7 @@ onMounted(async () => {
     controls = new OrbitControls(camera, renderer.domElement)
     controls.target.set(...overviewCamera.target); controls.enableDamping = true; controls.dampingFactor = .065
     controls.minZoom = .55; controls.maxZoom = 3; controls.minPolarAngle = .15; controls.maxPolarAngle = Math.PI / 2 - .025
-    controls.minDistance = 45; controls.maxDistance = 500
+    controls.minDistance = 12; controls.maxDistance = 500
     controls.autoRotateSpeed = .45
     controls.addEventListener('start', () => { tween = null })
     const hemisphere = new THREE.HemisphereLight('#e8edff', '#858fb0', 1.6)
@@ -199,6 +220,8 @@ watch(() => [props.mode, props.floor, props.layer], () => {
   landscape?.setMode(props.mode)
 })
 watch(() => props.mode, reset)
+watch(() => props.floor, (value, previous) => { if (value === -1 || previous === -1) reset() })
+watch(() => [props.workOrders, props.planLabels, props.floor, props.layer], () => { needsRender = true }, { deep: true, flush: 'post' })
 watch(() => props.focused, reset)
 watch(() => props.viewpoint, reset)
 watch(() => props.weather, value => {
@@ -223,7 +246,7 @@ onBeforeUnmount(() => {
   model?.dispose()
   disposeSceneExtras(scene, model?.root)
   environmentTarget?.dispose()
-  renderer?.dispose(); renderer?.domElement.remove(); markerElements.clear()
+  renderer?.dispose(); renderer?.domElement.remove(); markerElements.clear(); landmarkElements.clear()
 })
 async function exportModel() {
   if (!model) return
@@ -244,11 +267,22 @@ defineExpose({ reset, zoom, exportModel })
     <div ref="canvasHost" class="warehouse-canvas" />
     <div v-if="error" class="scene-error" role="alert"><TwinIcon name="cube" :size="40" /><p>{{ error }}</p><button @click="() => $router.go(0)">重新加载</button></div>
     <div v-else-if="!ready" class="scene-loading"><span class="scene-spinner" />正在加载云仓模型…</div>
+    <div v-if="ready && !error" class="plan-landmarks" aria-label="图纸空间名称">
+      <span v-for="point in landmarks" :key="point.id" :ref="element => element ? landmarkElements.set(point.id, element) : landmarkElements.delete(point.id)" class="plan-landmark">{{ point.name }}</span>
+    </div>
     <div v-show="ready && markers && !error" class="scene-pins">
-      <div v-for="point in pins" :key="point.id" :ref="element => element ? markerElements.set(point.id, element) : markerElements.delete(point.id)" class="scene-pin" :class="{ 'pin-building': point.module === 'park' }" :style="{ '--pin-color': moduleFor(point.module).color }">
-        <span class="pin-card"><button class="pin-info" :aria-label="'查看' + point.name" @click.stop="emit('select-point', point)"><span class="pin-icon"><TwinIcon :name="moduleFor(point.module).icon" :size="15" /></span><span class="pin-label"><span class="pin-short-name">{{ moduleFor(point.module).short }}</span><span class="pin-full-name">{{ point.name }}</span></span></button><button class="pin-enter" :aria-label="'直接进入' + moduleFor(point.module).name" :title="'直接进入' + moduleFor(point.module).name" @click.stop="emit('open-module', point)"><TwinIcon name="chevron" :size="12" /></button></span>
+      <div v-for="point in pins" :key="point.id" :ref="element => element ? markerElements.set(point.id, element) : markerElements.delete(point.id)" class="scene-pin" :class="{ 'pin-building': point.module === 'park', 'pin-workorder': point.orderId, 'pin-urgent': point.urgent }" :style="{ '--pin-color': point.urgent ? '#b44234' : moduleFor(point.module).color }">
+        <span class="pin-card"><button class="pin-info" :aria-label="(point.orderId ? '查看工单：' : '查看') + point.name" @click.stop="emit('select-point', point)"><span class="pin-icon"><TwinIcon :name="moduleFor(point.module).icon" :size="15" /></span><span class="pin-label"><span class="pin-short-name">{{ point.orderId ? point.status : moduleFor(point.module).short }}</span><span class="pin-full-name">{{ point.name }}</span></span></button><button class="pin-enter" :aria-label="'直接进入' + moduleFor(point.module).name" :title="'直接进入' + moduleFor(point.module).name" @click.stop="emit('open-module', point)"><TwinIcon name="chevron" :size="12" /></button></span>
         <span class="pin-stem" /><span class="pin-dot" />
       </div>
     </div>
   </div>
 </template>
+
+<style scoped>
+.plan-landmarks { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+.plan-landmark { position: absolute; left: 0; top: 0; visibility: hidden; padding: 3px 6px; border-radius: 3px; background: rgba(250, 250, 242, .92); color: #31514d; font-size: 11px; white-space: nowrap; }
+.pin-workorder .pin-card { border-color: var(--pin-color); }
+.pin-workorder .pin-short-name { display: none; }
+.pin-workorder .pin-full-name { display: inline; max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+</style>

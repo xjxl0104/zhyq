@@ -43,7 +43,7 @@ describe('warehouse scene model', () => {
     expect(model.floors[4].fire.visible).toBe(true)
     model.setState({ mode: 'exterior', floor: null })
     model.update(1)
-    expect(model.floors.every(item => item.group.visible && item.shell.visible && !item.interior.visible)).toBe(true)
+    expect(model.floors.filter(item => item.group.userData.floor > 0).every(item => item.group.visible && item.shell.visible && !item.interior.visible)).toBe(true)
     model.dispose()
   })
   it('keeps expanded floors separate and batches the thousands of façade details', () => {
