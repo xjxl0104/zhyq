@@ -6,7 +6,7 @@ import { workOrderApi } from '@/api/property'
 import { ACTIVE_ORDER_STATUSES, PLAN_BUILDING, isUrgentWorkOrder, spatialWorkOrder } from './workOrderSpatial'
 import TwinIcon from './TwinIcon.vue'
 const props = defineProps({ floor: Number, requestedOrderId: [String, Number] })
-const emit = defineEmits(['points', 'locate', 'available'])
+const emit = defineEmits(['points', 'locate', 'available', 'expanded'])
 const project = useProjectStore(), access = useAccessStore()
 const allowed = computed(() => Number(project.currentProjectId) === PLAN_BUILDING.projectId && (access.admin || access.paths.has('/property/workorder')))
 const points = ref([]), activePoints = ref([]), activeCount = ref(0), urgentCount = ref(0), loading = ref(false), error = ref(''), unmapped = ref(0), unmappedUrgent = ref(0), truncated = ref(false), hasSnapshot = ref(false)
@@ -16,6 +16,9 @@ const summary = computed(() => activeCount.value ? `${activeCount.value}${trunca
 const triggerLabel = computed(() => activeCount.value ? `问题提醒，待处理 ${activeCount.value}${truncated.value ? '+' : ''} 项，紧急 ${urgentCount.value} 项，常规 ${regularCount.value} 项，${expanded.value ? '收起' : '展开'}列表` : `问题提醒，${loading.value ? '正在加载' : error.value ? '加载失败' : '暂无待处理工单'}`)
 function toggle() { expanded.value = !expanded.value }
 async function close() { expanded.value = false; await nextTick(); trigger.value?.focus() }
+function collapse() { expanded.value = false }
+watch(expanded, value => emit('expanded', value))
+defineExpose({ collapse })
 function locate(point) { emit('locate', point); close() }
 let generation = 0, handledRequestedId = null
 async function load() {
@@ -89,9 +92,9 @@ onBeforeUnmount(() => { generation++ })
   </section>
 </template>
 <style scoped>
-.spatial-orders { --issue-red: #b34134; --issue-yellow: #946615; position: relative; color: var(--scene-ui, #345a6e); font-size: 12px; }
+.spatial-orders { --issue-red: #b34134; --issue-yellow: #946615; position: relative; display: flex; flex-direction: column; align-items: flex-start; max-height: 100%; min-height: 0; color: var(--scene-ui, #345a6e); font-size: 12px; }
 :global(.is-night) .spatial-orders { --issue-red: #f49384; --issue-yellow: #edc56c; }
-.order-dock-toggle { display: flex; align-items: center; gap: 7px; min-height: 44px; padding: 8px 10px; border: 1px solid var(--scene-line, #bfd0dc); border-radius: 6px; background: var(--scene-ui-bg, #f8fdff); }
+.order-dock-toggle { flex-shrink: 0; display: flex; align-items: center; gap: 7px; min-height: 44px; padding: 8px 10px; border: 1px solid var(--scene-line, #bfd0dc); border-radius: 6px; background: var(--scene-ui-bg, #f8fdff); }
 .order-dock-toggle strong { font-weight: 600; white-space: nowrap; }
 .urgent { --issue-color: var(--issue-red); }
 .warning { --issue-color: var(--issue-yellow); }
@@ -99,7 +102,7 @@ onBeforeUnmount(() => { generation++ })
 .order-dock-toggle:hover { filter: brightness(.97); }
 .order-dock-toggle .is-expanded { transform: rotate(180deg); }
 .order-summary { white-space: nowrap; font-weight: 600; font-variant-numeric: tabular-nums; }
-.order-drawer { position: absolute; bottom: calc(100% + 7px); left: 0; width: min(260px, 100%); box-sizing: border-box; max-height: 260px; overflow: auto; padding: 11px; border: 1px solid var(--scene-line, #bfd0dc); border-radius: 7px; background: var(--scene-ui-bg, #f8fdff); box-shadow: 0 5px 18px #224c6a20; backdrop-filter: blur(12px); }
+.order-drawer { flex: 0 1 auto; min-height: 0; margin-bottom: 7px; width: min(260px, 100%); box-sizing: border-box; max-height: 260px; overflow: auto; padding: 11px; border: 1px solid var(--scene-line, #bfd0dc); border-radius: 7px; background: var(--scene-ui-bg, #f8fdff); box-shadow: 0 5px 18px #224c6a20; backdrop-filter: blur(12px); }
 header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 header span { margin-left: 6px; font-variant-numeric: tabular-nums; }
 button { color: inherit; font: inherit; cursor: pointer; background: transparent; border: 0; padding: 6px; }
