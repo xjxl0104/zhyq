@@ -4,7 +4,7 @@ import TwinHome from '../TwinHome.vue'
 
 const { route, push, sceneReset, sceneFocus } = vi.hoisted(() => ({ route: { path: '/twin-preview', params: {}, query: {}, meta: { twinPreview: true } }, push: vi.fn(), sceneReset: vi.fn(), sceneFocus: vi.fn() }))
 vi.mock('vue-router', () => ({ useRoute: () => route, useRouter: () => ({ push }) }))
-vi.mock('../WarehouseScene.vue', () => ({ default: { name: 'WarehouseScene', props: ['floor', 'mode', 'layer', 'focused', 'weather', 'viewpoint', 'rotating', 'markers'], methods: { reset: sceneReset, focusPoint: sceneFocus }, template: '<div class="mock-scene" />' } }))
+vi.mock('../WarehouseScene.vue', () => ({ default: { name: 'WarehouseScene', props: ['floor', 'mode', 'layer', 'focused', 'weather', 'viewpoint', 'rotating', 'markers', 'selectedPoint', 'workOrders'], methods: { reset: sceneReset, focusPoint: sceneFocus }, template: '<div class="mock-scene" />' } }))
 
 describe('warehouse workspace interactions', () => {
   beforeEach(() => { push.mockClear(); sceneReset.mockClear(); sceneFocus.mockClear(); localStorage.clear(); route.params = {}; route.query = {}; route.meta = { twinPreview: true } })
@@ -65,14 +65,10 @@ describe('warehouse workspace interactions', () => {
     expect(wrapper.text()).toContain('演示数据')
     wrapper.unmount()
   })
-  it('switches to a pending point system when locating it from an unrelated layer', async () => {
+  it('keeps illustrative pending counts and cards out of the model workspace', () => {
     const wrapper = mount(TwinHome)
-    await wrapper.get('.layer-button:nth-of-type(5)').trigger('click')
-    const scene = wrapper.findComponent({ name: 'WarehouseScene' })
-    expect(scene.props('layer')).toBe('camera')
-    await wrapper.get('[aria-label="定位消防立管 · 东区，待巡检"]').trigger('click')
-    expect(scene.props()).toMatchObject({ floor: 3, layer: 'fire' })
-    expect(wrapper.get('[aria-label="空间点位详情"]').text()).toContain('HYD-032')
+    expect(wrapper.findAll('.ops-property, .ops-pending')).toHaveLength(0)
+    expect(wrapper.findComponent({ name: 'WarehouseScene' }).props('selectedPoint')).toBeNull()
     wrapper.unmount()
   })
   it('routes a model point into its local module without creating credentials', async () => {
@@ -105,18 +101,40 @@ describe('warehouse workspace interactions', () => {
     const scene = wrapper.findComponent({ name: 'WarehouseScene' }), dock = wrapper.findComponent({ name: 'SpatialWorkOrders' })
     const first = { id: 'workorder-123', orderId: 123, module: 'property', floor: 1, name: '一楼工单', values: [] }
     const next = { id: 'workorder-124', orderId: 124, module: 'property', floor: 4, name: '四楼工单', values: [] }
-    await wrapper.get('[aria-label="显示业务点位"]').trigger('click')
+    await wrapper.get('[aria-label="显示定位点"]').trigger('click')
+    await wrapper.get('.layer-button:nth-of-type(5)').trigger('click')
     dock.vm.$emit('locate', first); await flushPromises()
-    expect(scene.props()).toMatchObject({ floor: 1, mode: 'interior', markers: true, rotating: false })
+    expect(scene.props()).toMatchObject({ floor: 1, mode: 'interior', markers: true, rotating: false, layer: 'property', selectedPoint: first })
     expect(sceneFocus).toHaveBeenLastCalledWith(first)
     expect(wrapper.get('.spatial-orders-host').isVisible()).toBe(true)
     expect(wrapper.get('[aria-label="空间点位详情"]').text()).toContain('一楼工单')
     dock.vm.$emit('locate', next); await flushPromises()
-    expect(scene.props()).toMatchObject({ floor: 4, mode: 'interior', focused: true })
+    expect(scene.props()).toMatchObject({ floor: 4, mode: 'interior', focused: true, selectedPoint: next })
     expect(sceneFocus).toHaveBeenLastCalledWith(next)
     expect(sceneFocus).toHaveBeenCalledTimes(2)
     expect(wrapper.get('.spatial-orders-host').isVisible()).toBe(true)
     expect(wrapper.get('[aria-label="空间点位详情"]').text()).toContain('四楼工单')
+    wrapper.unmount()
+  })
+  it('refreshes the selected order without moving the camera until its drawing location changes', async () => {
+    route.meta = {}; localStorage.setItem('zhyq_token', 'test-session')
+    const wrapper = mount(TwinHome, { global: { stubs: { SpatialWorkOrders: { name: 'SpatialWorkOrders', template: '<button />' }, FloorPlanViewer: true } } })
+    const scene = wrapper.findComponent({ name: 'WarehouseScene' }), dock = wrapper.findComponent({ name: 'SpatialWorkOrders' })
+    const first = { id: 'workorder-123', orderId: 123, module: 'property', floor: 1, name: '一楼工单', localPosition: [10, 0, 20], values: [] }
+    dock.vm.$emit('locate', first); await flushPromises()
+    sceneFocus.mockClear()
+    const refreshed = { ...first, status: '处理中' }
+    dock.vm.$emit('points', [refreshed]); await flushPromises()
+    expect(scene.props('selectedPoint')).toEqual(refreshed)
+    expect(sceneFocus).not.toHaveBeenCalled()
+    const moved = { ...refreshed, floor: 4, localPosition: [15, 0, 28] }
+    dock.vm.$emit('points', [moved]); await flushPromises()
+    expect(scene.props()).toMatchObject({ floor: 4, selectedPoint: moved })
+    expect(sceneFocus).toHaveBeenCalledOnce()
+    expect(sceneFocus).toHaveBeenCalledWith(moved)
+    dock.vm.$emit('points', []); await flushPromises()
+    expect(scene.props('selectedPoint')).toBeNull()
+    expect(wrapper.find('[aria-label="空间点位详情"]').exists()).toBe(false)
     wrapper.unmount()
   })
   it('uses the existing protected business module on the real homepage' , async () => {

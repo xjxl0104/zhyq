@@ -7,6 +7,7 @@ const props = defineProps({
   side: { type: String, default: 'left', validator: value => ['left', 'right'].includes(value) },
   floor: { type: Number, default: null },
   compact: { type: Boolean, default: false },
+  showIssueExamples: { type: Boolean, default: true },
 })
 const emit = defineEmits(['open-module', 'select-floor', 'select-point'])
 const rentableFloors = FLOORS.filter(item => item.id > 0)
@@ -27,7 +28,7 @@ const pendingPoints = computed(() => POINTS
 </script>
 
 <template>
-  <aside class="twin-operations" :class="[`twin-operations--${side}`, { 'is-compact': compact }]" :aria-label="side === 'left' ? '经营数据面板（演示）与园区参考资料' : '运营数据面板（演示）'">
+  <aside class="twin-operations" :class="[`twin-operations--${side}`, { 'is-compact': compact, 'is-summary': !showIssueExamples }]" :aria-label="side === 'left' ? '经营数据面板（演示）与园区参考资料' : '运营数据面板（演示）'">
     <template v-if="side === 'left'">
       <section class="ops-card ops-occupancy">
         <header class="ops-heading">
@@ -64,7 +65,7 @@ const pendingPoints = computed(() => POINTS
         <div class="ops-chart-legend"><span><i class="ops-dot ops-dot--pale" />应收</span><span><i class="ops-dot" />已收</span><span>单位：万元</span></div>
       </section>
 
-      <section class="ops-card ops-property">
+      <section v-if="showIssueExamples" class="ops-card ops-property">
         <header class="ops-heading">
           <h3>物业工单</h3><span class="ops-demo">演示</span>
           <button class="ops-link" type="button" aria-label="进入物业服务" @click="emit('open-module', 'property')"><TwinIcon name="chevron" :size="15" /></button>
@@ -85,7 +86,7 @@ const pendingPoints = computed(() => POINTS
         <div class="ops-device-status"><span><i class="ops-dot" />正常 172</span><span><i class="ops-dot ops-dot--amber" />待检查 4</span></div>
       </section>
 
-      <section class="ops-card ops-pending">
+      <section v-if="showIssueExamples" class="ops-card ops-pending">
         <header class="ops-heading"><h3>运营待办</h3><span class="ops-demo">演示</span><span class="ops-count">02</span></header>
         <div class="ops-pending-caption">{{ floor ? `${floor}F 关联事项优先` : '从事项定位到空间' }}</div>
         <button v-for="point in pendingPoints" :key="point.id" class="ops-pending-row" type="button" :class="{ 'is-selected': floor === point.floor }" :aria-label="`定位${point.name}，${point.status}`" @click="emit('select-point', point)">
@@ -144,6 +145,7 @@ const pendingPoints = computed(() => POINTS
 .ops-ring-track { stroke: var(--panel-track); }
 .ops-ring-value { stroke: var(--panel-accent); }
 .ops-floor-list { display: flex; flex: 1; flex-direction: column; justify-content: space-between; gap: calc(3px - var(--panel-compact) * 2px); }
+.is-summary .ops-card, .is-summary .ops-floor-list { flex: none; }
 .ops-floor-row { display: grid; grid-template-columns: 24px minmax(0, 1fr) 36px; align-items: center; gap: 9px; width: 100%; min-height: var(--ops-floor-height, calc(19px - var(--panel-compact) * 1px)); padding: calc(2px - var(--panel-compact) * 1px) 4px; border: 0; border-radius: 4px; color: var(--panel-muted); background: transparent; text-align: right; }
 .ops-floor-row b { color: var(--panel-ink); font-size: 11px; font-weight: 550; text-align: left; }
 .ops-floor-row > span:last-child { color: var(--panel-ink); font-size: 11px; white-space: nowrap; }
