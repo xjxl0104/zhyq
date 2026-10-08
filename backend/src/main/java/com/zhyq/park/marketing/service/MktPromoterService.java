@@ -65,6 +65,17 @@ public class MktPromoterService {
         return createProfile(p, parentInviteCode, "mp");
     }
 
+    /** Internal admin creation; no agreement or verified phone is invented. */
+    @Transactional
+    public MktPromoter registerManaged(MktPromoter p, String parentInviteCode) {
+        if (!StringUtils.hasText(p.getPhone()))
+            p.setPhone("p:" + UUID.randomUUID().toString().replace("-", "").substring(0, 18));
+        else if (!p.getPhone().matches("^1\\d{10}$")) throw new BizException(400, "手机号格式不正确");
+        p.setPositionCode("P1");
+        p.setStatus(ST_NORMAL);
+        return createProfile(p, parentInviteCode, "admin");
+    }
+
     private MktPromoter createProfile(MktPromoter p, String parentInviteCode, String source) {
         // Both phone and profile-later registration require attribution; manual root creation remains available.
         if ("mp".equals(source)) {

@@ -27,6 +27,7 @@ public class JwtAccountService {
     private final MktPromoterMapper promoters;
     private final MktWarehouseMapper warehouses;
     private final MktCredentialMapper credentials;
+    private final com.zhyq.park.marketing.admin.MktAccountControl accountControl;
 
     public record Account(String type, Long id, String subject, List<String> authorities, String credentialState) {
         @Override public String toString() { return "Account[type=" + type + ", id=" + id + "]"; }
@@ -50,6 +51,8 @@ public class JwtAccountService {
                     .forEach(auth::add);
             return new Account(type, id, u.getUsername(), List.copyOf(auth), "admin:" + id + ":" + u.getPassword());
         }
+        var control = accountControl.state(type, id);
+        if (control.disabled()) throw unavailable();
         String subject;
         if ("mp".equals(type)) {
             assertPromoterActive(promoters.selectById(id));
@@ -62,6 +65,7 @@ public class JwtAccountService {
                 .eq(MktCredential::getIdentityType, type).eq(MktCredential::getIdentityId, id));
         if (credential != null && !Integer.valueOf(1).equals(credential.getStatus())) throw unavailable();
         String state = credential == null ? "wechat-only" : credential.getId() + ":" + credential.getUsername() + ":" + credential.getPasswordHash();
+        if (control.revision() > 0) state += ":control:" + control.revision();
         return new Account(type, id, subject, List.of("mp".equals(type) ? "ROLE_MP" : "ROLE_WH"), type + ":" + id + ":" + state);
     }
 
