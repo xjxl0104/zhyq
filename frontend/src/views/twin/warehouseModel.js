@@ -13,7 +13,6 @@ export function createWarehouse() {
   const building = new THREE.Group()
   const site = new THREE.Group()
   root.name = 'dipark-warehouse'
-  building.scale.setScalar(PLAN_BUILDING.sceneScale)
   building.userData.planRevision = PLAN_BUILDING.revision
   building.name = 'warehouse-building'; building.userData.twinRole = 'building'
   site.name = 'warehouse-site'; site.userData.twinRole = 'site'
@@ -150,8 +149,6 @@ export function createWarehouse() {
     if (index > 0) {
       addReferenceFacade(shell, { index, height, box, cylinder, tube, materials })
       batch(shell)
-      // Photo-derived facade is fitted to the measured plan envelope; interiors are metres.
-      shell.scale.set(PLAN_BUILDING.width / 96, 1, PLAN_BUILDING.depth / 54)
     }
     group.traverse(object => { object.userData.floor = index })
     interior.visible = false; fire.visible = false
@@ -159,10 +156,9 @@ export function createWarehouse() {
   }
   const roof = new THREE.Group()
   roof.name = 'warehouse-roof'; roof.userData.twinRole = 'roof'
-  roof.scale.set(PLAN_BUILDING.width / 96, 1, PLAN_BUILDING.depth / 54)
   roof.position.y = floorBase(MODEL.floors) + floorHeight(MODEL.floors)
   building.add(roof)
-  addReferenceRoof(roof, { box, materials, opening: [-46.2, -18, -25.5, 18] })
+  addReferenceRoof(roof, { box, materials })
   batch(roof)
 
   return bindWarehouse(root, sharedGeometries, Object.values(materials))

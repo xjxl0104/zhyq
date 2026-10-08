@@ -31,6 +31,9 @@ export function bindWarehouse(root, extraGeometries = [], extraMaterials = []) {
     if (!group) throw new Error('Warehouse asset is missing floor ' + floor)
     const parts = Object.fromEntries(['shell', 'structure', 'interior', 'fire'].map(role => [role, group.children.find(object => object.userData.twinRole === role)]))
     if (Object.values(parts).some(part => !part)) throw new Error('Warehouse floor ' + floor + ' is missing a system group')
+    // Fit the measured interior to the approved exterior only in overview/split views.
+    // The selected interior uses a uniform scale, preserving its real plan proportions.
+    for (const role of ['structure', 'interior', 'fire']) parts[role].scale.set(MODEL.width / PLAN_BUILDING.width, 1, MODEL.depth / PLAN_BUILDING.depth)
     group.traverse(object => { object.userData.floor = floor })
     floors.push({ group, ...parts })
   }
@@ -64,6 +67,10 @@ export function bindWarehouse(root, extraGeometries = [], extraMaterials = []) {
         item.group.position.y = Math.abs(distance) < .001 ? targetY : item.group.position.y + distance * ease
         changed = true
       }
+      for (const part of [item.structure, item.interior, item.fire]) {
+        if (inside) part.scale.setScalar(PLAN_BUILDING.sceneScale)
+        else part.scale.set(MODEL.width / PLAN_BUILDING.width, 1, MODEL.depth / PLAN_BUILDING.depth)
+      }
       item.shell.visible = !inside
       item.interior.visible = inside || (expanded && floor === selected)
       item.structure.children.filter(child => child.userData.planRole === 'overhead').forEach(child => { child.visible = !inside })
@@ -84,8 +91,8 @@ export function bindWarehouse(root, extraGeometries = [], extraMaterials = []) {
   function localPointPosition(floor, position) {
     const item = floors.find(item => item.group.userData.floor === floor)
     if (!item) return null
-    item.group.updateWorldMatrix(true, false)
-    return item.group.localToWorld(new THREE.Vector3(...position))
+    item.interior.updateWorldMatrix(true, false)
+    return item.interior.localToWorld(new THREE.Vector3(...position))
   }
   function pointPosition(point) {
     if (point.localPosition) return localPointPosition(point.floor, point.localPosition)
@@ -93,7 +100,7 @@ export function bindWarehouse(root, extraGeometries = [], extraMaterials = []) {
     // Never move these onto a selected floor and pretend that they are real devices.
     const vector = new THREE.Vector3(...point.position)
     const item = floors.find(item => item.group.userData.floor === point.floor)
-    if (item) vector.y = (item.group.position.y + Math.max(.6, point.position[1] - floorBase(point.floor))) * PLAN_BUILDING.sceneScale
+    if (item) vector.y += item.group.position.y - floorBase(point.floor)
     return vector
   }
   function dispose() {
