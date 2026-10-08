@@ -1,12 +1,13 @@
-// Storey heights come from the supplied brochure; footprint and device placements remain illustrative.
+import { PLAN_BUILDING, PLAN_FLOORS, planFloor } from './floorPlanData.js'
+// Footprint and interior layouts follow the architectural drawings; legacy business metrics and exterior device pins remain illustrative.
 export const PARK_REFERENCE = Object.freeze({ name: 'DIPARK 数智云仓产业园', totalArea: '82,000', freightLifts: 19, address: '广州市花都区炭步镇', source: '招商资料' })
-export const MODEL = Object.freeze({ width: 96, depth: 54, floorHeight: 6.6, floors: 7, baseHeight: 12, secondFloorHeight: 9.5 })
-export const floorBase = floor => floor === 1 ? 0 : floor === 2 ? MODEL.baseHeight : MODEL.baseHeight + MODEL.secondFloorHeight + (floor - 3) * MODEL.floorHeight
-export const floorHeight = floor => floor === 1 ? MODEL.baseHeight : floor === 2 ? MODEL.secondFloorHeight : MODEL.floorHeight
+export const MODEL = Object.freeze({ width: PLAN_BUILDING.width, depth: PLAN_BUILDING.depth, floorHeight: 6.6, floors: 7, baseHeight: 12, secondFloorHeight: 9.5 })
+export const floorBase = floor => planFloor(floor)?.base ?? 0
+export const floorHeight = floor => planFloor(floor)?.height ?? MODEL.floorHeight
 export const modelHeight = () => floorBase(MODEL.floors) + floorHeight(MODEL.floors)
-export const FLOORS = Array.from({ length: MODEL.floors }, (_, i) => ({
-  id: i + 1, label: (i + 1) + 'F', name: i === 0 ? '装卸与物流中心' : i === MODEL.floors - 1 ? '仓储与设备层' : '标准仓储空间',
-  area: '5,184', occupancy: [76, 92, 88, 100, 84, 72, 65][i],
+export const FLOORS = PLAN_FLOORS.map(item => ({
+  id: item.floor, label: item.floor === -1 ? 'B1' : item.floor + 'F', name: item.title,
+  area: item.floor === -1 ? '900' : '11,520', occupancy: item.floor > 0 ? [76, 92, 88, 100, 84, 72, 65][item.floor - 1] : null,
 }))
 export const MODULES = [
   { id: 'park', name: '园区空间', short: '园区', icon: 'building', color: '#148975', route: '/building/project', metric: String(MODEL.floors), unit: '个楼层', description: '建筑、楼层与房源，在空间里一目了然。' },

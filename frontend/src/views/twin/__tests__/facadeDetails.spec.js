@@ -149,7 +149,7 @@ describe('screen-filtered facade details', () => {
     const ribs = new MeshStandardMaterial({ color: '#eceee8' })
     ribs.userData.facadeDetail = ribDetail()
     const geometry = new BoxGeometry(1, 1, .04)
-    for (let floor = 1; floor <= MODEL.floors; floor++) {
+    for (const floor of [1, 2, 3, 4, 5, 6, 7, -1]) {
       const group = new Group()
       group.userData = { twinRole: 'floor', floor }
       building.add(group)

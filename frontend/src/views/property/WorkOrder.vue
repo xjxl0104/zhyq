@@ -369,6 +369,7 @@
         </el-descriptions-item>
       </el-descriptions>
 
+      <el-button v-if="detail.order && canLocateOrder(detail.order)" type="primary" plain @click="router.push({ path: '/dashboard', query: { floor: String(spatialWorkOrder(detail.order).floor), workOrderId: String(detail.order.id) } })">在 3D 中定位</el-button>
       <p v-if="detail.floor">楼层：{{ detail.building?.name }} / {{ detail.floor.name }}{{ detail.order?.zone ? ` / ${detail.order.zone}区` : '' }}</p>
       <FloorPlanViewer v-if="detail.order?.floorPlanFileId" :file-id="detail.order.floorPlanFileId" :point="{ x: Number(detail.order.planX), y: Number(detail.order.planY) }" />
       <div v-if="detailFiles.length" class="detail-files">
@@ -398,6 +399,7 @@
 </template>
 
 <script setup>
+import { canLocateOrder, spatialWorkOrder } from '@/views/twin/workOrderSpatial'
 import { computed, reactive, ref, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'

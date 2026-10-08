@@ -1,6 +1,8 @@
 import * as THREE from 'three'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { MODEL, floorBase, floorHeight } from './twinData.js'
+import { PLAN_BUILDING, PLAN_FLOORS } from './floorPlanData.js'
+import { createPlanFloor } from './floorPlanGeometry.js'
 import { bindWarehouse } from './warehouseController.js'
 import { createWarehouseSite } from './siteGeometry.js'
 import { addReferenceFacade, addReferenceRoof, createFacadeMaterials } from './warehouseFacade.js'
@@ -11,6 +13,8 @@ export function createWarehouse() {
   const building = new THREE.Group()
   const site = new THREE.Group()
   root.name = 'dipark-warehouse'
+  building.scale.setScalar(PLAN_BUILDING.sceneScale)
+  building.userData.planRevision = PLAN_BUILDING.revision
   building.name = 'warehouse-building'; building.userData.twinRole = 'building'
   site.name = 'warehouse-site'; site.userData.twinRole = 'site'
   root.add(site, building)
@@ -123,7 +127,8 @@ export function createWarehouse() {
   createWarehouseSite(site, { box, cylinder, tube, paint, hatch, materials, crownGeometry, batch })
 
   const floors = []
-  for (let index = 1; index <= MODEL.floors; index++) {
+  for (const definition of PLAN_FLOORS) {
+    const index = definition.floor
     const group = new THREE.Group()
     group.name = 'warehouse-floor-' + index
     group.userData.floor = index
@@ -131,70 +136,33 @@ export function createWarehouse() {
     group.userData.spaceKey = 'warehouse-01/floor-' + index
     group.position.y = floorBase(index)
     building.add(group)
-    const shell = new THREE.Group(), structure = new THREE.Group(), interior = new THREE.Group(), fire = new THREE.Group()
+    const shell = new THREE.Group()
+    const { structure, interior, fire } = createPlanFloor(index)
+    group.userData.planFileId = definition.fileId
+    group.userData.planFloorId = definition.floorId
+    group.userData.planDrawing = definition.drawing
     for (const [role, part] of Object.entries({ shell, structure, interior, fire })) {
       part.name = 'floor-' + index + '-' + role
       part.userData.twinRole = role
     }
     group.add(shell, structure, interior, fire)
     const height = floorHeight(index)
-    const W = MODEL.width, D = MODEL.depth
-    box(structure, 'concrete', 0, .08, 0, W, .28, D)
-    box(structure, 'white', 0, -.03, D / 2, W + .8, .45, .5)
-    box(structure, 'white', 0, -.03, -D / 2, W + .8, .45, .5)
-    box(structure, 'white', W / 2, -.03, 0, .5, .45, D)
-    box(structure, 'white', -W / 2, -.03, 0, .5, .45, D)
-    // Photo's repeating column grid and concrete beams.
-    for (let x = -44; x <= 44; x += 11) {
-      for (let z = -22; z <= 22; z += 11) {
-        box(structure, 'white', x, height / 2, z, .75, height, .75)
-        box(structure, 'concrete', x, height - .65, z, .82, .6, 10.9)
-      }
-      box(structure, 'concrete', x, height - .35, 0, .6, .5, D - 1)
+    if (index > 0) {
+      addReferenceFacade(shell, { index, height, box, cylinder, tube, materials })
+      batch(shell)
+      // Photo-derived facade is fitted to the measured plan envelope; interiors are metres.
+      shell.scale.set(PLAN_BUILDING.width / 96, 1, PLAN_BUILDING.depth / 54)
     }
-    addReferenceFacade(shell, { index, height, box, cylinder, tube, materials })
-    // Interior systems are deliberately schematic and separate from façade geometry.
-    for (const z of [-16, 16]) {
-      box(interior, 'steel', 0, height - 1.25, z, 89, .65, 1.5)
-      for (let x = -44; x <= 44; x += 3) box(interior, 'dark', x, height - 1.26, z, .06, .69, 1.55)
-    }
-    for (const x of [-33, 0, 33]) {
-      tube(fire, 'red', [x, height - 1, -24], [x, height - 1, 24], .09)
-      for (let z = -20; z <= 20; z += 8) {
-        tube(fire, 'red', [x, height - 1, z], [x, height - 1.4, z], .06)
-        tube(fire, 'red', [x, height - 1.4, z], [x + 10, height - 1.4, z], .06)
-        cylinder(fire, 'red', x + 10, height - 1.6, z, .06, .45)
-        cylinder(fire, 'steel', x + 10, height - 1.86, z, .12, .035)
-        cylinder(fire, 'red', x, height - 1, z, .13, .24).rotation.x = Math.PI / 2
-      }
-      cylinder(fire, 'red', x + .8, height / 2, 22, .1, height)
-      for (const y of [.45, 3.3]) cylinder(fire, 'red', x + .8, y, 22, .15, .13)
-      box(fire, 'red', x + 1.2, 1.4, 22, .9, 1.3, .4)
-      box(fire, 'white', x + 1.2, 1.4, 22.22, .6, .8, .025)
-      box(fire, 'steel', x + 1.48, 1.4, 22.25, .045, .2, .035)
-    }
-    for (let zone = 0; zone < 3; zone++) {
-      const x = -31 + zone * 31
-      box(interior, ['zoneA', 'zoneB', 'zoneC'][zone], x, .26, 0, 28, .045, 39)
-      // Warehouse racking leaves a generous circulation aisle.
-      for (const z of [-9, 7]) for (let r = -8; r <= 8; r += 8) {
-        box(interior, 'rack', x + r, .6, z, 5.8, .13, 3.5)
-        box(interior, 'storage', x + r, 1.25, z, 5.4, 1.2, 3.1)
-        box(interior, 'rack', x + r, 2, z, 5.8, .1, 3.5)
-        box(interior, 'storage', x + r, 2.7, z, 5.4, 1.3, 3.1)
-        for (const dx of [-2.9, 2.9]) box(interior, 'rack', x + r + dx, 1.7, z, .12, 3.3, 3.6)
-      }
-    }
-    for (const part of [shell, structure, interior, fire]) batch(part)
     group.traverse(object => { object.userData.floor = index })
     interior.visible = false; fire.visible = false
     floors.push({ group, shell, structure, interior, fire })
   }
   const roof = new THREE.Group()
   roof.name = 'warehouse-roof'; roof.userData.twinRole = 'roof'
+  roof.scale.set(PLAN_BUILDING.width / 96, 1, PLAN_BUILDING.depth / 54)
   roof.position.y = floorBase(MODEL.floors) + floorHeight(MODEL.floors)
   building.add(roof)
-  addReferenceRoof(roof, { box, materials })
+  addReferenceRoof(roof, { box, materials, opening: [-46.2, -18, -25.5, 18] })
   batch(roof)
 
   return bindWarehouse(root, sharedGeometries, Object.values(materials))
