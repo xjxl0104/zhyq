@@ -1,13 +1,13 @@
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import TwinHome from '../TwinHome.vue'
 
-const { route, push, sceneReset } = vi.hoisted(() => ({ route: { path: '/twin-preview', params: {}, query: {}, meta: { twinPreview: true } }, push: vi.fn(), sceneReset: vi.fn() }))
+const { route, push, sceneReset, sceneFocus } = vi.hoisted(() => ({ route: { path: '/twin-preview', params: {}, query: {}, meta: { twinPreview: true } }, push: vi.fn(), sceneReset: vi.fn(), sceneFocus: vi.fn() }))
 vi.mock('vue-router', () => ({ useRoute: () => route, useRouter: () => ({ push }) }))
-vi.mock('../WarehouseScene.vue', () => ({ default: { name: 'WarehouseScene', props: ['floor', 'mode', 'layer', 'focused', 'weather', 'viewpoint', 'rotating'], methods: { reset: sceneReset }, template: '<div class="mock-scene" />' } }))
+vi.mock('../WarehouseScene.vue', () => ({ default: { name: 'WarehouseScene', props: ['floor', 'mode', 'layer', 'focused', 'weather', 'viewpoint', 'rotating', 'markers'], methods: { reset: sceneReset, focusPoint: sceneFocus }, template: '<div class="mock-scene" />' } }))
 
 describe('warehouse workspace interactions', () => {
-  beforeEach(() => { push.mockClear(); sceneReset.mockClear(); route.params = {}; route.meta = { twinPreview: true } })
+  beforeEach(() => { push.mockClear(); sceneReset.mockClear(); sceneFocus.mockClear(); localStorage.clear(); route.params = {}; route.query = {}; route.meta = { twinPreview: true } })
   it('starts orbiting and lets the user pause and resume with the orbit control', async () => {
     const wrapper = mount(TwinHome)
     const orbit = wrapper.get('[aria-label="自动环绕"]')
@@ -97,6 +97,26 @@ describe('warehouse workspace interactions', () => {
     expect(wrapper.get('[aria-label="空间点位详情"]').text()).toContain('真实工单')
     await wrapper.get('[data-testid="point-open-module"]').trigger('click')
     expect(push).toHaveBeenCalledWith({ path: '/property/workorder', query: { highlightId: '123' } })
+    wrapper.unmount()
+  })
+  it('keeps the work-order dock available beside an open detail and focuses successive orders across floors', async () => {
+    route.meta = {}; localStorage.setItem('zhyq_token', 'test-session')
+    const wrapper = mount(TwinHome, { global: { stubs: { SpatialWorkOrders: { name: 'SpatialWorkOrders', template: '<button class="mock-order-dock">物业工单</button>' }, FloorPlanViewer: true } } })
+    const scene = wrapper.findComponent({ name: 'WarehouseScene' }), dock = wrapper.findComponent({ name: 'SpatialWorkOrders' })
+    const first = { id: 'workorder-123', orderId: 123, module: 'property', floor: 1, name: '一楼工单', values: [] }
+    const next = { id: 'workorder-124', orderId: 124, module: 'property', floor: 4, name: '四楼工单', values: [] }
+    await wrapper.get('[aria-label="显示业务点位"]').trigger('click')
+    dock.vm.$emit('locate', first); await flushPromises()
+    expect(scene.props()).toMatchObject({ floor: 1, mode: 'interior', markers: true, rotating: false })
+    expect(sceneFocus).toHaveBeenLastCalledWith(first)
+    expect(wrapper.get('.spatial-orders-host').isVisible()).toBe(true)
+    expect(wrapper.get('[aria-label="空间点位详情"]').text()).toContain('一楼工单')
+    dock.vm.$emit('locate', next); await flushPromises()
+    expect(scene.props()).toMatchObject({ floor: 4, mode: 'interior', focused: true })
+    expect(sceneFocus).toHaveBeenLastCalledWith(next)
+    expect(sceneFocus).toHaveBeenCalledTimes(2)
+    expect(wrapper.get('.spatial-orders-host').isVisible()).toBe(true)
+    expect(wrapper.get('[aria-label="空间点位详情"]').text()).toContain('四楼工单')
     wrapper.unmount()
   })
   it('uses the existing protected business module on the real homepage' , async () => {

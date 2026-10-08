@@ -28,12 +28,12 @@ describe('drawing-to-world positioning', () => {
     const model = createWarehouse()
     try {
       const point = spatialWorkOrder({ ...mark(PLAN_FLOORS[3], .25, .75), id: 123, title: '测试工单', status: 3 })
-      for (const [mode, elevation] of [['exterior', 28.1], ['exploded', 40.1], ['interior', .4]]) {
+      for (const [mode, elevation, verticalScale, depthScale] of [['exterior', 28.1, 1, .75], ['exploded', 40.1, 1, .75], ['interior', .4, .6, .6]]) {
         model.setState({ mode, floor: 4 }); model.update(5)
         const actual = model.pointPosition(point)
         expect(actual.x).toBeCloseTo(-24)
-        expect(actual.z).toBeCloseTo(10.8)
-        expect(actual.y).toBeCloseTo((elevation + .45) * .6)
+        expect(actual.z).toBeCloseTo(18 * depthScale)
+        expect(actual.y).toBeCloseTo(elevation + .45 * verticalScale)
       }
       model.setState({ mode: 'interior', floor: -1 }); model.update(5)
       expect(model.floors.filter(f => f.group.visible).map(f => f.group.userData.floor)).toEqual([-1])
@@ -41,15 +41,13 @@ describe('drawing-to-world positioning', () => {
       expect(model.floors[7].group.visible).toBe(false)
     } finally { model.dispose() }
   })
-  it('leaves the roof terrace open and does not seal a shared lift/lobby doorway', () => {
+  it('keeps the terrace visible inside and does not seal a shared lift/lobby doorway', () => {
     const model = createWarehouse()
     try {
-      model.root.updateMatrixWorld(true)
+      model.setState({ mode: 'interior', floor: 7 }); model.update(5)
       const roof = model.building.children.find(o => o.userData.twinRole === 'roof')
-      const throughTerrace = new Raycaster(new Vector3(-36, 60, 0), new Vector3(0, -1, 0))
-      expect(throughTerrace.intersectObject(roof, true)).toHaveLength(0)
-      const throughRoof = new Raycaster(new Vector3(0, 60, 0), new Vector3(0, -1, 0))
-      expect(throughRoof.intersectObject(roof, true).length).toBeGreaterThan(0)
+      expect(roof.visible).toBe(false)
+      expect(model.floors[6].structure.children.find(o => o.userData.planRole === 'overhead').visible).toBe(false)
       model.setState({ mode: 'interior', floor: 3 }); model.update(5); model.root.updateMatrixWorld(true)
       // South passenger lift opens into its adjacent lobby, which must have the same gap.
       const ray = new Raycaster(new Vector3((51.25 - 80) * .6, 1, (67 - 36) * .6), new Vector3(0, 0, 1), 0, 1)

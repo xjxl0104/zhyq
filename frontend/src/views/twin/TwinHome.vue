@@ -61,7 +61,14 @@ function setMode(value) {
   if (value !== 'interior' && floor.value === -1) floor.value = 1
   selectedPoint.value = null
 }
-function selectPoint(point) { selectedPoint.value = point; floor.value = point.floor; if (point.orderId) { layer.value = 'property'; mode.value = 'interior'; modelFocus.value = true; rotating.value = false } }
+async function selectPoint(point) {
+  selectedPoint.value = point; floor.value = point.floor
+  if (point.orderId) {
+    layer.value = 'property'; mode.value = 'interior'; modelFocus.value = true; rotating.value = false; markers.value = true; planOpen.value = false
+    await nextTick()
+    if (selectedPoint.value?.id === point.id) scene.value?.focusPoint?.(point)
+  }
+}
 function planView() { const point = selectedPoint.value; setMode('interior'); selectedPoint.value = point; viewpoint.value = 'plan' }
 function updateOrders(points) { workOrders.value = points; if (selectedPoint.value?.orderId) selectedPoint.value = points.find(point => point.id === selectedPoint.value.id) || null }
 function locatePanelPoint(point) { layer.value = point.module; selectPoint(point) }
@@ -149,7 +156,7 @@ onBeforeUnmount(() => { clearInterval(clockTimer); clearTimeout(toastTimer); win
           <div class="twin-world-scene"><WarehouseScene ref="scene" :mode="mode" :floor="floor" :layer="layer" :focused="modelFocus" :weather="weather" :viewpoint="viewpoint" :rotating="rotating" :markers="markers" :work-orders="workOrders" :plan-labels="planLabels" @select-floor="selectFloor" @select-point="selectPoint" @open-module="openPointModule" @ready="sceneReady = true" @error="sceneFailed = true" /></div>
           <header class="environment-bar"><div class="environment-location"><TwinIcon name="pin" :size="14" /><strong>数智云仓产业园</strong><span>广州 · 花都炭步</span></div><div class="environment-actions"><span class="weather-simulation">天气模拟</span><div class="weather-switch" aria-label="天气场景"><button v-for="item in weatherOptions" :key="item.id" :data-testid="'weather-' + item.id" :aria-pressed="weather === item.id" :class="{ active: weather === item.id }" @click="weather = item.id"><TwinIcon :name="item.icon" :size="14" />{{ item.name }}</button></div><button class="model-focus-toggle" :aria-label="modelFocus ? '恢复运营看板' : '专注查看模型'" :aria-pressed="modelFocus" @click="toggleModelFocus"><TwinIcon :name="modelFocus ? 'grid' : 'expand'" :size="13" />{{ modelFocus ? '返回看板' : '专注模型' }}</button><button class="entrance-view" data-testid="view-entrance" :aria-pressed="viewpoint === 'entrance'" @click="viewEntrance"><TwinIcon name="gate" :size="15" />入口视角</button></div></header>
           <aside class="twin-board-rail twin-board-left"><TwinOperationsPanel side="left" :floor="floor" @open-module="openModule" @select-floor="selectFloor" @select-point="locatePanelPoint" /></aside>
-          <section class="twin-viewport" aria-label="三维空间工作台">
+          <section class="twin-viewport" :class="{ 'has-work-order-dock': !preview && hasSession }" aria-label="三维空间工作台">
             <div class="viewport-top"><div class="view-switch" aria-label="模型视图"><button v-for="view in [{ id: 'exterior', icon: 'cube', name: '建筑外观' }, { id: 'exploded', icon: 'layers', name: '楼层展开' }, { id: 'interior', icon: 'eye', name: '室内空间' }]" :key="view.id" :data-testid="'view-' + view.id" :class="{ active: mode === view.id }" :aria-pressed="mode === view.id" @click="setMode(view.id)"><TwinIcon :name="view.icon" :size="15" /><span>{{ view.name }}</span></button></div></div>
             <div v-if="mode === 'interior'" class="plan-tools-bar" aria-label="楼层结构核对">
               <button type="button" :aria-pressed="viewpoint === 'plan'" @click="planView">俯视核对</button>
@@ -164,7 +171,7 @@ onBeforeUnmount(() => { clearInterval(clockTimer); clearTimeout(toastTimer); win
             <div class="scene-controls"><div><button aria-label="放大模型" title="放大" @click="scene?.zoom(1.18)"><TwinIcon name="plus" :size="18" /></button><button aria-label="缩小模型" title="缩小" @click="scene?.zoom(1 / 1.18)"><TwinIcon name="minus" :size="18" /></button><span /><button aria-label="复位视角" title="复位视角" @click="scene?.reset()"><TwinIcon name="reset" :size="17" /></button><button aria-label="自动环绕" title="自动环绕" :class="{ active: rotating }" :aria-pressed="rotating" @click="rotating = !rotating"><TwinIcon name="rotate" :size="18" /></button><button aria-label="显示业务点位" title="显示业务点位" :class="{ active: markers }" :aria-pressed="markers" @click="markers = !markers"><TwinIcon name="pin" :size="17" /></button><span /><button aria-label="全屏查看" title="全屏查看" @click="fullScreen"><TwinIcon name="expand" :size="17" /></button></div></div>
             <div class="viewport-bottom"><span><i />{{ sceneFailed ? '渲染不可用' : sceneReady ? '空间渲染已连接' : '正在加载场景' }}</span><span>拖动旋转<span class="key-dot">·</span>滚轮缩放<span class="key-dot">·</span>右键平移</span><span class="scale-rule">场地布局示意</span></div>
 
-            <div v-if="!preview && hasSession" v-show="!selectedPoint && !planOpen" class="spatial-orders-host"><SpatialWorkOrders :floor="floor" :requested-order-id="route.query.workOrderId" @points="updateOrders" @locate="selectPoint" /></div>
+            <div v-if="!preview && hasSession" class="spatial-orders-host"><SpatialWorkOrders :floor="floor" :requested-order-id="route.query.workOrderId" @points="updateOrders" @locate="selectPoint" /></div>
             <Transition name="twin-detail"><aside v-if="selectedPoint" class="point-detail" :style="{ '--detail-color': selectedModule.color }" aria-label="空间点位详情"><div class="detail-header"><span class="detail-icon"><TwinIcon :name="selectedModule.icon" :size="22" /></span><span>{{ selectedModule.name }}</span><button class="icon-button" aria-label="关闭点位详情" @click="selectedPoint = null"><TwinIcon name="close" :size="17" /></button></div><small class="detail-code">{{ selectedPoint.code }}</small><h3>{{ selectedPoint.name }}</h3><p class="detail-location"><TwinIcon name="pin" :size="14" />{{ selectedPoint.location }}</p><span class="detail-status"><i />{{ selectedPoint.status }}</span><div v-if="selectedPoint.module === 'camera'" class="camera-placeholder"><TwinIcon name="camera" :size="28" /><strong>视频通道待接入</strong><small>连接后可查看实时画面</small></div><dl><div v-for="pair in selectedPoint.values" :key="pair[0]"><dt>{{ pair[0] }}</dt><dd>{{ pair[1] }}</dd></div></dl><div class="detail-data-note">{{ selectedPoint.orderId ? '真实工单 · 按报修图纸定位' : '示例点位 · 未连接现场业务数据' }}</div><button data-testid="point-open-module" class="twin-button primary detail-action" @click="openPointModule(selectedPoint)">{{ selectedPoint.orderId ? '打开工单' : '进入' + selectedModule.name }}<TwinIcon name="arrow" :size="16" /></button></aside></Transition>
           </section>
 
@@ -197,6 +204,14 @@ onBeforeUnmount(() => { clearInterval(clockTimer); clearTimeout(toastTimer); win
 .plan-tools-bar button[aria-pressed=true] { background: #326d64; color: #fff; border-color: #326d64; }
 .plan-tools-bar button:focus-visible { outline: 2px solid #287c76; outline-offset: 2px; }
 .plan-source-panel { position: absolute; top: 88px; left: 0; width: min(520px, calc(100% - 46px)); max-height: 65%; overflow: auto; padding: 12px; border-radius: 8px; background: #fff; color: #28483f; z-index: 6; }
-.spatial-orders-host { position: absolute; z-index: 4; right: 12px; bottom: 74px; width: 255px; max-height: 44%; overflow: auto; }
-@media (max-width: 760px) { .spatial-orders-host { right: 8px; bottom: 130px; width: min(230px, 62%); max-height: 26%; } .plan-tools-bar { top: 45px; } }
+.spatial-orders-host { position: absolute; z-index: 8; left: 0; bottom: 77px; width: min(320px, calc(100% - 48px)); }
+.twin-workspace-v2 .has-work-order-dock .floor-selection-card { top: 91px; left: 0; bottom: auto; max-width: calc(100% - 48px); }
+.twin-workspace-v2 .has-work-order-dock .scene-compass { left: auto; right: 48px; bottom: 80px; }
+.is-focused .spatial-orders-host { left: 18px; }
+.twin-workspace-v2 .is-focused .has-work-order-dock .floor-selection-card { left: 18px; }
+@media (max-width: 760px) {
+  .spatial-orders-host { bottom: 77px; width: min(300px, calc(100% - 52px)); }
+  .plan-tools-bar { top: 45px; }
+  .twin-workspace-v2 .has-work-order-dock .point-detail { max-height: calc(100% - 207px); box-sizing: border-box; }
+}
 </style>

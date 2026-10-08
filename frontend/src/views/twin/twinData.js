@@ -1,7 +1,8 @@
-import { PLAN_BUILDING, PLAN_FLOORS, planFloor } from './floorPlanData.js'
-// Footprint and interior layouts follow the architectural drawings; legacy business metrics and exterior device pins remain illustrative.
+import { PLAN_FLOORS, planFloor } from './floorPlanData.js'
+// MODEL is the approved exterior display envelope. Interior geometry keeps the separate metre-based drawing coordinates.
+// Legacy business metrics and exterior device pins remain illustrative.
 export const PARK_REFERENCE = Object.freeze({ name: 'DIPARK 数智云仓产业园', totalArea: '82,000', freightLifts: 19, address: '广州市花都区炭步镇', source: '招商资料' })
-export const MODEL = Object.freeze({ width: PLAN_BUILDING.width, depth: PLAN_BUILDING.depth, floorHeight: 6.6, floors: 7, baseHeight: 12, secondFloorHeight: 9.5 })
+export const MODEL = Object.freeze({ width: 96, depth: 54, floorHeight: 6.6, floors: 7, baseHeight: 12, secondFloorHeight: 9.5 })
 export const floorBase = floor => planFloor(floor)?.base ?? 0
 export const floorHeight = floor => planFloor(floor)?.height ?? MODEL.floorHeight
 export const modelHeight = () => floorBase(MODEL.floors) + floorHeight(MODEL.floors)

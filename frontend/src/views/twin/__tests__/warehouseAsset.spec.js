@@ -10,7 +10,6 @@ import { Box3, Raycaster, Vector3 } from 'three'
 import { MODEL, POINTS, floorBase, modelHeight } from '../twinData'
 import { bindWarehouse } from '../warehouseController'
 
-const SCENE_SCALE = .6
 const assetUrl = new URL('../../../../public/models/dipark-warehouse.glb', import.meta.url)
 const parseAsset = bytes => new GLTFLoader().parseAsync(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength), '')
 const findEntrance = root => {
@@ -20,6 +19,35 @@ const findEntrance = root => {
 }
 
 describe('delivered warehouse asset', () => {
+  it('restores the approved exterior envelope after switching through indoor and split views', async () => {
+    const gltf = await parseAsset(await readFile(assetUrl))
+    const model = bindWarehouse(gltf.scene)
+    try {
+      const roof = model.building.children.find(object => object.userData.twinRole === 'roof')
+      // Recorded from the approved 78329b8 exterior; interior drawings must not
+      // change the outside building proportions or roof profile.
+      const approved = [[-49.125, 0, -28.55], [49.380001, 59.475, 28.55]]
+      const checkExterior = () => {
+        gltf.scene.updateMatrixWorld(true)
+        const bounds = new Box3().setFromObject(roof)
+        for (const floor of model.floors.filter(item => item.group.userData.floor > 0)) bounds.expandByObject(floor.shell)
+        for (const [actual, expected] of [[bounds.min.toArray(), approved[0]], [bounds.max.toArray(), approved[1]]]) {
+          actual.forEach((value, index) => expect(value).toBeCloseTo(expected[index], 4))
+        }
+        expect(model.building.scale.toArray()).toEqual([1, 1, 1])
+        expect(roof.scale.toArray()).toEqual([1, 1, 1])
+        expect(model.floors.every(item => item.shell.scale.toArray().every(value => value === 1))).toBe(true)
+        expect(model.floors[7].group.visible).toBe(false)
+      }
+      model.update(5); checkExterior()
+      for (const [mode, floor] of [['interior', 4], ['interior', -1], ['exploded', 5], ['exterior', null]]) {
+        model.setState({ mode, floor }); model.update(5)
+        expect(model.floors[3].interior.scale.toArray()).toEqual(mode === 'interior' ? [.6, .6, .6] : [.6, 1, .75])
+      }
+      checkExterior()
+    } finally { model.dispose() }
+  })
+
   it('loads clear architectural glazing on every floor without opaque glass shadows', async () => {
     const gltf = await parseAsset(await readFile(assetUrl))
     const model = bindWarehouse(gltf.scene)
@@ -75,7 +103,7 @@ describe('delivered warehouse asset', () => {
         { name: 'back balcony door', origin: [-10, floorBase(5) + 3.6, -29], direction: [0, 0, 1] },
       ]
       for (const window of windows) {
-        const ray = new Raycaster(new Vector3(window.origin[0], window.origin[1] * SCENE_SCALE, window.origin[2] * .8), new Vector3(...window.direction), 0, 4)
+        const ray = new Raycaster(new Vector3(...window.origin), new Vector3(...window.direction), 0, 4)
         const hits = ray.intersectObjects([floor.shell], true)
         const materialAt = hit => Array.isArray(hit.object.material)
           ? hit.object.material[hit.face.materialIndex]
@@ -100,8 +128,8 @@ describe('delivered warehouse asset', () => {
     const size = bounds.getSize(new Vector3())
     expect(size.x).toBeGreaterThan(96)
     expect(size.x).toBeLessThan(102)
-    expect(size.y).toBeGreaterThan((modelHeight() + 5.6) * SCENE_SCALE)
-    expect(size.y).toBeLessThan((modelHeight() + 5.6 + 9) * SCENE_SCALE)
+    expect(size.y).toBeGreaterThan(modelHeight())
+    expect(size.y).toBeLessThan(modelHeight() + 5.6 + 9)
     expect(model.building.children.filter(object => object.userData.twinRole === 'floor')).toHaveLength(MODEL.floors + 1)
     for (const floor of model.floors) {
       for (const role of ['structure', 'interior']) expect(floor[role].children.length).toBeGreaterThan(0)
@@ -115,15 +143,15 @@ describe('delivered warehouse asset', () => {
     model.setState({ mode: 'exploded', floor: 5 })
     model.update(2)
     expect(model.floors[4].group.position.y).toBeCloseTo(floorBase(5) + 16, 2)
-    expect(model.pointPosition({ localPosition: [1, .45, 3], floor: 5 }).y).toBeCloseTo((floorBase(5) + 16 + .45) * SCENE_SCALE, 2)
+    expect(model.pointPosition({ localPosition: [1, .45, 3], floor: 5 }).y).toBeCloseTo(floorBase(5) + 16 + .45, 2)
     for (const point of POINTS) {
-      expect(model.pointPosition(point).y).toBeCloseTo((Math.max(floorBase(point.floor) + .6, point.position[1]) + (point.floor - 1) * 4) * SCENE_SCALE, 2)
+      expect(model.pointPosition(point).y).toBeCloseTo(point.position[1] + (point.floor - 1) * 4, 2)
     }
     model.setState({ mode: 'exterior', floor: null })
     model.update(2)
     expect(model.floors.every(f => f.shell.visible && !f.fire.visible)).toBe(true)
     for (const point of POINTS) {
-      expect(model.pointPosition(point).distanceTo(new Vector3(point.position[0], Math.max(floorBase(point.floor) + .6, point.position[1]) * SCENE_SCALE, point.position[2]))).toBeLessThan(.001)
+      expect(model.pointPosition(point).distanceTo(new Vector3(...point.position))).toBeLessThan(.001)
     }
     model.dispose()
   })

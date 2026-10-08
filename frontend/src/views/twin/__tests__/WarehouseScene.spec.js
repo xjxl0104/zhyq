@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import WarehouseScene from '../WarehouseScene.vue'
 
 const state = vi.hoisted(() => ({
-  render: vi.fn(), frames: new Map(), nextFrame: 0, renderer: null, modelRoot: null,
+  render: vi.fn(), frames: new Map(), nextFrame: 0, renderer: null, modelRoot: null, controls: null,
   animeRendering: vi.fn(), originalRendering: vi.fn(), applyStyle: vi.fn(), weather: vi.fn(),
   styleDispose: vi.fn(), weatherDispose: vi.fn(), modelDispose: vi.fn(),
   prepareExport: vi.fn(), exportSnapshot: vi.fn(async () => new ArrayBuffer(8)),
@@ -23,7 +23,7 @@ vi.mock('three', async importOriginal => {
 })
 vi.mock('three/addons/controls/OrbitControls.js', async () => {
   const { Vector3 } = await import('three')
-  return { OrbitControls: class { target = new Vector3(); addEventListener() {} update() { return false } dispose() {} } }
+  return { OrbitControls: class { target = new Vector3(); constructor() { state.controls = this } addEventListener() {} update() { return false } dispose() {} } }
 })
 vi.mock('../warehouseAsset', async () => {
   const { Group } = await import('three')
@@ -61,6 +61,27 @@ function mountScene(options) {
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); vi.restoreAllMocks(); vi.clearAllMocks(); state.frames.clear() })
 
 describe('warehouse render demand', () => {
+  it('honours an order selected before loading and flies again to another point on the same floor', async () => {
+    const wrapper = mountScene({ props: { mode: 'interior', floor: 4 } })
+    wrapper.vm.focusPoint({ floor: 4, localPosition: [20, .45, -10] })
+    await flushPromises()
+    framesUntil(2000)
+    const camera = state.animeRendering.mock.calls[0][2]
+    state.controls.target.toArray().forEach((value, index) => expect(value).toBeCloseTo([12, .67, -6][index]))
+    camera.position.toArray().forEach((value, index) => expect(value).toBeCloseTo([37, 36.67, 27][index]))
+    wrapper.vm.focusPoint({ floor: 4, localPosition: [-40, .45, 18] })
+    framesUntil(2000)
+    expect(state.controls.target.x).toBeCloseTo(-24)
+    expect(state.controls.target.z).toBeCloseTo(10.8)
+    expect(camera.position.x).toBeCloseTo(1)
+    expect(camera.position.z).toBeCloseTo(43.8)
+    await wrapper.setProps({ viewpoint: 'plan' })
+    wrapper.vm.focusPoint({ floor: 4, localPosition: [20, .45, -10] })
+    framesUntil(2000)
+    camera.position.toArray().forEach((value, index) => expect(value).toBeCloseTo([12, 45.67, -5.9][index]))
+    wrapper.unmount()
+  })
+
   it('uses anime rendering by default, idles when settled, and redraws weather and zoom changes', async () => {
     const wrapper = mountScene()
     await flushPromises()
