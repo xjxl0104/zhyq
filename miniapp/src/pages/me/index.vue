@@ -36,6 +36,7 @@
         </view>
       </view>
       <view class="card">
+        <button v-if="me.superAdmin" class="menu-row" @click="go('/pages/admin-accounts/index')">账号管理 <text>超级管理员 ›</text></button>
         <button class="menu-row" @click="go('/pages/account-security/index?role=mp')">账号与密码 <text>设置密码登录 ›</text></button>
         <button class="menu-row" @click="go('/pages/team/index')">我的团队 <text>›</text></button>
         <button class="menu-row" @click="go('/pages/position/index')">我的称号 <text>›</text></button>

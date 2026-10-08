@@ -56,9 +56,11 @@ class PasswordAuthServiceTest {
     private PasswordAuthService service;
 
     @BeforeEach void setup() {
+        var control = mock(com.zhyq.park.marketing.admin.MktAccountControl.class);
+        lenient().when(control.state(anyString(), anyLong())).thenReturn(new com.zhyq.park.marketing.admin.MktAccountControl.State(false, false, 0));
         jwt = new JwtService("test-secret-for-password-tests-32-bytes-long", 3600,
                 new com.zhyq.park.auth.JwtAccountService(mock(com.zhyq.park.system.mapper.SysUserMapper.class),
-                        mock(com.zhyq.park.auth.mapper.AuthQueryMapper.class), promoters, warehouses, credentials));
+                        mock(com.zhyq.park.auth.mapper.AuthQueryMapper.class), promoters, warehouses, credentials, control));
         service = new PasswordAuthService(credentials, promoters, warehouses, contacts, promoterService,
                 warehouseService, auditService, settings, encoder, jwt, new PasswordAttemptLimiter());
         TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new MybatisConfiguration(), "test"), MktCredential.class);
