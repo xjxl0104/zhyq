@@ -59,11 +59,13 @@ public class MpMeController {
     private final MktAuditService auditService;
     private final com.zhyq.park.common.setting.BizSettings bizSettings;
     private final MktSelfProfileService profiles;
+    private final com.zhyq.park.marketing.admin.MktAccountControl accountControl;
 
     @Operation(summary = "我的资料") @GetMapping("/me")
     public Result<Map<String, Object>> me() {
         MktPromoter promoter = current();
         Map<String, Object> result = profile(promoter);
+        result.put("superAdmin", accountControl.isSuperAdmin(promoter.getId()) && Integer.valueOf(1).equals(promoter.getStatus()));
         result.put("phoneEditable", profiles.promoterPhoneEditable(promoter));
         result.put("contactPhone", MktSelfProfileService.isMobilePhone(promoter.getPhone()) ? promoter.getPhone() : null);
         result.put("profileComplete", StringUtils.hasText(promoter.getName()) && MktSelfProfileService.isMobilePhone(promoter.getPhone()));
