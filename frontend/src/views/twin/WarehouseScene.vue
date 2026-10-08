@@ -9,6 +9,7 @@ import { createSceneWeather } from './sceneWeather'
 import { createParkLandscape } from './parkLandscape'
 import { createSceneRendering, createAnimeSceneRendering } from './sceneRendering'
 import { floorLandmarks } from './floorPlanGeometry'
+import { PLAN_BUILDING } from './floorPlanData'
 import { MODULES, POINTS, visiblePoints } from './twinData'
 import TwinIcon from './TwinIcon.vue'
 
@@ -29,8 +30,8 @@ const landmarkElements = new Map()
 const moduleFor = id => MODULES.find(item => item.id === id)
 const markerElements = new Map()
 // Keep the first frame and reset at the same close overview, with room for the entrance.
-const overviewCamera = { position: [86, 58, 174], target: [0, 17, 0] }
-let renderer, scene, camera, controls, model, observer, environmentTarget, weatherEffects, landscape, rendering, stylization, metrics, frame = 0, lastTime = 0, disposed = false, tween = null, width = 1, height = 1, needsRender = true
+const overviewCamera = { position: [86, 58, 174], target: [0, 24, 0] }
+let renderer, scene, camera, controls, model, observer, environmentTarget, weatherEffects, landscape, rendering, stylization, metrics, frame = 0, lastTime = 0, disposed = false, tween = null, pendingPoint = null, width = 1, height = 1, needsRender = true
 const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
 const raycaster = new THREE.Raycaster(), pointer = new THREE.Vector2()
 let pointerDown = null
@@ -57,8 +58,8 @@ function reset() {
   const basement = inside && props.floor === -1
   const center = basement ? [37, 1, -14.4] : [0, 1, 0]
   const top = inside && props.viewpoint === 'plan'
-  const destination = entrance ? [44, 7, 96] : inside ? top ? [center[0], basement ? 46 : 112, center[2] + .1] : basement ? [66, 35, 22] : [48, 60, 70] : exploded ? [141, 108, 161] : overviewCamera.position
-  const target = entrance ? [22, 5, 56] : inside ? center : exploded ? [0, 25, 0] : overviewCamera.target
+  const destination = entrance ? [44, 7, 96] : inside ? top ? [center[0], basement ? 46 : 112, center[2] + .1] : basement ? [66, 35, 22] : [48, 60, 70] : exploded ? [181, 137, 193] : overviewCamera.position
+  const target = entrance ? [22, 5, 56] : inside ? center : exploded ? [0, 38, 0] : overviewCamera.target
   tween = {
     from: camera.position.clone(), to: new THREE.Vector3(...destination),
     targetFrom: controls.target.clone(), targetTo: new THREE.Vector3(...target), start: performance.now(),
@@ -72,6 +73,21 @@ function zoom(amount) {
   needsRender = true
   camera.zoom = THREE.MathUtils.clamp(camera.zoom * amount, .55, 3)
   camera.updateProjectionMatrix()
+}
+function focusPoint(point) {
+  if (!point?.localPosition) return
+  if (!model || !camera || !controls) { pendingPoint = point; return }
+  pendingPoint = null
+  // Use the settled interior transform: an incoming floor may still be animating
+  // down from its exterior elevation when the user picks another order.
+  const target = new THREE.Vector3(...point.localPosition).multiplyScalar(PLAN_BUILDING.sceneScale)
+  target.y += .4
+  const offset = props.viewpoint === 'plan' ? new THREE.Vector3(0, 45, .1) : new THREE.Vector3(25, 36, 33)
+  tween = {
+    from: camera.position.clone(), to: target.clone().add(offset),
+    targetFrom: controls.target.clone(), targetTo: target, start: performance.now(), fromZoom: camera.zoom,
+  }
+  needsRender = true
 }
 function onPointerDown(event) { pointerDown = { x: event.clientX, y: event.clientY } }
 function onPointerUp(event) {
@@ -206,7 +222,7 @@ onMounted(async () => {
     renderer.domElement.addEventListener('pointerup', onPointerUp)
     renderer.domElement.addEventListener('webglcontextlost', onContextLost)
     observer = new ResizeObserver(resize); observer.observe(host.value)
-    resize(); reset(); animate(performance.now())
+    resize(); reset(); if (pendingPoint) focusPoint(pendingPoint); animate(performance.now())
     ready.value = true; emit('ready')
   } catch (exception) {
     if (disposed) return
@@ -259,7 +275,7 @@ async function exportModel() {
   const anchor = document.createElement('a'); anchor.href = url; anchor.download = 'dipark-warehouse-' + props.mode + '.glb'; anchor.click()
   setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
-defineExpose({ reset, zoom, exportModel })
+defineExpose({ reset, zoom, focusPoint, exportModel })
 </script>
 
 <template>
