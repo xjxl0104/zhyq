@@ -45,7 +45,11 @@ export function bindWarehouse(root, extraGeometries = [], extraMaterials = []) {
   selection.userData.runtimeOnly = true
   building.add(selection)
   selection.visible = false
-  let current = { mode: 'exterior', floor: null, layer: 'all' }, stateChanged = true
+  // Hover highlight: a translucent band with an edge outline around the floor under the pointer.
+  const hoverFill = new THREE.Mesh(new THREE.BoxGeometry(MODEL.width + 1.8, 1, MODEL.depth + 1.8), new THREE.MeshBasicMaterial({ color: '#2b9fd0', transparent: true, opacity: .32, depthWrite: false }))
+  const hoverEdges = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(MODEL.width + 1.8, 1, MODEL.depth + 1.8)), new THREE.LineBasicMaterial({ color: '#1d8fb6', transparent: true, opacity: .95 }))
+  for (const part of [hoverFill, hoverEdges]) { part.userData.runtimeOnly = true; part.visible = false; building.add(part) }
+  let current = { mode: 'exterior', floor: null, layers: ['property'], hover: null }, stateChanged = true
   function setState(state) {
     current = { ...current, ...state }
     if (current.floor != null && !PLAN_FLOORS.some(item => item.floor === current.floor)) current.floor = null
@@ -74,12 +78,18 @@ export function bindWarehouse(root, extraGeometries = [], extraMaterials = []) {
       item.shell.visible = !inside
       item.interior.visible = inside || (expanded && floor === selected)
       item.structure.children.filter(child => child.userData.planRole === 'overhead').forEach(child => { child.visible = !inside })
-      item.fire.visible = inside || (current.layer === 'fire' && expanded && floor === selected)
+      item.fire.visible = inside || (current.layers.includes('fire') && expanded && floor === selected)
     }
     site.visible = current.mode !== 'interior'
     roof.visible = current.mode === 'exterior'
     outline.visible = current.floor != null && current.floor > 0 && current.mode !== 'interior'
     selection.visible = current.floor != null && current.floor > 0 && current.mode !== 'interior'
+    const hovered = current.mode !== 'interior' && current.hover > 0 ? floors.find(item => item.group.userData.floor === current.hover) : null
+    hoverFill.visible = hoverEdges.visible = Boolean(hovered)
+    if (hovered) {
+      const height = floorHeight(current.hover)
+      for (const part of [hoverFill, hoverEdges]) { part.position.y = hovered.group.position.y + height / 2; part.scale.y = height }
+    }
     if (current.floor) {
       const y = floors.find(item => item.group.userData.floor === current.floor).group.position.y
       outline.position.y = y + floorHeight(current.floor) / 2
