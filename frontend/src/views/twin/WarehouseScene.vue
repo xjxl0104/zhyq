@@ -99,7 +99,22 @@ function focusPoint(point) {
   }
   needsRender = true
 }
-function onPointerDown(event) { pointerDown = { x: event.clientX, y: event.clientY } }
+// Orbiting is a drag that starts on the canvas; without this the browser treats it as a text selection
+// and sweeps across the labels and cards it passes over. Lock selection page-wide until the drag ends.
+const DRAG_CLASS = 'twin-scene-dragging'
+function endDrag() {
+  document.documentElement.classList.remove(DRAG_CLASS)
+  window.removeEventListener('pointerup', endDrag)
+  window.removeEventListener('pointercancel', endDrag)
+}
+function onPointerDown(event) {
+  pointerDown = { x: event.clientX, y: event.clientY }
+  event.preventDefault()
+  window.getSelection?.()?.removeAllRanges()
+  document.documentElement.classList.add(DRAG_CLASS)
+  window.addEventListener('pointerup', endDrag)
+  window.addEventListener('pointercancel', endDrag)
+}
 // Floors under the pointer: cached mesh list, rebuilt whenever the model's visibility or layout changes.
 let floorMeshes = null, hoverPointer = null
 function pickFloor(clientX, clientY) {
@@ -305,6 +320,7 @@ onBeforeUnmount(() => {
   if (renderer) {
     renderer.domElement.removeEventListener('pointerdown', onPointerDown)
     renderer.domElement.removeEventListener('pointerup', onPointerUp)
+    endDrag()
     renderer.domElement.removeEventListener('pointermove', onPointerMove)
     renderer.domElement.removeEventListener('pointerleave', onPointerLeave)
     renderer.domElement.removeEventListener('webglcontextlost', onContextLost)
@@ -360,6 +376,9 @@ defineExpose({ reset, zoom, focusPoint, exportModel })
 .pin-workorder .pin-dot { background: var(--pin-color); }
 .pin-workorder .pin-short-name { display: none; }
 .pin-workorder .pin-full-name { display: inline; max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Labels drawn over the model are part of the picture, never selectable text. */
+.scene-pins, .plan-landmarks, .floor-hover-label { user-select: none; -webkit-user-select: none; }
+:global(html.twin-scene-dragging), :global(html.twin-scene-dragging *) { user-select: none !important; -webkit-user-select: none !important; }
 /* Floor under the pointer: number first, so the floor is readable at a glance. */
 .floor-hover-label { position: absolute; left: 0; top: 0; z-index: 4; display: grid; grid-template-columns: auto auto; align-items: baseline; column-gap: 8px; padding: 7px 10px; border: 1px solid #1d8fb655; border-radius: 7px; background: rgba(248, 253, 255, .95); color: #24485a; box-shadow: 0 6px 18px #18405a2a; pointer-events: none; white-space: nowrap; }
 .floor-hover-label strong { grid-row: span 2; font-size: 22px; line-height: 1; color: #1d7fa3; }
