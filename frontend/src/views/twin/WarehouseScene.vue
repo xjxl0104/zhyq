@@ -10,10 +10,10 @@ import { createParkLandscape } from './parkLandscape'
 import { createSceneRendering, createAnimeSceneRendering } from './sceneRendering'
 import { floorLandmarks } from './floorPlanGeometry'
 import { PLAN_BUILDING } from './floorPlanData'
-import { MODULES, visiblePoints } from './twinData'
+import { FLOORS, MODULES, visiblePoints } from './twinData'
 import TwinIcon from './TwinIcon.vue'
 
-const props = defineProps({ mode: { type: String, default: 'exterior' }, floor: { type: Number, default: null }, layer: { type: String, default: 'all' }, weather: { type: String, default: 'sunny' }, viewpoint: { type: String, default: 'overview' }, focused: Boolean, rotating: Boolean, markers: { type: Boolean, default: true }, selectedPoint: { type: Object, default: null }, workOrders: { type: Array, default: () => [] }, planLabels: { type: Boolean, default: true } })
+const props = defineProps({ mode: { type: String, default: 'exterior' }, floor: { type: Number, default: null }, layers: { type: Array, default: () => ['property'] }, weather: { type: String, default: 'sunny' }, viewpoint: { type: String, default: 'overview' }, focused: Boolean, rotating: Boolean, markers: { type: Boolean, default: true }, selectedPoint: { type: Object, default: null }, workOrders: { type: Array, default: () => [] }, planLabels: { type: Boolean, default: true } })
 const emit = defineEmits(['select-floor', 'select-point', 'open-module', 'ready', 'error'])
 // The approved anime finish is the homepage default. Only the local comparison
 // page can opt into the previous renderer or collect diagnostic measurements.
@@ -21,16 +21,20 @@ const demoProfile = import.meta.env.DEV ? inject('warehouse-scene-demo', null) :
 const anime = import.meta.env.DEV ? demoProfile?.style !== 'original' : true
 const host = ref(null), canvasHost = ref(null), ready = ref(false), error = ref('')
 const pins = computed(() => {
-  // Every live work order keeps its pin on the model; basement orders only make sense inside.
-  const orders = props.layer === 'all' || props.layer === 'property'
-    ? props.workOrders.filter(point => (props.floor == null || point.floor === props.floor) && (point.floor > 0 || props.mode === 'interior'))
+  const interior = props.mode === 'interior'
+  // Outside, every live order stays pinned whatever floor was last chosen; inside, only the shown floor.
+  // Basement orders only make sense inside.
+  const orders = props.layers.includes('property')
+    ? props.workOrders.filter(point => interior ? point.floor === props.floor : point.floor > 0)
     : []
-  // Demo points appear only when their own business layer is chosen, so the default view stays uncluttered.
-  const illustrative = props.mode !== 'interior' && !['all', 'property'].includes(props.layer) ? visiblePoints(props.layer, props.floor, props.mode) : []
+  // Demo points appear only for the business layers switched on in the layer panel.
+  const illustrative = interior ? [] : props.layers.filter(id => id !== 'property').flatMap(id => visiblePoints(id, null, props.mode))
   const selected = props.selectedPoint
   const extra = selected && !selected.orderId && selected.floor === props.floor && !illustrative.some(point => point.id === selected.id) ? [selected] : []
   return [...illustrative, ...extra, ...orders]
 })
+const hoverFloor = ref(null), hoverAt = ref({ x: 0, y: 0 })
+const hoverInfo = computed(() => FLOORS.find(item => item.id === hoverFloor.value) || null)
 const landmarks = computed(() => props.mode === 'interior' && props.planLabels ? floorLandmarks(props.floor || 3) : [])
 const landmarkElements = new Map()
 const moduleFor = id => MODULES.find(item => item.id === id)
@@ -96,18 +100,49 @@ function focusPoint(point) {
   needsRender = true
 }
 function onPointerDown(event) { pointerDown = { x: event.clientX, y: event.clientY } }
+// Floors under the pointer: cached mesh list, rebuilt whenever the model's visibility or layout changes.
+let floorMeshes = null, hoverPointer = null
+function pickFloor(clientX, clientY) {
+  const rect = renderer.domElement.getBoundingClientRect()
+  pointer.set(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1)
+  raycaster.setFromCamera(pointer, camera)
+  if (!floorMeshes) {
+    floorMeshes = []
+    model.floors.filter(item => item.group.visible).forEach(item => {
+      for (const group of [item.shell, item.structure, item.interior]) if (group.visible) group.traverse(object => { if (object.isMesh) floorMeshes.push(object) })
+    })
+  }
+  return raycaster.intersectObjects(floorMeshes, false)[0]?.object.userData.floor ?? null
+}
+function setHover(floor) {
+  if (hoverFloor.value === floor) return
+  hoverFloor.value = floor
+  model?.setState({ hover: floor })
+  if (renderer) renderer.domElement.style.cursor = floor ? 'pointer' : ''
+  needsRender = true
+}
+function onPointerMove(event) {
+  // Dragging orbits the camera; inside there is only one floor to choose.
+  if (props.mode === 'interior' || event.buttons) { hoverPointer = null; setHover(null); return }
+  hoverPointer = { x: event.clientX, y: event.clientY }
+  needsRender = true
+}
+function onPointerLeave() { hoverPointer = null; setHover(null) }
+function updateHover() {
+  if (!hoverPointer) return
+  const { x, y } = hoverPointer
+  hoverPointer = null
+  const floor = pickFloor(x, y)
+  setHover(floor > 0 ? floor : null)
+  const rect = host.value.getBoundingClientRect()
+  hoverAt.value = { x: x - rect.left, y: y - rect.top }
+}
 function onPointerUp(event) {
   if (!pointerDown || Math.hypot(event.clientX - pointerDown.x, event.clientY - pointerDown.y) > 6 || event.button !== 0) return
   pointerDown = null
-  const rect = renderer.domElement.getBoundingClientRect()
-  pointer.set(((event.clientX - rect.left) / rect.width) * 2 - 1, -((event.clientY - rect.top) / rect.height) * 2 + 1)
-  raycaster.setFromCamera(pointer, camera)
-  const meshes = []
-  model.floors.filter(item => item.group.visible).forEach(item => {
-    for (const group of [item.shell, item.structure, item.interior]) if (group.visible) group.traverse(object => { if (object.isMesh) meshes.push(object) })
-  })
-  const hit = raycaster.intersectObjects(meshes, false)[0]
-  if (hit?.object.userData.floor) emit('select-floor', hit.object.userData.floor)
+  if (props.mode === 'interior') return
+  const floor = pickFloor(event.clientX, event.clientY)
+  if (floor) { setHover(null); emit('select-floor', floor) }
 }
 function onContextLost(event) {
   event.preventDefault()
@@ -121,6 +156,8 @@ function animate(time) {
   if (document.hidden) { lastTime = time; return }
   const delta = Math.min((time - (lastTime || time)) / 1000, .05); lastTime = time
   const modelChanged = model.update(delta)
+  if (modelChanged) floorMeshes = null
+  updateHover()
   const cameraTweening = Boolean(tween)
   controls.autoRotate = props.rotating && !reducedMotion && props.viewpoint !== 'plan'
   if (tween) {
@@ -208,7 +245,7 @@ onMounted(async () => {
     const fill = new THREE.DirectionalLight('#dce2ff', .65); fill.position.set(60, 70, -90); scene.add(fill)
     model = await loadWarehouse()
     if (disposed) { model.dispose(); return }
-    model.setState({ mode: props.mode, floor: props.floor, layer: props.layer }); scene.add(model.root)
+    model.setState({ mode: props.mode, floor: props.floor, layers: props.layers }); scene.add(model.root)
     landscape = createParkLandscape(scene, model)
     landscape.setMode(props.mode); landscape.setWeather(props.weather)
     if (anime) {
@@ -226,6 +263,8 @@ onMounted(async () => {
     }
     renderer.domElement.addEventListener('pointerdown', onPointerDown)
     renderer.domElement.addEventListener('pointerup', onPointerUp)
+    renderer.domElement.addEventListener('pointermove', onPointerMove)
+    renderer.domElement.addEventListener('pointerleave', onPointerLeave)
     renderer.domElement.addEventListener('webglcontextlost', onContextLost)
     observer = new ResizeObserver(resize); observer.observe(host.value)
     resize(); reset(); if (pendingPoint) focusPoint(pendingPoint); animate(performance.now())
@@ -237,8 +276,9 @@ onMounted(async () => {
     emit('error', error.value)
   }
 })
-watch(() => [props.mode, props.floor, props.layer], () => {
-  model?.setState({ mode: props.mode, floor: props.floor, layer: props.layer })
+watch(() => [props.mode, props.floor, props.layers], () => {
+  if (props.mode === 'interior') setHover(null)
+  model?.setState({ mode: props.mode, floor: props.floor, layers: props.layers })
   landscape?.setMode(props.mode)
 })
 watch(() => props.mode, reset)
@@ -250,7 +290,7 @@ watch(() => props.selectedPoint, point => {
 watch(() => [props.mode, props.floor], () => {
   if (pendingPoint && (props.mode !== 'interior' || props.floor !== pendingPoint.floor)) pendingPoint = null
 }, { flush: 'sync' })
-watch(() => [props.selectedPoint, props.planLabels, props.floor, props.layer, props.workOrders], () => { needsRender = true }, { deep: true, flush: 'post' })
+watch(() => [props.selectedPoint, props.planLabels, props.floor, props.layers, props.workOrders], () => { needsRender = true }, { deep: true, flush: 'post' })
 watch(() => props.focused, reset)
 watch(() => props.viewpoint, reset)
 watch(() => props.weather, value => {
@@ -265,6 +305,8 @@ onBeforeUnmount(() => {
   if (renderer) {
     renderer.domElement.removeEventListener('pointerdown', onPointerDown)
     renderer.domElement.removeEventListener('pointerup', onPointerUp)
+    renderer.domElement.removeEventListener('pointermove', onPointerMove)
+    renderer.domElement.removeEventListener('pointerleave', onPointerLeave)
     renderer.domElement.removeEventListener('webglcontextlost', onContextLost)
   }
   weatherEffects?.dispose()
@@ -299,6 +341,7 @@ defineExpose({ reset, zoom, focusPoint, exportModel })
     <div v-if="ready && !error" class="plan-landmarks" aria-label="图纸空间名称">
       <span v-for="point in landmarks" :key="point.id" :ref="element => element ? landmarkElements.set(point.id, element) : landmarkElements.delete(point.id)" class="plan-landmark">{{ point.name }}</span>
     </div>
+    <div v-if="ready && hoverInfo" class="floor-hover-label" :style="{ transform: `translate(${hoverAt.x + 16}px, ${hoverAt.y + 12}px)` }" role="status"><strong>{{ hoverInfo.label }}</strong><span>{{ hoverInfo.name }}</span><small>点击进入室内</small></div>
     <div v-show="ready && markers && !error" class="scene-pins">
       <div v-for="point in pins" :key="point.id" :ref="element => element ? markerElements.set(point.id, element) : markerElements.delete(point.id)" class="scene-pin" :class="{ 'pin-building': point.module === 'park', 'pin-workorder': point.orderId, 'pin-urgent': point.urgent, 'pin-selected': point.id === selectedPoint?.id }" :style="{ '--pin-color': point.orderId ? point.urgent ? '#b44234' : '#94651a' : moduleFor(point.module).color }">
         <span class="pin-card"><button class="pin-info" :aria-label="(point.orderId ? '查看工单：' : '查看') + point.name" @click.stop="emit('select-point', point)"><span class="pin-icon"><TwinIcon :name="point.orderId ? 'alert' : moduleFor(point.module).icon" :size="15" /></span><span class="pin-label"><span class="pin-short-name">{{ point.orderId ? point.status : moduleFor(point.module).short }}</span><span class="pin-full-name">{{ point.name }}</span></span></button><button class="pin-enter" :aria-label="'直接进入' + moduleFor(point.module).name" :title="'直接进入' + moduleFor(point.module).name" @click.stop="emit('open-module', point)"><TwinIcon name="chevron" :size="12" /></button></span>
@@ -317,6 +360,11 @@ defineExpose({ reset, zoom, focusPoint, exportModel })
 .pin-workorder .pin-dot { background: var(--pin-color); }
 .pin-workorder .pin-short-name { display: none; }
 .pin-workorder .pin-full-name { display: inline; max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Floor under the pointer: number first, so the floor is readable at a glance. */
+.floor-hover-label { position: absolute; left: 0; top: 0; z-index: 4; display: grid; grid-template-columns: auto auto; align-items: baseline; column-gap: 8px; padding: 7px 10px; border: 1px solid #1d8fb655; border-radius: 7px; background: rgba(248, 253, 255, .95); color: #24485a; box-shadow: 0 6px 18px #18405a2a; pointer-events: none; white-space: nowrap; }
+.floor-hover-label strong { grid-row: span 2; font-size: 22px; line-height: 1; color: #1d7fa3; }
+.floor-hover-label span { font-size: 12px; font-weight: 600; }
+.floor-hover-label small { font-size: 11px; color: #6b8797; }
 /* A pin mounts at the origin; keep it hidden until the render loop has projected it. */
 .scene-pin { visibility: hidden; }
 /* Unselected orders show just their alert icon; the name appears on hover or when chosen. */

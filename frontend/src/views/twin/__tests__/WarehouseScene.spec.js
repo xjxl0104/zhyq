@@ -61,20 +61,23 @@ function mountScene(options) {
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); vi.restoreAllMocks(); vi.clearAllMocks(); state.frames.clear(); state.loadGate = null })
 
 describe('warehouse render demand', () => {
-  it('pins every live work order on its floor and keeps demo points out of the default view', async () => {
+  it('pins every live work order outside whatever floor was chosen, and only that floor inside', async () => {
     const orders = Array.from({ length: 20 }, (_, index) => ({ id: 'workorder-' + index, orderId: index + 1, floor: index < 15 ? 4 : 2, module: 'property', name: 'Order ' + index, localPosition: [index, .45, 0] }))
     const basement = { id: 'workorder-b1', orderId: 99, floor: -1, module: 'property', name: 'Pump room', localPosition: [0, .45, 0] }
     const wrapper = mountScene({ props: { workOrders: [...orders, basement] } })
     await flushPromises()
     expect(wrapper.findAll('.scene-pin')).toHaveLength(20)
     expect(wrapper.findAll('.scene-pin:not(.pin-workorder)')).toHaveLength(0)
-    await wrapper.setProps({ floor: 4, selectedPoint: orders[1] })
-    expect(wrapper.findAll('.scene-pin')).toHaveLength(15)
+    await wrapper.setProps({ floor: 4, selectedPoint: orders[1], mode: 'exploded' })
+    expect(wrapper.findAll('.scene-pin')).toHaveLength(20)
     expect(wrapper.findAll('.pin-selected')).toHaveLength(1)
     expect(wrapper.get('.pin-selected').text()).toContain('Order 1')
-    await wrapper.setProps({ layer: 'camera', selectedPoint: null })
+    await wrapper.setProps({ mode: 'interior' })
+    expect(wrapper.findAll('.scene-pin')).toHaveLength(15)
+    await wrapper.setProps({ layers: ['camera'], selectedPoint: null, mode: 'exterior' })
     expect(wrapper.findAll('.pin-workorder')).toHaveLength(0)
-    await wrapper.setProps({ layer: 'property', floor: -1, mode: 'interior' })
+    expect(wrapper.findAll('.scene-pin').length).toBeGreaterThan(0)
+    await wrapper.setProps({ layers: ['property'], floor: -1, mode: 'interior' })
     expect(wrapper.findAll('.scene-pin')).toHaveLength(1)
     expect(wrapper.get('.scene-pin').text()).toContain('Pump room')
     wrapper.unmount()
