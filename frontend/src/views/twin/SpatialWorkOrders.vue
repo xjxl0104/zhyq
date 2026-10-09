@@ -19,6 +19,23 @@ const summary = computed(() => activeCount.value ? `${activeCount.value}${trunca
 const triggerLabel = computed(() => activeCount.value ? `物业工单，待处理 ${activeCount.value}${truncated.value ? '+' : ''} 项，紧急 ${urgentCount.value} 项，常规 ${regularCount.value} 项，${expanded.value ? '收起' : '展开'}列表` : `物业工单，${loading.value ? '正在加载' : error.value ? '加载失败' : '暂无待处理工单'}`)
 function toggle() { expanded.value = !expanded.value }
 async function close() { expanded.value = false; await nextTick(); trigger.value?.focus() }
+// Drawer motion: grow/shrink the real height so the rail cards below slide instead of jumping.
+const DRAWER_MS = 220, DRAWER_EASE = 'cubic-bezier(.2, .8, .2, 1)'
+const reducedMotion = () => window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+function animateDrawer(el, opening, done) {
+  if (typeof el.animate !== 'function' || reducedMotion()) { done(); return }
+  const height = el.getBoundingClientRect().height + 'px'
+  const closed = { height: '0px', opacity: 0, paddingBottom: '0px' }, open = { height, opacity: 1 }
+  el.style.overflow = 'hidden'
+  const animation = el.animate(opening ? [closed, open] : [open, closed], { duration: DRAWER_MS, easing: DRAWER_EASE })
+  let finished = false
+  // A hidden page renders no frames, so animation events never arrive; finish on a timer instead.
+  const finish = () => { if (finished) return; finished = true; clearTimeout(fallback); el.style.overflow = ''; done() }
+  const fallback = setTimeout(() => { animation.cancel(); finish() }, DRAWER_MS + 150)
+  animation.onfinish = animation.oncancel = finish
+}
+const onDrawerEnter = (el, done) => animateDrawer(el, true, done)
+const onDrawerLeave = (el, done) => animateDrawer(el, false, done)
 function expand() { expanded.value = true }
 function collapse() { expanded.value = false }
 defineExpose({ expand, collapse })
@@ -86,6 +103,7 @@ onBeforeUnmount(() => { generation++ })
       <span v-if="activeCount" class="severity-pills"><span v-if="urgentCount" class="pill urgent">紧急 {{ urgentCount }}</span><span v-if="regularCount" class="pill warning">常规 {{ regularCount }}</span></span>
       <TwinIcon name="down" :size="13" class="toggle-chevron" :class="{ 'is-expanded': expanded }" />
     </button>
+    <Transition :css="false" @enter="onDrawerEnter" @leave="onDrawerLeave">
     <div v-if="expanded" id="spatial-work-order-list" class="order-drawer" aria-label="全楼待处理工单">
       <div v-if="selected" class="order-selected" :class="selected.urgent ? 'urgent' : 'warning'" aria-label="当前工单">
         <small>{{ selected.code }} · {{ floorLabel(selected) }} · {{ selected.urgent ? '紧急' : '常规' }}</small>
@@ -101,6 +119,7 @@ onBeforeUnmount(() => { generation++ })
       <p v-if="unmapped" class="unmapped-note">{{ unmapped }} 条待处理工单需补充定位{{ unmappedUrgent ? '（其中紧急 ' + unmappedUrgent + ' 条）' : '' }}：缺少标注或图纸版本未匹配，请在工单中补充定位。</p>
       <p v-if="truncated">当前显示部分工单，请前往工单列表查看全部。</p>
     </div>
+    </Transition>
   </section>
 </template>
 <style scoped>
@@ -121,7 +140,7 @@ button:disabled { cursor: wait; opacity: .6; }
 .severity-pills { display: flex; gap: 4px; margin-left: auto; min-width: 0; }
 .pill { padding: 2px 7px; border-radius: 10px; font-size: 11px; font-weight: 600; white-space: nowrap; color: var(--issue-color); border: 1px solid var(--issue-color); }
 .pill.urgent { color: #fff; background: var(--issue-red); }
-.toggle-chevron { flex-shrink: 0; margin-left: auto; }
+.toggle-chevron { flex-shrink: 0; margin-left: auto; transition: transform .22s cubic-bezier(.2, .8, .2, 1); }
 .severity-pills + .toggle-chevron { margin-left: 0; }
 .toggle-chevron.is-expanded { transform: rotate(180deg); }
 .order-drawer { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 0 11px 11px; border-top: 1px solid var(--scene-line, #dbe4df); }
@@ -153,5 +172,5 @@ li + li { margin-top: 5px; }
   .order-dock-toggle { gap: 5px; padding: 8px 9px; }
   .pill { padding: 1px 5px; }
 }
-@media (prefers-reduced-motion: reduce) { .order-dock-toggle:is(.urgent, .warning) { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .order-dock-toggle:is(.urgent, .warning) { animation: none; } .toggle-chevron { transition: none; } }
 </style>
