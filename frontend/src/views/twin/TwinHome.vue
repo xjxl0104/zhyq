@@ -23,8 +23,7 @@ const mode = ref('exterior'), floor = ref(null), layers = ref(['property']), lay
 const selectedPoint = ref(null), help = ref(false), toast = ref(''), sidebarOpen = ref(false)
 // modelFocus hides the rails; ordersHidden is the user's own "专注模型": only the model, no work-order panel or drawing.
 const modelFocus = ref(false), ordersHidden = ref(false)
-const weather = ref('sunny'), viewpoint = ref('overview')
-const weatherOptions = [{ id: 'sunny', name: '晴天', icon: 'sun' }, { id: 'night', name: '夜景', icon: 'moon' }]
+const viewpoint = ref('overview')
 function enterPureFocus() { modelFocus.value = true; ordersHidden.value = true; planOpen.value = false }
 async function viewEntrance() { viewpoint.value = 'entrance'; mode.value = 'exterior'; enterPureFocus(); selectedPoint.value = null; await nextTick(); scene.value?.reset() }
 function toggleModelFocus() {
@@ -163,7 +162,7 @@ onBeforeUnmount(() => { window.removeEventListener('pointerdown', closeLayersOnO
 </script>
 
 <template>
-  <div ref="workspace" class="twin-workspace twin-workspace-v2" :class="{ 'twin-embedded': !preview, 'is-night': weather === 'night' }">
+  <div ref="workspace" class="twin-workspace twin-workspace-v2" :class="{ 'twin-embedded': !preview }">
     <aside v-if="preview" class="twin-sidebar" :class="{ 'sidebar-open': sidebarOpen }">
       <button class="twin-brand" aria-label="返回首页" @click="goHome"><span class="brand-symbol"><TwinIcon name="cube" :size="28" /></span><span>DIPARK<span class="brand-caption">智慧园区 · 空间连接未来</span></span></button>
       <div class="park-switch"><span class="park-switch-icon"><TwinIcon name="building" :size="18" /></span><span><strong>云仓产业园</strong><small>空间运营工作台</small></span><span class="park-switch-dot" /></div>
@@ -196,8 +195,8 @@ onBeforeUnmount(() => { window.removeEventListener('pointerdown', closeLayersOnO
         </section>
 
         <div class="twin-content-grid" :class="{ 'is-focused': modelFocus }">
-          <div class="twin-world-scene"><WarehouseScene ref="scene" :mode="mode" :floor="floor" :layers="layers" :focused="modelFocus" :weather="weather" :viewpoint="viewpoint" :rotating="rotating" :markers="markers" :work-orders="workOrders" :selected-point="selectedPoint" :plan-labels="planLabels" @select-floor="enterFloor" @select-point="selectPoint" @open-module="openPointModule" @ready="sceneReady = true" @error="sceneFailed = true" /></div>
-          <header class="environment-bar"><div class="environment-location"><TwinIcon name="pin" :size="14" /><strong>数智云仓产业园</strong><span>广州 · 花都炭步</span></div><div class="environment-actions"><div class="weather-switch" aria-label="天气场景"><button v-for="item in weatherOptions" :key="item.id" :data-testid="'weather-' + item.id" :aria-pressed="weather === item.id" :class="{ active: weather === item.id }" @click="weather = item.id"><TwinIcon :name="item.icon" :size="14" />{{ item.name }}</button></div></div></header>
+          <div class="twin-world-scene"><WarehouseScene ref="scene" :mode="mode" :floor="floor" :layers="layers" :focused="modelFocus" :viewpoint="viewpoint" :rotating="rotating" :markers="markers" :work-orders="workOrders" :selected-point="selectedPoint" :plan-labels="planLabels" @select-floor="enterFloor" @select-point="selectPoint" @open-module="openPointModule" @ready="sceneReady = true" @error="sceneFailed = true" /></div>
+          <header class="environment-bar"><div class="environment-location"><TwinIcon name="pin" :size="14" /><strong>数智云仓产业园</strong><span>广州 · 花都炭步</span></div></header>
           <aside class="twin-board-rail twin-board-left"><TwinOperationsPanel side="left" :show-issue-examples="false" :floor="floor" @open-module="openModule" @select-floor="selectFloor" @select-point="locatePanelPoint" /></aside>
           <section class="twin-viewport" :class="{ 'plan-open': planOpen && mode === 'interior', 'is-interior': mode === 'interior' }" aria-label="三维空间工作台">
             <div v-if="planOpen && mode === 'interior' && hasSession && !preview && !ordersHidden" class="plan-source-panel" aria-label="报修图纸"><header><strong>{{ currentFloor?.label }} · {{ planFloor(floor)?.drawing }}</strong><button class="icon-button" aria-label="收起图纸" @click="planOpen = false"><TwinIcon name="close" :size="16" /></button></header><FloorPlanViewer :file-id="selectedPoint?.planFileId || planFloor(floor)?.fileId" :point="selectedPoint?.planPoint" /></div>
@@ -298,8 +297,6 @@ onBeforeUnmount(() => { window.removeEventListener('pointerdown', closeLayersOnO
 .layer-panel-enter-from, .layer-panel-leave-to { opacity: 0; transform: translateY(6px); }
 @media (prefers-reduced-motion: reduce) { .layer-panel-enter-active, .layer-panel-leave-active { transition: none; } }
 
-/* Top bar: location and weather only. */
-.twin-workspace-v2 .environment-actions { flex-wrap: nowrap; }
 /* Dashboard: the work-order panel heads the right rail, above the device cards. */
 .twin-workspace-v2 .twin-content-grid:not(.is-focused) .twin-board-right { display: flex; flex-direction: column; gap: 8px; }
 .twin-workspace-v2 .twin-board-right > :last-child { flex: 1 1 auto; min-height: 0; height: auto; overflow: auto; }
@@ -307,6 +304,10 @@ onBeforeUnmount(() => { window.removeEventListener('pointerdown', closeLayersOnO
 .rail-orders-slot:empty { display: none; }
 @container twin-main (max-width: 880px) {
   .rail-orders-slot { max-height: none; }
+}
+/* The top bar is just the location now; phones no longer need room for a second row. */
+@container twin-main (max-width: 680px) {
+  .twin-workspace-v2 .twin-content-grid { padding-top: 42px; }
 }
 
 /* Dock sizes: one row while everything fits; then short view names; then rows —

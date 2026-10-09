@@ -21,11 +21,11 @@ describe('warehouse workspace interactions', () => {
     expect(scene.props('rotating')).toBe(true)
     wrapper.unmount()
   })
-  it('offers sunny and night weather without the removed garden and rain controls', () => {
+  it('shows no weather switch: the scene stays in daylight', () => {
     const wrapper = mount(TwinHome)
-    expect(wrapper.find('[data-testid="view-garden"]').exists()).toBe(false)
-    expect(wrapper.find('[data-testid="weather-rain"]').exists()).toBe(false)
-    expect(wrapper.findAll('.weather-switch button').map(button => button.text())).toEqual(['晴天', '夜景'])
+    expect(wrapper.find('.weather-switch').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="weather-night"]').exists()).toBe(false)
+    expect(wrapper.findComponent({ name: 'WarehouseScene' }).props('weather')).toBeUndefined()
     wrapper.unmount()
   })
   it('can return to the entrance again after the user has moved the camera', async () => {
@@ -36,14 +36,13 @@ describe('warehouse workspace interactions', () => {
     expect(sceneReset).toHaveBeenCalledOnce()
     wrapper.unmount()
   })
-  it('changes weather without losing the selected floor and opens the entrance view', async () => {
+  it('keeps the selected floor when opening the entrance view', async () => {
     const wrapper = mount(TwinHome)
     const scene = wrapper.findComponent({ name: 'WarehouseScene' })
     scene.vm.$emit('select-floor', 5); await flushPromises()
-    await wrapper.get('[data-testid="weather-night"]').trigger('click')
-    expect(scene.props()).toMatchObject({ weather: 'night', floor: 5, mode: 'interior' })
+    expect(scene.props()).toMatchObject({ floor: 5, mode: 'interior' })
     await wrapper.get('[data-testid="view-entrance"]').trigger('click')
-    expect(scene.props()).toMatchObject({ viewpoint: 'entrance', mode: 'exterior', focused: true, weather: 'night', floor: 5 })
+    expect(scene.props()).toMatchObject({ viewpoint: 'entrance', mode: 'exterior', focused: true, floor: 5 })
     wrapper.unmount()
   })
   it('opens model focus and restores the surrounding operating panels without losing the selected floor', async () => {
@@ -200,7 +199,7 @@ describe('warehouse workspace interactions', () => {
     expect(dock.find('[aria-label="专注查看模型"]').exists()).toBe(true)
     expect(dock.find('[aria-label="放大模型"]').exists()).toBe(true)
     expect(dock.get('.dock-layers').text()).toContain('业务图层')
-    expect(wrapper.get('.environment-bar').findAll('button').map(button => button.text())).toEqual(['晴天', '夜景'])
+    expect(wrapper.get('.environment-bar').findAll('button')).toHaveLength(0)
     expect(wrapper.text()).not.toContain('天气模拟')
     expect(wrapper.text()).not.toContain('实景对照')
     expect(wrapper.text()).not.toContain('导出模型')
