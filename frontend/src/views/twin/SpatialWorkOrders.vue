@@ -82,7 +82,7 @@ onBeforeUnmount(() => { generation++ })
 <template>
   <section v-if="allowed" class="spatial-orders" :class="{ 'is-expanded': expanded }" aria-label="物业工单" :aria-busy="loading" @keydown.esc.stop.prevent="close">
     <button ref="trigger" type="button" class="order-dock-toggle" :class="{ urgent: urgentCount > 0, warning: activeCount > 0 && !urgentCount }" :aria-label="triggerLabel" :aria-expanded="expanded" :aria-controls="expanded ? 'spatial-work-order-list' : undefined" @click="toggle">
-      <span class="toggle-icon"><TwinIcon name="tool" :size="16" /></span><strong>物业工单</strong><span class="order-summary" aria-live="polite">{{ summary }}</span>
+      <span class="toggle-icon"><TwinIcon name="tool" :size="16" /></span><strong>物业工单</strong><span class="order-summary" :class="{ 'is-redundant': activeCount && !truncated }" aria-live="polite">{{ summary }}</span>
       <span v-if="activeCount" class="severity-pills"><span v-if="urgentCount" class="pill urgent">紧急 {{ urgentCount }}</span><span v-if="regularCount" class="pill warning">常规 {{ regularCount }}</span></span>
       <TwinIcon name="down" :size="13" class="toggle-chevron" :class="{ 'is-expanded': expanded }" />
     </button>
@@ -104,20 +104,21 @@ onBeforeUnmount(() => { generation++ })
   </section>
 </template>
 <style scoped>
-.spatial-orders { --issue-red: #b34134; --issue-yellow: #946615; position: relative; display: flex; flex-direction: column; max-height: 100%; min-height: 0; color: var(--scene-ui, #345a6e); font-size: 12px; border: 1px solid var(--scene-line, #bfd0dc); border-radius: 8px; background: rgba(250, 253, 255, .96); box-shadow: 0 6px 20px #224c6a24; overflow: hidden; }
+.spatial-orders { --issue-red: #b34134; --issue-yellow: #946615; container-type: inline-size; position: relative; display: flex; flex-direction: column; max-height: 100%; min-height: 0; color: var(--scene-ui, #345a6e); font-size: 12px; border: 1px solid var(--scene-line, #bfd0dc); border-radius: 8px; background: rgba(250, 253, 255, .96); box-shadow: 0 6px 20px #224c6a24; overflow: hidden; }
 :global(.is-night) .spatial-orders { --issue-red: #f49384; --issue-yellow: #edc56c; background: rgba(18, 40, 57, .95); }
 .urgent { --issue-color: var(--issue-red); }
 .warning { --issue-color: var(--issue-yellow); }
 button { color: inherit; font: inherit; cursor: pointer; background: transparent; border: 0; padding: 6px; }
 button:focus-visible { outline: 2px solid #287c76; outline-offset: 2px; }
 button:disabled { cursor: wait; opacity: .6; }
-.order-dock-toggle { flex-shrink: 0; display: flex; align-items: center; gap: 8px; width: 100%; min-height: 48px; padding: 8px 12px; text-align: left; border-left: 4px solid var(--issue-color, var(--scene-line, #bfd0dc)); }
+.order-dock-toggle { position: relative; flex-shrink: 0; display: flex; align-items: center; gap: 7px; width: 100%; min-height: 48px; padding: 8px 12px; text-align: left; border-left: 4px solid var(--issue-color, var(--scene-line, #bfd0dc)); }
 .order-dock-toggle:is(.urgent, .warning) { animation: dock-notice .8s ease-out; }
 .order-dock-toggle:hover { background: color-mix(in srgb, var(--issue-color, #8fb3c4) 7%, transparent); }
 .toggle-icon { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 6px; color: #fff; background: var(--issue-color, #5b8296); flex-shrink: 0; }
 .order-dock-toggle strong { font-size: 14px; font-weight: 700; white-space: nowrap; }
 .order-summary { white-space: nowrap; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--scene-ui-muted, #698392); }
-.severity-pills { display: flex; gap: 4px; margin-left: auto; }
+.order-summary.is-redundant { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+.severity-pills { display: flex; gap: 4px; margin-left: auto; min-width: 0; }
 .pill { padding: 2px 7px; border-radius: 10px; font-size: 11px; font-weight: 600; white-space: nowrap; color: var(--issue-color); border: 1px solid var(--issue-color); }
 .pill.urgent { color: #fff; background: var(--issue-red); }
 .toggle-chevron { flex-shrink: 0; margin-left: auto; }
@@ -146,5 +147,11 @@ li + li { margin-top: 5px; }
 .unmapped-note { padding-top: 7px; border-top: 1px solid var(--scene-line, #dbe4df); }
 .retry-button { text-decoration: underline; text-underline-offset: 3px; }
 @keyframes dock-notice { from { box-shadow: inset 0 0 0 3px color-mix(in srgb, var(--issue-color) 20%, transparent); } to { box-shadow: none; } }
+/* Narrow rail: drop the icon tile and tighten the pills so both counts stay readable. */
+@container (max-width: 250px) {
+  .toggle-icon { display: none; }
+  .order-dock-toggle { gap: 5px; padding: 8px 9px; }
+  .pill { padding: 1px 5px; }
+}
 @media (prefers-reduced-motion: reduce) { .order-dock-toggle:is(.urgent, .warning) { animation: none; } }
 </style>
