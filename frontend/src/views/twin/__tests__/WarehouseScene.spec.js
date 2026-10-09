@@ -6,7 +6,7 @@ const state = vi.hoisted(() => ({
   render: vi.fn(), frames: new Map(), nextFrame: 0, renderer: null, modelRoot: null, controls: null, loadGate: null,
   animeRendering: vi.fn(), originalRendering: vi.fn(), applyStyle: vi.fn(), weather: vi.fn(),
   styleDispose: vi.fn(), weatherDispose: vi.fn(), modelDispose: vi.fn(),
-  prepareExport: vi.fn(), exportSnapshot: vi.fn(async () => new ArrayBuffer(8)),
+  modelSetState: vi.fn(),
 }))
 vi.mock('three', async importOriginal => {
   const THREE = await importOriginal()
@@ -27,7 +27,7 @@ vi.mock('three/addons/controls/OrbitControls.js', async () => {
 })
 vi.mock('../warehouseAsset', async () => {
   const { Group } = await import('three')
-  return { loadWarehouse: async () => { await state.loadGate; return { root: (state.modelRoot = new Group()), floors: [], update: () => false, setState() {}, dispose: state.modelDispose, localPointPosition: () => ({ project: () => ({ x: 0, y: 0, z: 0 }) }), pointPosition: () => ({ project: () => ({ x: 0, y: 0, z: 0 }) }) } } }
+  return { loadWarehouse: async () => { await state.loadGate; return { root: (state.modelRoot = new Group()), floors: [], update: () => false, setState: state.modelSetState, dispose: state.modelDispose, localPointPosition: () => ({ project: () => ({ x: 0, y: 0, z: 0 }) }), pointPosition: () => ({ project: () => ({ x: 0, y: 0, z: 0 }) }) } } }
 })
 vi.mock('../sceneWeather', () => ({ createSceneWeather: options => {
   state.weather(options)
@@ -42,9 +42,8 @@ vi.mock('../sceneRendering', () => {
 })
 vi.mock('../animeSceneStyle.js', () => ({ createAnimeSceneStyle: scene => {
   state.applyStyle(scene)
-  return { dispose: state.styleDispose, prepareExport: state.prepareExport }
+  return { dispose: state.styleDispose }
 } }))
-vi.mock('three/addons/exporters/GLTFExporter.js', () => ({ GLTFExporter: class { parseAsync = state.exportSnapshot } }))
 
 function framesUntil(time) {
   for (let now = 0; now <= time; now += 16) {
@@ -169,22 +168,124 @@ describe('warehouse render demand', () => {
     expect(state.frames.size).toBe(0)
   })
 
-  it('prepares a cloned export with portable materials without changing the live anime model', async () => {
-    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
-    const createObjectURL = vi.fn(() => 'blob:warehouse-export')
-    vi.stubGlobal('URL', { createObjectURL, revokeObjectURL: vi.fn() })
-    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
-    const wrapper = mountScene()
-    await flushPromises()
-    await wrapper.vm.exportModel()
-    const snapshot = state.prepareExport.mock.calls[0][0]
-    expect(snapshot).not.toBe(state.modelRoot)
-    expect(snapshot.isGroup).toBe(true)
-    expect(state.exportSnapshot).toHaveBeenCalledWith(snapshot, { binary: true, onlyVisible: true })
-    expect(state.prepareExport.mock.invocationCallOrder[0]).toBeLessThan(state.exportSnapshot.mock.invocationCallOrder[0])
-    expect(createObjectURL).toHaveBeenCalledTimes(1)
-    expect(click).toHaveBeenCalledTimes(1)
-    vi.runOnlyPendingTimers()
+})
+
+function dispatchPointer(canvas, type, options = {}) {
+  const { pointerId = 1, pointerType = 'mouse', isPrimary = true, ...mouse } = options
+  const event = new MouseEvent(type, { bubbles: true, cancelable: true, clientX: 250, clientY: 200, button: 0, buttons: type === 'pointerup' ? 0 : 1, ...mouse })
+  Object.defineProperties(event, { pointerId: { value: pointerId }, pointerType: { value: pointerType }, isPrimary: { value: isPrimary } })
+  canvas.dispatchEvent(event)
+  return event
+}
+async function interactiveScene(props = {}) {
+  const { Raycaster } = await import('three')
+  vi.spyOn(Raycaster.prototype, 'intersectObjects').mockReturnValue([{ object: { userData: { floor: 4 } } }])
+  const wrapper = mountScene({ props })
+  await flushPromises()
+  const rect = { left: 0, top: 0, right: 500, bottom: 400, width: 500, height: 400 }
+  const canvas = state.renderer.domElement
+  vi.spyOn(canvas, 'getBoundingClientRect').mockReturnValue(rect)
+  vi.spyOn(wrapper.element, 'getBoundingClientRect').mockReturnValue(rect)
+  return { wrapper, canvas }
+}
+
+describe('warehouse pointer gestures', () => {
+  it('keeps a left click selectable while preventing native selection on the canvas', async () => {
+    const { wrapper, canvas } = await interactiveScene()
+    expect(dispatchPointer(canvas, 'pointerdown').defaultPrevented).toBe(true)
+    await wrapper.vm.$nextTick()
+    expect(wrapper.classes()).toContain('is-interacting')
+    dispatchPointer(canvas, 'pointerup', { clientX: 254 })
+    await wrapper.vm.$nextTick()
+    expect(wrapper.emitted('select-floor')).toEqual([[4]])
+    expect(wrapper.classes()).not.toContain('is-interacting')
+    expect(canvas.style.cursor).toBe('grab')
+    expect(wrapper.vm.exportModel).toBeUndefined()
     wrapper.unmount()
+  })
+
+  it('preserves floor hover and places its compact hint inside the edge of the canvas', async () => {
+    const { wrapper, canvas } = await interactiveScene()
+    dispatchPointer(canvas, 'pointermove', { clientX: 497, clientY: 397, buttons: 0 })
+    framesUntil(32); await wrapper.vm.$nextTick()
+    expect(wrapper.get('.floor-hover-label').text()).toContain('4F')
+    expect(wrapper.get('.floor-hover-label').attributes('aria-label')).toContain('点击进入室内')
+    expect(wrapper.get('.floor-hover-label').attributes('style')).toContain('translate(319px, 349px)')
+    expect(state.modelSetState).toHaveBeenCalledWith({ hover: 4 })
+    expect(canvas.style.cursor).toBe('pointer')
+    dispatchPointer(canvas, 'pointerdown')
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('.floor-hover-label').exists()).toBe(false)
+    expect(state.modelSetState).toHaveBeenLastCalledWith({ hover: null })
+    dispatchPointer(canvas, 'pointerup')
+    wrapper.unmount()
+  })
+
+  it('does not select a floor after dragging away and returning to the start', async () => {
+    const { wrapper, canvas } = await interactiveScene()
+    dispatchPointer(canvas, 'pointerdown')
+    dispatchPointer(canvas, 'pointermove', { clientX: 320 })
+    dispatchPointer(canvas, 'pointermove')
+    dispatchPointer(canvas, 'pointerup')
+    await wrapper.vm.$nextTick()
+    expect(wrapper.emitted('select-floor')).toBeUndefined()
+    expect(wrapper.classes()).not.toContain('is-interacting')
+    dispatchPointer(canvas, 'pointerup')
+    expect(wrapper.emitted('select-floor')).toBeUndefined()
+    wrapper.unmount()
+  })
+
+  it.each(['pointercancel', 'lostpointercapture', 'pointerleave', 'blur'])('does not keep a stale click after %s', async cancellation => {
+    const { wrapper, canvas } = await interactiveScene()
+    dispatchPointer(canvas, 'pointerdown')
+    if (cancellation === 'blur') window.dispatchEvent(new Event('blur'))
+    else dispatchPointer(canvas, cancellation)
+    dispatchPointer(canvas, 'pointerup')
+    expect(wrapper.emitted('select-floor')).toBeUndefined()
+    dispatchPointer(canvas, 'pointerdown')
+    dispatchPointer(canvas, 'pointerup')
+    expect(wrapper.emitted('select-floor')).toEqual([[4]])
+    wrapper.unmount()
+  })
+
+  it('does not treat a two-finger gesture as a floor click when either finger lifts', async () => {
+    const { wrapper, canvas } = await interactiveScene()
+    dispatchPointer(canvas, 'pointerdown', { pointerId: 11, pointerType: 'touch' })
+    dispatchPointer(canvas, 'pointerdown', { pointerId: 12, pointerType: 'touch', isPrimary: false })
+    dispatchPointer(canvas, 'pointerup', { pointerId: 12, pointerType: 'touch', isPrimary: false })
+    dispatchPointer(canvas, 'pointerup', { pointerId: 11, pointerType: 'touch' })
+    await wrapper.vm.$nextTick()
+    expect(wrapper.emitted('select-floor')).toBeUndefined()
+    expect(wrapper.classes()).not.toContain('is-interacting')
+    dispatchPointer(canvas, 'pointermove', { pointerId: 13, pointerType: 'touch', buttons: 0 })
+    framesUntil(32); await wrapper.vm.$nextTick()
+    expect(wrapper.find('.floor-hover-label').exists()).toBe(false)
+    dispatchPointer(canvas, 'pointerdown', { pointerId: 13, pointerType: 'touch' })
+    dispatchPointer(canvas, 'pointerup', { pointerId: 13, pointerType: 'touch' })
+    expect(wrapper.emitted('select-floor')).toEqual([[4]])
+    wrapper.unmount()
+  })
+
+  it('ignores secondary buttons, non-primary pointers and releases outside the canvas', async () => {
+    const { wrapper, canvas } = await interactiveScene()
+    for (const options of [{ button: 1 }, { button: 2 }, { isPrimary: false }]) {
+      dispatchPointer(canvas, 'pointerdown', options)
+      dispatchPointer(canvas, 'pointerup', options)
+    }
+    dispatchPointer(canvas, 'pointerdown', { clientX: 499 })
+    dispatchPointer(canvas, 'pointerup', { clientX: 501 })
+    expect(wrapper.emitted('select-floor')).toBeUndefined()
+    await wrapper.setProps({ mode: 'interior', floor: 4 })
+    dispatchPointer(canvas, 'pointerdown')
+    dispatchPointer(canvas, 'pointerup')
+    expect(wrapper.emitted('select-floor')).toBeUndefined()
+    wrapper.unmount()
+  })
+
+  it('removes pointer handlers when the scene is unmounted', async () => {
+    const { wrapper, canvas } = await interactiveScene()
+    wrapper.unmount()
+    expect(dispatchPointer(canvas, 'pointerdown').defaultPrevented).toBe(false)
+    expect(wrapper.emitted('select-floor')).toBeUndefined()
   })
 })
