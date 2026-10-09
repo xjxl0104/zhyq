@@ -33,7 +33,7 @@ const pins = computed(() => {
   const extra = selected && !selected.orderId && selected.floor === props.floor && !illustrative.some(point => point.id === selected.id) ? [selected] : []
   return [...illustrative, ...extra, ...orders]
 })
-const hoverFloor = ref(null), hoverAt = ref({ x: 0, y: 0 })
+const hoverFloor = ref(null), hoverAt = ref({ x: 0, y: 0 }), hoverLabel = ref(null), interacting = ref(false)
 const hoverInfo = computed(() => FLOORS.find(item => item.id === hoverFloor.value) || null)
 const landmarks = computed(() => props.mode === 'interior' && props.planLabels ? floorLandmarks(props.floor || 3) : [])
 const landmarkElements = new Map()
@@ -45,6 +45,7 @@ let renderer, scene, camera, controls, model, observer, environmentTarget, weath
 const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
 const raycaster = new THREE.Raycaster(), pointer = new THREE.Vector2()
 let pointerDown = null
+const activePointers = new Set()
 function resize() {
   if (!host.value || !renderer) return
   width = host.value.clientWidth; height = host.value.clientHeight
@@ -99,11 +100,22 @@ function focusPoint(point) {
   }
   needsRender = true
 }
-function onPointerDown(event) { pointerDown = { x: event.clientX, y: event.clientY } }
+function onPointerDown(event) {
+  activePointers.add(event.pointerId)
+  interacting.value = true
+  // A second finger belongs to the zoom/pan gesture, never a floor click.
+  pointerDown = activePointers.size === 1 && event.button === 0 && event.isPrimary !== false
+    ? { id: event.pointerId, x: event.clientX, y: event.clientY } : null
+  hoverPointer = null; setHover(null)
+  // Prevent native text selection without suppressing OrbitControls' pointer events.
+  event.preventDefault()
+}
 // Floors under the pointer: cached mesh list, rebuilt whenever the model's visibility or layout changes.
 let floorMeshes = null, hoverPointer = null
 function pickFloor(clientX, clientY) {
+  if (!renderer || !model || !camera) return null
   const rect = renderer.domElement.getBoundingClientRect()
+  if (!rect.width || !rect.height || clientX < rect.left || clientX > rect.right || clientY < rect.top || clientY > rect.bottom) return null
   pointer.set(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1)
   raycaster.setFromCamera(pointer, camera)
   if (!floorMeshes) {
@@ -115,19 +127,30 @@ function pickFloor(clientX, clientY) {
   return raycaster.intersectObjects(floorMeshes, false)[0]?.object.userData.floor ?? null
 }
 function setHover(floor) {
+  if (renderer) renderer.domElement.style.cursor = interacting.value ? 'grabbing' : floor ? 'pointer' : 'grab'
   if (hoverFloor.value === floor) return
   hoverFloor.value = floor
   model?.setState({ hover: floor })
-  if (renderer) renderer.domElement.style.cursor = floor ? 'pointer' : ''
   needsRender = true
 }
 function onPointerMove(event) {
+  // Once a drag crossed the threshold, returning to its start is still a drag.
+  if (pointerDown?.id === event.pointerId && Math.hypot(event.clientX - pointerDown.x, event.clientY - pointerDown.y) > 6) pointerDown = null
   // Dragging orbits the camera; inside there is only one floor to choose.
-  if (props.mode === 'interior' || event.buttons) { hoverPointer = null; setHover(null); return }
+  if (props.mode === 'interior' || activePointers.size || event.buttons || event.pointerType === 'touch') { hoverPointer = null; setHover(null); return }
   hoverPointer = { x: event.clientX, y: event.clientY }
   needsRender = true
 }
-function onPointerLeave() { hoverPointer = null; setHover(null) }
+function onPointerLeave() { pointerDown = null; hoverPointer = null; setHover(null) }
+function onPointerCancel(event) {
+  activePointers.delete(event.pointerId); pointerDown = null
+  interacting.value = activePointers.size > 0
+  hoverPointer = null; setHover(null)
+}
+function cancelInteraction() {
+  activePointers.clear(); pointerDown = null; interacting.value = false
+  hoverPointer = null; setHover(null)
+}
 function updateHover() {
   if (!hoverPointer) return
   const { x, y } = hoverPointer
@@ -135,17 +158,24 @@ function updateHover() {
   const floor = pickFloor(x, y)
   setHover(floor > 0 ? floor : null)
   const rect = host.value.getBoundingClientRect()
-  hoverAt.value = { x: x - rect.left, y: y - rect.top }
+  const labelWidth = hoverLabel.value?.offsetWidth || 164, labelHeight = hoverLabel.value?.offsetHeight || 36
+  const localX = x - rect.left, localY = y - rect.top
+  const left = localX + 14 + labelWidth > rect.width - 8 ? localX - 14 - labelWidth : localX + 14
+  const top = localY + 12 + labelHeight > rect.height - 8 ? localY - 12 - labelHeight : localY + 12
+  hoverAt.value = { x: Math.max(8, Math.min(left, rect.width - labelWidth - 8)), y: Math.max(8, Math.min(top, rect.height - labelHeight - 8)) }
 }
 function onPointerUp(event) {
-  if (!pointerDown || Math.hypot(event.clientX - pointerDown.x, event.clientY - pointerDown.y) > 6 || event.button !== 0) return
+  const click = activePointers.has(event.pointerId) && pointerDown?.id === event.pointerId && Math.hypot(event.clientX - pointerDown.x, event.clientY - pointerDown.y) <= 6 && event.button === 0
+  activePointers.delete(event.pointerId); interacting.value = activePointers.size > 0
   pointerDown = null
-  if (props.mode === 'interior') return
+  hoverPointer = null; setHover(null)
+  if (!click || props.mode === 'interior') return
   const floor = pickFloor(event.clientX, event.clientY)
   if (floor) { setHover(null); emit('select-floor', floor) }
 }
 function onContextLost(event) {
   event.preventDefault()
+  cancelInteraction()
   error.value = '三维画面暂时中断，请重新加载场景。'
   emit('error', error.value)
   cancelAnimationFrame(frame)
@@ -265,7 +295,10 @@ onMounted(async () => {
     renderer.domElement.addEventListener('pointerup', onPointerUp)
     renderer.domElement.addEventListener('pointermove', onPointerMove)
     renderer.domElement.addEventListener('pointerleave', onPointerLeave)
+    renderer.domElement.addEventListener('pointercancel', onPointerCancel)
+    renderer.domElement.addEventListener('lostpointercapture', onPointerCancel)
     renderer.domElement.addEventListener('webglcontextlost', onContextLost)
+    window.addEventListener('blur', cancelInteraction)
     observer = new ResizeObserver(resize); observer.observe(host.value)
     resize(); reset(); if (pendingPoint) focusPoint(pendingPoint); animate(performance.now())
     ready.value = true; emit('ready')
@@ -277,7 +310,8 @@ onMounted(async () => {
   }
 })
 watch(() => [props.mode, props.floor, props.layers], () => {
-  if (props.mode === 'interior') setHover(null)
+  cancelInteraction()
+  floorMeshes = null
   model?.setState({ mode: props.mode, floor: props.floor, layers: props.layers })
   landscape?.setMode(props.mode)
 })
@@ -301,12 +335,16 @@ watch(() => props.weather, value => {
 })
 watch(() => props.markers, () => { needsRender = true })
 onBeforeUnmount(() => {
+  cancelInteraction()
   disposed = true; cancelAnimationFrame(frame); observer?.disconnect(); controls?.dispose()
+  window.removeEventListener('blur', cancelInteraction)
   if (renderer) {
     renderer.domElement.removeEventListener('pointerdown', onPointerDown)
     renderer.domElement.removeEventListener('pointerup', onPointerUp)
     renderer.domElement.removeEventListener('pointermove', onPointerMove)
     renderer.domElement.removeEventListener('pointerleave', onPointerLeave)
+    renderer.domElement.removeEventListener('pointercancel', onPointerCancel)
+    renderer.domElement.removeEventListener('lostpointercapture', onPointerCancel)
     renderer.domElement.removeEventListener('webglcontextlost', onContextLost)
   }
   weatherEffects?.dispose()
@@ -319,29 +357,18 @@ onBeforeUnmount(() => {
   environmentTarget?.dispose()
   renderer?.dispose(); renderer?.domElement.remove(); markerElements.clear(); landmarkElements.clear()
 })
-async function exportModel() {
-  if (!model) return
-  const { GLTFExporter } = await import('three/addons/exporters/GLTFExporter.js')
-  // Clone freezes transforms during the asynchronous export, even while orbiting/animating.
-  const snapshot = model.root.clone(true)
-  stylization?.prepareExport(snapshot)
-  const glb = await new GLTFExporter().parseAsync(snapshot, { binary: true, onlyVisible: true })
-  const url = URL.createObjectURL(new Blob([glb], { type: 'model/gltf-binary' }))
-  const anchor = document.createElement('a'); anchor.href = url; anchor.download = 'dipark-warehouse-' + props.mode + '.glb'; anchor.click()
-  setTimeout(() => URL.revokeObjectURL(url), 1000)
-}
-defineExpose({ reset, zoom, focusPoint, exportModel })
+defineExpose({ reset, zoom, focusPoint })
 </script>
 
 <template>
-  <div ref="host" class="warehouse-scene">
+  <div ref="host" class="warehouse-scene" :class="{ 'is-interacting': interacting }" @dragstart.prevent>
     <div ref="canvasHost" class="warehouse-canvas" />
     <div v-if="error" class="scene-error" role="alert"><TwinIcon name="cube" :size="40" /><p>{{ error }}</p><button @click="() => $router.go(0)">重新加载</button></div>
     <div v-else-if="!ready" class="scene-loading"><span class="scene-spinner" />正在加载云仓模型…</div>
     <div v-if="ready && !error" class="plan-landmarks" aria-label="图纸空间名称">
       <span v-for="point in landmarks" :key="point.id" :ref="element => element ? landmarkElements.set(point.id, element) : landmarkElements.delete(point.id)" class="plan-landmark">{{ point.name }}</span>
     </div>
-    <div v-if="ready && hoverInfo" class="floor-hover-label" :style="{ transform: `translate(${hoverAt.x + 16}px, ${hoverAt.y + 12}px)` }" role="status"><strong>{{ hoverInfo.label }}</strong><span>{{ hoverInfo.name }}</span><small>点击进入室内</small></div>
+    <div v-if="ready && hoverInfo" ref="hoverLabel" class="floor-hover-label" :style="{ transform: `translate(${hoverAt.x}px, ${hoverAt.y}px)` }" :aria-label="`${hoverInfo.label} ${hoverInfo.name}，点击进入室内`" role="status"><strong>{{ hoverInfo.label }}</strong><span>点击进入室内</span></div>
     <div v-show="ready && markers && !error" class="scene-pins">
       <div v-for="point in pins" :key="point.id" :ref="element => element ? markerElements.set(point.id, element) : markerElements.delete(point.id)" class="scene-pin" :class="{ 'pin-building': point.module === 'park', 'pin-workorder': point.orderId, 'pin-urgent': point.urgent, 'pin-selected': point.id === selectedPoint?.id }" :style="{ '--pin-color': point.orderId ? point.urgent ? '#b44234' : '#94651a' : moduleFor(point.module).color }">
         <span class="pin-card"><button class="pin-info" :aria-label="(point.orderId ? '查看工单：' : '查看') + point.name" @click.stop="emit('select-point', point)"><span class="pin-icon"><TwinIcon :name="point.orderId ? 'alert' : moduleFor(point.module).icon" :size="15" /></span><span class="pin-label"><span class="pin-short-name">{{ point.orderId ? point.status : moduleFor(point.module).short }}</span><span class="pin-full-name">{{ point.name }}</span></span></button><button class="pin-enter" :aria-label="'直接进入' + moduleFor(point.module).name" :title="'直接进入' + moduleFor(point.module).name" @click.stop="emit('open-module', point)"><TwinIcon name="chevron" :size="12" /></button></span>
@@ -352,6 +379,9 @@ defineExpose({ reset, zoom, focusPoint, exportModel })
 </template>
 
 <style scoped>
+.warehouse-scene { user-select: none; -webkit-user-select: none; }
+.warehouse-canvas :deep(canvas) { touch-action: none; user-select: none; -webkit-user-select: none; cursor: grab; }
+.is-interacting .warehouse-canvas :deep(canvas) { cursor: grabbing; }
 .plan-landmarks { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
 .plan-landmark { position: absolute; left: 0; top: 0; visibility: hidden; padding: 3px 6px; border-radius: 3px; background: rgba(250, 250, 242, .92); color: #31514d; font-size: 11px; white-space: nowrap; }
 .scene-pin.pin-workorder .pin-card { border-color: #fff; border-radius: 6px; background: var(--pin-color); color: #fff; animation: locate-alert 1.2s ease-out 2; }
@@ -361,10 +391,9 @@ defineExpose({ reset, zoom, focusPoint, exportModel })
 .pin-workorder .pin-short-name { display: none; }
 .pin-workorder .pin-full-name { display: inline; max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* Floor under the pointer: number first, so the floor is readable at a glance. */
-.floor-hover-label { position: absolute; left: 0; top: 0; z-index: 4; display: grid; grid-template-columns: auto auto; align-items: baseline; column-gap: 8px; padding: 7px 10px; border: 1px solid #1d8fb655; border-radius: 7px; background: rgba(248, 253, 255, .95); color: #24485a; box-shadow: 0 6px 18px #18405a2a; pointer-events: none; white-space: nowrap; }
-.floor-hover-label strong { grid-row: span 2; font-size: 22px; line-height: 1; color: #1d7fa3; }
-.floor-hover-label span { font-size: 12px; font-weight: 600; }
-.floor-hover-label small { font-size: 11px; color: #6b8797; }
+.floor-hover-label { position: absolute; left: 0; top: 0; z-index: 4; display: flex; align-items: center; gap: 8px; padding: 6px 9px; border: 1px solid #1d8fb655; border-radius: 5px; background: rgba(248, 253, 255, .95); color: #24485a; box-shadow: 0 3px 10px #18405a20; pointer-events: none; user-select: none; -webkit-user-select: none; white-space: nowrap; }
+.floor-hover-label strong { font-size: 17px; line-height: 1; color: #1d7fa3; }
+.floor-hover-label span { font-size: 11px; color: #6b8797; }
 /* A pin mounts at the origin; keep it hidden until the render loop has projected it. */
 .scene-pin { visibility: hidden; }
 /* Unselected orders show just their alert icon; the name appears on hover or when chosen. */
