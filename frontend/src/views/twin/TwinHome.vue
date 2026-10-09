@@ -209,9 +209,9 @@ onBeforeUnmount(() => { window.removeEventListener('pointerdown', closeLayersOnO
               <div class="model-tools">
                 <div class="model-context" role="group" aria-label="观看方式">
                   <button class="model-focus-toggle" :aria-label="modelFocus ? '恢复运营看板' : '专注查看模型'" :aria-pressed="modelFocus" @click="toggleModelFocus"><TwinIcon :name="modelFocus ? 'grid' : 'expand'" :size="14" /><span>{{ modelFocus ? '返回看板' : '专注模型' }}</span></button>
-                  <button class="entrance-view" data-testid="view-entrance" :aria-pressed="viewpoint === 'entrance'" @click="viewEntrance"><TwinIcon name="gate" :size="14" /><span>入口视角</span></button>
                 </div>
                 <div class="scene-camera-controls" role="group" aria-label="视角操作">
+                  <button data-testid="view-entrance" aria-label="入口视角" title="入口视角" :aria-pressed="viewpoint === 'entrance'" @click="viewEntrance"><TwinIcon name="gate" :size="18" /></button>
                   <button aria-label="放大模型" title="放大" @click="scene?.zoom(1.18)"><TwinIcon name="plus" :size="18" /></button>
                   <button aria-label="缩小模型" title="缩小" @click="scene?.zoom(1 / 1.18)"><TwinIcon name="minus" :size="18" /></button>
                   <button aria-label="复位视角" title="复位视角" @click="scene?.reset()"><TwinIcon name="reset" :size="17" /></button>
@@ -229,7 +229,7 @@ onBeforeUnmount(() => { window.removeEventListener('pointerdown', closeLayersOnO
               </div>
             </div>
             <div class="scene-layer-controls">
-              <button class="layers-toggle" data-testid="layers-toggle" aria-label="业务图层" title="业务图层" :class="{ active: layersOpen }" :aria-expanded="layersOpen" aria-controls="twin-layer-panel" @click="layersOpen = !layersOpen"><TwinIcon name="layers" :size="18" /></button>
+              <button class="layers-toggle" data-testid="layers-toggle" aria-label="业务图层" title="业务图层" :class="{ active: layersOpen }" :aria-expanded="layersOpen" aria-controls="twin-layer-panel" @click="layersOpen = !layersOpen"><TwinIcon name="layers" :size="22" /><span>业务图层</span></button>
               <Transition name="layer-panel"><section v-if="layersOpen" id="twin-layer-panel" class="layer-panel" aria-label="业务图层">
                 <header><strong>图层</strong><button type="button" class="layer-all" @click="toggleAllLayers">{{ layers.length === MODULES.length ? '全部隐藏' : '全部显示' }}</button><button type="button" class="icon-button" aria-label="业务图层说明" @click="help = true"><TwinIcon name="help" :size="15" /></button></header>
                 <ul><li v-for="module in MODULES" :key="module.id"><button type="button" class="layer-row" :class="{ hidden: !layers.includes(module.id) }" :data-testid="'layer-' + module.id" :aria-pressed="layers.includes(module.id)" :style="{ '--layer-color': module.color }" @click="toggleLayer(module.id)"><span class="layer-eye"><TwinIcon name="eye" :size="15" /></span><span class="layer-swatch"><TwinIcon :name="module.icon" :size="14" /></span><span class="layer-name">{{ module.name }}</span><small>{{ module.id === 'property' ? (dockAvailable ? orderSummary.active + ' 单' : '') : '演示' }}</small></button></li></ul>
@@ -260,7 +260,7 @@ onBeforeUnmount(() => { window.removeEventListener('pointerdown', closeLayersOnO
 .twin-workspace-v2 .twin-content-grid { padding-bottom: 108px; }
 .twin-workspace-v2 .twin-content-grid.is-interior { padding-bottom: 146px; }
 .scene-bottom-bar { position: absolute; z-index: 10; left: 12px; right: 12px; bottom: 12px; display: flex; justify-content: center; align-items: flex-end; pointer-events: none; -webkit-user-select: none; user-select: none; }
-.model-toolbar { width: min(640px, calc(100% - 88px)); padding: 6px; box-sizing: border-box; border-radius: 10px; background: rgba(248, 253, 255, .96); color: var(--scene-ui); box-shadow: 0 6px 20px #18405a26; pointer-events: auto; }
+.model-toolbar { width: min(640px, calc(100% - 264px)); padding: 6px; box-sizing: border-box; border-radius: 10px; background: rgba(248, 253, 255, .96); color: var(--scene-ui); box-shadow: 0 6px 20px #18405a26; pointer-events: auto; }
 .twin-workspace-v2 .scene-bottom-bar .view-switch { display: flex; width: 100%; margin: 0; padding: 0 0 5px; border: 0; border-bottom: 1px solid var(--scene-line); border-radius: 0; background: transparent; box-shadow: none; backdrop-filter: none; }
 .twin-workspace-v2 .scene-bottom-bar .view-switch button { min-height: 32px; padding: 5px 8px; color: #345a6e; font-size: 11px; }
 .twin-workspace-v2 .scene-bottom-bar .view-switch button.active { background: #337f92; color: #fff; }
@@ -268,7 +268,7 @@ onBeforeUnmount(() => { window.removeEventListener('pointerdown', closeLayersOnO
 .model-context, .scene-camera-controls, .scene-floor-controls { display: flex; align-items: center; gap: 2px; }
 .scene-camera-controls { border-left: 1px solid var(--scene-line); padding-left: 8px; }
 .twin-workspace-v2 .scene-bottom-bar :where(button:not(.layer-row):not(.layer-all):not(.icon-button)) { display: flex; align-items: center; justify-content: center; gap: 4px; min-height: 32px; border: 0; border-radius: 5px; background: transparent; color: var(--scene-ui); cursor: pointer; }
-.twin-workspace-v2 .scene-bottom-bar :is(.model-focus-toggle, .entrance-view) { position: static; padding: 5px 8px; font-size: 11px; }
+.twin-workspace-v2 .scene-bottom-bar .model-focus-toggle { position: static; padding: 5px 8px; font-size: 11px; }
 .scene-camera-controls button, .scene-floor-controls button { width: 32px; padding: 0; }
 .twin-workspace-v2 .scene-bottom-bar .scene-text-button { width: auto; padding: 0 7px; font-size: 11px; font-weight: 600; }
 .twin-workspace-v2 .scene-bottom-bar :where(button:not(.layer-row):not(.layer-all):not(.icon-button)):hover { background: #dcecf0; }
@@ -278,8 +278,10 @@ onBeforeUnmount(() => { window.removeEventListener('pointerdown', closeLayersOnO
 .twin-workspace-v2 .scene-bottom-bar button:disabled { opacity: .35; cursor: default; }
 .scene-floor-label { display: grid; place-items: center; min-width: 28px; font-size: 12px; font-weight: 700; }
 .scene-bottom-bar .icon-up { transform: rotate(180deg); }
-.scene-layer-controls { position: absolute; right: 0; bottom: 0; pointer-events: auto; }
-.twin-workspace-v2 .scene-bottom-bar .layers-toggle { width: 40px; height: 40px; background: rgba(248, 253, 255, .96); box-shadow: 0 6px 20px #18405a26; border-radius: 9px; }
+.scene-layer-controls { position: absolute; right: 0; bottom: 0; padding-left: 12px; border-left: 1px solid #8cabbc80; pointer-events: auto; }
+.twin-workspace-v2 .scene-bottom-bar .layers-toggle { width: 112px; height: 44px; gap: 8px; background: #337f92; color: #fff; box-shadow: 0 6px 20px #18405a26; border-radius: 9px; }
+.layers-toggle span { font-size: 12px; font-weight: 600; white-space: nowrap; }
+.twin-workspace-v2 .scene-bottom-bar .layers-toggle:is(:hover, .active) { background: #245d6e; color: #fff; }
 @container twin-main (max-width: 880px) {
   .twin-workspace-v2 .twin-content-grid { --scene-height: 490px; padding-bottom: 12px; }
   .scene-bottom-bar { top: calc(var(--scene-height) - 12px); bottom: auto; transform: translateY(-100%); }
@@ -292,13 +294,19 @@ onBeforeUnmount(() => { window.removeEventListener('pointerdown', closeLayersOnO
   .twin-workspace-v2 .twin-world-scene { height: var(--scene-height); }
   .twin-workspace-v2 .twin-viewport { flex-basis: 456px; height: 456px; min-height: 456px; }
   .twin-workspace-v2 .is-focused .twin-world-scene { height: 100%; }
-  .model-toolbar { width: calc(100% - 48px); margin-right: 48px; }
+  .scene-bottom-bar { flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+  .model-toolbar { width: 100%; }
+  .scene-layer-controls { position: relative; padding-left: 8px; }
+  .twin-workspace-v2 .scene-bottom-bar .layers-toggle { height: 40px; }
+  .scene-layer-controls .layer-panel { bottom: 50px; }
+  .twin-workspace-v2 .twin-content-grid.is-focused { padding-bottom: 156px; }
+  .twin-workspace-v2 .twin-content-grid.is-focused.is-interior { padding-bottom: 194px; }
   .twin-workspace-v2 .scene-bottom-bar .view-switch button { padding: 4px 2px; gap: 3px; font-size: 10px; }
   .twin-workspace-v2 .scene-bottom-bar .view-switch button svg { width: 12px; }
   .model-tools { gap: 4px; justify-content: space-between; }
   .scene-camera-controls { padding-left: 4px; gap: 0; }
   .scene-camera-controls button { width: 28px; }
-  .twin-workspace-v2 .scene-bottom-bar :is(.model-focus-toggle, .entrance-view) { padding: 4px; font-size: 10px; }
+  .twin-workspace-v2 .scene-bottom-bar .model-focus-toggle { padding: 4px; font-size: 10px; }
   .model-context svg { display: none; }
   .scene-floor-controls { width: 100%; justify-content: center; padding-top: 4px; border-top: 1px solid var(--scene-line); }
 }
@@ -313,7 +321,7 @@ onBeforeUnmount(() => { window.removeEventListener('pointerdown', closeLayersOnO
 .twin-workspace-v2 .is-focused .plan-source-panel { width: min(560px, calc(100% - 36px)); }
 .kpi-urgent { color: #b34134; font-weight: 700; }
 /* Photoshop-style layer list: eye, swatch, name; hidden layers fade out. */
-.layer-panel { position: absolute; z-index: 9; right: 0; bottom: 46px; width: min(232px, calc(100vw - 48px)); padding: 8px; border: 1px solid var(--scene-line); border-radius: 9px; background: rgba(250, 253, 255, .97); color: var(--scene-ui); box-shadow: 0 10px 30px #18405a2e; backdrop-filter: blur(14px); }
+.layer-panel { position: absolute; z-index: 9; right: 0; bottom: 54px; width: min(232px, calc(100vw - 48px)); padding: 8px; border: 1px solid var(--scene-line); border-radius: 9px; background: rgba(250, 253, 255, .97); color: var(--scene-ui); box-shadow: 0 10px 30px #18405a2e; backdrop-filter: blur(14px); }
 .layer-panel header { display: flex; align-items: center; gap: 6px; padding: 0 2px 6px; border-bottom: 1px solid var(--scene-line); }
 .layer-panel header strong { margin-right: auto; font-size: 13px; }
 .layer-panel .layer-all { padding: 3px 6px; border: 0; border-radius: 4px; background: transparent; color: #2a7f93; font-size: 11px; cursor: pointer; }

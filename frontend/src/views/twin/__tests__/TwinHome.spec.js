@@ -21,10 +21,14 @@ describe('warehouse workspace interactions', () => {
     expect(scene.props('rotating')).toBe(true)
     wrapper.unmount()
   })
-  it('keeps the workspace free of weather, reality-reference and export controls', () => {
+  it('keeps weather, reality-reference and export controls out of every model view', async () => {
     const wrapper = mount(TwinHome)
-    expect(wrapper.find('.weather-switch, .weather-simulation, .reference-modal').exists()).toBe(false)
-    expect(wrapper.findAll('button').map(button => button.text()).some(text => /实景对照|导出模型|晴天|夜景/.test(text))).toBe(false)
+    for (const mode of ['exterior', 'exploded', 'interior']) {
+      await wrapper.get(`[data-testid="view-${mode}"]`).trigger('click')
+      expect(wrapper.findComponent({ name: 'WarehouseScene' }).props('mode')).toBe(mode)
+      expect(wrapper.find('.weather-switch, .weather-simulation, .reference-modal').exists()).toBe(false)
+      expect(wrapper.text()).not.toMatch(/天气模拟|实景对照|导出模型|晴天|夜景/)
+    }
     wrapper.unmount()
   })
   it('groups model controls in one bottom toolbar and keeps the layer popup in its own bottom-right zone', async () => {
