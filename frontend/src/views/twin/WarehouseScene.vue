@@ -10,7 +10,7 @@ import { createParkLandscape } from './parkLandscape'
 import { createSceneRendering, createAnimeSceneRendering } from './sceneRendering'
 import { floorLandmarks } from './floorPlanGeometry'
 import { PLAN_BUILDING } from './floorPlanData'
-import { MODULES } from './twinData'
+import { MODULES, visiblePoints } from './twinData'
 import TwinIcon from './TwinIcon.vue'
 
 const props = defineProps({ mode: { type: String, default: 'exterior' }, floor: { type: Number, default: null }, layer: { type: String, default: 'all' }, weather: { type: String, default: 'sunny' }, viewpoint: { type: String, default: 'overview' }, focused: Boolean, rotating: Boolean, markers: { type: Boolean, default: true }, selectedPoint: { type: Object, default: null }, workOrders: { type: Array, default: () => [] }, planLabels: { type: Boolean, default: true } })
@@ -21,12 +21,15 @@ const demoProfile = import.meta.env.DEV ? inject('warehouse-scene-demo', null) :
 const anime = import.meta.env.DEV ? demoProfile?.style !== 'original' : true
 const host = ref(null), canvasHost = ref(null), ready = ref(false), error = ref('')
 const pins = computed(() => {
-  const point = props.selectedPoint
-  if (!point || point.floor !== props.floor) return []
-  // Problems live in the corner dock. The model shows only the chosen location,
-  // and real drawing coordinates are shown in their corresponding interior.
-  if (point.orderId) return props.mode === 'interior' ? [point] : []
-  return props.mode !== 'interior' && (props.layer === 'all' || props.layer === point.module) ? [point] : []
+  // Every live work order keeps its pin on the model; basement orders only make sense inside.
+  const orders = props.layer === 'all' || props.layer === 'property'
+    ? props.workOrders.filter(point => (props.floor == null || point.floor === props.floor) && (point.floor > 0 || props.mode === 'interior'))
+    : []
+  // Demo points appear only when their own business layer is chosen, so the default view stays uncluttered.
+  const illustrative = props.mode !== 'interior' && !['all', 'property'].includes(props.layer) ? visiblePoints(props.layer, props.floor, props.mode) : []
+  const selected = props.selectedPoint
+  const extra = selected && !selected.orderId && selected.floor === props.floor && !illustrative.some(point => point.id === selected.id) ? [selected] : []
+  return [...illustrative, ...extra, ...orders]
 })
 const landmarks = computed(() => props.mode === 'interior' && props.planLabels ? floorLandmarks(props.floor || 3) : [])
 const landmarkElements = new Map()
@@ -247,7 +250,7 @@ watch(() => props.selectedPoint, point => {
 watch(() => [props.mode, props.floor], () => {
   if (pendingPoint && (props.mode !== 'interior' || props.floor !== pendingPoint.floor)) pendingPoint = null
 }, { flush: 'sync' })
-watch(() => [props.selectedPoint, props.planLabels, props.floor, props.layer], () => { needsRender = true }, { deep: true, flush: 'post' })
+watch(() => [props.selectedPoint, props.planLabels, props.floor, props.layer, props.workOrders], () => { needsRender = true }, { deep: true, flush: 'post' })
 watch(() => props.focused, reset)
 watch(() => props.viewpoint, reset)
 watch(() => props.weather, value => {
@@ -297,7 +300,7 @@ defineExpose({ reset, zoom, focusPoint, exportModel })
       <span v-for="point in landmarks" :key="point.id" :ref="element => element ? landmarkElements.set(point.id, element) : landmarkElements.delete(point.id)" class="plan-landmark">{{ point.name }}</span>
     </div>
     <div v-show="ready && markers && !error" class="scene-pins">
-      <div v-for="point in pins" :key="point.id" :ref="element => element ? markerElements.set(point.id, element) : markerElements.delete(point.id)" class="scene-pin" :class="{ 'pin-building': point.module === 'park', 'pin-workorder': point.orderId, 'pin-urgent': point.urgent }" :style="{ '--pin-color': point.orderId ? point.urgent ? '#b44234' : '#94651a' : moduleFor(point.module).color }">
+      <div v-for="point in pins" :key="point.id" :ref="element => element ? markerElements.set(point.id, element) : markerElements.delete(point.id)" class="scene-pin" :class="{ 'pin-building': point.module === 'park', 'pin-workorder': point.orderId, 'pin-urgent': point.urgent, 'pin-selected': point.id === selectedPoint?.id }" :style="{ '--pin-color': point.orderId ? point.urgent ? '#b44234' : '#94651a' : moduleFor(point.module).color }">
         <span class="pin-card"><button class="pin-info" :aria-label="(point.orderId ? '查看工单：' : '查看') + point.name" @click.stop="emit('select-point', point)"><span class="pin-icon"><TwinIcon :name="point.orderId ? 'alert' : moduleFor(point.module).icon" :size="15" /></span><span class="pin-label"><span class="pin-short-name">{{ point.orderId ? point.status : moduleFor(point.module).short }}</span><span class="pin-full-name">{{ point.name }}</span></span></button><button class="pin-enter" :aria-label="'直接进入' + moduleFor(point.module).name" :title="'直接进入' + moduleFor(point.module).name" @click.stop="emit('open-module', point)"><TwinIcon name="chevron" :size="12" /></button></span>
         <span class="pin-stem" /><span class="pin-dot" />
       </div>
@@ -308,11 +311,18 @@ defineExpose({ reset, zoom, focusPoint, exportModel })
 <style scoped>
 .plan-landmarks { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
 .plan-landmark { position: absolute; left: 0; top: 0; visibility: hidden; padding: 3px 6px; border-radius: 3px; background: rgba(250, 250, 242, .92); color: #31514d; font-size: 11px; white-space: nowrap; }
-.pin-workorder .pin-card { border-color: var(--pin-color); border-radius: 6px; animation: locate-alert 1.2s ease-out 2; }
-.pin-workorder .pin-icon { color: var(--pin-color); }
+.scene-pin.pin-workorder .pin-card { border-color: #fff; border-radius: 6px; background: var(--pin-color); color: #fff; animation: locate-alert 1.2s ease-out 2; }
+.scene-pin.pin-workorder .pin-icon { color: #fff; background: transparent; }
+.scene-pin.pin-workorder .pin-enter { color: #fff; }
 .pin-workorder .pin-dot { background: var(--pin-color); }
 .pin-workorder .pin-short-name { display: none; }
 .pin-workorder .pin-full-name { display: inline; max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* A pin mounts at the origin; keep it hidden until the render loop has projected it. */
+.scene-pin { visibility: hidden; }
+/* Unselected orders show just their alert icon; the name appears on hover or when chosen. */
+.pin-workorder:not(.pin-selected):not(:hover):not(:focus-within) .pin-label { display: none; }
+.pin-workorder.pin-selected { z-index: 2; }
+.pin-workorder.pin-selected .pin-card { box-shadow: 0 0 0 3px color-mix(in srgb, var(--pin-color) 25%, transparent), 0 4px 12px #224c6a40; }
 @keyframes locate-alert { from { outline: 2px solid var(--pin-color); outline-offset: 1px; } to { outline: 2px solid transparent; outline-offset: 8px; } }
 @media (prefers-reduced-motion: reduce) { .pin-workorder .pin-card { animation: none; } }
 </style>
