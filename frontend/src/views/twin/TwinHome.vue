@@ -7,7 +7,7 @@ import FloorPlanViewer from '@/components/FloorPlanViewer.vue'
 import { planFloor } from './floorPlanData'
 import TwinIcon from './TwinIcon.vue'
 import TwinOperationsPanel from './TwinOperationsPanel.vue'
-import { FLOORS, MODULES, POINTS, PARK_REFERENCE, floorHeight, moduleDestination } from './twinData'
+import { FLOORS, MODULES, POINTS, REFERENCES, PARK_REFERENCE, floorHeight, moduleDestination } from './twinData'
 import './twin.css'
 import './twin-dashboard.css'
 import './twin-immersive.css'
@@ -20,15 +20,16 @@ const dockAvailable = ref(false), orderDock = ref(null), railOrdersSlot = ref(nu
 const workOrders = ref([]), planLabels = ref(true), planOpen = ref(false)
 const hasSession = Boolean(localStorage.getItem('zhyq_token'))
 const mode = ref('exterior'), floor = ref(null), layers = ref(['property']), layersOpen = ref(false), rotating = ref(!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches), markers = ref(true)
-const selectedPoint = ref(null), help = ref(false), toast = ref(''), sidebarOpen = ref(false)
+const selectedPoint = ref(null), gallery = ref(false), referenceIndex = ref(0), help = ref(false), exporting = ref(false), toast = ref(''), sidebarOpen = ref(false)
 const modelFocus = ref(false)
-const viewpoint = ref('overview')
+const weather = ref('sunny'), viewpoint = ref('overview')
+const weatherOptions = [{ id: 'sunny', name: '晴天', icon: 'sun' }, { id: 'night', name: '夜景', icon: 'moon' }]
 async function viewEntrance() { viewpoint.value = 'entrance'; mode.value = 'exterior'; modelFocus.value = true; selectedPoint.value = null; await nextTick(); scene.value?.reset() }
 function toggleModelFocus() { modelFocus.value = !modelFocus.value; if (!modelFocus.value) viewpoint.value = 'overview' }
-watch(modelFocus, focused => { if (focused) orderDock.value?.collapse?.() })
 const currentTime = ref(new Date())
 const averageOccupancy = computed(() => (FLOORS.filter(item => item.id > 0).reduce((sum, item) => sum + item.occupancy, 0) / FLOORS.filter(item => item.id > 0).length).toFixed(1))
 const currentFloor = computed(() => FLOORS.find(item => item.id === floor.value))
+const activeReference = computed(() => REFERENCES[referenceIndex.value])
 const selectedModule = computed(() => MODULES.find(item => item.id === selectedPoint.value?.module))
 const dateLabel = computed(() => currentTime.value.toLocaleDateString('zh-CN', { month: 'long', day: 'numeric', weekday: 'long' }))
 const moduleRows = computed(() => {
@@ -66,6 +67,7 @@ async function selectPoint(point) {
   selectedPoint.value = point; floor.value = point.floor
   if (point.orderId) {
     showLayer('property'); mode.value = 'interior'; modelFocus.value = true; rotating.value = false; markers.value = true
+    orderDock.value?.expand?.()
     await nextTick()
     if (selectedPoint.value?.id === point.id) scene.value?.focusPoint?.(point)
   }
@@ -107,16 +109,25 @@ async function fullScreen() {
     else await workspace.value.requestFullscreen()
   } catch { showToast('当前浏览器不支持全屏，可使用浏览器的全屏功能。') }
 }
+async function exportModel() {
+  if (!sceneReady.value || !scene.value) return
+  exporting.value = true
+  try { await scene.value.exportModel(); showToast('已导出当前视图的 GLB 模型，可在三维软件中打开。') }
+  catch (error) { console.error(error); showToast('模型导出失败，请重试。') }
+  finally { exporting.value = false }
+}
 function locateModuleRow(row) {
   floor.value = row.floor; showLayer(moduleView.value.id); mode.value = 'exploded'
   selectedPoint.value = { ...row.point, floor: row.floor, name: row.name, code: row.id, location: row.location }
   router.push({ path: homePath.value, query: { floor: String(row.floor) } })
 }
-function closeDialogs() { help.value = false; selectedPoint.value = null }
+function closeDialogs() { gallery.value = false; help.value = false; selectedPoint.value = null }
 function onKey(event) {
   if (event.key === 'Escape') { closeDialogs(); sidebarOpen.value = false; layersOpen.value = false }
+  if (gallery.value && event.key === 'ArrowRight') referenceIndex.value = (referenceIndex.value + 1) % REFERENCES.length
+  if (gallery.value && event.key === 'ArrowLeft') referenceIndex.value = (referenceIndex.value + REFERENCES.length - 1) % REFERENCES.length
   // Keep keyboard focus inside the currently open modal.
-  if (event.key === 'Tab' && help.value) {
+  if (event.key === 'Tab' && (gallery.value || help.value)) {
     const modal = workspace.value?.querySelector('[aria-modal="true"]')
     const focusable = modal?.querySelectorAll('button, input, [tabindex="0"]')
     if (!focusable?.length) return
@@ -125,13 +136,13 @@ function onKey(event) {
     else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus() }
   }
 }
-watch(help, async open => {
+watch(() => [gallery.value, help.value].some(Boolean), async open => {
   if (open) { dialogFocusBefore = document.activeElement; await nextTick(); workspace.value?.querySelector('[aria-modal="true"] input, [aria-modal="true"] button')?.focus() }
   else { dialogFocusBefore?.focus?.() }
 })
 // Live work orders replace the demo property card in the KPI strip; both open the same panel.
 const ordersCountLabel = computed(() => orderSummary.value.active + (orderSummary.value.truncated ? '+' : ''))
-async function showOrders() { modelFocus.value = false; await nextTick(); orderDock.value?.expand?.() }
+function showOrders() { orderDock.value?.expand?.() }
 // The rail hosts the panel only while the rails sit beside the model (twin-main wider than 880px, as in the CSS);
 // once they stack below it, the panel stays in the scene where it is still seen first.
 const RAILS_BESIDE_MODEL = 881
@@ -155,7 +166,7 @@ onBeforeUnmount(() => { window.removeEventListener('pointerdown', closeLayersOnO
 </script>
 
 <template>
-  <div ref="workspace" class="twin-workspace twin-workspace-v2" :class="{ 'twin-embedded': !preview }">
+  <div ref="workspace" class="twin-workspace twin-workspace-v2" :class="{ 'twin-embedded': !preview, 'is-night': weather === 'night' }">
     <aside v-if="preview" class="twin-sidebar" :class="{ 'sidebar-open': sidebarOpen }">
       <button class="twin-brand" aria-label="返回首页" @click="goHome"><span class="brand-symbol"><TwinIcon name="cube" :size="28" /></span><span>DIPARK<span class="brand-caption">智慧园区 · 空间连接未来</span></span></button>
       <div class="park-switch"><span class="park-switch-icon"><TwinIcon name="building" :size="18" /></span><span><strong>云仓产业园</strong><small>空间运营工作台</small></span><span class="park-switch-dot" /></div>
@@ -177,9 +188,9 @@ onBeforeUnmount(() => { window.removeEventListener('pointerdown', closeLayersOnO
       <template v-if="!moduleView">
         <section class="twin-heading">
           <div><div class="heading-kicker"><button v-if="preview" class="mobile-menu icon-button" aria-label="打开菜单" :aria-expanded="sidebarOpen" @click="sidebarOpen = !sidebarOpen"><TwinIcon name="menu" /></button><h1>云仓运营总览</h1><span class="demo-pill">演示数据</span></div><p>{{ preview ? '主楼平面图模型 · 地下室与 1–7 层' : '主楼按建筑平面图还原 · 选择楼层查看结构与工单位置' }}</p></div>
-          <div class="heading-actions"><span class="twin-date">{{ dateLabel }}</span></div>
+          <div class="heading-actions"><span class="twin-date">{{ dateLabel }}</span><button class="twin-button" @click="gallery = true"><TwinIcon name="photo" :size="15" />实景对照</button><button class="twin-button primary" :disabled="!sceneReady || exporting || sceneFailed" @click="exportModel"><TwinIcon name="export" :size="15" />{{ exporting ? '导出中…' : '导出模型' }}</button></div>
         </section>
-        <section v-show="!modelFocus" class="twin-kpi-strip" aria-label="园区资料与运营演示指标">
+        <section class="twin-kpi-strip" aria-label="园区资料与运营演示指标">
           <button class="twin-kpi" style="--kpi-color:#387eaa" @click="openModule('park')"><span class="kpi-icon"><TwinIcon name="building" :size="21" /></span><span><span class="kpi-caption">{{ currentFloor ? currentFloor.label + ' 资料层高' : '园区资料面积' }}</span><strong>{{ currentFloor ? floorHeight(currentFloor.id) : PARK_REFERENCE.totalArea }}<em>{{ currentFloor ? 'm' : 'm²' }}</em></strong></span><small class="kpi-note">招商资料</small></button>
           <button class="twin-kpi" style="--kpi-color:#208b7c" @click="openModule('park')"><span class="kpi-icon"><TwinIcon name="layers" :size="21" /></span><span><span class="kpi-caption">{{ currentFloor ? currentFloor.label + ' 出租率' : '空间出租率' }}</span><strong>{{ currentFloor ? (currentFloor.occupancy ?? '—') : averageOccupancy }}<em>%</em></strong></span><small class="kpi-note">演示</small></button>
           <button class="twin-kpi" style="--kpi-color:#8c79b1" @click="openModule('contract')"><span class="kpi-icon"><TwinIcon name="document" :size="21" /></span><span><span class="kpi-caption">执行中合同</span><strong>36<em>份</em></strong></span><small class="kpi-note">演示</small></button>
@@ -187,55 +198,22 @@ onBeforeUnmount(() => { window.removeEventListener('pointerdown', closeLayersOnO
           <button v-else class="twin-kpi" style="--kpi-color:#b38e55" @click="openModule('property')"><span class="kpi-icon"><TwinIcon name="tool" :size="21" /></span><span><span class="kpi-caption">物业服务</span><strong>工单管理</strong></span><small class="kpi-note">进入</small></button>
         </section>
 
-        <div class="twin-content-grid" :class="{ 'is-focused': modelFocus, 'is-interior': mode === 'interior' }">
-          <div class="twin-world-scene"><WarehouseScene ref="scene" :mode="mode" :floor="floor" :layers="layers" :focused="modelFocus" :viewpoint="viewpoint" :rotating="rotating" :markers="markers" :work-orders="workOrders" :selected-point="selectedPoint" :plan-labels="planLabels" @select-floor="enterFloor" @select-point="selectPoint" @open-module="openPointModule" @ready="sceneReady = true" @error="sceneFailed = true" /></div>
-          <header class="environment-bar"><div class="environment-location"><TwinIcon name="pin" :size="14" /><strong>数智云仓产业园</strong><span>广州 · 花都炭步</span></div></header>
-          <aside v-show="!modelFocus" class="twin-board-rail twin-board-left"><TwinOperationsPanel side="left" :show-issue-examples="false" :floor="floor" @open-module="openModule" @select-floor="selectFloor" @select-point="locatePanelPoint" /></aside>
+        <div class="twin-content-grid" :class="{ 'is-focused': modelFocus }">
+          <div class="twin-world-scene"><WarehouseScene ref="scene" :mode="mode" :floor="floor" :layers="layers" :focused="modelFocus" :weather="weather" :viewpoint="viewpoint" :rotating="rotating" :markers="markers" :work-orders="workOrders" :selected-point="selectedPoint" :plan-labels="planLabels" @select-floor="enterFloor" @select-point="selectPoint" @open-module="openPointModule" @ready="sceneReady = true" @error="sceneFailed = true" /></div>
+          <header class="environment-bar"><div class="environment-location"><TwinIcon name="pin" :size="14" /><strong>数智云仓产业园</strong><span>广州 · 花都炭步</span></div><div class="view-switch" aria-label="模型视图"><button v-for="view in [{ id: 'exterior', icon: 'cube', name: '建筑外观' }, { id: 'exploded', icon: 'layers', name: '楼层展开' }, { id: 'interior', icon: 'eye', name: '室内空间' }]" :key="view.id" :data-testid="'view-' + view.id" :class="{ active: mode === view.id }" :aria-pressed="mode === view.id" @click="setMode(view.id)"><TwinIcon :name="view.icon" :size="15" /><span>{{ view.name }}</span></button></div><div class="environment-actions"><span class="weather-simulation">天气模拟</span><div class="weather-switch" aria-label="天气场景"><button v-for="item in weatherOptions" :key="item.id" :data-testid="'weather-' + item.id" :aria-pressed="weather === item.id" :class="{ active: weather === item.id }" @click="weather = item.id"><TwinIcon :name="item.icon" :size="14" />{{ item.name }}</button></div><button class="model-focus-toggle" :aria-label="modelFocus ? '恢复运营看板' : '专注查看模型'" :aria-pressed="modelFocus" @click="toggleModelFocus"><TwinIcon :name="modelFocus ? 'grid' : 'expand'" :size="13" />{{ modelFocus ? '返回看板' : '专注模型' }}</button><button class="entrance-view" data-testid="view-entrance" :aria-pressed="viewpoint === 'entrance'" @click="viewEntrance"><TwinIcon name="gate" :size="15" />入口视角</button></div></header>
+          <aside class="twin-board-rail twin-board-left"><TwinOperationsPanel side="left" :show-issue-examples="false" :floor="floor" @open-module="openModule" @select-floor="selectFloor" @select-point="locatePanelPoint" /></aside>
           <section class="twin-viewport" :class="{ 'plan-open': planOpen && mode === 'interior' }" aria-label="三维空间工作台">
             <div v-if="planOpen && mode === 'interior' && hasSession && !preview" class="plan-source-panel" aria-label="报修图纸"><header><strong>{{ currentFloor?.label }} · {{ planFloor(floor)?.drawing }}</strong><button class="icon-button" aria-label="收起图纸" @click="planOpen = false"><TwinIcon name="close" :size="16" /></button></header><FloorPlanViewer :file-id="selectedPoint?.planFileId || planFloor(floor)?.fileId" :point="selectedPoint?.planPoint" /></div>
-            <div class="viewport-caption"><span>{{ mode === 'exterior' ? '一座建筑，一个运营入口' : mode === 'exploded' ? '逐层看见空间的价值' : '结构、设备与业务，在此相遇' }}</span><small>{{ mode === 'interior' ? '柱网 / 分区墙 / 楼梯 / 货梯井 / 前室' : dockAvailable ? '从看板中物业工单定位' : '点击建筑选择楼层，查看室内空间' }}</small></div>
+            <div class="viewport-caption"><span>{{ mode === 'exterior' ? '一座建筑，一个运营入口' : mode === 'exploded' ? '逐层看见空间的价值' : '结构、设备与业务，在此相遇' }}</span><small>{{ mode === 'interior' ? '柱网 / 分区墙 / 楼梯 / 货梯井 / 前室' : dockAvailable ? '从左上角物业工单定位' : '点击建筑选择楼层，查看室内空间' }}</small></div>
+            <div class="scene-controls"><div><button class="scene-zoom" aria-label="放大模型" title="放大" @click="scene?.zoom(1.18)"><TwinIcon name="plus" :size="18" /></button><button class="scene-zoom" aria-label="缩小模型" title="缩小" @click="scene?.zoom(1 / 1.18)"><TwinIcon name="minus" :size="18" /></button><span class="scene-zoom" /><button aria-label="复位视角" title="复位视角" @click="scene?.reset()"><TwinIcon name="reset" :size="17" /></button><button aria-label="自动环绕" title="自动环绕" :class="{ active: rotating }" :aria-pressed="rotating" @click="rotating = !rotating"><TwinIcon name="rotate" :size="18" /></button><span /><template v-if="mode === 'interior'"><button data-testid="floor-down" aria-label="下一层" title="下一层" :disabled="floor === FLOOR_ORDER[0]" @click="stepFloor(-1)"><TwinIcon name="down" :size="15" /></button><span class="scene-floor-label" aria-live="polite">{{ currentFloor?.label }}</span><button data-testid="floor-up" aria-label="上一层" title="上一层" :disabled="floor === FLOOR_ORDER.at(-1)" @click="stepFloor(1)"><TwinIcon name="down" :size="15" class="icon-up" /></button><span /><button class="scene-text-button" data-testid="plan-view" title="俯视核对楼层结构" :class="{ active: viewpoint === 'plan' }" :aria-pressed="viewpoint === 'plan'" @click="planView">俯视</button><button class="scene-text-button" data-testid="plan-labels" title="显示空间名称" :class="{ active: planLabels }" :aria-pressed="planLabels" @click="planLabels = !planLabels">名称</button><button v-if="hasSession && !preview" class="scene-text-button" data-testid="plan-source" title="对照报修图纸" :class="{ active: planOpen }" :aria-pressed="planOpen" @click="planOpen = !planOpen">图纸</button><span /></template><button data-testid="layers-toggle" aria-label="业务图层" title="业务图层" :class="{ active: layersOpen }" :aria-expanded="layersOpen" @click="layersOpen = !layersOpen"><TwinIcon name="layers" :size="17" /></button><button aria-label="全屏查看" title="全屏查看" @click="fullScreen"><TwinIcon name="expand" :size="17" /></button></div></div>
+            <Transition name="layer-panel"><section v-if="layersOpen" class="layer-panel" aria-label="业务图层"><header><strong>图层</strong><button type="button" class="layer-all" @click="toggleAllLayers">{{ layers.length === MODULES.length ? '全部隐藏' : '全部显示' }}</button><button type="button" class="icon-button" aria-label="业务图层说明" @click="help = true"><TwinIcon name="help" :size="15" /></button></header><ul><li v-for="module in MODULES" :key="module.id"><button type="button" class="layer-row" :class="{ hidden: !layers.includes(module.id) }" :data-testid="'layer-' + module.id" :aria-pressed="layers.includes(module.id)" :style="{ '--layer-color': module.color }" @click="toggleLayer(module.id)"><span class="layer-eye"><TwinIcon name="eye" :size="15" /></span><span class="layer-swatch"><TwinIcon :name="module.icon" :size="14" /></span><span class="layer-name">{{ module.name }}</span><small>{{ module.id === 'property' ? (dockAvailable ? orderSummary.active + ' 单' : '') : '演示' }}</small></button></li></ul></section></Transition>
             <div v-if="!sceneReady || sceneFailed" class="viewport-bottom"><span><i />{{ sceneFailed ? '渲染不可用' : '正在加载场景' }}</span></div>
-            <div v-if="!preview && hasSession" class="spatial-orders-host"><Teleport defer :to="railOrdersSlot || 'body'" :disabled="modelFocus || !railsBeside || !railOrdersSlot"><SpatialWorkOrders v-show="!modelFocus" ref="orderDock" :floor="floor" :requested-order-id="route.query.workOrderId" :selected-order-id="selectedPoint?.orderId" :plan-open="planOpen && mode === 'interior'" @available="dockAvailable = $event" @summary="orderSummary = $event" @points="updateOrders" @locate="selectPoint" @toggle-plan="planOpen = !planOpen" @open-order="openPointModule" /></Teleport></div>
+            <div v-if="!preview && hasSession" class="spatial-orders-host"><Teleport defer :to="railOrdersSlot || 'body'" :disabled="modelFocus || !railsBeside || !railOrdersSlot"><SpatialWorkOrders ref="orderDock" :floor="floor" :requested-order-id="route.query.workOrderId" :selected-order-id="selectedPoint?.orderId" :plan-open="planOpen && mode === 'interior'" @available="dockAvailable = $event" @summary="orderSummary = $event" @points="updateOrders" @locate="selectPoint" @toggle-plan="planOpen = !planOpen" @open-order="openPointModule" /></Teleport></div>
 
             <Transition name="twin-detail"><aside v-if="selectedPoint && !(selectedPoint.orderId && dockAvailable)" class="point-detail" :style="{ '--detail-color': selectedModule.color }" aria-label="空间点位详情"><div class="detail-header"><span class="detail-icon"><TwinIcon :name="selectedModule.icon" :size="22" /></span><span>{{ selectedModule.name }}</span><button class="icon-button" aria-label="关闭点位详情" @click="selectedPoint = null"><TwinIcon name="close" :size="17" /></button></div><small class="detail-code">{{ selectedPoint.code }}</small><h3>{{ selectedPoint.name }}</h3><p class="detail-location"><TwinIcon name="pin" :size="14" />{{ selectedPoint.location }}</p><span class="detail-status"><i />{{ selectedPoint.status }}</span><div v-if="selectedPoint.module === 'camera'" class="camera-placeholder"><TwinIcon name="camera" :size="28" /><strong>视频通道待接入</strong><small>连接后可查看实时画面</small></div><dl><div v-for="pair in selectedPoint.values" :key="pair[0]"><dt>{{ pair[0] }}</dt><dd>{{ pair[1] }}</dd></div></dl><div class="detail-data-note">{{ selectedPoint.orderId ? '真实工单 · 按报修图纸定位' : '示例点位 · 未连接现场业务数据' }}</div><button data-testid="point-open-module" class="twin-button primary detail-action" @click="openPointModule(selectedPoint)">{{ selectedPoint.orderId ? '打开工单' : '进入' + selectedModule.name }}<TwinIcon name="arrow" :size="16" /></button></aside></Transition>
           </section>
 
-          <aside v-show="!modelFocus" class="twin-board-rail twin-board-right"><div v-if="!preview && hasSession" ref="railOrdersSlot" class="rail-orders-slot" /><TwinOperationsPanel side="right" :show-issue-examples="false" :floor="floor" @open-module="openModule" @select-floor="selectFloor" @select-point="locatePanelPoint" /></aside>
-          <div class="scene-bottom-bar" role="toolbar" aria-label="模型操作">
-            <div class="model-toolbar">
-              <div class="view-switch" role="group" aria-label="模型视图">
-                <button v-for="view in [{ id: 'exterior', icon: 'cube', name: '建筑外观' }, { id: 'exploded', icon: 'layers', name: '楼层展开' }, { id: 'interior', icon: 'eye', name: '室内空间' }]" :key="view.id" :data-testid="'view-' + view.id" :class="{ active: mode === view.id }" :aria-pressed="mode === view.id" @click="setMode(view.id)"><TwinIcon :name="view.icon" :size="14" /><span>{{ view.name }}</span></button>
-              </div>
-              <div class="model-tools">
-                <div class="model-context" role="group" aria-label="观看方式">
-                  <button class="model-focus-toggle" :aria-label="modelFocus ? '恢复运营看板' : '专注查看模型'" :aria-pressed="modelFocus" @click="toggleModelFocus"><TwinIcon :name="modelFocus ? 'grid' : 'expand'" :size="14" /><span>{{ modelFocus ? '返回看板' : '专注模型' }}</span></button>
-                </div>
-                <div class="scene-camera-controls" role="group" aria-label="视角操作">
-                  <button data-testid="view-entrance" aria-label="入口视角" title="入口视角" :aria-pressed="viewpoint === 'entrance'" @click="viewEntrance"><TwinIcon name="gate" :size="18" /></button>
-                  <button aria-label="放大模型" title="放大" @click="scene?.zoom(1.18)"><TwinIcon name="plus" :size="18" /></button>
-                  <button aria-label="缩小模型" title="缩小" @click="scene?.zoom(1 / 1.18)"><TwinIcon name="minus" :size="18" /></button>
-                  <button aria-label="复位视角" title="复位视角" @click="scene?.reset()"><TwinIcon name="reset" :size="17" /></button>
-                  <button aria-label="自动环绕" title="自动环绕" :class="{ active: rotating }" :aria-pressed="rotating" @click="rotating = !rotating"><TwinIcon name="rotate" :size="18" /></button>
-                  <button aria-label="全屏查看" title="全屏查看" @click="fullScreen"><TwinIcon name="expand" :size="17" /></button>
-                </div>
-                <div v-if="mode === 'interior'" class="scene-floor-controls" role="group" aria-label="室内楼层工具">
-                  <button data-testid="floor-down" aria-label="下一层" title="下一层" :disabled="floor === FLOOR_ORDER[0]" @click="stepFloor(-1)"><TwinIcon name="down" :size="15" /></button>
-                  <span class="scene-floor-label" aria-live="polite">{{ currentFloor?.label }}</span>
-                  <button data-testid="floor-up" aria-label="上一层" title="上一层" :disabled="floor === FLOOR_ORDER.at(-1)" @click="stepFloor(1)"><TwinIcon name="down" :size="15" class="icon-up" /></button>
-                  <button class="scene-text-button" data-testid="plan-view" title="俯视核对楼层结构" :class="{ active: viewpoint === 'plan' }" :aria-pressed="viewpoint === 'plan'" @click="planView">俯视</button>
-                  <button class="scene-text-button" data-testid="plan-labels" title="显示空间名称" :class="{ active: planLabels }" :aria-pressed="planLabels" @click="planLabels = !planLabels">名称</button>
-                  <button v-if="hasSession && !preview" class="scene-text-button" data-testid="plan-source" title="对照报修图纸" :class="{ active: planOpen }" :aria-pressed="planOpen" @click="planOpen = !planOpen">图纸</button>
-                </div>
-              </div>
-            </div>
-            <div class="scene-layer-controls">
-              <button class="layers-toggle" data-testid="layers-toggle" aria-label="业务图层" title="业务图层" :class="{ active: layersOpen }" :aria-expanded="layersOpen" aria-controls="twin-layer-panel" @click="layersOpen = !layersOpen"><TwinIcon name="layers" :size="22" /><span>业务图层</span></button>
-              <Transition name="layer-panel"><section v-if="layersOpen" id="twin-layer-panel" class="layer-panel" aria-label="业务图层">
-                <header><strong>图层</strong><button type="button" class="layer-all" @click="toggleAllLayers">{{ layers.length === MODULES.length ? '全部隐藏' : '全部显示' }}</button><button type="button" class="icon-button" aria-label="业务图层说明" @click="help = true"><TwinIcon name="help" :size="15" /></button></header>
-                <ul><li v-for="module in MODULES" :key="module.id"><button type="button" class="layer-row" :class="{ hidden: !layers.includes(module.id) }" :data-testid="'layer-' + module.id" :aria-pressed="layers.includes(module.id)" :style="{ '--layer-color': module.color }" @click="toggleLayer(module.id)"><span class="layer-eye"><TwinIcon name="eye" :size="15" /></span><span class="layer-swatch"><TwinIcon :name="module.icon" :size="14" /></span><span class="layer-name">{{ module.name }}</span><small>{{ module.id === 'property' ? (dockAvailable ? orderSummary.active + ' 单' : '') : '演示' }}</small></button></li></ul>
-              </section></Transition>
-            </div>
-          </div>
+          <aside class="twin-board-rail twin-board-right"><div v-if="!preview && hasSession" ref="railOrdersSlot" class="rail-orders-slot" /><TwinOperationsPanel side="right" :show-issue-examples="false" :floor="floor" @open-module="openModule" @select-floor="selectFloor" @select-point="locatePanelPoint" /></aside>
         </div>
         <footer class="twin-footer"><span><span class="footer-logo">DIPARK</span>让园区更有生命力</span><span>建筑图纸模型 · 设备细节待现场核对<span class="footer-separator">/</span>业务数据为演示数据</span></footer>
       </template>
@@ -250,66 +228,16 @@ onBeforeUnmount(() => { window.removeEventListener('pointerdown', closeLayersOnO
       </section>
     </main>
 
-    <div v-if="help" class="twin-modal-backdrop" @click.self="help = false"><section class="help-modal" role="dialog" aria-modal="true" aria-label="三维工作台操作指南"><header><span class="brand-symbol"><TwinIcon name="cube" :size="26" /></span><button class="icon-button" aria-label="关闭操作指南" @click="help = false"><TwinIcon name="close" /></button></header><div class="twin-eyebrow">EXPLORE YOUR SPACE</div><h2>以空间为起点。</h2><p>拖动建筑旋转视角，滚轮缩放，右键拖动平移。也可以用底部工具栏调整视图。</p><ol><li><strong>查看建筑与楼层</strong><span>鼠标移到建筑上会高亮所在楼层并显示层号，点击即进入该层室内；室内用底部工具条的上下箭头切换楼层。</span></li><li><strong>定位待处理工单</strong><span>展开看板中「物业工单」，点击工单进入对应楼层，可同时对照报修图纸。红色表示紧急或超时，黄色表示常规待处理。</span></li><li><strong>业务图层</strong><span>右下角的图层按钮可逐项显示或隐藏物业工单、监控、消防等点位，像 PS 图层一样点眼睛切换。</span></li><li><strong>从位置进入业务</strong><span>详情内点击「进入」打开关联模块，演示模块支持返回模型定位。</span></li></ol><div class="help-note">主楼结构按建筑图纸还原。工单位置来源于报修标注；运营数字仍为演示。室内可在底部工具栏切换俯视、空间名称及图纸。</div><button class="twin-button primary" @click="help = false">开始探索<TwinIcon name="arrow" :size="16" /></button></section></div>
+    <div v-if="gallery" class="twin-modal-backdrop" @click.self="gallery = false"><section class="reference-modal" role="dialog" aria-modal="true" aria-label="云仓实景对照"><header><div><div class="twin-eyebrow">REALITY / DIGITAL TWIN</div><h2>从照片，重建一座云仓</h2><p>白色水平线条、青蓝幕墙转角与高标仓内部结构。</p></div><button class="icon-button" aria-label="关闭实景对照" @click="gallery = false"><TwinIcon name="close" /></button></header><div class="reference-image-wrap"><img :src="'/twin-reference/reference-' + activeReference.id + '.' + (activeReference.extension || 'png')" :alt="activeReference.title" /><span>{{ activeReference.title }}</span><small>{{ referenceIndex + 1 }} / {{ REFERENCES.length }}</small></div><div class="reference-thumbnails"><button v-for="(photo, index) in REFERENCES" :key="photo.id" :class="{ active: index === referenceIndex }" :aria-label="photo.title" :aria-pressed="index === referenceIndex" @click="referenceIndex = index"><img :src="'/twin-reference/reference-' + photo.id + '.' + (photo.extension || 'png')" :alt="photo.title" /></button></div><footer><TwinIcon name="help" :size="16" /><span>主楼平面结构参照 2025.10 建筑图纸，外立面沿用照片参照。图纸未载明的设备细节仍待现场核对。</span></footer></section></div>
+    <div v-if="help" class="twin-modal-backdrop" @click.self="help = false"><section class="help-modal" role="dialog" aria-modal="true" aria-label="三维工作台操作指南"><header><span class="brand-symbol"><TwinIcon name="cube" :size="26" /></span><button class="icon-button" aria-label="关闭操作指南" @click="help = false"><TwinIcon name="close" /></button></header><div class="twin-eyebrow">EXPLORE YOUR SPACE</div><h2>以空间为起点。</h2><p>拖动建筑旋转视角，滚轮缩放，右键拖动平移。也可以用底部工具栏调整视图。</p><ol><li><strong>查看建筑与楼层</strong><span>鼠标移到建筑上会高亮所在楼层并显示层号，点击即进入该层室内；室内用底部工具条的上下箭头切换楼层。</span></li><li><strong>定位待处理工单</strong><span>展开左上角「物业工单」，点击工单进入对应楼层，可同时对照报修图纸。红色表示紧急或超时，黄色表示常规待处理。</span></li><li><strong>业务图层</strong><span>底部工具条的图层按钮可逐项显示或隐藏物业工单、监控、消防等点位，像 PS 图层一样点眼睛切换。</span></li><li><strong>从位置进入业务</strong><span>详情内点击「进入」打开关联模块，演示模块支持返回模型定位。</span></li></ol><div class="help-note">主楼结构按建筑图纸还原。工单位置来源于报修标注；运营数字仍为演示。室内可在底部工具栏切换俯视、空间名称及图纸。</div><button class="twin-button primary" @click="help = false">开始探索<TwinIcon name="arrow" :size="16" /></button></section></div>
     <Transition name="twin-detail"><div v-if="toast" class="twin-toast" role="status"><TwinIcon name="check" :size="18" />{{ toast }}</div></Transition>
   </div>
 </template>
 
 <style scoped>
-/* Keep model controls on the full scene, independent of the dashboard columns. */
-.twin-workspace-v2 .twin-content-grid { padding-bottom: 108px; }
-.twin-workspace-v2 .twin-content-grid.is-interior { padding-bottom: 146px; }
-.scene-bottom-bar { position: absolute; z-index: 10; left: 12px; right: 12px; bottom: 12px; display: flex; justify-content: center; align-items: flex-end; pointer-events: none; -webkit-user-select: none; user-select: none; }
-.model-toolbar { width: min(640px, calc(100% - 264px)); padding: 6px; box-sizing: border-box; border-radius: 10px; background: rgba(248, 253, 255, .96); color: var(--scene-ui); box-shadow: 0 6px 20px #18405a26; pointer-events: auto; }
-.twin-workspace-v2 .scene-bottom-bar .view-switch { display: flex; width: 100%; margin: 0; padding: 0 0 5px; border: 0; border-bottom: 1px solid var(--scene-line); border-radius: 0; background: transparent; box-shadow: none; backdrop-filter: none; }
-.twin-workspace-v2 .scene-bottom-bar .view-switch button { min-height: 32px; padding: 5px 8px; color: #345a6e; font-size: 11px; }
-.twin-workspace-v2 .scene-bottom-bar .view-switch button.active { background: #337f92; color: #fff; }
-.model-tools { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 4px 12px; padding-top: 5px; }
-.model-context, .scene-camera-controls, .scene-floor-controls { display: flex; align-items: center; gap: 2px; }
-.scene-camera-controls { border-left: 1px solid var(--scene-line); padding-left: 8px; }
-.twin-workspace-v2 .scene-bottom-bar :where(button:not(.layer-row):not(.layer-all):not(.icon-button)) { display: flex; align-items: center; justify-content: center; gap: 4px; min-height: 32px; border: 0; border-radius: 5px; background: transparent; color: var(--scene-ui); cursor: pointer; }
-.twin-workspace-v2 .scene-bottom-bar .model-focus-toggle { position: static; padding: 5px 8px; font-size: 11px; }
-.scene-camera-controls button, .scene-floor-controls button { width: 32px; padding: 0; }
-.twin-workspace-v2 .scene-bottom-bar .scene-text-button { width: auto; padding: 0 7px; font-size: 11px; font-weight: 600; }
-.twin-workspace-v2 .scene-bottom-bar :where(button:not(.layer-row):not(.layer-all):not(.icon-button)):hover { background: #dcecf0; }
-.twin-workspace-v2 .scene-bottom-bar button.active, .twin-workspace-v2 .scene-bottom-bar button[aria-pressed=true] { background: #dcecf0; color: #226d81; }
-.twin-workspace-v2 .scene-bottom-bar .view-switch button.active { background: #337f92; color: #fff; }
-.scene-bottom-bar button:focus-visible { outline: 2px solid #226d81; outline-offset: 2px; }
-.twin-workspace-v2 .scene-bottom-bar button:disabled { opacity: .35; cursor: default; }
-.scene-floor-label { display: grid; place-items: center; min-width: 28px; font-size: 12px; font-weight: 700; }
-.scene-bottom-bar .icon-up { transform: rotate(180deg); }
-.scene-layer-controls { position: absolute; right: 0; bottom: 0; padding-left: 12px; border-left: 1px solid #8cabbc80; pointer-events: auto; }
-.twin-workspace-v2 .scene-bottom-bar .layers-toggle { width: 112px; height: 44px; gap: 8px; background: #337f92; color: #fff; box-shadow: 0 6px 20px #18405a26; border-radius: 9px; }
-.layers-toggle span { font-size: 12px; font-weight: 600; white-space: nowrap; }
-.twin-workspace-v2 .scene-bottom-bar .layers-toggle:is(:hover, .active) { background: #245d6e; color: #fff; }
-@container twin-main (max-width: 880px) {
-  .twin-workspace-v2 .twin-content-grid { --scene-height: 490px; padding-bottom: 12px; }
-  .scene-bottom-bar { top: calc(var(--scene-height) - 12px); bottom: auto; transform: translateY(-100%); }
-  .twin-workspace-v2 .twin-content-grid.is-focused { padding-bottom: 108px; }
-  .twin-workspace-v2 .twin-content-grid.is-focused.is-interior { padding-bottom: 146px; }
-  .is-focused .scene-bottom-bar { top: auto; bottom: 12px; transform: none; }
-}
-@container twin-main (max-width: 680px) {
-  .twin-workspace-v2 .twin-content-grid { --scene-height: 510px; padding-top: 42px; }
-  .twin-workspace-v2 .twin-world-scene { height: var(--scene-height); }
-  .twin-workspace-v2 .twin-viewport { flex-basis: 456px; height: 456px; min-height: 456px; }
-  .twin-workspace-v2 .is-focused .twin-world-scene { height: 100%; }
-  .scene-bottom-bar { flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
-  .model-toolbar { width: 100%; }
-  .scene-layer-controls { position: relative; padding-left: 8px; }
-  .twin-workspace-v2 .scene-bottom-bar .layers-toggle { height: 40px; }
-  .scene-layer-controls .layer-panel { bottom: 50px; }
-  .twin-workspace-v2 .twin-content-grid.is-focused { padding-bottom: 156px; }
-  .twin-workspace-v2 .twin-content-grid.is-focused.is-interior { padding-bottom: 194px; }
-  .twin-workspace-v2 .scene-bottom-bar .view-switch button { padding: 4px 2px; gap: 3px; font-size: 10px; }
-  .twin-workspace-v2 .scene-bottom-bar .view-switch button svg { width: 12px; }
-  .model-tools { gap: 4px; justify-content: space-between; }
-  .scene-camera-controls { padding-left: 4px; gap: 0; }
-  .scene-camera-controls button { width: 28px; }
-  .twin-workspace-v2 .scene-bottom-bar .model-focus-toggle { padding: 4px; font-size: 10px; }
-  .model-context svg { display: none; }
-  .scene-floor-controls { width: 100%; justify-content: center; padding-top: 4px; border-top: 1px solid var(--scene-line); }
-}
+/* Floating layers in the 3D viewport, one zone each:
+   left = work-order panel, right = floor picker, then the drawing / point detail beside it,
+   bottom-centre = scene controls. */
 .twin-workspace-v2 .twin-viewport { container: twin-viewport / inline-size; }
 .spatial-orders-host { position: absolute; z-index: 8; top: 8px; left: 0; bottom: 72px; width: min(300px, 100%); display: flex; flex-direction: column; pointer-events: none; }
 .spatial-orders-host > * { pointer-events: auto; }
@@ -318,10 +246,16 @@ onBeforeUnmount(() => { window.removeEventListener('pointerdown', closeLayersOnO
 .twin-workspace-v2 .point-detail { top: 8px; right: 0; left: auto; width: min(300px, 100%); max-height: calc(100% - 80px); box-sizing: border-box; }
 .twin-workspace-v2 .is-focused .spatial-orders-host { left: 18px; width: min(300px, calc(100% - 36px)); }
 .twin-workspace-v2 .is-focused :is(.plan-source-panel, .point-detail) { right: 18px; }
-.twin-workspace-v2 .is-focused .plan-source-panel { width: min(560px, calc(100% - 36px)); }
+.twin-workspace-v2 .is-focused .plan-source-panel { width: min(560px, calc(100% - 36px - 300px - 16px)); }
+.twin-workspace-v2 .scene-controls .scene-text-button { flex-shrink: 0; width: auto; padding: 0 7px; font-size: 12px; font-weight: 600; white-space: nowrap; }
 .kpi-urgent { color: #b34134; font-weight: 700; }
+.twin-workspace-v2 .scene-controls .scene-floor-label { display: grid; place-items: center; min-width: 28px; margin: 0; font-size: 12px; font-weight: 700; color: var(--scene-ui); }
+.scene-controls .icon-up { transform: rotate(180deg); }
+.scene-controls button:disabled { opacity: .35; cursor: default; }
+/* Phones pinch to zoom; drop the zoom buttons so the bar fits the scene. */
+@container twin-viewport (max-width: 460px) { .scene-controls .scene-zoom { display: none; } }
 /* Photoshop-style layer list: eye, swatch, name; hidden layers fade out. */
-.layer-panel { position: absolute; z-index: 9; right: 0; bottom: 54px; width: min(232px, calc(100vw - 48px)); padding: 8px; border: 1px solid var(--scene-line); border-radius: 9px; background: rgba(250, 253, 255, .97); color: var(--scene-ui); box-shadow: 0 10px 30px #18405a2e; backdrop-filter: blur(14px); }
+.layer-panel { position: absolute; z-index: 9; left: 50%; bottom: 74px; width: 232px; margin-left: -116px; padding: 8px; border: 1px solid var(--scene-line); border-radius: 9px; background: rgba(250, 253, 255, .97); color: var(--scene-ui); box-shadow: 0 10px 30px #18405a2e; backdrop-filter: blur(14px); }
 .layer-panel header { display: flex; align-items: center; gap: 6px; padding: 0 2px 6px; border-bottom: 1px solid var(--scene-line); }
 .layer-panel header strong { margin-right: auto; font-size: 13px; }
 .layer-panel .layer-all { padding: 3px 6px; border: 0; border-radius: 4px; background: transparent; color: #2a7f93; font-size: 11px; cursor: pointer; }
@@ -338,12 +272,35 @@ onBeforeUnmount(() => { window.removeEventListener('pointerdown', closeLayersOnO
 .layer-panel-enter-active, .layer-panel-leave-active { transition: opacity .16s ease, transform .16s ease; }
 .layer-panel-enter-from, .layer-panel-leave-to { opacity: 0; transform: translateY(6px); }
 @media (prefers-reduced-motion: reduce) { .layer-panel-enter-active, .layer-panel-leave-active { transition: none; } }
+/* One top bar: location, model view and scene options; the viewport below keeps only the model. */
+.twin-workspace-v2 .environment-bar .view-switch { display: flex; flex: 0 1 330px; width: auto; min-width: 0; margin: 0 auto; padding: 2px; border: 1px solid var(--scene-line); border-radius: 6px; background: var(--scene-ui-bg); backdrop-filter: blur(12px); }
+.twin-workspace-v2 .environment-bar .view-switch button { flex: 1; display: flex; align-items: center; justify-content: center; gap: 4px; padding: 4px 8px; border: 0; border-radius: 4px; background: transparent; color: var(--scene-ui-muted); font-size: 11px; white-space: nowrap; }
+.twin-workspace-v2 .environment-bar .view-switch button.active { color: #fff; background: #337f92; }
+.twin-workspace-v2 .environment-actions { flex-wrap: nowrap; }
 /* Dashboard: the work-order panel heads the right rail, above the device cards. */
 .twin-workspace-v2 .twin-content-grid:not(.is-focused) .twin-board-right { display: flex; flex-direction: column; gap: 8px; }
 .twin-workspace-v2 .twin-board-right > :last-child { flex: 1 1 auto; min-height: 0; height: auto; overflow: auto; }
 .rail-orders-slot { flex: 0 1 auto; min-height: 0; max-height: 58%; display: flex; flex-direction: column; }
 .rail-orders-slot:empty { display: none; }
-@container twin-main (max-width: 880px) { .rail-orders-slot { max-height: none; } }
+/* Room for the panel beside the centred scene controls. */
+@container twin-viewport (min-width: 1000px) {
+  .spatial-orders-host { bottom: 26px; }
+}
+/* Too narrow for panel and drawing side by side: the drawing spans the viewport below the panel header,
+   and the panel keeps only its header (with counts) while the drawing is open. */
+@container twin-main (max-width: 1100px) {
+  .twin-workspace-v2 .weather-simulation, .twin-workspace-v2 .environment-location > span { display: none; }
+}
+@container twin-main (max-width: 880px) {
+  .twin-workspace-v2 .environment-bar .view-switch button span { display: none; }
+  .twin-workspace-v2 .environment-bar .view-switch { flex-basis: 132px; }
+  .rail-orders-slot { max-height: none; }
+}
+@container twin-main (max-width: 680px) {
+  .twin-workspace-v2 .twin-content-grid { padding-top: 116px; }
+  .twin-workspace-v2 .environment-bar .view-switch { align-self: stretch; flex-basis: auto; width: 100%; }
+  .twin-workspace-v2 .environment-bar .view-switch button span { display: inline; }
+}
 @container twin-viewport (max-width: 759px) {
   .twin-workspace-v2 .twin-viewport .plan-source-panel { top: 64px; left: 0; right: 0; width: auto; max-height: calc(100% - 136px); }
   .twin-workspace-v2 .is-focused .twin-viewport .plan-source-panel { left: 18px; }
