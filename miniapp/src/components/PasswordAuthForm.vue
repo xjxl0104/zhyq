@@ -16,7 +16,7 @@
         <view class="auth-caption">注册后加入邀请人的团队。</view>
       </template>
       <checkbox-group @change="form.agreed = $event.detail.value.includes('agree')">
-        <label class="agreement"><checkbox value="agree" :checked="form.agreed" :disabled="busy" color="#3857f5" /><text>我同意{{ warehouse ? '云仓入驻' : '园区伙伴' }}协议与隐私协议</text></label>
+        <label class="agreement"><checkbox value="agree" :checked="form.agreed" :disabled="busy" color="#2b4fd6" /><text>我同意{{ warehouse ? '云仓入驻' : '园区伙伴' }}协议与隐私协议</text></label>
       </checkbox-group>
     </template>
     <view v-if="error" class="auth-error" role="alert">{{ error }}</view>
@@ -66,15 +66,15 @@ async function submit() {
 </script>
 
 <style scoped>
-.auth-caption { margin: 14rpx 0 24rpx; color: #58617d; font-size: 26rpx; line-height: 1.6; }
+.auth-caption { margin: 14rpx 0 24rpx; color: #6b7386; font-size: 26rpx; line-height: 1.6; }
 .field-label { margin-top: 24rpx; color: var(--park-text); font-size: 28rpx; font-weight: 500; }
 .input { font-size: 32rpx; }
 .password-field { position: relative; }
 .password-field .input { padding-right: 112rpx; }
-.password-toggle { position: absolute; right: 2rpx; top: 2rpx; bottom: 2rpx; min-width: 104rpx; margin: 0; padding: 0 20rpx; background: transparent; color: #2e47cc; font-size: 28rpx; display: flex; align-items: center; justify-content: center; }
+.password-toggle { position: absolute; right: 2rpx; top: 2rpx; bottom: 2rpx; min-width: 104rpx; margin: 0; padding: 0 20rpx; background: transparent; color: var(--park-blue); font-size: 26rpx; line-height: 1.5; display: flex; align-items: center; justify-content: center; }
 .password-toggle:focus-visible { outline: 2px solid var(--park-blue); }
-.auth-error { margin-top: 24rpx; color: #a3293e; font-size: 28rpx; line-height: 1.6; }
-.auth-link { margin-top: 12rpx; padding: 14rpx 4rpx; color: #2e47cc; background: transparent; font-size: 28rpx; line-height: 1.5; }
+.auth-error { margin-top: 24rpx; color: #c0392b; font-size: 28rpx; line-height: 1.6; }
+.auth-link { margin-top: 12rpx; padding: 14rpx 4rpx; color: var(--park-blue); background: transparent; font-size: 28rpx; line-height: 1.5; }
 .auth-link:focus-visible { outline: 2px solid var(--park-blue); }
-.agreement { display: flex; align-items: flex-start; gap: 10rpx; margin-top: 20rpx; color: #58617d; font-size: 26rpx; line-height: 1.6; }
+.agreement { display: flex; align-items: flex-start; gap: 10rpx; margin-top: 20rpx; color: #6b7386; font-size: 26rpx; line-height: 1.6; }
 </style>

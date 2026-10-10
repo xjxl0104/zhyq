@@ -3,8 +3,6 @@
     <view v-if="error" class="card"><view class="muted">{{ error }}</view><button class="btn" :disabled="loading" @click="load">重新加载</button></view>
     <view v-if="loading" class="card muted">正在读取收益…</view>
     <view v-if="home" class="card hero-card">
-      <view class="hero-title">全民营销</view>
-      <view class="hero-subtitle">连接客户、空间与云仓服务，让每一次推荐都有回响</view>
       <view class="hero-label">累计收益（元）</view>
       <view class="hero-number">{{ fmt(home.total) }}</view>
       <view class="hero-meta">
@@ -14,27 +12,27 @@
       </view>
     </view>
 
-    <view class="section-head"><text class="section-title">快捷入口</text><text class="section-link">运营服务</text></view>
+    <view class="section-head"><text class="section-title">常用功能</text></view>
     <view class="grid quick-grid">
       <view class="quick-card pressable" @click="go('/pages/referral/index')">
-        <view class="quick-icon">荐</view><view><view class="quick-title">推荐客户</view><view class="quick-desc">园区入驻 / 云仓服务</view></view>
+        <view class="quick-icon"><image src="/static/icons/user-plus.svg" mode="aspectFit" /></view><view><view class="quick-title">推荐客户</view><view class="quick-desc">园区入驻 / 云仓服务</view></view>
       </view>
       <view class="quick-card pressable" @click="go('/pages/position/index')">
-        <view class="quick-icon">岗</view><view><view class="quick-title">我的称号</view><view class="quick-desc">{{ me.positionCode || '-' }} · 查看详情</view></view>
+        <view class="quick-icon"><image src="/static/icons/medal.svg" mode="aspectFit" /></view><view><view class="quick-title">我的称号</view><view class="quick-desc">{{ me.positionCode || '-' }} · 查看详情</view></view>
       </view>
       <view class="quick-card pressable" @click="go('/pages/team/index')">
-        <view class="quick-icon">团</view><view><view class="quick-title">我的团队</view><view class="quick-desc">查看直属成员</view></view>
+        <view class="quick-icon"><image src="/static/icons/team.svg" mode="aspectFit" /></view><view><view class="quick-title">我的团队</view><view class="quick-desc">查看直属成员</view></view>
       </view>
       <view class="quick-card pressable" @click="go('/pages/withdraw/index')">
-        <view class="quick-icon">提</view><view><view class="quick-title">申请提现</view><view class="quick-desc">可提 {{ fmt(home?.withdrawable) }}</view></view>
+        <view class="quick-icon"><image src="/static/icons/wallet.svg" mode="aspectFit" /></view><view><view class="quick-title">申请提现</view><view class="quick-desc">可提 {{ fmt(home?.withdrawable) }}</view></view>
       </view>
       <view v-if="me.positionCode === 'P4' && Number(me.status) === 1" class="quick-card pressable" @click="go('/pages/allocation/index')">
-        <view class="quick-icon">价</view><view><view class="quick-title">客户定价与分佣</view><view class="quick-desc">按客户自定义每单金额</view></view>
+        <view class="quick-icon"><image src="/static/icons/sliders.svg" mode="aspectFit" /></view><view><view class="quick-title">客户定价与分佣</view><view class="quick-desc">按客户自定义每单金额</view></view>
       </view>
     </view>
-    <view class="card"><view class="muted">积分及礼品兑换规则待配置，当前收益按金额展示。</view></view>
+    <view class="home-note">积分及礼品兑换规则待配置，当前收益按金额展示。</view>
 
-    <view class="section-head"><text class="section-title">最近动态</text><text class="caption" @click="uni.navigateTo({url:'/pages/notices/index'})">消息通知 ›</text></view>
+    <view class="section-head"><text class="section-title">最近动态</text><text class="section-link" @click="uni.navigateTo({url:'/pages/notices/index'})">消息通知</text></view>
     <view v-if="home" class="card activity-card">
       <view v-if="!home.recent?.length" class="list-empty">还没有收益记录，去推荐第一位客户吧</view>
       <view class="row" v-for="(r, i) in home.recent" :key="i">
@@ -92,5 +90,7 @@ onUnmounted(() => { requestNo++ })
 .home-page { padding-top: 12rpx; }
 .quick-grid { margin: 0 24rpx; }
 .activity-card { padding-top: 14rpx; padding-bottom: 14rpx; }
-.negative { color: #c84b5c; }
+.negative { color: var(--park-danger); }
+.hero-card .hero-label { margin-top: 0; }
+.home-note { margin: 20rpx 28rpx 0; color: var(--park-muted); font-size: 23rpx; line-height: 1.6; }
 </style>

@@ -1,7 +1,7 @@
 <template>
   <view class="page-wrap login-page">
     <view class="login-hero">
-      <view class="brand-mark">P</view>
+      <view class="brand-mark"><image src="/static/icons/megaphone-white.svg" mode="aspectFit" /></view>
       <view class="login-title">全民营销</view>
       <view class="login-subtitle">连接客户与园区服务，让每一次推荐更有价值</view>
     </view>
@@ -50,12 +50,12 @@ function goDemo() { if (!busy.value) uni.navigateTo({ url: '/pages/demo/index' }
 <style scoped>
 .login-page { padding: 24rpx 0 56rpx; }
 .login-hero { padding: 30rpx 42rpx 12rpx; }
-.login-hero .brand-mark { margin-bottom: 24rpx; }
-.login-title { color: var(--park-ink); font-size: 48rpx; font-weight: 750; }
-.login-subtitle { max-width: 560rpx; margin-top: 12rpx; color: #58617d; font-size: 28rpx; line-height: 1.6; }
+.login-hero .brand-mark { margin-bottom: 32rpx; }
+.login-title { color: var(--park-ink); font-size: 48rpx; font-weight: 600; }
+.login-subtitle { margin-top: 8rpx; color: var(--park-muted); font-size: 27rpx; line-height: 1.6; }
 .login-card { padding: 32rpx; }
-.identity-link { padding: 16rpx; color: #58617d; background: transparent; font-size: 28rpx; line-height: 1.5; }
+.identity-link { margin-top: 0; padding: 16rpx; color: var(--park-muted); background: transparent; font-size: 28rpx; line-height: 1.5; }
 .demo-link { margin-top: 24rpx; padding: 18rpx; color: var(--park-blue); background: transparent; font-size: 26rpx; line-height: 1.5; }
 button:focus-visible { outline: 2px solid var(--park-blue); }
-.method-link { margin-top: 24rpx; padding: 20rpx 0; background: transparent; color: #2e47cc; font-size: 28rpx; line-height: 1.5; }
+.method-link { margin-top: 24rpx; padding: 20rpx 0; background: transparent; color: var(--park-blue); font-size: 28rpx; line-height: 1.5; }
 </style>

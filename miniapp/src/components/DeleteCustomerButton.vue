@@ -22,7 +22,7 @@ async function remove() {
     const result = await new Promise((resolve, reject) => uni.showModal({
       title: '删除推荐客户',
       content: `确认删除「${name}」？删除后将移出客户列表并释放推荐锁定。已关联合同、订单或佣金的客户无法删除。`,
-      confirmText: '确认删除', cancelText: '取消', confirmColor: '#a3293e',
+      confirmText: '确认删除', cancelText: '取消', confirmColor: '#c0392b',
       success: resolve, fail: () => reject(new Error('无法打开确认窗口，请重试'))
     }))
     if (!result.confirm) return
@@ -37,8 +37,8 @@ async function remove() {
 
 <style scoped>
 .customer-delete { margin-top: 20rpx; }
-.delete-button { min-height: 88rpx; margin: 0; padding: 0 24rpx; color: #a3293e; border: 1rpx solid #ecc9d0; border-radius: 16rpx; background: #fff; font-size: 28rpx; line-height: 88rpx; }
+.delete-button { min-height: 88rpx; margin: 0; padding: 0 24rpx; color: #c0392b; border: 1rpx solid #ecc9d0; border-radius: 16rpx; background: #fff; font-size: 28rpx; line-height: 88rpx; }
 .delete-button::after { border: 0; }
 .delete-button[disabled] { opacity: .5; }
-.delete-error { margin-top: 14rpx; color: #a3293e; font-size: 28rpx; line-height: 1.6; overflow-wrap: anywhere; }
+.delete-error { margin-top: 14rpx; color: #c0392b; font-size: 28rpx; line-height: 1.6; overflow-wrap: anywhere; }
 </style>

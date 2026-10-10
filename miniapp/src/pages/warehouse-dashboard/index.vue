@@ -91,7 +91,7 @@ onShow(load)
 
 <style scoped>
 @import '../../styles/warehouse.css';
-.entry { display: block; width: 100%; padding: 24rpx 0; text-align: left; background: transparent; color: #17203e; border-bottom: 1rpx solid #e6eaf3; border-radius: 0; font-size: 32rpx; line-height: 1.5; }
+.entry { display: block; width: 100%; padding: 24rpx 0; text-align: left; background: transparent; color: #141a2e; border-bottom: 1rpx solid #e8eaef; border-radius: 0; font-size: 32rpx; line-height: 1.5; }
 .entry .wh-note { margin: 6rpx 0; font-size: 26rpx; }
 .hero-subtitle { margin-top: 20rpx; color: #dce3ff; font-size: 28rpx; line-height: 1.6; }
 .profile-prompt .wh-note { margin: 12rpx 0 20rpx; }

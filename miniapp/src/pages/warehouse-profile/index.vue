@@ -109,8 +109,8 @@ onShow(load)
 
 <style scoped>
 @import '../../styles/warehouse.css';
-.profile-placeholder { color: #58617d; }
-.profile-notice { margin-top: 20rpx; padding: 20rpx; border-radius: 12rpx; background: #eef1ff; color: #283252; font-size: 28rpx; line-height: 1.7; }
+.profile-placeholder { color: #6b7386; }
+.profile-notice { margin-top: 20rpx; padding: 20rpx; border-radius: 12rpx; background: #eef2fd; color: #141a2e; font-size: 28rpx; line-height: 1.7; }
 .back-button { margin-top: 20rpx; }
-.wh-field[disabled] { background: #f4f6fb; color: #58617d; }
+.wh-field[disabled] { background: #f4f6fb; color: #6b7386; }
 </style>
