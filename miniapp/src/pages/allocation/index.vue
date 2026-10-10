@@ -41,7 +41,7 @@
           <view class="amount-field"><input id="owner-price" class="input" v-model="form.ownerPerOrder" type="digit" :disabled="!editable" placeholder="填写本人金额，可为 0" @input="clearFeedback" /><text>元／单</text></view>
         </view>
         <view class="card">
-          <view class="row form-heading"><text class="section-title">分配给其他人员</text><switch :checked="distribute" :disabled="!editable" color="#3857f5" @change="toggleDistribution" aria-label="分配给其他人员" /></view>
+          <view class="row form-heading"><text class="section-title">分配给其他人员</text><switch :checked="distribute" :disabled="!editable" color="#2b4fd6" @change="toggleDistribution" aria-label="分配给其他人员" /></view>
           <view class="pricing-note">可不分配；开启后最多选择 2 位具体受益人，并分别填写金额。</view>
           <template v-if="distribute">
             <view v-for="(row, index) in form.beneficiaries" :key="row.key" class="beneficiary-row">

@@ -39,5 +39,5 @@ async function open(file) { error.value = ''; try { await warehouseApi.openFile(
 </script>
 <style scoped>
 @import '../styles/warehouse.css';
-.file-name { flex: 1; min-width: 0; background: transparent; color: #2e47cc; text-align: left; font-size: 28rpx; line-height: 1.5; overflow-wrap: anywhere; padding: 12rpx 0; }
+.file-name { flex: 1; min-width: 0; background: transparent; color: #2b4fd6; text-align: left; font-size: 28rpx; line-height: 1.5; overflow-wrap: anywhere; padding: 12rpx 0; }
 </style>

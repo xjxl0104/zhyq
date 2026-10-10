@@ -92,5 +92,5 @@ async function saveAccount() {
 function logout() { token.clear(); uni.reLaunch({url:'/pages/entry/index?select=1'}) }
 </script>
 <style scoped>
-.error{color:#a3293e;line-height:1.6;margin:18rpx 0}.review-note{margin:20rpx 0;line-height:1.6;overflow-wrap:anywhere}.menu-row{display:flex;justify-content:space-between;gap:20rpx;background:transparent;padding:26rpx 0;text-align:left;font-size:30rpx;line-height:1.5;border-bottom:1rpx solid #e2e7f1;border-radius:0}.menu-row text{color:#58617d}.menu-row:last-child{border-bottom:0}.input{font-size:32rpx}.row{flex-wrap:wrap;gap:12rpx}
+.error{color:#c0392b;line-height:1.6;margin:18rpx 0}.review-note{margin:20rpx 0;line-height:1.6;overflow-wrap:anywhere}.menu-row{display:flex;justify-content:space-between;align-items:center;gap:20rpx;margin:0;background:transparent;padding:28rpx 0;text-align:left;font-size:29rpx;font-weight:400;line-height:1.5;border-bottom:1rpx solid #e8eaef;border-radius:0}.menu-row text{color:#6b7386;font-size:25rpx}.menu-row:last-child{border-bottom:0}.row{flex-wrap:wrap;gap:12rpx}
 </style>

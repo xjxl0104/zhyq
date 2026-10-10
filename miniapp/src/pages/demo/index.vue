@@ -36,9 +36,9 @@
           <view class="metric-caption">累计收益（元）</view><view class="metric-number">12,860.50</view>
           <view class="metric-foot"><text>可提现 8,240.00</text><text>本月 +18.6%</text></view>
         </view>
-        <view class="demo-stat-grid"><view v-for="item in partnerStats" :key="item.label" class="demo-stat"><view class="stat-icon" :class="item.tone">{{ item.icon }}</view><view class="stat-value">{{ item.value }}</view><view class="stat-label">{{ item.label }}</view></view></view>
+        <view class="demo-stat-grid"><view v-for="item in partnerStats" :key="item.label" class="demo-stat"><view class="stat-icon" :class="item.tone"><image :src="iconSrc(item.icon)" mode="aspectFit" /></view><view class="stat-value">{{ item.value }}</view><view class="stat-label">{{ item.label }}</view></view></view>
         <view class="demo-section-heading compact"><view class="demo-section-title">快捷体验</view><text class="demo-section-link">点击卡片查看</text></view>
-        <view class="demo-action-grid"><view v-for="item in partnerActions" :key="item.key" class="demo-action" @click="setSection(item.key)"><view class="action-icon" :class="item.tone">{{ item.icon }}</view><view class="action-name">{{ item.label }}</view><view class="action-desc">{{ item.desc }}</view><text class="action-arrow">›</text></view></view>
+        <view class="demo-action-grid"><view v-for="item in partnerActions" :key="item.key" class="demo-action" @click="setSection(item.key)"><view class="action-icon" :class="item.tone"><image :src="iconSrc(item.icon)" mode="aspectFit" /></view><view class="action-name">{{ item.label }}</view><view class="action-desc">{{ item.desc }}</view><text class="action-arrow">›</text></view></view>
         <view class="demo-card"><view class="card-title-row"><view class="demo-card-title">最近动态</view><text class="demo-muted">示例记录</text></view><view v-for="item in partnerActivity" :key="item.title" class="activity-row"><view class="activity-mark">{{ item.icon }}</view><view class="activity-main"><view class="activity-title">{{ item.title }}</view><view class="activity-time">{{ item.time }}</view></view><view class="activity-amount">{{ item.amount }}</view></view></view>
       </view>
 
@@ -77,9 +77,9 @@
       <view v-if="section === 'home'">
         <view class="demo-section-heading"><view><view class="demo-section-label">WAREHOUSE WORKSPACE</view><view class="demo-section-title">云仓商家看板</view></view><text class="demo-date">本月演示</text></view>
         <view class="warehouse-demo-hero"><view class="warehouse-status">● 运营中</view><view class="warehouse-demo-title">星河智能仓</view><view class="warehouse-demo-subtitle">加盟进度、订单与结算，一站掌握</view><view class="warehouse-progress"><view class="progress-fill" /><view class="progress-label"><text>入驻进度</text><text>72%</text></view></view></view>
-        <view class="demo-stat-grid"><view v-for="item in warehouseStats" :key="item.label" class="demo-stat"><view class="stat-icon" :class="item.tone">{{ item.icon }}</view><view class="stat-value">{{ item.value }}</view><view class="stat-label">{{ item.label }}</view></view></view>
+        <view class="demo-stat-grid"><view v-for="item in warehouseStats" :key="item.label" class="demo-stat"><view class="stat-icon" :class="item.tone"><image :src="iconSrc(item.icon)" mode="aspectFit" /></view><view class="stat-value">{{ item.value }}</view><view class="stat-label">{{ item.label }}</view></view></view>
         <view class="demo-section-heading compact"><view class="demo-section-title">业务入口</view><text class="demo-section-link">演示可浏览</text></view>
-        <view class="demo-action-grid"><view v-for="item in warehouseActions" :key="item.key" class="demo-action" @click="setSection(item.key)"><view class="action-icon" :class="item.tone">{{ item.icon }}</view><view class="action-name">{{ item.label }}</view><view class="action-desc">{{ item.desc }}</view><text class="action-arrow">›</text></view></view>
+        <view class="demo-action-grid"><view v-for="item in warehouseActions" :key="item.key" class="demo-action" @click="setSection(item.key)"><view class="action-icon" :class="item.tone"><image :src="iconSrc(item.icon)" mode="aspectFit" /></view><view class="action-name">{{ item.label }}</view><view class="action-desc">{{ item.desc }}</view><text class="action-arrow">›</text></view></view>
         <view class="demo-card"><view class="card-title-row"><view class="demo-card-title">订单动态</view><text class="demo-muted">最近更新</text></view><view v-for="item in warehouseActivity" :key="item.title" class="activity-row"><view class="activity-mark warehouse-mark">{{ item.icon }}</view><view class="activity-main"><view class="activity-title">{{ item.title }}</view><view class="activity-time">{{ item.time }}</view></view><view class="activity-amount">{{ item.status }}</view></view></view>
       </view>
 
@@ -129,6 +129,8 @@ export default { mixins: [appShareMixin] }
 <script setup>
 import { computed, reactive, ref } from 'vue'
 
+const ICON_FILES = { 客: 'users', 锁: 'lock', 佣: 'coins', 团: 'team', 单: 'clipboard', 仓: 'warehouse', 结: 'wallet', 接: 'link', 荐: 'user-plus', 收: 'coins', 信: 'bell', 进: 'check' }
+const iconSrc = (key) => `/static/icons/${ICON_FILES[key] || 'info'}.svg`
 const role = ref('partner')
 const section = ref('home')
 const selectedCustomer = ref(null)
@@ -283,4 +285,49 @@ function toast(message) { notice.value = message; setTimeout(() => { notice.valu
 .warehouse-status { color: #aaf0d7; font-size: 22rpx; }.warehouse-demo-hero { background: linear-gradient(135deg, #0f3b48, #16798b); }.warehouse-demo-title { margin-top: 13rpx; font-size: 40rpx; font-weight: 750; }.warehouse-demo-subtitle { margin-top: 6rpx; color: rgba(255,255,255,.7); font-size: 23rpx; }.warehouse-progress { margin-top: 28rpx; }.progress-fill { width: 72%; height: 10rpx; border-radius: 999rpx; background: #7de1d1; }.progress-label { display: flex; justify-content: space-between; margin-top: 8rpx; color: rgba(255,255,255,.7); font-size: 20rpx; }.order-card { padding: 24rpx; }.order-id { color: #253052; font-size: 25rpx; font-weight: 700; }.order-info { align-items: flex-start; margin-top: 22rpx; padding-top: 20rpx; border-top: 1rpx solid #edf0f6; }.order-info > view { flex: 1; }.order-info > view:not(:last-child) { border-right: 1rpx solid #edf0f6; }.order-info > view + view { padding-left: 16rpx; }.erp-row { justify-content: flex-start; padding: 22rpx 0; border-bottom: 1rpx solid #edf0f6; }.erp-icon { display: flex; align-items: center; justify-content: center; width: 58rpx; height: 58rpx; color: #16869a; border-radius: 17rpx; background: #eaf9fa; font-size: 22rpx; font-weight: 700; }.erp-main { margin-right: auto; }.timeline-row { display: flex; align-items: flex-start; gap: 16rpx; position: relative; padding: 22rpx 0; }.timeline-row:not(:last-child)::after { position: absolute; top: 55rpx; left: 19rpx; width: 2rpx; height: calc(100% - 28rpx); background: #e1e6f0; content: ''; }.timeline-dot { display: flex; align-items: center; justify-content: center; width: 40rpx; height: 40rpx; flex: 0 0 40rpx; z-index: 1; color: #8993a8; border: 2rpx solid #d5dce9; border-radius: 50%; background: #fff; font-size: 20rpx; }.timeline-dot.done { color: #fff; border-color: #39b894; background: #39b894; }.timeline-main { flex: 1; }.timeline-status { color: #8993a8; font-size: 21rpx; }.done-text { color: #14876e; }.warehouse-settle-hero { background: linear-gradient(135deg, #633f15, #b9771a); }
 .demo-boundary { display: flex; gap: 14rpx; margin: 28rpx 24rpx 0; padding: 20rpx; border: 1rpx solid #e7eaf2; border-radius: 18rpx; background: #fff; }.boundary-icon { display: flex; align-items: center; justify-content: center; width: 40rpx; height: 40rpx; flex: 0 0 40rpx; color: #687592; border-radius: 50%; background: #eef1f7; }.boundary-title { color: #415071; font-size: 23rpx; font-weight: 700; }.boundary-copy { margin-top: 5rpx; color: #8b95aa; font-size: 21rpx; line-height: 1.5; }
 .demo-sheet-mask { position: fixed; inset: 0; z-index: 10; display: flex; align-items: flex-end; background: rgba(17,25,54,.36); }.demo-sheet { width: 100%; padding: 20rpx 28rpx 42rpx; border-radius: 30rpx 30rpx 0 0; background: #fff; box-shadow: 0 -12rpx 36rpx rgba(17,25,54,.18); }.sheet-handle { width: 72rpx; height: 8rpx; margin: 0 auto 24rpx; border-radius: 999rpx; background: #dfe4ee; }.sheet-note { margin: 8rpx 0 16rpx; }.sheet-cancel { width: 100%; margin-top: 12rpx; padding: 18rpx; color: #687592; background: transparent; font-size: 26rpx; line-height: 1.4; }.demo-toast { position: fixed; left: 50%; bottom: 56rpx; z-index: 20; width: calc(100% - 48rpx); max-width: 620rpx; padding: 17rpx 24rpx; color: #fff; border-radius: 999rpx; background: rgba(17,25,54,.9); font-size: 23rpx; transform: translateX(-50%); white-space: normal; text-align: center; overflow-wrap: anywhere; }
+/* 视觉收敛：单一主色、去渐变与装饰英文、线性图标 */
+.demo-page { background: var(--park-bg); }
+.demo-kicker, .demo-eyebrow, .demo-section-label, .demo-hero-glow, .demo-nav-icon { display: none; }
+.demo-mode { margin-top: 0; color: var(--park-muted); font-size: 24rpx; font-weight: 500; }
+.demo-live-dot { background: var(--park-ok); box-shadow: none; }
+.demo-topbar { align-items: center; }
+.demo-exit { min-height: 0; border: 0; border-radius: 12rpx; background: #e6e9ef; color: var(--park-text); }
+.demo-hero { border-radius: 20rpx; background: var(--park-ink); box-shadow: none; }
+.demo-title { margin-top: 0; font-size: 44rpx; font-weight: 600; letter-spacing: 0; }
+.demo-safe-note { padding: 0; color: rgba(255,255,255,.6); border: 0; border-radius: 0; background: transparent; font-size: 23rpx; }
+.role-switch { border-radius: 16rpx; background: #e6e9ef; }
+.role-switch-item { min-height: 72rpx; border-radius: 12rpx; color: var(--park-muted); }
+.role-switch-item.active { color: var(--park-ink); box-shadow: 0 2rpx 8rpx rgba(20,26,46,.08); font-weight: 600; }
+.demo-nav-item { margin-right: 36rpx; color: var(--park-muted); font-size: 27rpx; }
+.demo-nav-item.active { color: var(--park-ink); border-bottom-color: var(--park-ink); font-weight: 600; }
+.demo-section-title { margin-top: 0; color: var(--park-ink); font-size: 34rpx; font-weight: 600; letter-spacing: 0; }
+.demo-section-link, .demo-date { color: var(--park-muted); font-size: 24rpx; }
+.demo-metric-hero, .warehouse-demo-hero, .warehouse-settle-hero { border-radius: 20rpx; background: var(--park-ink); box-shadow: none; }
+.metric-number { font-size: 64rpx; font-weight: 600; letter-spacing: -1rpx; font-variant-numeric: tabular-nums; }
+.demo-stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16rpx; }
+.demo-stat { display: grid; grid-template-columns: auto 1fr; column-gap: 20rpx; align-items: center; min-height: 0; padding: 24rpx; border-color: var(--park-line); border-radius: 20rpx; box-shadow: none; }
+.demo-stat .stat-icon { grid-row: span 2; }
+.stat-icon, .action-icon, .stat-icon.blue, .stat-icon.cyan, .stat-icon.gold, .stat-icon.purple, .action-icon.blue, .action-icon.cyan, .action-icon.gold, .action-icon.purple { width: 72rpx; height: 72rpx; border-radius: 18rpx; background: var(--park-blue-soft); }
+.stat-icon image, .action-icon image { width: 40rpx; height: 40rpx; }
+.stat-value { margin-top: 0; color: var(--park-ink); font-size: 36rpx; font-weight: 600; font-variant-numeric: tabular-nums; }
+.stat-label { margin-top: 0; color: var(--park-muted); font-size: 23rpx; }
+.demo-action-grid { gap: 16rpx; }
+.demo-action { display: grid; grid-template-columns: auto 1fr; column-gap: 20rpx; align-items: center; min-height: 0; padding: 24rpx; border-color: var(--park-line); box-shadow: none; }
+.demo-action .action-icon { grid-row: span 2; }
+.action-name { margin-top: 0; color: var(--park-ink); font-size: 28rpx; font-weight: 600; }
+.action-desc { margin-top: 0; color: var(--park-muted); font-size: 22rpx; }
+.action-arrow { display: none; }
+.demo-card { margin: 20rpx 24rpx; padding: 28rpx; border-color: var(--park-line); border-radius: 20rpx; box-shadow: none; }
+.demo-card-title { color: var(--park-ink); font-size: 30rpx; font-weight: 600; }
+.demo-muted, .activity-time { color: var(--park-muted); font-size: 23rpx; }
+.activity-row { border-bottom-color: var(--park-line); }
+.activity-mark, .warehouse-mark { color: var(--park-blue); border-radius: 16rpx; background: var(--park-blue-soft); }
+.activity-title { color: var(--park-ink); font-size: 27rpx; font-weight: 500; }
+.activity-amount { color: var(--park-ink); font-size: 26rpx; font-weight: 600; font-variant-numeric: tabular-nums; }
+.status-tag, .status-tag.blue { color: var(--park-blue); border-radius: 8rpx; background: var(--park-blue-soft); font-size: 22rpx; }
+.status-tag.ok { color: var(--park-ok); background: #e6f4ee; }
+.status-tag.gold { color: #8a5a00; background: #fdf3dc; }
+.mini-action { min-height: 0; color: var(--park-blue); border: 0; border-radius: 12rpx; background: var(--park-blue-soft); font-size: 24rpx; }
+.customer-tip { background: #eceef3; }
+.demo-boundary { border-color: var(--park-line); border-radius: 20rpx; }
 </style>

@@ -49,7 +49,7 @@ async function makePoster(){
     ctx.drawImage(code,70,132,180,180)
     ctx.setFillStyle('#15254a');ctx.setFontSize(16);ctx.fillText('微信扫码，加入伙伴团队',64,337)
     ctx.setFontSize(14);ctx.fillText('邀请码',30,390);ctx.setFontSize(26);ctx.fillText(info.value.inviteCode,104,392)
-    ctx.setFillStyle('#58617d');ctx.setFontSize(12);ctx.fillText('推荐客户 · 查看进度 · 团队协作',30,430)
+    ctx.setFillStyle('#6b7386');ctx.setFontSize(12);ctx.fillText('推荐客户 · 查看进度 · 团队协作',30,430)
     await new Promise(resolve=>ctx.draw(false,resolve))
     const result=await new Promise((resolve,reject)=>uni.canvasToTempFilePath({canvasId:'invitePoster',width:320,height:460,destWidth:640,destHeight:920,success:resolve,fail:reject},instance.proxy))
     poster.value=result.tempFilePath
@@ -69,4 +69,4 @@ async function save(){
   // #endif
 }
 </script>
-<style scoped>.invite-code{font-size:48rpx;font-weight:600;letter-spacing:4rpx;margin:32rpx 0;color:#263c78}.poster{width:100%;margin-top:24rpx}.error{color:#a3293e;margin:20rpx 0;line-height:1.6}.canvas{position:absolute;left:-10000px;top:0}</style>
+<style scoped>.invite-code{font-size:48rpx;font-weight:600;letter-spacing:4rpx;margin:32rpx 0;color:#263c78}.poster{width:100%;margin-top:24rpx}.error{color:#c0392b;margin:20rpx 0;line-height:1.6}.canvas{position:absolute;left:-10000px;top:0}</style>
