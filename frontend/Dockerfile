@@ -13,5 +13,6 @@ RUN node -e 'if (!/^[0-9a-f]{40}$/i.test(process.env.VITE_GIT_SHA || "")) throw 
 # ---- 运行阶段:Nginx 托管 + 反代 /api ----
 FROM nginx:1.27-alpine
 COPY --from=build /build/dist /usr/share/nginx/html
+COPY security-headers.conf /etc/nginx/snippets/security-headers.conf
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 EXPOSE 80
