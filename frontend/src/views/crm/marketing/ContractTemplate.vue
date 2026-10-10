@@ -1,5 +1,5 @@
 <template>
-  <div class="page-container">
+  <div class="page-container mkt-page">
     <div class="table-card">
       <div class="toolbar">
         <el-button type="primary" @click="openDialog()"><el-icon><Plus /></el-icon>新增模板</el-button>

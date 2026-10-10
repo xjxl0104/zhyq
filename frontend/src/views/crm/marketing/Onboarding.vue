@@ -1,5 +1,5 @@
 <template>
-  <div class="page-container">
+  <div class="page-container mkt-page">
     <el-alert v-if="error" :title="error" type="error" :closable="false" /><div class="table-card">
       <div class="toolbar">
         <span class="title">加盟申请(未上线的云仓)</span>

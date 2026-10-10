@@ -1,5 +1,5 @@
 <template>
-  <div class="page-container">
+  <div class="page-container mkt-page">
     <el-alert :title="isBill ? '按园区签合同汇总出库服务费：云仓核对 → 财务登记实际到账 → 生成云仓应付结算。' : '按已收款账单和云仓成本费率生成应付结算：云仓确认 → 财务线下付款 → 上传真实凭证。'" type="info" :closable="false" show-icon class="notice" />
     <div class="search-bar">
       <el-form :inline="true" :model="query">
