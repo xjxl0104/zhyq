@@ -1,0 +1,47 @@
+/* 全民营销后台页面的统一细节，只在 .mkt-page 内生效，不影响其他模块 */
+.mkt-page {
+  .toolbar { gap: 12px; flex-wrap: wrap; }
+  .toolbar .hint,
+  .rule-note {
+    color: var(--text-secondary);
+    font-size: 13px;
+    line-height: 1.6;
+  }
+  .toolbar .hint--block {
+    flex-basis: 100%;
+    padding: 10px 14px;
+    border-radius: var(--radius-sm);
+    background: var(--bg-subtle);
+  }
+  .toolbar .title { color: var(--text-title); font-size: 15px; font-weight: 600; }
+
+  .el-table { font-variant-numeric: tabular-nums; }
+  .el-table .cell { line-height: 1.5; }
+  .el-table .el-button.is-link { font-weight: 400; padding: 2px 0; }
+  .el-table .el-button.is-link + .el-button.is-link,
+  .el-table .el-button.is-link + .el-dropdown,
+  .el-table .el-dropdown + .el-button.is-link { margin-left: 14px; }
+  .el-table .el-dropdown { vertical-align: baseline; }
+  .el-table .el-button--success.is-link,
+  .el-table .el-button--warning.is-link { color: var(--el-color-primary); }
+  .el-table .el-button--danger.is-link { color: var(--text-secondary); }
+  .el-table .el-button--danger.is-link:hover { color: var(--el-color-danger); }
+
+  .el-tag {
+    border-color: transparent;
+    border-radius: 6px;
+    font-weight: 500;
+  }
+
+  > .hint,
+  .table-card > .hint {
+    margin-top: 16px;
+    padding: 12px 16px;
+    color: var(--text-secondary);
+    border-radius: var(--radius-sm);
+    background: var(--bg-subtle);
+    font-size: 13px;
+    line-height: 1.7;
+  }
+  .table-card > .hint p { margin: 0; }
+}

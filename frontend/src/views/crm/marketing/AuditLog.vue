@@ -1,5 +1,5 @@
 <template>
-  <div class="page-container">
+  <div class="page-container mkt-page">
     <div class="search-bar">
       <el-form :inline="true" :model="query">
         <el-form-item label="动作"><el-input v-model="query.action" placeholder="如 commission.void" clearable style="width: 200px" /></el-form-item>

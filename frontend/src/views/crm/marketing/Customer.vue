@@ -1,5 +1,5 @@
 <template>
-  <div class="page-container">
+  <div class="page-container mkt-page">
     <div class="search-bar">
       <el-form :inline="true" :model="query">
         <el-form-item label="名称/手机"><el-input v-model="query.keyword" clearable style="width: 180px" /></el-form-item>
@@ -42,15 +42,13 @@
           <template #default="{ row }"><div>{{ row.assignedWarehouseName || '尚未分派' }}</div><div class="project-note">{{ ASSIGN[row.warehouseAssignmentStatus || 0] }}</div><div v-if="row.intendedWarehouseName" class="project-note">意向：{{ row.intendedWarehouseName }}</div></template>
         </el-table-column>
         <el-table-column prop="publicProgress" label="伙伴可见进度" min-width="155" show-overflow-tooltip />
-        <el-table-column label="操作" :width="canDelete ? 380 : 325" fixed="right">
+        <el-table-column label="操作" :width="canDelete ? 270 : 215" fixed="right">
           <template #default="{ row }">
             <el-button v-if="row.bizLine !== 1" link type="primary" @click="openPricing(row)">按单佣金</el-button>
-            <el-button link type="primary" @click="openAssignment(row)">分派云仓</el-button>
             <el-button link type="primary" @click="openProgress(row)">更新进度</el-button>
-            <el-button link type="primary" @click="openLock(row)">锁定</el-button>
             <el-dropdown trigger="click" @command="handleMore($event, row)">
               <el-button link type="primary" class="more-action">更多</el-button>
-              <template #dropdown><el-dropdown-menu><el-dropdown-item command="grade">客户评级</el-dropdown-item><el-dropdown-item command="referrer">设置推荐人</el-dropdown-item><el-dropdown-item command="sign">签约方式</el-dropdown-item><el-dropdown-item v-if="canEdit && row.status === 1" command="lose" divided>标记流失</el-dropdown-item><el-dropdown-item v-if="canEdit && row.status === 3" command="restore" divided>恢复跟进</el-dropdown-item></el-dropdown-menu></template>
+              <template #dropdown><el-dropdown-menu><el-dropdown-item command="assign">分派云仓</el-dropdown-item><el-dropdown-item command="lock">锁定归属</el-dropdown-item><el-dropdown-item command="grade" divided>客户评级</el-dropdown-item><el-dropdown-item command="referrer">设置推荐人</el-dropdown-item><el-dropdown-item command="sign">签约方式</el-dropdown-item><el-dropdown-item v-if="canEdit && row.status === 1" command="lose" divided>标记流失</el-dropdown-item><el-dropdown-item v-if="canEdit && row.status === 3" command="restore" divided>恢复跟进</el-dropdown-item></el-dropdown-menu></template>
             </el-dropdown>
             <el-button v-if="canDelete" link type="danger" :disabled="removal.busy" @click="openDelete(row)">删除</el-button>
           </template>
@@ -232,6 +230,8 @@ const pricing = reactive({ visible: false, row: null })
 function openPricing(row) { Object.assign(pricing, { visible: true, row }) }
 
 function handleMore(action, row) {
+  if (action === 'assign') return openAssignment(row)
+  if (action === 'lock') return openLock(row)
   if (action === 'grade') return openGrade(row)
   if (action === 'referrer') return openReferrer(row)
   if (action === 'sign') return openSignMode(row)
