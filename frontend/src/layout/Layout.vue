@@ -80,6 +80,7 @@
       </el-aside>
       <el-main ref="mainRef" id="main-content" tabindex="-1">
         <span class="sr-only" aria-live="polite">{{ currentTitle }}</span>
+        <SectionTabs v-if="ready && navGroup && navGroup.tabs.length > 1" :tabs="navGroup.tabs" :label="navGroup.title" />
         <router-view v-if="ready" v-slot="{ Component }">
           <transition name="fade-slide" mode="out-in">
             <keep-alive v-if="alive" :exclude="['TwinDashboard']"><component :is="Component" :key="route.fullPath" /></keep-alive>
@@ -98,6 +99,8 @@ import { useRoute, useRouter } from 'vue-router'
 import request from '@/utils/request'
 import { useProjectStore } from '@/stores/project'
 import { useAccessStore } from '@/stores/access'
+import { navigationGroup } from '@/utils/navigationAccess'
+import SectionTabs from './SectionTabs.vue'
 import GrainientBg from '@/components/GrainientBg.vue'
 import StrokeBrand from './StrokeBrand.vue'
 import MenuItem from './MenuItem.vue'
@@ -158,7 +161,9 @@ async function onProjectSwitched() {
   await nextTick()
   alive.value = true
 }
-const activePath = computed(() => route.path)
+const navGroup = computed(() => navigationGroup(route.path, accessStore.navigation))
+// 合并入口下的页面,侧边栏高亮落在该入口上。
+const activePath = computed(() => navGroup.value?.path || route.path)
 const currentTitle = computed(() => route.meta.title || '')
 const uname = ref(localStorage.getItem('zhyq_user') || '管理员')
 
