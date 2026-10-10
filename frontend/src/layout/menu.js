@@ -37,24 +37,25 @@ export const menuTree = [
         ]
       },
       {
+        // 子项很多:侧边栏按 group 合并成一个入口,同组页面在页内用标签切换(见 navigationAccess / SectionTabs)。
         title: '全民营销', icon: 'Share', children: [
-          { title: '看板', path: '/crm/marketing/dashboard' },
-          { title: '伙伴管理', path: '/crm/marketing/promoter' },
-          { title: '角色与称号', path: '/crm/marketing/position' },
-          { title: '客户评级', path: '/crm/marketing/grade' },
-          { title: '客户管理', path: '/crm/marketing/customer' },
-          { title: '服务合同', path: '/crm/marketing/contract' },
-          { title: '合同模板', path: '/crm/marketing/template' },
-          { title: '云仓管理', path: '/crm/marketing/warehouse' },
-          { title: '加盟申请', path: '/crm/marketing/onboarding' },
-          { title: 'ERP 对接', path: '/crm/marketing/erp' },
-          { title: '计佣订单', path: '/crm/marketing/order' },
-          { title: '佣金结算', path: '/crm/marketing/commission' },
-          { title: '服务费账单', path: '/crm/marketing/bill' },
-          { title: '云仓结算', path: '/crm/marketing/settlement' },
-          { title: '提现审核', path: '/crm/marketing/withdrawal' },
-          { title: '规则参数', path: '/crm/marketing/setting' },
-          { title: '审计日志', path: '/crm/marketing/audit' }
+          { title: '看板', path: '/crm/marketing/dashboard', group: '看板' },
+          { title: '伙伴管理', path: '/crm/marketing/promoter', group: '伙伴' },
+          { title: '角色与称号', path: '/crm/marketing/position', group: '伙伴' },
+          { title: '客户管理', path: '/crm/marketing/customer', group: '客户' },
+          { title: '客户评级', path: '/crm/marketing/grade', group: '客户' },
+          { title: '云仓管理', path: '/crm/marketing/warehouse', group: '云仓' },
+          { title: '加盟申请', path: '/crm/marketing/onboarding', group: '云仓' },
+          { title: 'ERP 对接', path: '/crm/marketing/erp', group: '云仓' },
+          { title: '服务合同', path: '/crm/marketing/contract', group: '合同' },
+          { title: '合同模板', path: '/crm/marketing/template', group: '合同' },
+          { title: '计佣订单', path: '/crm/marketing/order', group: '结算' },
+          { title: '佣金结算', path: '/crm/marketing/commission', group: '结算' },
+          { title: '服务费账单', path: '/crm/marketing/bill', group: '结算' },
+          { title: '云仓结算', path: '/crm/marketing/settlement', group: '结算' },
+          { title: '提现审核', path: '/crm/marketing/withdrawal', group: '结算' },
+          { title: '规则参数', path: '/crm/marketing/setting', group: '设置' },
+          { title: '审计日志', path: '/crm/marketing/audit', group: '设置' }
         ]
       },
       {
