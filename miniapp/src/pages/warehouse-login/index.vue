@@ -1,7 +1,7 @@
 <template>
   <view class="page-wrap warehouse-login-page">
     <view class="warehouse-login-hero">
-      <view class="brand-mark">W</view>
+      <view class="brand-mark"><image src="/static/icons/warehouse-white.svg" mode="aspectFit" /></view>
       <view class="login-title">云仓商家端</view>
       <view class="login-subtitle">加盟进度、ERP 接入、订单与结算，一站式掌握</view>
     </view>
@@ -43,12 +43,12 @@ function goDemo() { if (!busy.value) uni.navigateTo({ url: '/pages/demo/index' }
 <style scoped>
 .warehouse-login-page { padding: 24rpx 0 56rpx; }
 .warehouse-login-hero { padding: 30rpx 42rpx 12rpx; }
-.warehouse-login-hero .brand-mark { margin-bottom: 24rpx; background: #248596; }
-.login-title { color: var(--park-ink); font-size: 48rpx; font-weight: 750; }
-.login-subtitle { margin-top: 12rpx; color: #58617d; font-size: 28rpx; line-height: 1.6; }
+.warehouse-login-hero .brand-mark { margin-bottom: 32rpx; }
+.login-title { color: var(--park-ink); font-size: 48rpx; font-weight: 600; }
+.login-subtitle { margin-top: 12rpx; color: #6b7386; font-size: 28rpx; line-height: 1.6; }
 .login-card { padding: 32rpx; }
-.identity-link { padding: 16rpx; color: #58617d; background: transparent; font-size: 28rpx; line-height: 1.5; }
+.identity-link { padding: 16rpx; color: #6b7386; background: transparent; font-size: 28rpx; line-height: 1.5; }
 .demo-link { margin-top: 24rpx; padding: 18rpx; color: var(--park-blue); background: transparent; font-size: 26rpx; line-height: 1.5; }
 button:focus-visible { outline: 2px solid var(--park-blue); }
-.method-link { margin-top: 24rpx; padding: 20rpx 0; background: transparent; color: #2e47cc; font-size: 28rpx; line-height: 1.5; }
+.method-link { margin-top: 24rpx; padding: 20rpx 0; background: transparent; color: #2b4fd6; font-size: 28rpx; line-height: 1.5; }
 </style>

@@ -1,37 +1,35 @@
 <template>
   <view class="page-wrap entry-page">
     <view class="entry-hero">
-      <view class="brand-mark">D</view>
-      <view class="eyebrow">DIPARK · SMART PARK</view>
+      <view class="brand-mark"><image src="/static/icons/megaphone-white.svg" mode="aspectFit" /></view>
       <view class="entry-title">选择你的身份</view>
       <view class="entry-subtitle">进入全民营销或云仓商家工作台</view>
     </view>
 
     <view class="card role-card pressable" @click="goPartner">
-      <view class="role-mark partner">P</view>
+      <view class="icon-box"><image src="/static/icons/megaphone.svg" mode="aspectFit" /></view>
       <view class="role-main">
         <view class="role-title">全民营销</view>
         <view class="role-desc">推荐客户、查看收益与团队</view>
       </view>
-      <view class="role-arrow">›</view>
+      <image class="chevron" src="/static/icons/chevron.svg" mode="aspectFit" />
     </view>
 
     <view class="card role-card pressable" @click="goWarehouse">
-      <view class="role-mark warehouse">W</view>
+      <view class="icon-box"><image src="/static/icons/warehouse.svg" mode="aspectFit" /></view>
       <view class="role-main">
         <view class="role-title">云仓商家</view>
         <view class="role-desc">加盟进度、ERP 接入、订单与结算</view>
       </view>
-      <view class="role-arrow">›</view>
+      <image class="chevron" src="/static/icons/chevron.svg" mode="aspectFit" />
     </view>
 
     <view class="demo-entry pressable" @click="goDemo">
-      <view class="demo-entry-mark">◈</view>
       <view class="demo-entry-main">
         <view class="demo-entry-title">无需登录，先体验功能</view>
         <view class="demo-entry-desc">临时演示数据 · 不会提交真实业务</view>
       </view>
-      <view class="demo-entry-arrow">进入 ›</view>
+      <image class="chevron" src="/static/icons/chevron.svg" mode="aspectFit" />
     </view>
   </view>
 </template>
@@ -64,23 +62,16 @@ function goDemo() { uni.navigateTo({ url: '/pages/demo/index' }) }
 </script>
 
 <style scoped>
-.entry-page { padding: 32rpx 24rpx 56rpx; }
-.entry-hero { padding: 30rpx 18rpx 34rpx; }
-.entry-hero .brand-mark { margin-bottom: 34rpx; }
-.entry-title { margin-top: 12rpx; color: var(--park-ink); font-size: 52rpx; font-weight: 750; letter-spacing: -1rpx; }
-.entry-subtitle { max-width: 560rpx; margin-top: 12rpx; color: var(--park-muted); font-size: 26rpx; line-height: 1.6; }
-.role-card { display: flex; align-items: center; gap: 24rpx; padding: 34rpx 30rpx; }
-.role-mark { display: flex; align-items: center; justify-content: center; width: 88rpx; height: 88rpx; flex: 0 0 88rpx; border-radius: 22rpx; color: #fff; font-size: 40rpx; font-weight: 700; }
-.role-mark.partner { background: linear-gradient(145deg, var(--park-blue-2), var(--park-blue)); }
-.role-mark.warehouse { background: linear-gradient(145deg, #50c7d8, #299cb0); }
-.role-main { flex: 1; }
-.role-title { color: var(--park-ink); font-size: 32rpx; font-weight: 650; }
-.role-desc { margin-top: 8rpx; color: var(--park-muted); font-size: 25rpx; }
-.role-arrow { color: #c3cadb; font-size: 40rpx; }
-.demo-entry { display: flex; align-items: center; gap: 18rpx; margin: 28rpx 24rpx 0; padding: 22rpx 24rpx; border: 1rpx solid rgba(56,87,245,.18); border-radius: 22rpx; background: linear-gradient(135deg, #f4f6ff, #eefbfc); }
-.demo-entry-mark { display: flex; align-items: center; justify-content: center; width: 58rpx; height: 58rpx; color: #3857f5; border-radius: 18rpx; background: #fff; box-shadow: 0 8rpx 18rpx rgba(56,87,245,.13); font-size: 30rpx; }
-.demo-entry-main { flex: 1; }
-.demo-entry-title { color: var(--park-ink); font-size: 28rpx; font-weight: 650; }
-.demo-entry-desc { margin-top: 6rpx; color: var(--park-muted); font-size: 22rpx; }
-.demo-entry-arrow { color: var(--park-blue); font-size: 24rpx; font-weight: 600; }
+.entry-page { padding: 48rpx 8rpx 56rpx; }
+.entry-hero { padding: 24rpx 28rpx 40rpx; }
+.entry-title { margin-top: 40rpx; color: var(--park-ink); font-size: 52rpx; font-weight: 600; line-height: 1.25; }
+.entry-subtitle { margin-top: 12rpx; color: var(--park-muted); font-size: 27rpx; line-height: 1.6; }
+.role-card { display: flex; align-items: center; gap: 24rpx; padding: 32rpx 28rpx; }
+.role-main { flex: 1; min-width: 0; }
+.role-title { color: var(--park-ink); font-size: 32rpx; font-weight: 600; }
+.role-desc { margin-top: 6rpx; color: var(--park-muted); font-size: 25rpx; }
+.demo-entry { display: flex; align-items: center; gap: 18rpx; margin: 40rpx 24rpx 0; padding: 24rpx 28rpx; border-radius: 20rpx; background: #eceef3; }
+.demo-entry-main { flex: 1; min-width: 0; }
+.demo-entry-title { color: var(--park-ink); font-size: 27rpx; font-weight: 500; }
+.demo-entry-desc { margin-top: 4rpx; color: var(--park-muted); font-size: 23rpx; }
 </style>

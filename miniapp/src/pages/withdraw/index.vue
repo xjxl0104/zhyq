@@ -108,11 +108,11 @@ onUnmounted(()=>{balanceRequest++;pager.invalidate()})
 .section-title { margin-bottom: 24rpx; font-size: 32rpx; font-weight: 650; color: var(--park-ink); }
 .rule-item + .rule-item { margin-top: 24rpx; padding-top: 24rpx; border-top: 1rpx solid var(--park-line, #e2e6ef); }
 .rule-label { margin-bottom: 8rpx; color: var(--park-ink); font-size: 28rpx; font-weight: 600; }
-.rule-value, .account-notice { color: #58617d; font-size: 28rpx; line-height: 1.7; overflow-wrap: anywhere; }
+.rule-value, .account-notice { color: #6b7386; font-size: 28rpx; line-height: 1.7; overflow-wrap: anywhere; }
 .field-label { margin-bottom: 12rpx; font-size: 28rpx; font-weight: 600; }
 .account-notice { margin-bottom: 28rpx; }
 .all-amount { margin: 12rpx 0; padding: 12rpx 0; text-align: left; background: transparent; color: var(--park-blue); font-size: 28rpx; }
-.all-amount[disabled] { color: #58617d; background: transparent; }
+.all-amount[disabled] { color: #6b7386; background: transparent; }
 .input-hint, .submit-note { margin-top: 16rpx; line-height: 1.6; }
 .history-row { align-items: flex-start; gap: 20rpx; }
 .history-details { min-width: 0; overflow-wrap: anywhere; }

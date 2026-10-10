@@ -16,10 +16,12 @@ const pending = () => {
 function harness(page, api) {
   const events = {}, calls = []
   const context = vm.createContext({
-    ref: value => ({ value }), onShow: callback => { events.show = callback },
+    ref: value => ({ value }), computed: getter => ({ get value() { return getter() } }),
+    onShow: callback => { events.show = callback }, onHide: callback => { events.hide = callback },
+    setInterval: callback => { events.tick = callback; return 1 }, clearInterval: () => { events.tick = null },
     onLoad: callback => { events.load = callback }, onUnmounted: callback => { events.unmount = callback },
     onShareAppMessage: callback => { events.share = callback }, createAppShare, getCurrentInstance: () => ({ proxy: {} }),
-    token: { get: () => 'current-token' }, meApi: api,
+    token: { get: () => 'current-token' }, meApi: { workbench: async () => ({ bySource: [] }), ...api },
     uni: { reLaunch: options => calls.push(options.url), setClipboardData: options => calls.push(options.data) }
   })
   vm.runInContext(script(page), context)
@@ -57,6 +59,27 @@ test('首页较早的刷新不得覆盖较新的余额，退出页面后忽略�
   events.unmount()
   third.reject(new Error('已离开页面')); await last
   assert.equal(vm.runInContext('error.value', context), '')
+})
+
+test('首页工作台按来源拆分收入，定时刷新失败时保留已显示的数字，离开页面即停止', async () => {
+  let fail = false
+  const { context, events } = harness('home', {
+    home: async () => { if (fail) throw new Error('网络超时'); return { total: '30.000', recent: [] } },
+    me: async () => ({ positionCode: 'P1', status: 1 }),
+    workbench: async () => ({ teamCount: 12, customerCount: 28, earned: '30.000', pending: '5.500',
+      bySource: [{ sourceType: 2, amount: '25.000' }, { sourceType: null, amount: '5.000' }, { sourceType: 4, amount: '0.000' }] })
+  })
+  await events.show()
+  assert.equal(vm.runInContext('bench.value.teamCount', context), 12)
+  assert.equal(vm.runInContext('fmt(bench.value.pending)', context), '5.50')
+  assert.deepEqual(JSON.parse(vm.runInContext('JSON.stringify(sources.value)', context)),
+    [{ label: '出库单', amount: 25 }, { label: '其他', amount: 5 }])
+  fail = true
+  await events.tick()
+  assert.equal(vm.runInContext('home.value.total', context), '30.000')
+  assert.equal(vm.runInContext('error.value', context), '')
+  events.hide()
+  assert.equal(events.tick, null)
 })
 
 test('称号请求失败有可重试状态，刷新期间不保留旧账号称号', async () => {

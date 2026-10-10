@@ -70,5 +70,5 @@ async function extend() {
 }
 </script>
 <style scoped>
-.row{gap:24rpx;align-items:flex-start}.row text:last-child{max-width:66%;text-align:right;overflow-wrap:anywhere}.progress{margin:20rpx 0;white-space:pre-wrap;line-height:1.7;overflow-wrap:anywhere}.error{color:#a3293e;margin-bottom:20rpx}
+.row{gap:24rpx;align-items:flex-start}.row text:last-child{max-width:66%;text-align:right;overflow-wrap:anywhere}.progress{margin:20rpx 0;white-space:pre-wrap;line-height:1.7;overflow-wrap:anywhere}.error{color:#c0392b;margin-bottom:20rpx}
 </style>

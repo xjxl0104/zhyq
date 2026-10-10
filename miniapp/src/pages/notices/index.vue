@@ -24,4 +24,4 @@ async function load(reset=true){if(loading.value)return;loading.value=true;error
 async function read(n){try{await bizApi.noticeRead(n.id);n.readFlag=1}catch(e){error.value=e.message}}
 onShow(()=>load(true))
 </script>
-<style scoped>.content{margin:18rpx 0;line-height:1.7;white-space:pre-wrap;overflow-wrap:anywhere}.error{color:#a3293e}.row{gap:16rpx;align-items:flex-start}</style>
+<style scoped>.content{margin:18rpx 0;line-height:1.7;white-space:pre-wrap;overflow-wrap:anywhere}.error{color:#c0392b}.row{gap:16rpx;align-items:flex-start}</style>

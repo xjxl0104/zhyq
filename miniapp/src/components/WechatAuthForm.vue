@@ -13,7 +13,7 @@
     </template>
     <checkbox-group @change="agreed = $event.detail.value.includes('agree')">
       <label class="agreement">
-        <checkbox value="agree" :checked="agreed" :disabled="busy" color="#3857f5" />
+        <checkbox value="agree" :checked="agreed" :disabled="busy" color="#2b4fd6" />
         <text>我已阅读并同意{{ warehouse ? '云仓入驻' : '园区伙伴' }}协议与隐私协议</text>
       </label>
     </checkbox-group>
@@ -85,10 +85,10 @@ function loginWithTestPhone() {
 </script>
 
 <style scoped>
-.quick-note { margin: 14rpx 0 28rpx; color: #58617d; font-size: 28rpx; line-height: 1.6; }
+.quick-note { margin: 14rpx 0 28rpx; color: #6b7386; font-size: 28rpx; line-height: 1.6; }
 .secondary-note { margin: 26rpx 0 0; font-size: 26rpx; }
-.agreement { display: flex; align-items: flex-start; gap: 10rpx; margin: 28rpx 0; color: #58617d; font-size: 26rpx; line-height: 1.6; }
-.quick-error { margin: 22rpx 0; color: #a3293e; font-size: 28rpx; line-height: 1.6; }
+.agreement { display: flex; align-items: flex-start; gap: 10rpx; margin: 28rpx 0; color: #6b7386; font-size: 26rpx; line-height: 1.6; }
+.quick-error { margin: 22rpx 0; color: #c0392b; font-size: 28rpx; line-height: 1.6; }
 .field-label { margin-top: 24rpx; color: var(--park-text); font-size: 28rpx; font-weight: 500; }
 button:focus-visible { outline: 2px solid var(--park-blue); outline-offset: 2px; }
 </style>
