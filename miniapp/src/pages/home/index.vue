@@ -12,6 +12,23 @@
       </view>
     </view>
 
+    <view v-if="bench" class="grid bench-grid">
+      <view class="stat pressable" @click="go('/pages/team/index')"><view class="caption">团队人数</view><view class="v">{{ bench.teamCount }}</view></view>
+      <view class="stat pressable" @click="uni.switchTab({ url: '/pages/customers/index' })"><view class="caption">客户数</view><view class="v">{{ bench.customerCount }}</view></view>
+      <view class="stat"><view class="caption">已赚（元）</view><view class="v">{{ fmt(bench.earned) }}</view></view>
+      <view class="stat"><view class="caption">待结算佣金（元）</view><view class="v">{{ fmt(bench.pending) }}</view></view>
+    </view>
+
+    <template v-if="sources.length">
+      <view class="section-head"><text class="section-title">收入构成</text><text class="section-link" @click="uni.switchTab({ url: '/pages/income/index' })">收益明细</text></view>
+      <view class="card activity-card">
+        <view class="row" v-for="source in sources" :key="source.label">
+          <text>{{ source.label }}</text>
+          <text class="money" :class="{ negative: source.amount < 0 }">{{ fmt(source.amount) }}</text>
+        </view>
+      </view>
+    </template>
+
     <view class="section-head"><text class="section-title">常用功能</text></view>
     <view class="grid quick-grid">
       <view class="quick-card pressable" @click="go('/pages/referral/index')">
@@ -30,7 +47,6 @@
         <view class="quick-icon"><image src="/static/icons/sliders.svg" mode="aspectFit" /></view><view><view class="quick-title">客户定价与分佣</view><view class="quick-desc">按客户自定义每单金额</view></view>
       </view>
     </view>
-    <view class="home-note">积分及礼品兑换规则待配置，当前收益按金额展示。</view>
 
     <view class="section-head"><text class="section-title">最近动态</text><text class="section-link" @click="uni.navigateTo({url:'/pages/notices/index'})">消息通知</text></view>
     <view v-if="home" class="card activity-card">
@@ -50,8 +66,8 @@ export default { mixins: [appShareMixin] }
 </script>
 
 <script setup>
-import { ref, onUnmounted } from 'vue'
-import { onShow } from '@dcloudio/uni-app'
+import { ref, computed, onUnmounted } from 'vue'
+import { onShow, onHide } from '@dcloudio/uni-app'
 import { meApi } from '@/api'
 import { token } from '@/utils/request'
 
@@ -59,31 +75,54 @@ const STATUS = { 1: '冻结', 2: '可结算', 3: '已结算', 4: '已提现', 5:
 const home = ref(null)
 const me = ref({})
 const error = ref(''), loading = ref(false)
-const fmt = (v) => v == null ? '—' : Number(v).toFixed(3)
+const SOURCE = { 1: '园区入驻', 2: '出库单', 3: '平台费', 4: '签约奖' }
+const REFRESH_MS = 10000
+const bench = ref(null)
+// 首页金额显示到分；3 位小数的精确值保留在收益明细里。
+const fmt = (v) => v == null ? '—' : Number(v).toFixed(2)
+const sources = computed(() => (bench.value?.bySource || [])
+  .map(row => ({ label: SOURCE[row.sourceType] || '其他', amount: Number(row.amount) }))
+  .filter(row => row.amount !== 0))
 const go = (url) => uni.navigateTo({ url })
 let requestNo = 0
 
 async function load() {
   const request = ++requestNo
   home.value = null
+  bench.value = null
   me.value = {}
   error.value = ''
   loading.value = false
   if (!token.get()) return uni.reLaunch({ url: '/pages/login/index' })
   loading.value = true
   try {
-    const [summary, profile] = await Promise.all([meApi.home(), meApi.me()])
+    const [summary, profile, workbench] = await Promise.all([meApi.home(), meApi.me(), meApi.workbench()])
     if (request !== requestNo) return
     home.value = summary
     me.value = profile
+    bench.value = workbench
   } catch (failure) {
     if (request === requestNo) error.value = failure.message || '收益读取失败，请重新加载'
   } finally {
     if (request === requestNo) loading.value = false
   }
 }
-onShow(load)
-onUnmounted(() => { requestNo++ })
+// 页面可见时定时刷新数字；失败时保留上一次的数据，不打断正在看的页面。
+let timer = null
+async function refresh() {
+  const request = requestNo
+  if (loading.value || !token.get()) return
+  try {
+    const [summary, workbench] = await Promise.all([meApi.home(), meApi.workbench()])
+    if (request !== requestNo) return
+    home.value = summary
+    bench.value = workbench
+  } catch (failure) { /* 下一轮重试 */ }
+}
+function stopRefresh() { if (timer) { clearInterval(timer); timer = null } }
+onShow(() => { stopRefresh(); timer = setInterval(refresh, REFRESH_MS); return load() })
+onHide(stopRefresh)
+onUnmounted(() => { stopRefresh(); requestNo++ })
 </script>
 
 <style scoped>
@@ -92,5 +131,5 @@ onUnmounted(() => { requestNo++ })
 .activity-card { padding-top: 14rpx; padding-bottom: 14rpx; }
 .negative { color: var(--park-danger); }
 .hero-card .hero-label { margin-top: 0; }
-.home-note { margin: 20rpx 28rpx 0; color: var(--park-muted); font-size: 23rpx; line-height: 1.6; }
+.bench-grid { margin-top: 20rpx; }
 </style>

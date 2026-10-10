@@ -17,6 +17,7 @@ export const meApi = {
   accountStatus: () => get('/me/account'),
   account: (data) => put('/me/account', data),
   home: () => get('/home'),
+  workbench: () => get('/workbench'),
   position: () => get('/position'),
   team: () => get('/team'),
   poster: () => get('/poster')
