@@ -1,5 +1,5 @@
 <template>
-  <div class="page-container">
+  <div class="page-container mkt-page">
     <div class="search-bar">
       <el-form :inline="true">
         <el-form-item label="云仓">

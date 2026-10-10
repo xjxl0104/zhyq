@@ -1,5 +1,5 @@
 <template>
-  <div class="page-container">
+  <div class="page-container mkt-page">
     <div class="search-bar">
       <el-form :inline="true" :model="query">
         <el-form-item label="合同号/客户"><el-input v-model="query.keyword" clearable style="width: 180px" /></el-form-item>
