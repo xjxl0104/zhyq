@@ -276,4 +276,21 @@ class MktWithdrawalServiceTest {
     }
     private static MktPromoter promoter() { MktPromoter p = new MktPromoter(); p.setId(1L); p.setStatus(1); p.setIdVerified(1); return p; }
     private static MktPromoterCommission row(Long id, String amount) { MktPromoterCommission c = new MktPromoterCommission(); c.setId(id); c.setPromoterId(1L); c.setAmount(new BigDecimal(amount)); c.setSign(1); c.setStatus(MktCommissionService.C_SETTLED); return c; }
+
+    @Test void withdrawalWindowIsInclusiveAndZeroStartMeansNoLimit() {
+        assertThat(MktWithdrawalService.inWindow(25, 31, java.time.LocalDate.of(2026, 10, 24))).isFalse();
+        assertThat(MktWithdrawalService.inWindow(25, 31, java.time.LocalDate.of(2026, 10, 25))).isTrue();
+        assertThat(MktWithdrawalService.inWindow(25, 31, java.time.LocalDate.of(2026, 2, 28))).isTrue();
+        assertThat(MktWithdrawalService.inWindow(25, 31, java.time.LocalDate.of(2026, 11, 1))).isFalse();
+        assertThat(MktWithdrawalService.inWindow(0, 0, java.time.LocalDate.of(2026, 10, 11))).isTrue();
+    }
+
+    @Test void rulesDescribeTheConfiguredWindow() {
+        when(bizSettings.getInt(eq("marketing"), eq("withdraw_window_start_day"), anyInt())).thenReturn(25);
+        when(bizSettings.getInt(eq("marketing"), eq("withdraw_window_end_day"), anyInt())).thenReturn(31);
+        when(bizSettings.getString(eq("marketing"), eq("withdraw_arrival_time"), anyString()))
+                .thenAnswer(call -> call.getArgument(2));
+        assertThat(service.withdrawalRules()).containsEntry("applicationTime", "每月 25–31 日开放提现申请")
+                .containsKey("applicationOpen");
+    }
 }

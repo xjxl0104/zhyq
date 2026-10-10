@@ -91,7 +91,7 @@ public class MktLockService {
     /** 专员确认「联系上·非重复·真实需求」→ 有效锁定 180 天。 */
     @Transactional
     public void confirm(Long lockId, String confirmedBy) {
-        int days = bizSettings.getInt(MODULE, "lock_days", 180);
+        int days = bizSettings.getInt(MODULE, "lock_days", 90);
         int updated = lockMapper.update(null, new LambdaUpdateWrapper<MktCustomerLock>()
                 .eq(MktCustomerLock::getId, lockId)
                 .eq(MktCustomerLock::getStatus, LS_PRELOCK)
@@ -223,7 +223,7 @@ public class MktLockService {
         lock.setPromoterId(toPromoterId);
         lock.setStatus(LS_LOCKED);
         lock.setLockUntil(old.getLockUntil() == null
-                ? LocalDateTime.now().plusDays(bizSettings.getInt(MODULE, "lock_days", 180)) : old.getLockUntil());
+                ? LocalDateTime.now().plusDays(bizSettings.getInt(MODULE, "lock_days", 90)) : old.getLockUntil());
         lock.setConfirmedBy(MktAuditService.currentOperator());
         lock.setConfirmedAt(LocalDateTime.now());
         lock.setExtendedCount(old.getExtendedCount());
