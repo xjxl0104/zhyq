@@ -68,10 +68,10 @@ async function save() {
 </script>
 <style scoped>
 .security-card { padding: 32rpx; }
-.note { margin: 18rpx 0 28rpx; color: #58617d; font-size: 28rpx; line-height: 1.6; }
+.note { margin: 18rpx 0 28rpx; color: #6b7386; font-size: 28rpx; line-height: 1.6; }
 .field-label { margin-top: 24rpx; font-size: 28rpx; font-weight: 500; }
 .input { font-size: 32rpx; }
 .error, .success { margin-top: 24rpx; font-size: 28rpx; line-height: 1.6; }
-.error { color: #a3293e; }
+.error { color: #c0392b; }
 .success { color: #147a62; }
 </style>

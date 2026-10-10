@@ -68,15 +68,15 @@ onUnmounted(pager.invalidate)
 
 <style scoped>
 .income-heading{display:flex;align-items:center;justify-content:space-between;gap:20rpx}
-.income-refresh{margin:0;padding:8rpx 12rpx;color:#3857f5;background:transparent;font-size:28rpx;line-height:52rpx}
+.income-refresh{margin:0;padding:8rpx 12rpx;color:#2b4fd6;background:transparent;font-size:28rpx;line-height:52rpx}
 .income-filters{display:flex;flex-wrap:wrap;gap:12rpx;margin-top:20rpx}
 .income-filter{margin:0;min-height:76rpx;padding:0 20rpx;font-size:26rpx;line-height:76rpx}
-.income-message{margin-top:12rpx;color:#58617d;font-size:26rpx;line-height:1.65;overflow-wrap:anywhere}
-.income-error,.income-negative{color:#a3293e}
+.income-message{margin-top:12rpx;color:#6b7386;font-size:26rpx;line-height:1.65;overflow-wrap:anywhere}
+.income-error,.income-negative{color:#c0392b}
 .income-row{align-items:flex-start;flex-wrap:wrap}
 .income-details{flex:1 1 320rpx;min-width:0}
 .income-name{overflow-wrap:anywhere}
 .income-value{max-width:100%;margin-left:auto;text-align:right;overflow-wrap:anywhere}
 .income-value .tag{margin-top:12rpx}
-.income-refresh:focus-visible,.income-filter:focus-visible{outline:2px solid #3857f5;outline-offset:2px}
+.income-refresh:focus-visible,.income-filter:focus-visible{outline:2px solid #2b4fd6;outline-offset:2px}
 </style>
