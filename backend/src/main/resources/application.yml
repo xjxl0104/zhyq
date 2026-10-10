@@ -67,12 +67,15 @@ mybatis-plus:
   mapper-locations: classpath*:mapper/**/*.xml
   type-aliases-package: com.zhyq.park.**.entity
 
+# SWAGGER_ENABLED=false 时连同 springdoc 一起关闭:只关 knife4j 仍会对外输出完整 /v3/api-docs。
 springdoc:
   swagger-ui:
+    enabled: ${SWAGGER_ENABLED:true}
     path: /swagger-ui.html
     tags-sorter: alpha
     operations-sorter: alpha
   api-docs:
+    enabled: ${SWAGGER_ENABLED:true}
     path: /v3/api-docs
 knife4j:
   enable: ${SWAGGER_ENABLED:true}

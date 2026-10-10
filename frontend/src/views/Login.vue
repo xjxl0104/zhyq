@@ -19,7 +19,6 @@
         <el-button type="primary" class="login-btn" :loading="loading" @click="submit">登 录</el-button>
       </el-form>
 
-      <div class="hint">演示账号:admin / zhyq@2026</div>
     </div>
   </div>
 </template>
@@ -90,14 +89,12 @@ async function submit() {
 .brand-text h1 { margin: 0; font-size: 20px; color: #111827; letter-spacing: 1px; }
 .brand-text p { margin: 2px 0 0; font-size: 12px; color: #9aa1ac; letter-spacing: 2px; }
 .login-btn { width: 100%; height: 44px; font-size: 15px; letter-spacing: 6px; margin-top: 4px; }
-.hint { margin-top: 18px; text-align: center; font-size: 12px; color: #9aa1ac; }
 @media (max-width: 767px), (max-width: 1023px) and (max-height: 500px) {
   .login-page { padding: max(20px, env(safe-area-inset-top)) 20px max(20px, env(safe-area-inset-bottom)); }
   .login-panel { padding: 32px 24px; }
   .brand { gap: 10px; }
   .brand-text h1 { font-size: 18px; letter-spacing: 0; }
   .brand-text p { letter-spacing: .5px; }
-  .hint { font-size: 13px; overflow-wrap: anywhere; }
 }
 @media (max-height: 480px) { .login-page { align-items: flex-start; } }
 </style>

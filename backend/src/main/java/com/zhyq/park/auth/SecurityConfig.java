@@ -42,6 +42,9 @@ public class SecurityConfig {
     @Value("${zhyq.cors.allowed-origins:http://localhost:*,http://127.0.0.1:*}")
     private String allowedOrigins;
 
+    @Value("${springdoc.api-docs.enabled:true}")
+    private boolean apiDocsEnabled;
+
     public SecurityConfig(JwtAuthFilter jwtAuthFilter,
                           AccessLogFilter accessLogFilter,
                           RestAuthEntryPoint authEntryPoint,
@@ -66,9 +69,11 @@ public class SecurityConfig {
                         "/mp/v1/auth/**",
                         "/wh/v1/auth/**",
                         "/open/v1/erp/**",
-                        "/doc.html", "/webjars/**", "/v3/api-docs/**", "/swagger-ui/**",
                         "/favicon.ico", "/error"
                 ).permitAll()
+                // 接口文档只在显式开启时匿名可读；关闭后静态文档页也不再对外。
+                .requestMatchers("/doc.html", "/webjars/**", "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html")
+                        .access((authentication, context) -> new AuthorizationDecision(apiDocsEnabled))
                 // 仅浏览器下载交接入口免 Bearer；控制器仍须验证绑定文件的一次性凭证。
                 .requestMatchers(HttpMethod.GET, "/file/browser-download/*").permitAll()
                 // 凭证签发、原始文件读取与上传等接口仍须登录，/uploads 不静态放行。
