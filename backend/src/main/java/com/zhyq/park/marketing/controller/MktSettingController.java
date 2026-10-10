@@ -33,7 +33,8 @@ public class MktSettingController {
             "daily_referral_cap", "attribution_rule", "protect_days", "dup_customer_fields", "clawback_days",
             "old_channel_exclusive", "internal_commission", "monthly_cap", "tax_mode", "tax_rate",
             "default_sign_mode", "prelock_days", "lock_days", "lock_extend_days", "lock_cooldown_days",
-            "lease_clawback_days", "lease_renew_ratio", "invite_grace_days", ARRIVAL_TIME);
+            "lease_clawback_days", "lease_renew_ratio", "invite_grace_days",
+            "withdraw_window_start_day", "withdraw_window_end_day", ARRIVAL_TIME);
 
     private final JdbcTemplate jdbc;
     private final MktAuditService auditService;

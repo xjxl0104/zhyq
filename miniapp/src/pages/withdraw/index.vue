@@ -28,6 +28,7 @@
           <view>首次提现请先完善收款资料，确认款项转入本人账户。资料通过审核后可申请。</view>
           <button class="btn ghost" @click="openAccount">完善收款资料</button>
         </view>
+        <view v-if="closed" class="account-notice">当前不在提现开放期。{{ b.withdrawalRules?.applicationTime || '' }}，开放期内提交后财务会统一处理。</view>
         <view class="field-label">提现金额（元）</view>
         <input class="input" v-model="amount" type="digit" :disabled="loading || Number(b.idVerified) !== 1 || !cashAvailable?.cents" placeholder="输入金额，最多两位小数" aria-label="提现金额，单位元，最多两位小数" />
         <button class="all-amount" :disabled="loading || Number(b.idVerified) !== 1 || !cashAvailable?.cents" @click="fillAll">全部可提现金额</button>
@@ -83,7 +84,8 @@ const inputHint = computed(() => {
 })
 function openAccount() { uni.switchTab({ url: '/pages/me/index' }) }
 function formatTime(value) { return typeof value === 'string' ? value.replace('T', ' ').slice(0, 16) : '—' }
-const validAmount = computed(() => !!b.value && Number(b.value.idVerified) === 1 && !!cashAvailable.value && isValidWithdrawal(amount.value, cashAvailable.value.amount, b.value.minWithdraw ?? 0))
+const closed = computed(() => b.value?.withdrawalRules?.applicationOpen === false)
+const validAmount = computed(() => !closed.value && !!b.value && Number(b.value.idVerified) === 1 && !!cashAvailable.value && isValidWithdrawal(amount.value, cashAvailable.value.amount, b.value.minWithdraw ?? 0))
 function fillAll() { if (!loading.value && cashAvailable.value?.cents) amount.value = cashAvailable.value.amount }
 function hasInvalidMinimum(balance) { return balance?.minWithdraw == null || !Number.isFinite(Number(balance.minWithdraw)) || Number(balance.minWithdraw) < 0 }
 let balanceRequest=0
