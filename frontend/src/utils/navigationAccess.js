@@ -38,10 +38,35 @@ export function allowedNavigationPaths(menus) {
   return paths
 }
 
+// 带 group 的同级菜单合并成一个入口:标题用组名,落到该组第一个有权限的页面。
+function collapseGroups(children) {
+  const merged = []
+  for (const child of children) {
+    const entry = child.group && merged.find(item => item.group === child.group)
+    if (entry) entry.tabs.push({ title: child.title, path: child.path })
+    else if (child.group) merged.push({ ...child, title: child.group, tabs: [{ title: child.title, path: child.path }] })
+    else merged.push(child)
+  }
+  return merged
+}
+
+/** 当前路径所属的合并入口;不在任何合并组内时返回 null。 */
+export function navigationGroup(path, navigation) {
+  const find = items => {
+    for (const item of items) {
+      if (item.tabs?.some(tab => tab.path === path)) return item
+      const nested = item.children && find(item.children)
+      if (nested) return nested
+    }
+    return null
+  }
+  return find(navigation)
+}
+
 export function visibleNavigation(paths, admin = false) {
   const filter = item => {
     if (item.path) return admin || paths.has(item.path) ? { ...item } : null
-    const children = item.children?.map(filter).filter(Boolean) || []
+    const children = collapseGroups(item.children?.map(filter).filter(Boolean) || [])
     return children.length ? { ...item, children } : null
   }
   return menuTree.map((item, topIndex) => ({ ...item, topIndex })).map(filter).filter(Boolean)
