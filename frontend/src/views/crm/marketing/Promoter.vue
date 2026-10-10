@@ -1,5 +1,5 @@
 <template>
-  <div class="page-container">
+  <div class="page-container mkt-page">
     <div class="search-bar">
       <el-form :inline="true" :model="query">
         <el-form-item label="姓名/手机">
@@ -25,7 +25,7 @@
     <div class="table-card">
       <div class="toolbar">
         <el-button type="primary" @click="openManual"><el-icon><Plus /></el-icon>录入伙伴</el-button>
-        <span class="hint">伙伴注册时绑定上级邀请码；P4 拥有定价权，P1–P4 按单金额均由 P4 自定义。</span>
+        <span class="hint">注册时绑定上级邀请码。P4 拥有定价权，P1–P4 的按单金额由 P4 设定。</span>
       </div>
       <el-table :data="list" v-loading="loading" border stripe>
         <el-table-column type="index" label="#" width="60" />
@@ -46,15 +46,16 @@
         </el-table-column>
         <el-table-column prop="source" label="来源" width="80" />
         <el-table-column prop="createTime" label="注册时间" width="160" />
-        <el-table-column label="操作" :width="canDelete ? 390 : 340" :fixed="isMobile ? false : 'right'">
+        <el-table-column label="操作" :width="canDelete ? 250 : 200" :fixed="isMobile ? false : 'right'">
           <template #default="{ row }">
             <el-button link type="primary" @click="openDetail(row)">详情</el-button>
-            <el-button v-if="canReviewAccount" link type="primary" @click="openAccount(row)">收款资料</el-button>
-            <el-button link type="primary" @click="openPosition(row)">调岗</el-button>
-            <el-button link type="primary" @click="openParent(row)">改上级</el-button>
-            <el-button v-if="row.status === 1" link type="warning" @click="freeze(row)">冻结</el-button>
-            <el-button v-else-if="row.status === 2" link type="success" @click="unfreeze(row)">解冻</el-button>
-            <el-button v-else-if="row.status === 3" link type="success" @click="audit(row, true)">审核通过</el-button>
+            <el-button v-if="row.status === 1" link type="primary" @click="freeze(row)">冻结</el-button>
+            <el-button v-else-if="row.status === 2" link type="primary" @click="unfreeze(row)">解冻</el-button>
+            <el-button v-else-if="row.status === 3" link type="primary" @click="audit(row, true)">审核通过</el-button>
+            <el-dropdown trigger="click" @command="handleMore($event, row)">
+              <el-button link type="primary" class="more-action">更多</el-button>
+              <template #dropdown><el-dropdown-menu><el-dropdown-item v-if="canReviewAccount" command="account">收款资料</el-dropdown-item><el-dropdown-item command="position">调岗</el-dropdown-item><el-dropdown-item command="parent">改上级</el-dropdown-item></el-dropdown-menu></template>
+            </el-dropdown>
             <el-button v-if="canDelete" link type="danger" :disabled="removal.busy" @click="openDelete(row)">删除</el-button>
           </template>
         </el-table-column>
@@ -317,6 +318,9 @@ async function audit(row, pass) { await mktPromoterApi.audit(row.id, { pass, rea
 
 // ---- 详情 ----
 const detail = reactive({ visible: false, tab: 'info', row: null, team: [], commissions: [], commissionTotal: 0, commissionPage: 1, history: [] })
+const MORE_ACTIONS = { account: (row) => openAccount(row), position: (row) => openPosition(row), parent: (row) => openParent(row) }
+function handleMore(command, row) { MORE_ACTIONS[command]?.(row) }
+
 async function openDetail(row) {
   detail.row = await mktPromoterApi.get(row.id)
   detail.tab = 'info'

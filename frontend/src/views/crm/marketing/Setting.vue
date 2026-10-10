@@ -1,5 +1,5 @@
 <template>
-  <div class="page-container">
+  <div class="page-container mkt-page">
     <div class="table-card">
       <div class="toolbar">
         <span class="title">规则参数(biz_setting · module = marketing)</span>

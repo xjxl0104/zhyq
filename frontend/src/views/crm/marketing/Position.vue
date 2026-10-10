@@ -1,5 +1,5 @@
 <template>
-  <div class="page-container">
+  <div class="page-container mkt-page">
     <div class="table-card">
       <div class="toolbar">
         <span class="title">角色称号与锁定上限</span>

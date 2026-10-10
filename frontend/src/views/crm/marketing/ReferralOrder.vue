@@ -1,5 +1,5 @@
 <template>
-  <div class="page-container">
+  <div class="page-container mkt-page">
     <div class="search-bar">
       <el-form :inline="true" :model="query">
         <el-form-item label="单号"><el-input v-model="query.sourceNo" clearable style="width: 180px" /></el-form-item>
@@ -26,7 +26,7 @@
           <el-button type="primary" :loading="importing"><el-icon><Upload /></el-icon>导入出库单(Excel)</el-button>
         </el-upload>
         <el-button link type="primary" @click="downloadTemplate">下载模板</el-button>
-        <span class="hint">列:出库单号 · 客户手机号 · 件数 · 包裹数 · 发货时间 · 物流单号 · 云仓编码(可选) · 货值(可选)。服务费按园区签合同单价表计算；佣金按已配置冻结期到期解冻。发货日期须在合同有效期内。直签出库只记录运营数量，不生成园区服务费或佣金；平台费实际到账请到服务费账单页登记。</span>
+        <span class="hint hint--block">列:出库单号 · 客户手机号 · 件数 · 包裹数 · 发货时间 · 物流单号 · 云仓编码(可选) · 货值(可选)。服务费按园区签合同单价表计算；佣金按已配置冻结期到期解冻。发货日期须在合同有效期内。直签出库只记录运营数量，不生成园区服务费或佣金；平台费实际到账请到服务费账单页登记。</span>
       </div>
       <el-alert v-if="importResult" :type="importResult.errors.length ? 'warning' : 'success'" :closable="true" class="mb" @close="importResult = null">
         导入 {{ importResult.imported }} 条,跳过 {{ importResult.skipped }} 条(重复单号)
@@ -52,7 +52,7 @@
         <el-table-column label="状态" width="90"><template #default="{ row }"><el-tag :type="stType(row.status)">{{ ST[row.status] }}</el-tag></template></el-table-column>
         <el-table-column prop="remark" label="业务说明" min-width="170" show-overflow-tooltip />
         <el-table-column prop="eventTime" label="事件时间" width="160" />
-        <el-table-column label="操作" width="150" fixed="right">
+        <el-table-column label="操作" width="120" fixed="right">
           <template #default="{ row }">
             <el-button v-if="row.pricingId != null || Number(row.poolAmount) > 0" link type="primary" @click="openSplits(row)">拆分</el-button>
             <el-button v-if="row.status === 2" link type="danger" @click="voidOrder(row)">作废</el-button>
