@@ -2,7 +2,7 @@
   <div class="page-container mkt-page">
     <div class="table-card">
       <div class="toolbar">
-        <span class="title">规则参数(biz_setting · module = marketing)</span>
+        <span class="title">规则参数</span>
         <el-button type="primary" :loading="saving" @click="save">保存</el-button>
       </div>
       <el-table :data="list" v-loading="loading" border>
