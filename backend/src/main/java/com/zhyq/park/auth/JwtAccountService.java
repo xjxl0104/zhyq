@@ -82,7 +82,7 @@ public class JwtAccountService {
 
     public static void assertWarehouseActive(MktWarehouse w) {
         if (w == null || w.getJoinStatus() == null || w.getJoinStatus() < 1 || w.getJoinStatus() > 6)
-            throw new BizException(403, "云仓档案不存在或已退出，请联系园区运营");
+            throw new BizException(403, "云仓档案不存在、已冻结待删除或已退出，请联系园区运营");
     }
 
     private static BizException unavailable() { return new BizException(401, "登录状态已失效，请重新登录"); }

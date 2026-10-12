@@ -154,7 +154,7 @@ class MktP1HardeningTest {
         void applyDoesNotPassContactOpenidToService() {
             MktWarehouse captured = warehouse(1L);
             MktWarehouseController controller = new MktWarehouseController(
-                    warehouseMapper, stepMapper, null, onboarding, audit, null);
+                    warehouseMapper, stepMapper, null, onboarding, audit, null, null, null);
             when(onboarding.apply(any(MktWarehouse.class))).thenReturn(captured);
 
             MktWarehouse req = warehouse(null);

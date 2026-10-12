@@ -13,6 +13,7 @@ import java.time.LocalDateTime;
 public class Customer extends BaseEntity {
     /** 客户/公司名 */
     private String name;
+    private String brandName;
     private String contact;
     private String phone;
     private String industry;

@@ -86,6 +86,19 @@ public class FieldEncryptionService {
         return key != null;
     }
 
+    /** Keyed lookup avoids exposing low-entropy business names through plain hashes. */
+    public String businessNameFingerprint(String normalized) {
+        requireKey();
+        try {
+            javax.crypto.Mac mac = javax.crypto.Mac.getInstance("HmacSHA256");
+            mac.init(new SecretKeySpec(key, "HmacSHA256"));
+            return java.util.HexFormat.of().formatHex(mac.doFinal(
+                    ("warehouse-protection:v1:" + normalized).getBytes(StandardCharsets.UTF_8)));
+        } catch (GeneralSecurityException e) {
+            throw new BizException("敏感名称校验失败");
+        }
+    }
+
     private void requireKey() {
         if (key == null) {
             throw new BizException("未配置 ZHYQ_FIELD_ENCRYPTION_KEY，禁止保存完整账号");

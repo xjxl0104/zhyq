@@ -73,7 +73,13 @@ public class MktWarehouseOnboardingService {
             stepMapper.insert(s);
         }
         // 申请一提交就进入资质审核
-        transition(w.getId(), JS_QUALIFYING, "warehouse.apply", null, JS_APPLIED);
+        int changed = warehouseMapper.update(null, new LambdaUpdateWrapper<MktWarehouse>()
+                .eq(MktWarehouse::getId, w.getId()).eq(MktWarehouse::getJoinStatus, JS_APPLIED)
+                .set(MktWarehouse::getJoinStatus, JS_QUALIFYING));
+        requireUpdated(changed, w.getId());
+        w.setJoinStatus(JS_QUALIFYING);
+        auditService.logRequired("warehouse.apply", w, "新增加盟云仓", null,
+                java.util.Map.of("id", w.getId(), "name", w.getName(), "code", w.getCode(), "status", JS_QUALIFYING));
         return w;
     }
 

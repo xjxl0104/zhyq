@@ -127,6 +127,8 @@ test('release checker rejects disabled or missing source / output domain verific
   const checker = fileURLToPath(new URL('./check-wechat-build.mjs', import.meta.url))
   mkdirSync(join(directory, 'src'), { recursive: true })
   mkdirSync(join(directory, 'dist/build/mp-weixin'), { recursive: true })
+  mkdirSync(join(directory, 'dist/build/mp-weixin/pages/customers'), { recursive: true })
+  writeFileSync(join(directory, 'dist/build/mp-weixin/pages/customers/index.wxml'), '<navigator url="/pages/referral/index" open-type="navigate">推荐新客户</navigator>')
   try {
     for (const [sourceCheck, outputCheck, expected] of [[true, true, 0], [false, true, 1], [true, false, 1], [true, undefined, 1]]) {
       writeFileSync(join(directory, 'src/manifest.json'), JSON.stringify({ 'mp-weixin': { appid: 'test-app', setting: { urlCheck: sourceCheck } } }))

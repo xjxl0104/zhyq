@@ -79,14 +79,14 @@ class MktOnboardingAndLockServiceTest {
 
             service.apply(w);
 
-            assertThat(w.getJoinStatus()).isEqualTo(MktWarehouseOnboardingService.JS_APPLIED);
+            assertThat(w.getJoinStatus()).isEqualTo(MktWarehouseOnboardingService.JS_QUALIFYING);
             assertThat(w.getFeeModel()).isNull();
             ArgumentCaptor<MktWarehouseOnboarding> cap = ArgumentCaptor.forClass(MktWarehouseOnboarding.class);
             verify(stepMapper, times(5)).insert(cap.capture());
             assertThat(cap.getAllValues()).extracting(MktWarehouseOnboarding::getStep).containsExactly(1, 2, 3, 4, 5);
             assertThat(cap.getAllValues().get(0).getStatus()).isEqualTo(2); // 申请步直接通过
             assertThat(cap.getAllValues().get(1).getStatus()).isEqualTo(1); // 资质审核进行中
-            verify(auditService).log(eq("warehouse.apply"), any(), eq(7L), isNull());
+            verify(auditService).logRequired(eq("warehouse.apply"), eq(w), eq("新增加盟云仓"), isNull(), any());
         }
 
         @Test
@@ -181,6 +181,7 @@ class MktOnboardingAndLockServiceTest {
         @Mock ApplicationEventPublisher eventPublisher;
         @Mock CustomerMapper customerMapper;
         @Mock MktCustomerAssignmentService assignmentService;
+        @Mock MktCompetitionProtectionService protectionService;
         @InjectMocks MktLockService service;
 
         @BeforeEach

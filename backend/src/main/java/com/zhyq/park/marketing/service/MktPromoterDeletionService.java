@@ -35,15 +35,16 @@ public class MktPromoterDeletionService {
         // earlier repeatable-read snapshot hiding business records committed before we got it.
         block("SELECT id FROM crm_promoter WHERE deleted=0 AND id<>? AND (parent_id=? OR path LIKE ?) LIMIT 1 FOR UPDATE",
                 "该伙伴仍有下级团队，请先调整下级的上级归属", id, id, partner.getPath() + "%");
-        block("SELECT id FROM crm_lead WHERE referrer_id=? LIMIT 1 FOR UPDATE", "该伙伴已有推荐线索，不能删除，请使用冻结或退出", id);
-        block("SELECT id FROM crm_customer WHERE referrer_id=? LIMIT 1 FOR UPDATE", "该伙伴已有推荐客户，不能删除，请使用冻结或退出", id);
-        block("SELECT id FROM crm_customer_lock WHERE promoter_id=? LIMIT 1 FOR UPDATE", "该伙伴已有客户锁定记录，不能删除，请使用冻结或退出", id);
+        block("SELECT id FROM crm_lead WHERE referrer_id=? AND deleted=0 LIMIT 1 FOR UPDATE", "该伙伴已有推荐线索，不能删除，请使用冻结或退出", id);
+        block("SELECT id FROM crm_customer WHERE referrer_id=? AND deleted=0 LIMIT 1 FOR UPDATE", "该伙伴已有推荐客户，不能删除，请使用冻结或退出", id);
+        // 已删除客户的已释放锁只保留审计意义；活锁及成交历史仍须保护。
+        block("SELECT id FROM crm_customer_lock WHERE promoter_id=? AND (status=3 OR (deleted=0 AND status IN (1,2))) LIMIT 1 FOR UPDATE", "该伙伴已有客户锁定记录，不能删除，请使用冻结或退出", id);
         block("SELECT id FROM crm_service_contract WHERE partner_id=? LIMIT 1 FOR UPDATE", "该伙伴已关联合同，不能删除，请使用冻结或退出", id);
         block("SELECT id FROM crm_referral_order WHERE promoter_id=? LIMIT 1 FOR UPDATE", "该伙伴已有业务订单，不能删除，请使用冻结或退出", id);
         block("SELECT id FROM crm_promoter_commission WHERE promoter_id=? LIMIT 1 FOR UPDATE", "该伙伴已有佣金流水，不能删除，请使用冻结或退出", id);
         block("SELECT id FROM crm_withdrawal WHERE promoter_id=? LIMIT 1 FOR UPDATE", "该伙伴已有提现记录，不能删除，请使用冻结或退出", id);
 
-        block("SELECT id FROM crm_customer_pricing WHERE owner_promoter_id=? OR JSON_CONTAINS(beneficiaries_json, JSON_OBJECT('promoterId', ?)) LIMIT 1 FOR UPDATE",
+        block("SELECT p.id FROM crm_customer_pricing p JOIN crm_customer c ON c.id=p.customer_id WHERE c.deleted=0 AND p.deleted=0 AND (p.owner_promoter_id=? OR JSON_CONTAINS(p.beneficiaries_json, JSON_OBJECT('promoterId', ?))) LIMIT 1 FOR UPDATE",
                 "该伙伴已有客户定价或分佣配置，不能删除，请使用停用登录", id, id);
 
         String operator = MktAuditService.currentOperator();

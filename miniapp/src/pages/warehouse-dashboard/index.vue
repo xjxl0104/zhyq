@@ -55,6 +55,7 @@ const ERP = { 0: '未接入', 1: '沙箱联调', 2: '正式联通', 3: '连接�
 const entries = [
   { page: 'warehouse-profile', title: '个人信息', note: '补充云仓名称、联系人和联系电话' },
   { page: 'warehouse-apply', title: '加盟申请', note: '完善资料与上传资质附件' },
+  { page: 'warehouse-protection', title: '竞争保护白名单', note: '仅填品牌或公司名称，名单仅本云仓可见' },
   { page: 'warehouse-onboarding', title: '加盟进度', note: '查看审核、协议及上线状态' },
   { page: 'warehouse-customers', title: '承接客户', note: '确认分派并更新服务进度' },
   { page: 'warehouse-orders', title: '出库单', note: '查看园区导入的订单与物流' },

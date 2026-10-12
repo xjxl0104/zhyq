@@ -3,6 +3,7 @@
     <view class="card">
       <view class="muted">推荐后客户进入 7 天预锁,专员联系确认后转为 180 天有效锁定;期内成交归您。</view>
       <input class="input" v-model="form.name" placeholder="客户公司 / 店铺名称 *" />
+      <input class="input" v-model="form.brandName" maxlength="100" placeholder="品牌名称（选填，请填写准确名称）" />
       <input class="input" v-model="form.contact" placeholder="联系人" />
       <input class="input" v-model="form.phone" type="number" maxlength="11" placeholder="联系手机 *" />
       <picker :range="TYPES" range-key="label" @change="e => form.serviceType = TYPES[e.detail.value].value">
@@ -32,7 +33,7 @@ import { bizApi } from '@/api'
 const TYPES = [{ value: 2, label: '一件代发' }, { value: 1, label: '仓储' }, { value: 3, label: '仓配一体' }, { value: 4, label: '园区入驻(租仓/租办公)' }]
 const warehouses = ref([{id:null,name:'不限'}])
 const loading = ref(false)
-const form = reactive({ name: '', contact: '', phone: '', serviceType: 2, warehouseId: null, demand: '', remark: '' })
+const form = reactive({ name: '', brandName: '', contact: '', phone: '', serviceType: 2, warehouseId: null, demand: '', remark: '' })
 
 onLoad(async () => { try { warehouses.value = [{id:null,name:'不限'}, ...await bizApi.warehouses()] } catch (e) { /* 可为空 */ } })
 
@@ -45,6 +46,8 @@ async function submit() {
     const r = await bizApi.referral({...form, warehouseId:form.serviceType === 4 ? null : form.warehouseId})
     uni.showModal({ title: '推荐成功', content: `已为您预锁至 ${r.prelockUntil?.slice(0, 10)},招商专员将尽快联系客户。`, showCancel: false,
       success: () => uni.switchTab({ url: '/pages/customers/index' }) })
+  } catch (e) {
+    uni.showToast({ title: e.message || '推荐提交失败，请重试', icon: 'none' })
   } finally { loading.value = false }
 }
 </script>

@@ -2,7 +2,7 @@
   <view class="page-wrap">
     <view v-if="state.error" class="card"><view class="muted">{{ state.error }}</view><button class="btn" :disabled="state.loading" @click="pager.retry()">重新加载</button></view>
     <view v-if="state.loading && !list.length" class="card muted">正在读取客户…</view>
-    <view class="card" v-if="!list.length && state.loaded && !state.error"><view class="muted">还没有推荐客户</view><button class="btn" @click="navigateTo('/pages/referral/index')">去推荐</button></view>
+    <view class="card" v-if="!list.length && state.loaded && !state.error"><view class="muted">还没有推荐客户</view></view>
     <view class="card" v-for="c in list" :key="c.id" @click="navigateTo('/pages/customer-detail/index?id=' + c.id)">
       <view class="row">
         <view>
@@ -17,7 +17,7 @@
       <DeleteCustomerButton :customer="c" :disabled="state.loading" @deleted="pager.load()" />
     </view>
     <view v-if="list.length" class="card"><button v-if="list.length < state.total" class="btn ghost" :loading="state.loading" :disabled="state.loading" @click="pager.load(false)">加载更多客户</button><view v-else class="muted">共 {{ state.total }} 位客户，已全部显示</view></view>
-    <view v-if="list.length" class="bottom-action"><button class="btn" @click="navigateTo('/pages/referral/index')">推荐新客户</button></view>
+    <view class="bottom-action"><navigator url="/pages/referral/index" open-type="navigate" hover-class="none"><view class="btn recommend-button">推荐新客户</view></navigator></view>
   </view>
 </template>
 
@@ -48,4 +48,5 @@ onUnmounted(pager.invalidate)
 </script>
 <style scoped>
 .bottom-action{margin:0 24rpx}
+.recommend-button{text-align:center}
 </style>

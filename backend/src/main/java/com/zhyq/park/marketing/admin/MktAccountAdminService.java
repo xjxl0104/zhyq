@@ -26,6 +26,7 @@ public class MktAccountAdminService {
     private final MktPromoterService promoters;
     private final MktWarehouseOnboardingService warehouses;
     private final MktPromoterDeletionService deletion;
+    private final MktWarehouseDeletionService warehouseDeletion;
     private final MktCredentialMapper credentials;
     private final PasswordEncoder encoder;
     private final SysAuditMapper audits;
@@ -145,20 +146,7 @@ public class MktAccountAdminService {
         protectAdmin(type, id, operator);
         Map<String, Object> before = lock(type, id);
         if ("mp".equals(type)) { deletion.delete(id, note); return; }
-        // Empty warehouses can be removed; contracts, ERP credentials, customer ownership and
-        // money remain attached to their original archives. Locking range reads protect empty gaps.
-        for (String relation : List.of("crm_service_contract", "crm_contract_warehouse", "crm_referral_order",
-                "crm_warehouse_erp", "crm_customer_erp_map", "crm_erp_sync_log", "crm_erp_event_inbox", "crm_erp_dead_letter", "crm_erp_unmapped",
-                "crm_erp_reconcile_snapshot", "crm_service_fee_bill", "crm_warehouse_settlement", "crm_direct_sign_payment")) {
-            block("SELECT id FROM " + relation + " WHERE warehouse_id=? LIMIT 1 FOR UPDATE", id);
-        }
-        block("SELECT id FROM crm_customer WHERE intended_warehouse_id=? OR assigned_warehouse_id=? LIMIT 1 FOR UPDATE", id, id);
-        String op = MktAuditService.currentOperator();
-        jdbc.update("UPDATE crm_marketing_credential SET username=CONCAT('~deleted_',id),registration_phone=NULL,password_hash='!deleted',status=0,deleted=1,version=version+1,update_by=?,update_time=NOW() WHERE identity_type='wh' AND identity_id=?", op, id);
-        jdbc.update("UPDATE crm_warehouse_contact SET openid=NULL,status=0,deleted=1,version=version+1,update_by=?,update_time=NOW() WHERE warehouse_id=? AND deleted=0", op, id);
-        int changed = jdbc.update("UPDATE crm_warehouse SET deleted=1,join_status=7,contact_openid=NULL,version=version+1,update_by=?,update_time=NOW() WHERE id=? AND deleted=0", op, id);
-        if (changed != 1) throw new BizException(409, "账号已变化，请刷新后重试");
-        audit("account.delete", type, id, note, Map.of("name", before.get("name")), Map.of("deleted", true, "loginRevoked", true));
+        warehouseDeletion.request(id, note);
     }
 
     private void protectAdmin(String type, Long id, long operator) {

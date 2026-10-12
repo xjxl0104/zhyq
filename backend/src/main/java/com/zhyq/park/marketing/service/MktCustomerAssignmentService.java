@@ -34,7 +34,7 @@ public class MktCustomerAssignmentService {
 
     public MktWarehouse requireAvailableWarehouse(Long warehouseId, Long projectId) {
         if (warehouseId == null || warehouseId <= 0) throw new BizException("请选择承接云仓");
-        MktWarehouse warehouse = warehouses.selectById(warehouseId);
+        MktWarehouse warehouse = warehouses.selectForUpdate(warehouseId);
         if (warehouse == null || !Integer.valueOf(MktWarehouseOnboardingService.JS_ONLINE).equals(warehouse.getJoinStatus())) {
             throw new BizException("云仓不存在或尚未上线，不能接收客户");
         }

@@ -44,7 +44,7 @@
           <view class="field-label">新的本人邀请码 *</view>
           <input class="input code" v-model="form.inviteCode" maxlength="8" :disabled="busy" placeholder="8 位字母或 2–9 数字" aria-label="新的本人邀请码" />
         </template>
-        <view v-else-if="mode === 'delete'" class="message">删除后无法登录，账号将从列表移除。有团队、客户、订单或资金等业务记录时不可删除，请改用停用登录。</view>
+        <view v-else-if="mode === 'delete'" class="message">{{ type === 'wh' ? '云仓提交删除后立即冻结，7天后正式移除。冻结期内可在后台加盟云仓页面撤销；历史档案及维护记录保留。请先处理在服客户及未结束合同。' : '删除后无法登录，账号将从列表移除。有团队、有效客户、订单或资金等业务记录时不可删除，请改用停用登录。' }}</view>
         <view v-else class="message">{{ nextDisabled ? '停用后微信和密码登录均不可用，当前登录也会失效。历史业务数据保留。' : '恢复后用户需重新登录；原有业务审核状态保留。' }}</view>
         <view class="field-label">操作原因 *</view>
         <textarea class="input reason" v-model="form.reason" maxlength="500" :disabled="busy" placeholder="说明本次新增或修改的原因" aria-label="操作原因" />
@@ -105,7 +105,7 @@ const editorTitle = computed(() => ({ create: type.value === 'mp' ? '新增伙�
 const submitLabel = computed(() => ({ create: '创建账号', invite: '保存邀请码', delete: '确认删除', status: nextDisabled.value ? '确认停用' : '确认恢复' }[mode.value]))
 function businessLabel(item) {
   return type.value === 'mp' ? ({ 1: '正常', 2: '已冻结', 3: '待审核', 4: '已退出' }[item.businessStatus] || '状态待确认')
-    : ({ 1: '待申请', 2: '资质审核中', 3: '接入准备中', 4: '待签协议', 5: '已上线', 6: '暂停业务', 7: '已退出' }[item.businessStatus] || '状态待确认')
+    : ({ 1: '待申请', 2: '资质审核中', 3: '接入准备中', 4: '待签协议', 5: '已上线', 6: '暂停业务', 7: '已退出', 8: '冻结待删除' }[item.businessStatus] || '状态待确认')
 }
 async function authorize() {
   const seq = ++authId
@@ -148,7 +148,7 @@ async function submit() {
   if (mode.value === 'delete') {
     busy.value = true
     let confirmed = false
-    try { confirmed = (await new Promise((resolve, reject) => uni.showModal({ title: '确认删除账号', content: `删除“${target.value.name}”后将无法登录。此操作不能在小程序内撤销。`, confirmText: '删除账号', confirmColor: '#c0392b', success: resolve, fail: reject }))).confirm }
+    try { confirmed = (await new Promise((resolve, reject) => uni.showModal({ title: '确认删除账号', content: type.value === 'wh' ? `云仓“${target.value.name}”将立即冻结，7天后正式删除。期间可在后台加盟云仓页面撤销。` : `删除“${target.value.name}”后将无法登录。此操作不能在小程序内撤销。`, confirmText: '确认提交', confirmColor: '#c0392b', success: resolve, fail: reject }))).confirm }
     catch (_) { formError.value = '确认窗口未打开，请重试' }
     if (!confirmed) { busy.value = false; return }
   }
@@ -163,7 +163,7 @@ async function submit() {
     } else if (mode.value === 'status') {
       await accountAdminApi.status(type.value, target.value.id, { disabled: nextDisabled.value, expectedDisabled: isDisabled(target.value), reason: note }); success.value = nextDisabled.value ? '已停用登录，历史业务记录保留。' : '已恢复登录，请用户重新登录。'
     } else if (mode.value === 'delete') {
-      await accountAdminApi.remove(type.value, target.value.id, note); success.value = '账号已删除。'
+      await accountAdminApi.remove(type.value, target.value.id, note); success.value = type.value === 'wh' ? '云仓已冻结，7天后自动删除。' : '账号已删除。'
     }
     closeEditor(); await load(1)
   } catch (e) { formError.value = e.message }

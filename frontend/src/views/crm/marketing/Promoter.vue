@@ -68,7 +68,7 @@
     <el-dialog v-model="removal.visible" title="删除伙伴" width="min(92vw, 480px)"
                :close-on-click-modal="false" :close-on-press-escape="!removal.busy" :show-close="!removal.busy">
       <p class="delete-target">确认删除伙伴「{{ removal.row?.name || '未填写姓名' }}」<span v-if="removal.row?.phone">（{{ maskPhone(removal.row.phone) }}）</span>？</p>
-      <p class="delete-note">删除后该伙伴将从列表移除，原账号退出登录，操作记录保留。有下级、客户或财务业务关联的伙伴无法删除，可使用冻结功能。</p>
+      <p class="delete-note">删除后该伙伴将从列表移除，原账号退出登录，操作记录保留。已清空的推荐客户不影响删除；仍有下级、有效客户或合同、订单、资金记录时不可删除，可使用冻结功能。</p>
       <el-form label-position="top" @submit.prevent="submitDelete">
         <el-form-item label="删除原因" required>
           <el-input v-model="removal.reason" type="textarea" :rows="3" maxlength="500" show-word-limit

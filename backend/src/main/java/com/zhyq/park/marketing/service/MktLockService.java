@@ -53,11 +53,13 @@ public class MktLockService {
     private final ApplicationEventPublisher eventPublisher;
     private final CustomerMapper customerMapper;
     private final MktCustomerAssignmentService assignmentService;
+    private final MktCompetitionProtectionService protectionService;
 
     /** 报备 = 预锁。校验:伙伴正常、未超岗位上限、不在冷却期;唯一键兜底并发。 */
     @Transactional
     public MktCustomerLock prelock(Long customerId, Long promoterId) {
         Customer customer = requireCustomer(customerId);
+        protectionService.assertUnprotected(customer.getTenantId(), customer.getName(), customer.getBrandName());
         assignmentService.assertNoActiveContracts(customerId);
         if (customer.getReferrerId() != null && !Objects.equals(customer.getReferrerId(), promoterId)) {
             throw new BizException("报备伙伴与客户归属不一致");

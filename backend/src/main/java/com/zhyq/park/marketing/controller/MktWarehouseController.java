@@ -39,6 +39,40 @@ public class MktWarehouseController {
     private final MktWarehouseOnboardingService onboardingService;
     private final MktAuditService auditService;
     private final MktWarehouseFileService files;
+    private final com.zhyq.park.marketing.service.MktWarehouseDeletionService deletion;
+    private final org.springframework.jdbc.core.JdbcTemplate jdbc;
+
+    @Operation(summary = "申请删除：冻结7天后正式归档")
+    @PreAuthorize("hasRole('admin')") @DeleteMapping("/{id}")
+    public Result<Void> delete(@PathVariable Long id, @RequestBody Map<String, String> body) {
+        deletion.request(id, body.get("reason")); return Result.ok();
+    }
+
+    @Operation(summary = "冻结期撤销删除")
+    @PreAuthorize("hasRole('admin')") @PostMapping("/{id}/delete/cancel")
+    public Result<Void> cancelDelete(@PathVariable Long id, @RequestBody Map<String, String> body) {
+        deletion.cancel(id, body.get("reason")); return Result.ok();
+    }
+
+    @Operation(summary = "加盟云仓维护记录：包含已删除云仓")
+    @PreAuthorize("hasAuthority('crm:marketing:warehouse:query')") @GetMapping("/maintenance")
+    public Result<PageResult<Map<String, Object>>> maintenance(@RequestParam(defaultValue = "1") int pageNo,
+            @RequestParam(defaultValue = "20") int pageSize, @RequestParam(defaultValue = "") String keyword,
+            @RequestParam(required = false) Long projectId) {
+        if (pageNo < 1 || pageNo > 100000 || pageSize < 1 || pageSize > 100 || keyword.length() > 100)
+            throw new BizException(400, "查询参数无效");
+        String from = " FROM sys_audit a LEFT JOIN crm_warehouse w ON w.id=a.biz_id WHERE a.deleted=0 AND a.module='crm.marketing' "
+                + "AND a.biz_type='warehouse' AND a.action IN ('warehouse.apply','warehouse.delete.request','warehouse.delete.cancel','warehouse.delete.complete','account.delete') "
+                + "AND (w.name LIKE ? OR w.code LIKE ?)";
+        List<Object> args = new java.util.ArrayList<>(List.of("%" + keyword.trim() + "%", "%" + keyword.trim() + "%"));
+        if (projectId != null) { from += " AND (w.project_id=? OR w.project_id IS NULL)"; args.add(projectId); }
+        Long total = jdbc.queryForObject("SELECT COUNT(*)" + from, Long.class, args.toArray());
+        args.add(pageSize); args.add((pageNo - 1) * pageSize);
+        var rows = jdbc.queryForList("SELECT a.id,a.biz_id AS warehouseId,w.name,w.code,a.action,a.reason,a.operator,"
+                + "DATE_FORMAT(a.create_time,'%Y-%m-%d %H:%i:%s') AS createTime,a.before_json AS beforeJson,a.after_json AS afterJson" + from
+                + " ORDER BY a.create_time DESC,a.id DESC LIMIT ? OFFSET ?", args.toArray());
+        return Result.ok(PageResult.of(total == null ? 0 : total, rows));
+    }
 
     @Operation(summary = "分页;inProgress=1 只看未上线(加盟申请页)")
     @PreAuthorize("hasAuthority('crm:marketing:warehouse:query')")
@@ -113,7 +147,7 @@ public class MktWarehouseController {
         MktWarehouse before = warehouseMapper.selectById(w.getId());
         if (before == null) throw new BizException("云仓不存在");
         int updated = warehouseMapper.update(null, new LambdaUpdateWrapper<MktWarehouse>()
-                .eq(MktWarehouse::getId, w.getId()).ne(MktWarehouse::getJoinStatus, 7)
+                .eq(MktWarehouse::getId, w.getId()).notIn(MktWarehouse::getJoinStatus, 7, 8)
                 .set(MktWarehouse::getName, w.getName()).set(MktWarehouse::getRegion, w.getRegion())
                 .set(MktWarehouse::getAddress, w.getAddress()).set(MktWarehouse::getContact, w.getContact())
                 .set(MktWarehouse::getPhone, w.getPhone()).set(MktWarehouse::getAreaSqm, w.getAreaSqm())

@@ -53,7 +53,7 @@ class MktCustomerAssignmentServiceTest {
         warehouse = new MktWarehouse(); warehouse.setId(20L); warehouse.setName("测试云仓"); warehouse.setProjectId(1L);
         warehouse.setJoinStatus(5); warehouse.setErpStatus(0); warehouse.setOrderMode("manual");
         lenient().when(customers.selectForUpdate(11L)).thenReturn(customer);
-        lenient().when(warehouses.selectById(20L)).thenReturn(warehouse);
+        lenient().when(warehouses.selectForUpdate(20L)).thenReturn(warehouse);
     }
 
     @Test
