@@ -133,7 +133,7 @@ public class MpBizController {
     public Result<PageResult<Map<String, Object>>> myCustomers(@RequestParam(defaultValue = "1") int pageNo,
                                                                @RequestParam(defaultValue = "20") int pageSize) {
         Long pid = MpAuthService.currentPromoterId();
-        IPage<Customer> p = customerMapper.selectPage(new Page<>(pageNo, pageSize),
+        IPage<Customer> p = customerMapper.selectPage(new Page<>(Math.max(pageNo, 1), Math.min(Math.max(pageSize, 1), 50)),
                 new LambdaQueryWrapper<Customer>().eq(Customer::getReferrerId, pid).orderByDesc(Customer::getId));
         return Result.ok(PageResult.of(p.getTotal(), p.getRecords().stream().map(this::customerView).collect(Collectors.toList())));
     }

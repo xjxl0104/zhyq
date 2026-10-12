@@ -17,7 +17,7 @@
       <view v-if="me.positionCode === 'P4' && Number(me.status) === 1" class="card">
         <view class="title">客户定价与分佣</view>
         <view class="muted" style="margin-top:16rpx">由您自定义总佣金、P4 本人和具体受益人的每单金额。</view>
-        <button class="btn secondary" @click="uni.navigateTo({ url: '/pages/allocation/index?customerId=' + c.id })">设置每单金额</button>
+        <button class="btn secondary" @click="navigateTo('/pages/allocation/index?customerId=' + c.id)">设置每单金额</button>
       </view>
       <view class="card">
         <view class="title">服务进度</view>
@@ -25,11 +25,11 @@
         <view v-if="c.progressUpdatedAt" class="muted">更新于 {{ c.progressUpdatedAt.slice(0, 16) }}</view>
       </view>
       <view v-if="c.canExtend" class="card">
-        <view class="muted">近60天有到访或方案记录且符合延期次数限制时，可以延长锁定90天。</view>
+        <view class="muted">已进入有效锁定且尚未延期过的客户，可以延长锁定90天，每个客户仅限延期一次。</view>
         <button class="btn" :loading="busy" :disabled="busy" @click="extend">延长锁定90天</button>
       </view>
       <button class="btn ghost" :disabled="loading" @click="load">刷新进度</button>
-      <DeleteCustomerButton :customer="c" :disabled="loading || busy" @deleted="uni.switchTab({ url: '/pages/customers/index' })" />
+      <DeleteCustomerButton :customer="c" :disabled="loading || busy" @deleted="switchTab('/pages/customers/index')" />
     </template>
   </view>
 </template>
@@ -43,6 +43,7 @@ export default { mixins: [appShareMixin] }
 import { ref, computed } from 'vue'
 import { onLoad, onShow } from '@dcloudio/uni-app'
 import { bizApi, meApi } from '@/api'
+import { navigateTo, switchTab } from '@/utils/nav.mjs'
 import DeleteCustomerButton from '@/components/DeleteCustomerButton.vue'
 const STATUS = {1:'跟进中',2:'已签约',3:'已流失'}
 const ASSIGN = {0:'待分派',1:'待商家确认',2:'已承接',3:'商家已拒绝，等待重新分派'}
@@ -53,7 +54,7 @@ onShow(load)
 async function load() {
   if (!id || loading.value) return
   loading.value = true; error.value = ''
-  try { [c.value, me.value] = await Promise.all([bizApi.customer(id), meApi.me()]) } catch (e) { error.value = e.message } finally { loading.value = false }
+  try { [c.value, me.value] = await Promise.all([bizApi.customer(id), meApi.me()]) } catch (e) { c.value = null; error.value = e.message } finally { loading.value = false }
 }
 const lockText = computed(() => {
   const x = c.value

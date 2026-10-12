@@ -9,7 +9,7 @@ const vueFiles=dir=>readdirSync(dir,{withFileTypes:true}).flatMap(e=>e.isDirecto
 test('真机 tabBar 页面不能使用 navigateTo 或 redirectTo',()=>{
   for(const file of vueFiles(join(src,'pages'))){
     const text=readFileSync(file,'utf8')
-    for(const match of text.matchAll(/uni\.(navigateTo|redirectTo)\(\{\s*url:\s*['"]([^'"]+)['"]/g))assert.ok(!tabs.has(match[2].split('?')[0]),`${file} ${match[1]} cannot open ${match[2]}`)
+    for(const match of text.matchAll(/(?:uni\.)?(navigateTo|redirectTo)\((?:\{\s*url:\s*)?['"]([^'"]+)['"]/g))assert.ok(!tabs.has(match[2].split('?')[0]),`${file} ${match[1]} cannot open ${match[2]}`)
   }
-  for(const page of ['team','withdraw'])assert.match(readFileSync(join(src,'pages',page,'index.vue'),'utf8'),/uni\.switchTab\(\{\s*url:\s*['"]\/pages\/me\/index['"]/)
+  for(const page of ['team','withdraw'])assert.match(readFileSync(join(src,'pages',page,'index.vue'),'utf8'),/(?:uni\.)?switchTab\((?:\{\s*url:\s*)?['"]\/pages\/me\/index['"]/)
 })
