@@ -50,7 +50,8 @@ public class MktCompetitionProtectionService {
         // Lock before any consistent read, so concurrent quota checks see committed entries.
         MktWarehouse warehouse = warehouses.selectForUpdate(warehouseId);
         if (warehouse == null) throw new BizException(403, "云仓不存在或无权访问");
-        if (Integer.valueOf(7).equals(warehouse.getJoinStatus())) throw new BizException("已退出云仓不能新增保护");
+        if (Integer.valueOf(7).equals(warehouse.getJoinStatus()) || Integer.valueOf(8).equals(warehouse.getJoinStatus()))
+            throw new BizException("已退出或冻结待删除云仓不能新增保护");
         String normalized = normalize(name);
         if (normalized.isEmpty() || name.length() > 100) throw new BizException("请填写 1–100 字的品牌或公司名称");
         requireEncryption();

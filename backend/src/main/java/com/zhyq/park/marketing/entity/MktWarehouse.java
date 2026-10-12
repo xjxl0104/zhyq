@@ -28,6 +28,11 @@ public class MktWarehouse extends BaseEntity {
     private String categories;
     /** 1申请 2资质审核 3ERP对接中 4待签协议 5已上线 6暂停 7退出 */
     private Integer joinStatus;
+    /** 8 = 删除冻结期，禁止登录及新增业务。 */
+    private LocalDateTime deleteRequestedAt;
+    private LocalDateTime deleteDueAt;
+    private String deleteReason;
+    private Integer deletePreviousStatus;
     /** 0未对接 1已联通(沙箱) 2已联通(正式) 3断连 */
     private Integer erpStatus;
     /** erp 外部系统接入 / manual 运营导入出库单 */
