@@ -78,6 +78,8 @@ public class ErpOrderIngestService {
             if (wh == null || (whCode != null && !whCode.equals(wh.getCode()))) {
                 return fail(logRow, 400, "WH_MISMATCH", "warehouse_code 与 App-Id 对应的云仓不一致");
             }
+            if (Integer.valueOf(8).equals(wh.getJoinStatus()))
+                return fail(logRow, 403, "WH_FROZEN", "云仓冻结待删除，暂不接收订单事件");
             MktErpEventInbox inbox = inboxMapper.selectOne(new LambdaQueryWrapper<MktErpEventInbox>()
                     .eq(MktErpEventInbox::getWarehouseId, cred.getWarehouseId())
                     .eq(MktErpEventInbox::getAppId, cred.getAppId())

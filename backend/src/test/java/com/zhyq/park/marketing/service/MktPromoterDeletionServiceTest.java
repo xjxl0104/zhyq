@@ -55,19 +55,23 @@ class MktPromoterDeletionServiceTest {
     @CsvSource({"crm_promoter,下级", "crm_lead,推荐线索", "crm_customer,推荐客户", "crm_customer_lock,锁定记录",
             "crm_service_contract,关联合同", "crm_referral_order,业务订单", "crm_promoter_commission,佣金流水", "crm_withdrawal,提现记录", "crm_customer_pricing,分佣配置"})
     void everyBusinessDependencyStopsDeletionBeforeAnyMutation(String table, String hint) {
-        when(jdbc.queryForList(startsWith("SELECT id FROM " + table + " WHERE"), eq(Long.class), any(Object[].class)))
+        when(jdbc.queryForList(contains("FROM " + table + " "), eq(Long.class), any(Object[].class)))
                 .thenReturn(List.of(99L));
         assertThatThrownBy(() -> service.delete(7L, "清理重复档案")).isInstanceOf(BizException.class).hasMessageContaining(hint);
         verify(jdbc, never()).update(anyString(), any(Object[].class));
         verifyNoInteractions(audits);
     }
 
-    @Test void softDeletedBusinessHistoryAlsoBlocksButDeletedChildrenDoNot() {
+    @Test void clearedCustomersAndReleasedLocksDoNotBlockButFinancialHistoryStillDoes() {
         service.delete(7L, "清理测试");
         ArgumentCaptor<String> sql = ArgumentCaptor.forClass(String.class);
         verify(jdbc, times(9)).queryForList(sql.capture(), eq(Long.class), any(Object[].class));
         assertThat(sql.getAllValues().get(0)).contains("deleted=0", "parent_id=?", "path LIKE ?");
-        assertThat(sql.getAllValues().subList(1, 9)).allSatisfy(query -> assertThat(query).doesNotContain("deleted="));
+        assertThat(sql.getAllValues().get(1)).contains("deleted=0");
+        assertThat(sql.getAllValues().get(2)).contains("deleted=0");
+        assertThat(sql.getAllValues().get(3)).contains("status=3 OR (deleted=0 AND status IN (1,2))");
+        assertThat(sql.getAllValues().subList(4, 8)).allSatisfy(query -> assertThat(query).doesNotContain("deleted="));
+        assertThat(sql.getAllValues().get(8)).contains("c.deleted=0", "p.deleted=0");
     }
 
     @Test void missingAndRepeatedDeletionDoNotTouchCredentialsOrAudit() {

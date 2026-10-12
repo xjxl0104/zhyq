@@ -51,6 +51,22 @@ public class MktAuditService {
         return auth == null ? "system" : auth.getName();
     }
 
+    /** 关键维护动作与审计同事务提交，写入失败必须回滚。 */
+    public void logRequired(String action, com.zhyq.park.marketing.entity.MktWarehouse warehouse,
+                            String reason, Object before, Object after) {
+        try {
+            SysAudit a = new SysAudit();
+            a.setModule(MODULE); a.setAction(action); a.setBizType("warehouse"); a.setBizId(warehouse.getId());
+            a.setTenantId(warehouse.getTenantId()); a.setProjectId(warehouse.getProjectId());
+            a.setReason(reason); a.setOperator(currentOperator());
+            a.setBeforeJson(before == null ? null : objectMapper.writeValueAsString(before));
+            a.setAfterJson(after == null ? null : objectMapper.writeValueAsString(after));
+            if (auditMapper.insert(a) != 1) throw new IllegalStateException("audit not saved");
+        } catch (Exception e) {
+            throw new com.zhyq.park.common.exception.BizException("云仓维护记录保存失败，请重试");
+        }
+    }
+
     private String toJson(Object o) {
         if (o == null) return null;
         try {

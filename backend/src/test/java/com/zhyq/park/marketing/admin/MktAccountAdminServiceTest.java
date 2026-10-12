@@ -20,10 +20,11 @@ class MktAccountAdminServiceTest {
     MktPromoterService promoters = mock(MktPromoterService.class);
     MktWarehouseOnboardingService warehouses = mock(MktWarehouseOnboardingService.class);
     MktPromoterDeletionService deletion = mock(MktPromoterDeletionService.class);
+    MktWarehouseDeletionService warehouseDeletion = mock(MktWarehouseDeletionService.class);
     MktCredentialMapper credentials = mock(MktCredentialMapper.class);
     SysAuditMapper audits = mock(SysAuditMapper.class);
     BCryptPasswordEncoder encoder = new BCryptPasswordEncoder(4);
-    MktAccountAdminService service = new MktAccountAdminService(control,jdbc,promoters,warehouses,deletion,credentials,encoder,audits,new ObjectMapper());
+    MktAccountAdminService service = new MktAccountAdminService(control,jdbc,promoters,warehouses,deletion,warehouseDeletion,credentials,encoder,audits,new ObjectMapper());
     @BeforeEach void setup() {
         when(control.requireSuperAdmin()).thenReturn(2L);
         when(control.state(anyString(),anyLong())).thenReturn(new MktAccountControl.State(false,false,0));
@@ -70,17 +71,15 @@ class MktAccountAdminServiceTest {
     @Test void partnerDeletionReusesExistingBusinessHistoryGuards() {
         service.delete("mp",7L,"误建账号"); verify(deletion).delete(7L,"误建账号");
     }
-    @Test void warehouseWithHistoryCannotBeDeleted() {
-        when(jdbc.queryForList(contains("FROM crm_referral_order WHERE"),eq(Long.class),any(Object[].class))).thenReturn(List.of(8L));
-        assertThatThrownBy(() -> service.delete("wh",7L,"误建账号")).hasMessageContaining("关联业务");
+    @Test void warehouseWithServingBusinessCannotBypassSharedDeletionGuard() {
+        doThrow(new BizException(409,"仍有在服客户")).when(warehouseDeletion).request(7L,"误建账号");
+        assertThatThrownBy(() -> service.delete("wh",7L,"误建账号")).hasMessageContaining("在服客户");
         verify(jdbc,never()).update(anyString(),any(Object[].class)); verifyNoInteractions(audits);
     }
-    @Test void emptyWarehouseDeleteRevokesBothPasswordAndWechatWithoutDeletingHistory() {
+    @Test void warehouseDeletionAlwaysUsesSevenDayGracePeriod() {
         service.delete("wh",7L,"误建账号");
-        verify(jdbc).update(startsWith("UPDATE crm_marketing_credential"),eq("system"),eq(7L));
-        verify(jdbc).update(startsWith("UPDATE crm_warehouse_contact SET openid=NULL"),eq("system"),eq(7L));
-        verify(jdbc).update(startsWith("UPDATE crm_warehouse SET deleted=1"),eq("system"),eq(7L));
-        verify(jdbc,never()).update(startsWith("DELETE"),any(Object[].class));
+        verify(warehouseDeletion).request(7L,"误建账号");
+        verify(jdbc,never()).update(anyString(),any(Object[].class));
     }
     @Test void creationReturnsNoTokenPasswordOrElevatedRole() {
         when(promoters.registerManaged(any(),isNull())).thenAnswer(i -> {

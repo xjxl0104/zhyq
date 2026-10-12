@@ -18,6 +18,7 @@
     <el-alert v-if="error" :title="error" type="error" :closable="false" /><div class="table-card">
       <div class="toolbar">
         <el-button type="primary" @click="openDialog()"><el-icon><Plus /></el-icon>新增云仓(提交加盟申请)</el-button>
+        <el-button @click="maintenanceVisible = true">加盟云仓维护记录</el-button>
       </div>
       <el-table :data="list" v-loading="loading" border stripe>
         <el-table-column prop="code" label="编码" width="120" />
@@ -26,17 +27,17 @@
         <el-table-column prop="contact" label="联系人" width="100" />
         <el-table-column prop="phone" label="电话" width="130" />
         <el-table-column label="加盟状态" width="110">
-          <template #default="{ row }"><el-tag :type="joinType(row.joinStatus)">{{ JOIN[row.joinStatus] }}</el-tag></template>
+          <template #default="{ row }"><el-tag :type="joinType(row.joinStatus)">{{ JOIN[row.joinStatus] }}</el-tag><div v-if="row.joinStatus === 8" class="hint">预计删除：{{ row.deleteDueAt?.replace('T', ' ') }}<br />原因：{{ row.deleteReason }}</div></template>
         </el-table-column>
         <el-table-column label="订单接入" width="140"><template #default="{ row }">{{ row.orderMode === 'manual' ? '人工导入出库单' : '外部 ERP' }}</template></el-table-column>
         <el-table-column label="ERP" width="110">
           <template #default="{ row }"><el-tag :type="erpType(row.erpStatus)" size="small">{{ ERP[row.erpStatus] }}</el-tag></template>
         </el-table-column>
         <el-table-column label="结算周期" width="90"><template #default="{ row }">{{ CYCLE[row.settleCycle] }}</template></el-table-column>
-        <el-table-column label="操作" width="300" fixed="right">
+        <el-table-column label="操作" width="350" fixed="right">
           <template #default="{ row }">
             <el-button :disabled="acting" link type="primary" @click="openSteps(row)">进度</el-button>
-            <el-button :disabled="acting" link type="primary" @click="openDialog(row)">编辑</el-button>
+            <el-button :disabled="acting || [7,8].includes(row.joinStatus)" link type="primary" @click="openDialog(row)">编辑</el-button>
             <template v-if="row.joinStatus === 2">
               <el-button :disabled="acting" link type="success" @click="act(row, 'passQualification', '资质审核通过')">审核通过</el-button>
               <el-button :disabled="acting" link type="danger" @click="withReason(row, 'rejectQualification', '驳回资质')">驳回</el-button>
@@ -46,6 +47,8 @@
             <el-button v-else-if="row.joinStatus === 5" link type="warning" @click="withReason(row, 'pause', '暂停云仓')">暂停</el-button>
             <el-button v-else-if="row.joinStatus === 6" link type="success" @click="act(row, 'resume', '已恢复')">恢复</el-button>
             <el-button v-if="[5, 6].includes(row.joinStatus)" link type="danger" @click="withReason(row, 'exit', '云仓退出')">退出</el-button>
+            <el-button v-if="canDelete && row.joinStatus !== 8" :disabled="acting" link type="danger" @click="openDelete(row)">删除</el-button>
+            <el-button v-if="canDelete && row.joinStatus === 8" :disabled="acting" link type="primary" @click="openDelete(row, true)">撤销删除</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -88,6 +91,15 @@
       <p class="hint">审核后可选择人工导入出库单，再提交已签署协议；外部 ERP 接入单独配置。</p>
     </el-drawer>
     <WarehouseAgreementUpload v-model:visible="agreement.visible" :warehouse="agreement.row" @saved="load" />
+    <WarehouseMaintenance v-model="maintenanceVisible" />
+    <el-dialog v-model="removal.visible" :title="removal.cancel ? '撤销云仓删除' : '删除加盟云仓'" width="min(92vw, 520px)"
+      :close-on-click-modal="false" :close-on-press-escape="!removal.busy" :show-close="!removal.busy">
+      <p>{{ removal.cancel ? '撤销删除' : '确认删除' }}云仓「{{ removal.row?.name }}」（{{ removal.row?.code }}）？</p>
+      <el-alert :closable="false" type="warning" :title="removal.cancel ? '撤销后恢复申请删除前的加盟状态。' : '提交后立即冻结登录和新增业务，7天内可撤销；到期自动从业务列表移除，历史档案及维护记录保留。'" />
+      <el-input v-model="removal.reason" type="textarea" :rows="4" maxlength="500" show-word-limit :disabled="removal.busy" :placeholder="removal.cancel ? '请填写撤销原因（必填）' : '请填写删除原因（必填）'" style="margin-top:16px" />
+      <el-alert v-if="removal.error" :title="removal.error" type="error" :closable="false" />
+      <template #footer><el-button :disabled="removal.busy" @click="removal.visible=false">取消</el-button><el-button :type="removal.cancel ? 'primary' : 'danger'" :loading="removal.busy" @click="submitDelete">{{ removal.cancel ? '确认撤销' : '提交并冻结7天' }}</el-button></template>
+    </el-dialog>
   </div>
 </template>
 
@@ -97,12 +109,14 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { mktWarehouseApi } from '@/api/marketing'
 import WarehouseAgreementUpload from '@/components/WarehouseAgreementUpload.vue'
 import WarehouseAttachments from '@/components/WarehouseAttachments.vue'
+import WarehouseMaintenance from './WarehouseMaintenance.vue'
+import { hasPermission } from '@/utils/permission'
 import { useProjectStore } from '@/stores/project'
 const projectStore = useProjectStore()
 const projectLabel = id => id == null ? '待分配园区' : (projectStore.projects.find(p => p.id === id)?.name || `园区 #${id}`)
 function parseFiles(raw){try{return JSON.parse(raw||'[]').filter(f=>f.id)}catch{return []}}
 
-const JOIN = { 1: '申请', 2: '资质审核', 3: '待配置订单接入', 4: '待签协议', 5: '已上线', 6: '暂停', 7: '退出' }
+const JOIN = { 1: '申请', 2: '资质审核', 3: '待配置订单接入', 4: '待签协议', 5: '已上线', 6: '暂停', 7: '退出', 8: '冻结待删除' }
 const ERP = { 0: '未对接', 1: '已联通(沙箱)', 2: '已联通(正式)', 3: '断连' }
 const CYCLE = { 1: '周', 2: '半月', 3: '月' }
 const STEP = { 1: '提交申请', 2: '资质审核', 3: '确认订单接入方式', 4: '签加盟协议', 5: '上线' }
@@ -113,6 +127,25 @@ const loading = ref(false), saving = ref(false), acting = ref(false), error = re
 const list = ref([])
 const total = ref(0)
 const query = reactive({ pageNo: 1, pageSize: 10, keyword: '', joinStatus: null })
+const canDelete = computed(() => hasPermission('ROLE_admin'))
+const maintenanceVisible = ref(false)
+const removal = reactive({ visible: false, row: null, cancel: false, reason: '', busy: false, error: '' })
+function openDelete(row, cancel = false) {
+  if (!canDelete.value || acting.value || removal.busy) return
+  Object.assign(removal, { visible: true, row, cancel, reason: '', error: '' })
+}
+async function submitDelete() {
+  if (!canDelete.value || removal.busy || !removal.row) return
+  const reason = removal.reason.trim()
+  if (!reason || reason.length > 500) { removal.error = '操作原因必填且不能超过500字'; return }
+  removal.busy = true; removal.error = ''
+  try {
+    await mktWarehouseApi[removal.cancel ? 'cancelDelete' : 'remove'](removal.row.id, { reason })
+    ElMessage.success(removal.cancel ? '已撤销删除' : '云仓已冻结，7天后自动删除')
+    removal.visible = false; await load()
+  } catch (e) { removal.error = e.message || '操作失败，请重试' }
+  finally { removal.busy = false }
+}
 
 async function load() {
   loading.value = true; error.value=''
