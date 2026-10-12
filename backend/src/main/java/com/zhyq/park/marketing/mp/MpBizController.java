@@ -91,7 +91,11 @@ public class MpBizController {
             throw new BizException("该客户已在系统中(已被推荐)");
         }
         Customer c = new Customer();
+        c.setTenantId(me.getTenantId());
         c.setName(name); c.setContact(str(body, "contact")); c.setPhone(phone);
+        String brandName = str(body, "brandName");
+        if (name.length() > 100 || (brandName != null && brandName.length() > 100)) throw new BizException("公司或品牌名称最多 100 字");
+        c.setBrandName(brandName);
         c.setIndustry(str(body, "industry")); c.setDemandArea(str(body, "demand"));
         Object st = body.get("serviceType");
         int serviceType;

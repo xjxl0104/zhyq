@@ -212,7 +212,7 @@ class MktTransitionGuardTest {
 
         @BeforeEach
         void setUp() {
-            service = new MktLockService(lockMapper, promoterMapper, positionMapper, bizSettings, auditService, eventPublisher, customerMapper, assignmentService);
+            service = new MktLockService(lockMapper, promoterMapper, positionMapper, bizSettings, auditService, eventPublisher, customerMapper, assignmentService, org.mockito.Mockito.mock(MktCompetitionProtectionService.class));
             Customer customer = new Customer(); customer.setId(5L); customer.setReferrerId(9L);
             when(customerMapper.selectForUpdate(5L)).thenReturn(customer);
             captor = ArgumentCaptor.forClass(Wrapper.class);

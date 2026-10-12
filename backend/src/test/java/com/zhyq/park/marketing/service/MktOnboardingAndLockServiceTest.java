@@ -181,6 +181,7 @@ class MktOnboardingAndLockServiceTest {
         @Mock ApplicationEventPublisher eventPublisher;
         @Mock CustomerMapper customerMapper;
         @Mock MktCustomerAssignmentService assignmentService;
+        @Mock MktCompetitionProtectionService protectionService;
         @InjectMocks MktLockService service;
 
         @BeforeEach

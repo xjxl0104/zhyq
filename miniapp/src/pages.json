@@ -22,6 +22,7 @@
     { "path": "pages/warehouse-dashboard/index", "style": { "navigationBarTitleText": "云仓看板" } },
     { "path": "pages/warehouse-profile/index", "style": { "navigationBarTitleText": "个人信息" } },
     { "path": "pages/warehouse-apply/index", "style": { "navigationBarTitleText": "加盟申请" } },
+    { "path": "pages/warehouse-protection/index", "style": { "navigationBarTitleText": "竞争保护白名单" } },
     { "path": "pages/warehouse-onboarding/index", "style": { "navigationBarTitleText": "加盟进度" } },
     { "path": "pages/warehouse-erp/index", "style": { "navigationBarTitleText": "ERP 接入" } },
     { "path": "pages/warehouse-customers/index", "style": { "navigationBarTitleText": "承接客户" } },
