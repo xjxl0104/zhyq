@@ -63,11 +63,16 @@
 
   --mkt-line: rgba(15, 23, 42, .07);
   .el-table {
+    /* 保留营销页的白底轻列表；固定列也必须使用不透明的行底色。 */
+    --list-header: var(--bg-card);
+    --list-surface: var(--bg-card);
+    --list-stripe: var(--bg-card);
+    --list-hover: #f7f7fe;
     --el-table-border-color: var(--mkt-line);
-    --el-table-header-bg-color: transparent;
-    --el-table-row-hover-bg-color: rgba(79, 70, 229, .045);
-    --el-table-tr-bg-color: transparent;
-    background: transparent;
+    --el-table-header-bg-color: var(--list-header);
+    --el-table-row-hover-bg-color: var(--list-hover);
+    --el-table-tr-bg-color: var(--list-surface);
+    background-color: var(--list-surface);
   }
   /* border 属性仍保留(列宽可拖),只是不画竖线和外框 */
   .el-table--border .el-table__cell { border-right: 0; }
@@ -78,19 +83,31 @@
   .el-table th.el-table__cell {
     height: 40px;
     padding: 0;
-    /* 全局表头规则带 !important,这里只能同样加才能去掉底色 */
-    background: transparent !important;
+    /* 表头随固定列移动时遮住下方文字，不能用透明背景。 */
+    background-color: var(--list-header) !important;
     color: var(--text-secondary) !important;
     font-size: 12.5px;
     font-weight: 500;
     border-bottom: 1px solid rgba(15, 23, 42, .12);
   }
   .el-table td.el-table__cell { padding: 13px 0; }
-  .el-table--striped .el-table__body tr.el-table__row--striped td.el-table__cell { background: transparent; }
+  /* 行底色、悬停、选中态统一交给全局列表规则，避免斑马行单独透字。 */
   .el-table__body tr:last-child td.el-table__cell { border-bottom: 0; }
-  .el-table .el-table__fixed-right, .el-table .el-table-fixed-column--right { background: #fff; }
+  /* 只在确实横向溢出的表格中常显；覆盖 Scrollbar 离开鼠标后的 v-show。 */
+  .el-table--scrollable-x .el-scrollbar__bar.is-horizontal { display: block !important; opacity: 1; }
   .project-note, .el-table .muted, .el-table .sub { color: var(--text-secondary); font-size: 12px; }
 
   .el-tag { padding: 0 9px; height: 22px; line-height: 22px; border-radius: 999px; font-size: 12px; }
   .el-pagination { margin-top: 16px; }
+}
+
+/* 和 useResponsive / responsive.scss 的手机断点保持一致。
+   Element Plus 使用 el-table-fixed-column--*，手机上不让固定操作列盖住数据区。 */
+@media (max-width: 767px), (max-width: 1023px) and (max-height: 500px) {
+  .mkt-page .el-table .el-table__cell:is(.el-table-fixed-column--left, .el-table-fixed-column--right) {
+    position: static !important;
+    left: auto !important;
+    right: auto !important;
+    &::before { display: none; }
+  }
 }
