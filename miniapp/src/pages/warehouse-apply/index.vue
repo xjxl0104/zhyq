@@ -1,6 +1,7 @@
 <template>
   <view class="page-wrap"><view class="card">
     <view class="wh-title">加盟申请资料</view>
+    <navigator url="/pages/warehouse-protection/index"><view class="wh-secondary">管理竞争保护白名单</view></navigator>
     <view v-if="loading" class="wh-note">正在读取申请资料…</view>
     <template v-else-if="ready">
       <view class="wh-status">{{ JOIN[form.joinStatus] || '状态待确认' }}</view>

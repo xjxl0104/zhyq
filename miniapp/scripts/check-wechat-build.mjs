@@ -2,6 +2,10 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 const manifest = JSON.parse(readFileSync(resolve('src/manifest.json'), 'utf8'))
 const project = JSON.parse(readFileSync(resolve('dist/build/mp-weixin/project.config.json'), 'utf8'))
+const customers = readFileSync(resolve('dist/build/mp-weixin/pages/customers/index.wxml'), 'utf8')
+if (!/<navigator\b[^>]*url="\/pages\/referral\/index"[^>]*open-type="navigate"/.test(customers)) {
+  throw new Error('客户页缺少推荐新客户原生导航入口，请重新构建。')
+}
 if (project.appid !== manifest['mp-weixin'].appid) {
   throw new Error('构建产物 AppID 与源码不一致，请清理旧产物后重新构建。')
 }

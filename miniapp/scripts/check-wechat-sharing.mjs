@@ -60,6 +60,10 @@ for (const page of pages) {
   load(resolve(root, `${page}.js`))
   assert.equal(registered.length, before + 1, `${page}: native page not registered`)
   const options = registered.at(-1)
+  if (page === 'pages/warehouse-protection/index') {
+    assert.equal(options.methods?.onShareAppMessage, undefined, 'Confidential protection list must not be shareable')
+    continue
+  }
   assert.equal(typeof options.methods?.onShareAppMessage, 'function', `${page}: native share hook missing (menu would be disabled)`)
   const properties = Object.fromEntries(Object.entries(options.properties || {}).map(([key, value]) => [key, value.value]))
   const instance = {
@@ -97,4 +101,4 @@ for (const page of pages) {
   }
   options.lifetimes.detached?.call(instance)
 }
-console.log(`微信分享构建已核验：${pages.length} 个页面均注册原生转发回调，默认入口和邀请页分享均正确。`)
+console.log(`微信分享构建已核验：公开页面转发回调正确，保密名单不注册转发回调。`)
