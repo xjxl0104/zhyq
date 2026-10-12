@@ -1,9 +1,9 @@
 <template>
-  <view>
+  <view class="page-wrap">
     <view v-if="state.error" class="card"><view class="muted">{{ state.error }}</view><button class="btn" :disabled="state.loading" @click="pager.retry()">重新加载</button></view>
     <view v-if="state.loading && !list.length" class="card muted">正在读取客户…</view>
-    <view class="card" v-if="!list.length && state.loaded && !state.error"><view class="muted">还没有推荐客户</view><button class="btn" @click="uni.navigateTo({ url: '/pages/referral/index' })">去推荐</button></view>
-    <view class="card" v-for="c in list" :key="c.id" @click="uni.navigateTo({ url: '/pages/customer-detail/index?id=' + c.id })">
+    <view class="card" v-if="!list.length && state.loaded && !state.error"><view class="muted">还没有推荐客户</view><button class="btn" @click="navigateTo('/pages/referral/index')">去推荐</button></view>
+    <view class="card" v-for="c in list" :key="c.id" @click="navigateTo('/pages/customer-detail/index?id=' + c.id)">
       <view class="row">
         <view>
           <view style="font-weight:600">{{ c.name }}</view>
@@ -17,7 +17,7 @@
       <DeleteCustomerButton :customer="c" :disabled="state.loading" @deleted="pager.load()" />
     </view>
     <view v-if="list.length" class="card"><button v-if="list.length < state.total" class="btn ghost" :loading="state.loading" :disabled="state.loading" @click="pager.load(false)">加载更多客户</button><view v-else class="muted">共 {{ state.total }} 位客户，已全部显示</view></view>
-    <button v-if="list.length" class="btn" @click="uni.navigateTo({ url: '/pages/referral/index' })">推荐新客户</button>
+    <view v-if="list.length" class="bottom-action"><button class="btn" @click="navigateTo('/pages/referral/index')">推荐新客户</button></view>
   </view>
 </template>
 
@@ -31,6 +31,7 @@ export default { mixins: [appShareMixin] }
 import { reactive, computed, onUnmounted } from 'vue'
 import { onShow, onReachBottom } from '@dcloudio/uni-app'
 import { bizApi } from '@/api'
+import { navigateTo } from '@/utils/nav.mjs'
 import { createPager } from '@/utils/pagination.mjs'
 import DeleteCustomerButton from '@/components/DeleteCustomerButton.vue'
 
@@ -41,7 +42,10 @@ const list = computed(() => state.records)
 const lockText = (c) => !c.lockStatus ? '未锁定' : c.lockStatus === 1 ? `预锁 · 剩 ${c.lockDaysLeft} 天` : c.lockStatus === 2 ? `锁定 · 剩 ${c.lockDaysLeft} 天` : c.lockStatus === 3 ? '已成交' : '已释放'
 const lockClass = (c) => c.lockStatus === 2 || c.lockStatus === 3 ? 'ok' : c.lockStatus === 1 ? 'warn' : ''
 
-onShow(() => pager.load())
+onShow(() => pager.refresh())
 onReachBottom(() => pager.load(false))
 onUnmounted(pager.invalidate)
 </script>
+<style scoped>
+.bottom-action{margin:0 24rpx}
+</style>

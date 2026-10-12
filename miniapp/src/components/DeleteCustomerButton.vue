@@ -21,7 +21,7 @@ async function remove() {
   try {
     const result = await new Promise((resolve, reject) => uni.showModal({
       title: '删除推荐客户',
-      content: `确认删除「${name}」？删除后将移出客户列表并释放推荐锁定。已关联合同、订单或佣金的客户无法删除。`,
+      content: `确认删除「${name}」？删除后将移出客户列表并释放推荐锁定。已关联合同、订单、佣金或已由云仓承接的客户无法删除。`,
       confirmText: '确认删除', cancelText: '取消', confirmColor: '#c0392b',
       success: resolve, fail: () => reject(new Error('无法打开确认窗口，请重试'))
     }))

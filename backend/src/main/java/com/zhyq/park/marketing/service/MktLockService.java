@@ -104,7 +104,7 @@ public class MktLockService {
         publish(require(lockId));
     }
 
-    /** 延期一次 +90 天(运营审核,需近 60 天有到访/方案记录 —— 由调用方校验后传原因)。 */
+    /** 延期一次 +90 天。本方法只校验“已锁定且未延期过”，不校验到访/方案记录；小程序端和后台均按此规则展示。 */
     @Transactional
     public void extend(Long lockId, String reason) {
         requireReason(reason);

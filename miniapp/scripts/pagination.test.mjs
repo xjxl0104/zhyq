@@ -27,3 +27,23 @@ test('空结果仅请求第一页且重叠分页去重',async()=>{
   let calls=0;const state={},pager=createPager(async()=>{calls++;return {records:[],total:0}},state);await pager.load();await pager.load(false);assert.equal(calls,1);assert.equal(state.loaded,true)
   const other={},pages=createPager(async({pageNo})=>({records:pageNo===1?[{id:1},{id:2}]:[{id:2},{id:3}],total:3}),other,{pageSize:2});await pages.load();await pages.load(false);assert.deepEqual(other.records.map(x=>x.id),[1,2,3])
 })
+test('回到页面刷新：保留已加载的页，取回后整体替换，被删除的客户消失',async()=>{
+  const all=Array.from({length:5},(_,i)=>({id:i+1,v:1}));const state={};let calls=[]
+  const pager=createPager(async({pageNo,pageSize})=>{calls.push(pageNo);return {total:all.length,records:all.slice((pageNo-1)*pageSize,pageNo*pageSize)}},state,{pageSize:2})
+  await pager.load();await pager.load(false);assert.equal(state.records.length,4);assert.equal(state.pageNo,2)
+  all.splice(0,1);all.forEach(r=>{r.v=2});calls=[]
+  const running=pager.refresh();assert.equal(state.loading,true);assert.equal(state.records.length,4,'刷新期间列表不清空')
+  await running;assert.deepEqual(calls,[1,2]);assert.deepEqual(state.records.map(r=>r.id),[2,3,4,5]);assert.equal(state.total,4);assert.equal(state.pageNo,2);assert.equal(state.loading,false)
+})
+test('刷新失败保留原列表并给出错误；未加载过时等同首次加载',async()=>{
+  const state={};let fail=false,calls=0
+  const pager=createPager(async()=>{calls++;if(fail)throw new Error('网络超时');return {total:1,records:[{id:1}]}},state)
+  await pager.refresh();assert.equal(calls,1);assert.equal(state.loaded,true);assert.equal(state.records.length,1)
+  fail=true;await pager.refresh();assert.equal(state.error,'网络超时');assert.deepEqual(state.records,[{id:1}]);assert.equal(state.loading,false)
+  fail=false;await pager.retry();assert.equal(state.error,'');assert.deepEqual(state.records,[{id:1}])
+})
+test('刷新期间被新请求取代时，旧响应不能覆盖',async()=>{
+  const a=pending(),state={};let n=0;const pager=createPager(()=>{n++;return n===1?Promise.resolve({total:1,records:[{id:1}]}):a.promise},state)
+  await pager.load();const stale=pager.refresh();pager.invalidate();a.resolve({total:1,records:[{id:9}]});await stale
+  assert.deepEqual(state.records,[{id:1}])
+})
