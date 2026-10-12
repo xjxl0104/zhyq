@@ -93,7 +93,8 @@
   .el-table td.el-table__cell { padding: 13px 0; }
   /* 行底色、悬停、选中态统一交给全局列表规则，避免斑马行单独透字。 */
   .el-table__body tr:last-child td.el-table__cell { border-bottom: 0; }
-  .el-table--scrollable-x .el-scrollbar__bar.is-horizontal { opacity: 1; }
+  /* 只在确实横向溢出的表格中常显；覆盖 Scrollbar 离开鼠标后的 v-show。 */
+  .el-table--scrollable-x .el-scrollbar__bar.is-horizontal { display: block !important; opacity: 1; }
   .project-note, .el-table .muted, .el-table .sub { color: var(--text-secondary); font-size: 12px; }
 
   .el-tag { padding: 0 9px; height: 22px; line-height: 22px; border-radius: 999px; font-size: 12px; }
