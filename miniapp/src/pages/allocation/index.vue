@@ -16,7 +16,7 @@
     <view v-else-if="!customers.length" class="card">
       <view class="section-title">暂无可定价客户</view>
       <view class="pricing-note">您和邀请体系内成员推荐的客户会显示在这里。</view>
-      <button class="btn secondary" @click="uni.navigateTo({ url: '/pages/referral/index' })">推荐客户</button>
+      <button class="btn secondary" @click="navigateTo('/pages/referral/index')">推荐客户</button>
     </view>
     <template v-else>
       <view class="card">
@@ -83,6 +83,7 @@ export default { mixins: [appShareMixin] }
 import { computed, reactive, ref } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
 import { meApi, pricingApi } from '@/api'
+import { navigateTo } from '@/utils/nav.mjs'
 import { amountToMills, formatPerOrder, millsToAmount, validatePricing } from '@/utils/pricing.mjs'
 
 const me = ref({})
