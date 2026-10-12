@@ -14,13 +14,13 @@
 
     <view v-if="bench" class="grid bench-grid">
       <view class="stat pressable" @click="go('/pages/team/index')"><view class="caption">团队人数</view><view class="v">{{ bench.teamCount }}</view></view>
-      <view class="stat pressable" @click="uni.switchTab({ url: '/pages/customers/index' })"><view class="caption">客户数</view><view class="v">{{ bench.customerCount }}</view></view>
+      <view class="stat pressable" @click="switchTab('/pages/customers/index')"><view class="caption">客户数</view><view class="v">{{ bench.customerCount }}</view></view>
       <view class="stat"><view class="caption">已赚（元）</view><view class="v">{{ fmt(bench.earned) }}</view></view>
       <view class="stat"><view class="caption">待结算佣金（元）</view><view class="v">{{ fmt(bench.pending) }}</view></view>
     </view>
 
     <template v-if="sources.length">
-      <view class="section-head"><text class="section-title">收入构成</text><text class="section-link" @click="uni.switchTab({ url: '/pages/income/index' })">收益明细</text></view>
+      <view class="section-head"><text class="section-title">收入构成</text><text class="section-link" @click="switchTab('/pages/income/index')">收益明细</text></view>
       <view class="card activity-card">
         <view class="row" v-for="source in sources" :key="source.label">
           <text>{{ source.label }}</text>
@@ -48,7 +48,7 @@
       </view>
     </view>
 
-    <view class="section-head"><text class="section-title">最近动态</text><text class="section-link" @click="uni.navigateTo({url:'/pages/notices/index'})">消息通知</text></view>
+    <view class="section-head"><text class="section-title">最近动态</text><text class="section-link" @click="navigateTo('/pages/notices/index')">消息通知</text></view>
     <view v-if="home" class="card activity-card">
       <view v-if="!home.recent?.length" class="list-empty">还没有收益记录，去推荐第一位客户吧</view>
       <view class="row" v-for="(r, i) in home.recent" :key="i">
@@ -69,6 +69,7 @@ export default { mixins: [appShareMixin] }
 import { ref, computed, onUnmounted } from 'vue'
 import { onShow, onHide } from '@dcloudio/uni-app'
 import { meApi } from '@/api'
+import { navigateTo, switchTab } from '@/utils/nav.mjs'
 import { token } from '@/utils/request'
 
 const STATUS = { 1: '冻结', 2: '可结算', 3: '已结算', 4: '已提现', 5: '作废' }

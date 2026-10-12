@@ -41,6 +41,12 @@ public class MktCustomerDeletionService {
         // 不向其他伙伴泄漏该编号是否存在或是否已签约。
         if (customer == null || !Objects.equals(promoterId, customer.getReferrerId()))
             throw new BizException(403, "无权删除该客户，仅能删除自己推荐的客户");
+        // 已分派给云仓、等待确认或已承接的客户，云仓端正在跟进，不能由推荐伙伴单方面删除。
+        Integer assignment = customer.getWarehouseAssignmentStatus();
+        if (customer.getAssignedWarehouseId() != null
+                && (Integer.valueOf(MktCustomerAssignmentService.PENDING).equals(assignment)
+                || Integer.valueOf(MktCustomerAssignmentService.ACCEPTED).equals(assignment)))
+            throw new BizException(409, "该客户已分派给云仓承接，不能自行删除，请联系园区运营处理");
         delete(customer, "园区伙伴删除自己推荐的客户");
     }
 

@@ -8,7 +8,7 @@
       <view style="font-size:40rpx;font-weight:600">{{ p.name }} <text class="tag">{{ p.code }}</text></view>
       <view class="muted">自 {{ p.since?.slice(0, 10) }}</view>
       <view class="muted" style="margin-top:20rpx">P1–P4 的每单金额均由 P4 按客户自定义，称号不对应固定金额或比例。</view>
-      <button v-if="p.code === 'P4'" class="btn secondary" @click="uni.navigateTo({ url: '/pages/allocation/index' })">客户定价与分佣</button>
+      <button v-if="p.code === 'P4'" class="btn secondary" @click="navigateTo('/pages/allocation/index')">客户定价与分佣</button>
     </view>
     <view class="card">
       <view style="font-weight:600;margin-bottom:12rpx">近 12 个月业绩</view>
@@ -18,7 +18,7 @@
     <view class="card">
       <view style="font-weight:600;margin-bottom:12rpx">称号说明</view>
       <view class="muted">称号由所属 P4 设置，不按成交额或单数自动晋升。P4 可管理邀请体系成员称号，并配置负责客户的每单金额。</view>
-      <button v-if="p.code === 'P4'" class="btn secondary" @click="uni.navigateTo({ url: '/pages/team/index' })">管理团队称号</button>
+      <button v-if="p.code === 'P4'" class="btn secondary" @click="navigateTo('/pages/team/index')">管理团队称号</button>
     </view>
     </template>
   </view>
@@ -34,6 +34,7 @@ export default { mixins: [appShareMixin] }
 import { ref, onUnmounted } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import { meApi } from '@/api'
+import { navigateTo } from '@/utils/nav.mjs'
 const p = ref(null)
 const error = ref(''), loading = ref(false)
 let requestNo = 0

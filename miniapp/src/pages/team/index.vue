@@ -4,7 +4,7 @@
     <view v-if="loading && !loaded" class="card muted">正在读取团队成员…</view>
     <view v-if="loaded" class="card">
       <view class="row team-heading"><text class="title">{{ canManage ? '邀请体系成员' : '直属成员' }} {{ list.length }} 人</text>
-        <button v-if="canManage" class="text-button" @click="uni.navigateTo({ url: '/pages/allocation/index' })">客户定价 ›</button></view>
+        <button v-if="canManage" class="text-button" @click="navigateTo('/pages/allocation/index')">客户定价 ›</button></view>
       <view v-if="canManage" class="team-note">显示邀请体系内的正常成员。您可以设置 P1–P4 称号，金额仍按客户单独配置。P4 拥有定价权。</view>
       <view v-if="!list.length" class="team-note">还没有可显示的成员。朋友通过您的邀请码注册后会加入团队。</view>
       <view class="row member-row" v-for="member in list" :key="member.id">
@@ -16,7 +16,7 @@
       </view>
       <view v-if="savedMessage" class="success-text" role="status">{{ savedMessage }}</view>
     </view>
-    <button class="btn" @click="uni.switchTab({ url: '/pages/me/index' })">查看我的邀请码</button>
+    <button class="btn" @click="switchTab('/pages/me/index')">查看我的邀请码</button>
   </view>
 </template>
 
@@ -30,6 +30,7 @@ export default { mixins: [appShareMixin] }
 import { computed, ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import { meApi, pricingApi } from '@/api'
+import { navigateTo, switchTab } from '@/utils/nav.mjs'
 const POS = { P1: '园区伙伴', P2: '银牌合伙人', P3: '金牌合伙人', P4: '钻石合伙人' }
 const CODES = ['P1', 'P2', 'P3', 'P4']
 const positions = ref([])
