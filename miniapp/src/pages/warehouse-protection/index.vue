@@ -17,7 +17,7 @@
       <view v-if="ready && !items.length" class="wh-note">暂无保护名称，添加后即可生效。</view>
       <view v-for="item in items" :key="item.id" class="protection-row">
         <view class="protection-name">{{ item.name }}</view>
-        <button size="mini" :disabled="busy || loading" @click="confirmRemove(item)">移除</button>
+        <button class="protection-remove" size="mini" :disabled="busy || loading" @click="confirmRemove(item)">移除</button>
       </view>
     </view>
   </view>
@@ -104,4 +104,5 @@ onUnload(clearPrivateData)
 .privacy-note { margin: 24rpx 0; padding: 24rpx; background: #eef2fd; border-radius: 12rpx; line-height: 1.7; }
 .protection-row { display:flex; align-items:center; justify-content:space-between; gap:24rpx; padding:24rpx 0; border-bottom:1rpx solid #e8eaef; }
 .protection-name { flex:1; overflow-wrap:anywhere; }
+.protection-remove { min-height: 56rpx; margin: 0; padding: 0 20rpx; color: var(--park-blue); border-radius: 12rpx; background: #eef1ff; font-size: 24rpx; line-height: 56rpx; }
 </style>
