@@ -18,15 +18,22 @@
         <el-table-column label="当前步骤" width="130">
           <template #default="{ row }"><el-tag :type="row.joinStatus === 3 ? 'primary' : 'warning'">{{ JOIN[row.joinStatus] }}</el-tag></template>
         </el-table-column>
+        <el-table-column label="订单接入方式" width="135">
+          <template #default="{ row }">{{ row.orderMode === 'manual' ? '手工导入' : row.orderMode === 'erp' ? '外部 ERP' : '待选择' }}</template>
+        </el-table-column>
         <el-table-column prop="createTime" label="申请时间" width="160" />
-        <el-table-column label="操作" width="330" fixed="right">
+        <el-table-column label="操作" width="420" fixed="right">
           <template #default="{ row }">
             <el-button :disabled="acting" link type="primary" @click="showApplication(row)">查看资料</el-button>
             <template v-if="row.joinStatus === 2">
               <el-button :disabled="acting" link type="success" @click="act(row, 'passQualification')">审核通过</el-button>
               <el-button :disabled="acting" link type="danger" @click="withReason(row, 'rejectQualification', '驳回资质')">驳回</el-button>
             </template>
-            <el-button v-else-if="row.joinStatus === 3" link type="success" @click="act(row, 'useManual')">采用人工导入订单</el-button>
+            <template v-else-if="row.joinStatus === 3">
+              <el-button :disabled="acting" link type="success" @click="act(row, 'useManual')">{{ row.orderMode === 'erp' ? '切换手工导入' : '选择手工导入' }}</el-button>
+              <el-button :disabled="acting" link type="primary" @click="selectErp(row)">{{ row.orderMode === 'erp' ? '继续配置 ERP' : '选择 ERP 接入' }}</el-button>
+              <el-button :disabled="acting || row.erpStatus !== 2 || row.orderMode !== 'erp'" link type="success" @click="act(row, 'confirmErp')">ERP 已联通，继续</el-button>
+            </template>
             <el-button v-else-if="row.joinStatus === 4" link type="success" @click="signAgreement(row)">上传协议并上线</el-button>
             <router-link to="/crm/marketing/warehouse" class="link">去云仓管理</router-link>
           </template>
@@ -42,11 +49,13 @@
 
 <script setup>
 import { reactive, ref, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { mktWarehouseApi } from '@/api/marketing'
 import WarehouseAgreementUpload from '@/components/WarehouseAgreementUpload.vue'
 import WarehouseAttachments from '@/components/WarehouseAttachments.vue'
 const application=reactive({visible:false,loading:false,row:null,steps:[]})
+const router = useRouter()
 const fields={name:'云仓名称',region:'区域',address:'地址',contact:'联系人',phone:'手机号',areaSqm:'面积（㎡）',dailyCapacity:'日处理单量',categories:'经营品类',remark:'补充说明'}
 const STEP={1:'申请材料',2:'资质审核',3:'订单接入方式',4:'加盟协议',5:'上线'}
 function parseFiles(raw){try{return JSON.parse(raw||'[]').filter(f=>f.id)}catch{return []}}
@@ -68,6 +77,7 @@ async function load() {
   } catch(e){error.value=e.message||'加盟申请读取失败，请重试'} finally { loading.value = false }
 }
 async function act(row,fn){if(acting.value)return;acting.value=true;try{await mktWarehouseApi[fn](row.id,fn==='passQualification'?{version:row.version}:undefined);ElMessage.success('已处理');await load()}finally{acting.value=false}}
+async function selectErp(row){if(acting.value)return;acting.value=true;try{if(row.orderMode!=='erp')await mktWarehouseApi.selectErp(row.id);await router.push({path:'/crm/marketing/erp',query:{warehouseId:row.id,onboarding:1}})}catch(e){error.value=e.message||'ERP 接入方式设置失败'}finally{acting.value=false}}
 async function withReason(row,fn,title){if(acting.value)return;try{const {value}=await ElMessageBox.prompt('请填写原因',title,{inputPattern:/\S+/,inputErrorMessage:'原因必填'});acting.value=true;await mktWarehouseApi[fn](row.id,{reason:value});ElMessage.success('已处理');await load()}catch(e){if(e!=='cancel'&&e!=='close')error.value=e.message||'操作失败'}finally{acting.value=false}}
 const agreement = reactive({ visible: false, row: null })
 function signAgreement(row) { agreement.row = row; agreement.visible = true }

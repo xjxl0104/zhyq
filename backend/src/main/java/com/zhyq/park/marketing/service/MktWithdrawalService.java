@@ -43,7 +43,10 @@ public class MktWithdrawalService {
 
     /** Cash precision, not an accumulated-earnings threshold; legacy min_withdraw settings are retired. */
     public static final BigDecimal MIN_WITHDRAWAL = new BigDecimal("0.01");
-    public static final String DEFAULT_ARRIVAL_TIME = "人工审核后安排转账，实际到账以收款渠道处理为准";
+    public static final String DEFAULT_ARRIVAL_TIME = "提交后财务 24 小时内打款，实际到账以收款渠道处理为准";
+    /** 每月开放提现申请的起止日(含);财务集中在这一段处理打款。 */
+    public static final int DEFAULT_WINDOW_START_DAY = 25;
+    public static final int DEFAULT_WINDOW_END_DAY = 31;
 
     private static final String MODULE = "marketing";
     private static final String BIZ_TYPE = "withdrawal";
@@ -59,14 +62,25 @@ public class MktWithdrawalService {
 
     /** These rules describe the actual application flow; submitting an application does not transfer money. */
     public Map<String, Object> withdrawalRules() {
+        int start = windowStartDay(), end = windowEndDay();
         return Map.of(
+                "applicationOpen", inWindow(start, end, LocalDate.now()),
                 "minimumAmount", MIN_WITHDRAWAL,
                 "dailyLimit", 0, // No daily application-count gate exists. Reserved funds cannot be claimed twice.
-                "applicationTime", "全天 24 小时可提交申请",
+                "applicationTime", start <= 0 ? "全天 24 小时可提交申请" : "每月 " + start + "–" + Math.max(start, end) + " 日开放提现申请",
                 "applicationNotice", "收款资料审核通过且可提现余额达到 0.01 元即可提交申请，提交后进入人工审核。",
                 "payoutMethod", "人工审核后转账至已审核的收款账户",
                 "arrivalTime", bizSettings.getString(MODULE, "withdraw_arrival_time", DEFAULT_ARRIVAL_TIME),
                 "feeAmount", BigDecimal.ZERO); // No withdrawal fee is deducted; configured tax remains separate.
+    }
+
+    private int windowStartDay() { return bizSettings.getInt(MODULE, "withdraw_window_start_day", DEFAULT_WINDOW_START_DAY); }
+
+    private int windowEndDay() { return bizSettings.getInt(MODULE, "withdraw_window_end_day", DEFAULT_WINDOW_END_DAY); }
+
+    /** 起始日 ≤ 0 表示不限制日期;止日大于当月天数时自然截到月末。 */
+    static boolean inWindow(int startDay, int endDay, LocalDate day) {
+        return startDay <= 0 || (day.getDayOfMonth() >= startDay && day.getDayOfMonth() <= Math.max(startDay, endDay));
     }
 
     /** 可提现余额:已结算正向 − 可结算负向(扣回);不含已锁进提现单的行。 */
@@ -85,6 +99,10 @@ public class MktWithdrawalService {
         MktPromoter p = promoterMapper.selectForUpdate(promoterId);
         if (p == null || p.getStatus() == null || p.getStatus() != MktPromoterService.ST_NORMAL) {
             throw new BizException("伙伴状态异常,不能提现");
+        }
+        int startDay = windowStartDay(), endDay = windowEndDay();
+        if (!inWindow(startDay, endDay, LocalDate.now())) {
+            throw new BizException("每月 " + startDay + "–" + Math.max(startDay, endDay) + " 日开放提现申请,请在开放期内提交");
         }
         if (!Integer.valueOf(1).equals(p.getIdVerified())) throw new BizException("收款资料尚未通过人工审核,暂不能提现");
         var account = accountMapper.selectOne(new LambdaQueryWrapper<com.zhyq.park.marketing.entity.MktPromoterAccount>()

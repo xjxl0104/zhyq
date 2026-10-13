@@ -180,6 +180,16 @@ public class MktWarehouseController {
     @PostMapping("/{id}/order-mode/manual")
     public Result<Void> useManual(@PathVariable Long id) { onboardingService.useManualOrders(id); return Result.ok(); }
 
+    @Operation(summary = "选择外部 ERP 订单接入")
+    @PreAuthorize("hasAuthority('crm:marketing:onboarding:audit')")
+    @PostMapping("/{id}/order-mode/erp")
+    public Result<Void> selectErp(@PathVariable Long id) { onboardingService.selectErpOrders(id); return Result.ok(); }
+
+    @Operation(summary = "正式 ERP 联通后继续加盟流程")
+    @PreAuthorize("hasAuthority('crm:marketing:onboarding:audit')")
+    @PostMapping("/{id}/order-mode/erp/confirm")
+    public Result<Void> confirmErp(@PathVariable Long id) { onboardingService.confirmErpOrders(id); return Result.ok(); }
+
     @Operation(summary = "上传加盟协议 → 上线") @PreAuthorize("hasAuthority('crm:marketing:onboarding:audit')") @PostMapping("/{id}/agreement")
     public Result<Void> signAgreement(@PathVariable Long id, @RequestBody Map<String, String> body) {
         files.requireReference(body.get("contractFile"), id);
