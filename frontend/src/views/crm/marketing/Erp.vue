@@ -11,9 +11,14 @@
     </div>
 
     <template v-if="warehouseId">
+      <el-alert v-if="onboardingMode" type="info" :closable="false" class="mb"
+        title="当前云仓选择了 ERP 接入：请签发正式凭证并完成正式环境订单同步。收到真实同步后，可确认并进入加盟协议环节。" />
       <div class="table-card">
         <div class="toolbar">
           <span class="title">接入凭证</span>
+          <el-button v-if="onboardingMode" :disabled="!canConfirmErp" type="success" @click="confirmErp">正式 ERP 已联通，继续加盟</el-button>
+          <el-tag v-if="onboardingMode && warehouse?.erpStatus !== 2" type="warning">等待正式环境真实同步</el-tag>
+          <el-button v-if="onboardingMode" link @click="load">刷新联通状态</el-button>
           <template v-if="cred">
             <el-button @click="resetSecret">重置密钥</el-button>
             <el-button @click="toggleEnv">{{ cred.env === 1 ? '切正式' : '切回沙箱' }}</el-button>
@@ -79,13 +84,18 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, computed } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { mktErpApi, mktWarehouseApi } from '@/api/marketing'
 
 const origin = window.location.origin
+const route = useRoute()
+const router = useRouter()
+const onboardingMode = computed(() => route.query.onboarding === '1')
 const warehouses = ref([])
-const warehouseId = ref(null)
+const warehouseId = ref(route.query.warehouseId ? Number(route.query.warehouseId) : null)
+const warehouse = ref(null)
 const cred = ref(null)
 const secret = ref('')
 const mappings = ref([])
@@ -94,7 +104,7 @@ const mapDialog = reactive({ visible: false, customerId: null, customerCode: '' 
 
 async function load() {
   secret.value = ''
-  ;[cred.value, mappings.value] = await Promise.all([mktErpApi.get(warehouseId.value), mktErpApi.mappings(warehouseId.value)])
+  ;[warehouse.value, cred.value, mappings.value] = await Promise.all([mktWarehouseApi.get(warehouseId.value), mktErpApi.get(warehouseId.value), mktErpApi.mappings(warehouseId.value)])
   loadLogs()
 }
 async function loadLogs() {
@@ -115,8 +125,17 @@ async function saveMapping() {
 }
 async function deleteMapping(id) { await mktErpApi.deleteMapping(id); mappings.value = await mktErpApi.mappings(warehouseId.value) }
 const copy = (t) => navigator.clipboard.writeText(t).then(() => ElMessage.success('已复制'))
+const canConfirmErp = computed(() => onboardingMode.value && warehouse.value?.joinStatus === 3 && warehouse.value?.orderMode === 'erp' && warehouse.value?.erpStatus === 2)
+async function confirmErp() {
+  await mktWarehouseApi.confirmErp(warehouseId.value)
+  ElMessage.success('ERP 接入已确认，请继续上传加盟协议')
+  await router.push('/crm/marketing/onboarding')
+}
 
-onMounted(async () => { warehouses.value = (await mktWarehouseApi.page({ pageNo: 1, pageSize: 200 })).records })
+onMounted(async () => {
+  warehouses.value = (await mktWarehouseApi.page({ pageNo: 1, pageSize: 200 })).records
+  if (warehouseId.value) await load()
+})
 </script>
 
 <style scoped>

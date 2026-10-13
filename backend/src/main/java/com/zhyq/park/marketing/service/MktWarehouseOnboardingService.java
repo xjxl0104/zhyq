@@ -59,7 +59,8 @@ public class MktWarehouseOnboardingService {
         if (!StringUtils.hasText(w.getFeeModel())) {
             w.setFeeModel(null);
         }
-        w.setOrderMode("erp");
+        // The existing schema defaults to "erp" for legacy rows; persist an explicit pending choice for new applications.
+        w.setOrderMode("pending");
         w.setJoinStatus(JS_APPLIED);
         w.setErpStatus(ERP_NONE);
         warehouseMapper.insert(w);
@@ -122,6 +123,34 @@ public class MktWarehouseOnboardingService {
         passStep(warehouseId, STEP_ERP);
         startStep(warehouseId, STEP_AGREEMENT);
         auditService.log("warehouse.orders.manual", BIZ_TYPE, warehouseId, "采用运营 Excel 导入出库单，未连接外部 ERP");
+    }
+
+    /** 选择 ERP 模式后进入 ERP 对接页；仍停留在接入阶段，直到正式环境真实联通。 */
+    @Transactional
+    public void selectErpOrders(Long warehouseId) {
+        int updated = warehouseMapper.update(null, new LambdaUpdateWrapper<MktWarehouse>()
+                .eq(MktWarehouse::getId, warehouseId).eq(MktWarehouse::getJoinStatus, JS_ERP_CONNECTING)
+                .set(MktWarehouse::getOrderMode, "erp"));
+        requireUpdated(updated, warehouseId);
+        auditService.log("warehouse.orders.erp.select", BIZ_TYPE, warehouseId, "选择外部 ERP 接入");
+    }
+
+    /** ERP 只能在收到正式环境的真实订单同步后通过，不提供人工伪造联通状态的入口。 */
+    @Transactional
+    public void confirmErpOrders(Long warehouseId) {
+        MktWarehouse current = require(warehouseId);
+        if (!Integer.valueOf(JS_ERP_CONNECTING).equals(current.getJoinStatus()) || !"erp".equals(current.getOrderMode()))
+            throw new BizException("请先选择外部 ERP 接入方式");
+        if (!Integer.valueOf(ERP_LIVE).equals(current.getErpStatus()))
+            throw new BizException("ERP 尚未完成正式环境联通，请先完成 ERP 对接并收到正式同步事件");
+        int updated = warehouseMapper.update(null, new LambdaUpdateWrapper<MktWarehouse>()
+                .eq(MktWarehouse::getId, warehouseId).eq(MktWarehouse::getJoinStatus, JS_ERP_CONNECTING)
+                .eq(MktWarehouse::getOrderMode, "erp").eq(MktWarehouse::getErpStatus, ERP_LIVE)
+                .set(MktWarehouse::getJoinStatus, JS_PENDING_AGREEMENT));
+        requireUpdated(updated, warehouseId);
+        passStep(warehouseId, STEP_ERP);
+        startStep(warehouseId, STEP_AGREEMENT);
+        auditService.log("warehouse.orders.erp.confirm", BIZ_TYPE, warehouseId, "正式 ERP 已联通，进入加盟协议环节");
     }
 
     @Transactional
