@@ -15,6 +15,15 @@ it('keeps page access and actions together as independent real-ID leaves', () =>
   expect(user.children.map(n => [n.id, n.name])).toEqual([[1, '页面访问'], [2, '用户-新增']])
   expect(typeof user.id).toBe('string')
 })
+it('lists overview before report while keeping the shared query permission a single real grant', () => {
+  const menus = [page(1, '/finance/overview'), page(2, '/finance/report'),
+    grant(3, 'finance:report:query', '财务报表-查询')]
+  const finance = buildPermissionTree(menus)[3]
+  expect(finance.children.map(node => node.name)).toEqual(['财务总览', '财务报表'])
+  expect(permissionIds([finance.children[0]])).toEqual([1])
+  expect(permissionIds([finance.children[1]])).toEqual([2, 3])
+  expect(permissionIds([finance])).toEqual([1, 2, 3])
+})
 it('does not turn selected legacy directories into action grants', () => {
   const menus = [{ id: 130, name: '系统管理', type: 1, status: 1 }, page(131, '/system/user'), grant(200, 'system:user:add')]
   expect(permissionIds(buildPermissionTree(menus))).toEqual([131, 200])

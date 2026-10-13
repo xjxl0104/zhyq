@@ -67,6 +67,7 @@ const routes = [
       { path: 'contract/setting', meta: { title: '合同设置' }, component: () => import('@/views/contract/Setting.vue') },
 
       // 财务
+      { path: 'finance/overview', meta: { title: '财务总览' }, component: () => import('@/views/finance/Overview.vue') },
       { path: 'finance/receivable-register', meta: { title: '应收明细登记表' }, component: () => import('@/views/finance/ReceivableRegister.vue') },
       { path: 'finance/bill', meta: { title: '所有账单' }, component: () => import('@/views/finance/Bill.vue') },
       { path: 'finance/overdue', meta: { title: '逾期账单' }, component: () => import('@/views/finance/Overdue.vue') },

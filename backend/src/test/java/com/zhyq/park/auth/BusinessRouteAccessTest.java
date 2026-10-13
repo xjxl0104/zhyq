@@ -36,4 +36,13 @@ class BusinessRouteAccessTest {
         assertThat(BusinessRouteAccess.allowed("/crm/customer/page", "GET", Set.of("ROLE_MP"))).isFalse();
         assertThat(BusinessRouteAccess.allowed("/mp/v1/me", "GET", Set.of("ROLE_MP"))).isTrue();
     }
+
+    @Test void financeOverviewRetainsTheExistingReportApiBoundary() {
+        String path = "/finance/report/overview";
+        assertThat(BusinessRouteAccess.allowed(path, "GET", Set.of("finance:report:query"))).isTrue();
+        assertThat(BusinessRouteAccess.allowed(path, "GET", Set.of("MENU:/finance/report"))).isTrue();
+        assertThat(BusinessRouteAccess.allowed(path, "GET", Set.of("finance:bill:query"))).isFalse();
+        assertThat(BusinessRouteAccess.allowed(path, "GET", Set.of("MENU:/finance/overview"))).isFalse();
+        assertThat(BusinessRouteAccess.allowed(path, "GET", Set.of())).isFalse();
+    }
 }
