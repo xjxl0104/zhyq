@@ -11,6 +11,7 @@ const SHARED_PATHS = {
   tenant: ['/tenant/list'],
   receivable: ['/finance/receivable-register'],
   'finance:payment': ['/finance/cashier'],
+  'finance:report': ['/finance/overview', '/finance/report'],
   'building:floorPlan': ['/building/building'],
   'energy:reading': ['/energy/meter'],
   'property:unit': ['/property/responsible-unit'],
@@ -30,11 +31,13 @@ export function allowedNavigationPaths(menus) {
   }
   buildPermissionTree(menus).forEach(visit)
   for (const menu of menus) {
-    if (!selected.has(menu.id) || !menu.perm) continue
+    if (!selected.has(menu.id) || menu.status !== 1 || !menu.perm) continue
     for (const [prefix, routes] of Object.entries(SHARED_PATHS)) {
       if (menu.perm === prefix || menu.perm.startsWith(`${prefix}:`)) routes.forEach(route => paths.add(route))
     }
   }
+  // 财务总览与报表共用查询能力；原报表页面授权也继续适用于新入口。
+  if (paths.has('/finance/report')) paths.add('/finance/overview')
   return paths
 }
 

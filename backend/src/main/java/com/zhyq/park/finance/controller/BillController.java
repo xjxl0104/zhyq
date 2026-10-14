@@ -65,11 +65,14 @@ public class BillController {
                                          @RequestParam(required = false) String source,
                                          // 从流水/收据/发票/收款通知点「关联账单」跳过来时按 id 定位那一张
                                          @RequestParam(required = false) Long billId,
-                                         @RequestParam(required = false) Boolean onlyDue) {
+                                         @RequestParam(required = false) Boolean onlyDue,
+                                         @RequestParam(required = false) Boolean onlyOutstanding) {
         LambdaQueryWrapper<Bill> qw = new LambdaQueryWrapper<>();
         // 「保证金」是费用大类:登记表生成的是「租金保证金/物业保证金」,按后缀命中
         // 全部保证金类账单(老数据里费用类型恰好叫「保证金」的也被 %保证金 覆盖)
         boolean depositCategory = "保证金".equals(feeType);
+        // 总览的待收入口只追加查询条件，不改账单金额/状态；精确定位仍能查看历史账单。
+        boolean outstandingFilter = Boolean.TRUE.equals(onlyOutstanding) && billId == null;
         qw.eq(billId != null, Bill::getId, billId)
           .like(StringUtils.hasText(code), Bill::getCode, code)
           .eq(contractId != null, Bill::getContractId, contractId)
@@ -81,6 +84,10 @@ public class BillController {
           .eq(StringUtils.hasText(source), Bill::getSource, source)
           // 隐藏未到期:仅显示应收日<=今天的账单
           .le(Boolean.TRUE.equals(onlyDue), Bill::getDueDate, LocalDate.now())
+          .eq(outstandingFilter, Bill::getDirection, 1)
+          .in(outstandingFilter, Bill::getStatus, 3, 4, 5, 6)
+          .apply(outstandingFilter,
+                  "COALESCE(amount,0) + COALESCE(late_fee,0) - COALESCE(paid_amount,0) > 0")
           // 台账习惯:按账期从合同起始月往后排,而不是最后生成的(合同末期)排最前
           .orderByAsc(Bill::getPeriodStart)
           .orderByAsc(Bill::getId);
@@ -138,7 +145,8 @@ public class BillController {
         // 未结清且已过「逾期起算日」(应收日与登记表 late_fee_start_date 取较晚者)。
         // 2026-09-07 口径:试运行期账单 10 月起算,之前不进逾期页
         qw.eq(Bill::getDirection, 1)
-          .in(Bill::getStatus, 3, 4, 6)
+          .in(Bill::getStatus, 3, 4, 5, 6)
+          .apply("COALESCE(amount,0) + COALESCE(late_fee,0) - COALESCE(paid_amount,0) > 0")
           .isNotNull(Bill::getDueDate)
           .apply("GREATEST(due_date, COALESCE((SELECT r.late_fee_start_date FROM fin_receivable_register r"
                   + " WHERE r.id = receivable_register_id), due_date)) < {0}", today)

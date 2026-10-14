@@ -87,6 +87,7 @@
         </template>
       </el-alert>
       <div class="toolbar">
+        <el-tag v-if="query.onlyOutstanding" closable @close="clearOutstanding">仅未结清应收</el-tag>
         <el-button type="warning" @click="calcLateFee"><el-icon><Money /></el-icon>计算滞纳金</el-button>
         <!-- 原来叫「重置」且摆在筛选栏里,和收支流水页「清筛选」那个重置同名同位,
              实际做的却是作废账单。改名 + 挪到动作区,避免点错 -->
@@ -327,21 +328,30 @@ const loading = ref(false)
 const list = ref([])
 const total = ref(0)
 const stats = reactive({ receivable: 0, received: 0, needReceive: 0, lateFee: 0, overdueCount: 0, overdueAmount: 0, maxOverdueDays: 0 })
-const EMPTY_FILTERS = { code: '', feeType: null, status: null, direction: null, tenantRefId: null, billId: null, onlyDue: false }
+const EMPTY_FILTERS = { code: '', feeType: null, status: null, direction: null, tenantRefId: null, billId: null, onlyDue: false, onlyOutstanding: false }
 const query = reactive({ pageNo: 1, pageSize: 10, ...EMPTY_FILTERS })
 // 租客下拉用档案全量,结清的租客也要能查到他的历史账单
 const tenants = ref([])
 
 const router = useRouter()
-// 从流水/收据/发票/收款通知点「关联账单」跳来时,url 上带 billId,把列表筛成那一张
+// 关联记录用 billId 定位单张账单；财务总览带租客、费用及到期条件查看明细。
 const route = useRoute()
 const locatedBillId = ref(null)
 function applyRouteLocate() {
-  const raw = Number(route.query.billId)
-  if (!Number.isFinite(raw) || raw <= 0) return
-  query.billId = raw
-  query.pageNo = 1
-  locatedBillId.value = raw
+  const positiveId = value => typeof value === 'string' && /^\d+$/.test(value)
+    && Number.isSafeInteger(Number(value)) && Number(value) > 0 ? Number(value) : null
+  const billId = positiveId(route.query.billId)
+  if (billId) {
+    query.billId = billId
+    query.pageNo = 1
+    locatedBillId.value = billId
+    return
+  }
+  query.tenantRefId = positiveId(route.query.tenantRefId)
+  query.feeType = typeof route.query.feeType === 'string' ? route.query.feeType.trim() || null : null
+  query.onlyDue = route.query.onlyDue === 'true' || route.query.onlyDue === '1'
+  query.onlyOutstanding = route.query.onlyOutstanding === 'true' || route.query.onlyOutstanding === '1'
+  query.direction = ['1', '2'].includes(route.query.direction) ? Number(route.query.direction) : null
 }
 function clearLocate() {
   query.billId = null
@@ -398,6 +408,10 @@ function clearFilters() {
   locatedBillId.value = null
   ElMessage.success('已清空筛选条件，显示全部账单')
   return load()
+}
+function clearOutstanding() {
+  query.onlyOutstanding = false
+  return search()
 }
 function showCollectionBills() {
   // 只显示未结清的逾期应收，避免财务在全量台账里逐条找催收对象。

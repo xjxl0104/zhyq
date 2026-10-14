@@ -220,8 +220,8 @@ class BillControllerTest {
         when(billMapper.selectPage(any(), any()))
                 .thenReturn(new com.baomidou.mybatisplus.extension.plugins.pagination.Page<>());
 
-        controller().page(1, 10, null, null, null, null, null, "保证金", null, null, null);
-        controller().page(1, 10, null, null, null, null, null, "租金", null, null, null);
+        controller().page(1, 10, null, null, null, null, null, "保证金", null, null, null, null);
+        controller().page(1, 10, null, null, null, null, null, "租金", null, null, null, null);
 
         @SuppressWarnings({"unchecked", "rawtypes"})
         ArgumentCaptor<com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<Bill>> captor =
@@ -233,6 +233,71 @@ class BillControllerTest {
         assertThat(depositSql).contains("LIKE");
         assertThat(rentSql).doesNotContain("LIKE");
         assertThat(rentSql).contains("fee_type =");
+    }
+
+    @Test
+    @DisplayName("待收入口追加有效应收与正欠款条件，并保留原租客/费用/方向/状态/到期筛选")
+    void outstandingFilterCombinesWithExistingFiltersWithoutChangingBills() {
+        when(billMapper.selectPage(any(), any()))
+                .thenReturn(new com.baomidou.mybatisplus.extension.plugins.pagination.Page<>());
+
+        controller().page(1, 10, null, null, 23L, 2, 6, "保证金", null, null, true, true);
+
+        @SuppressWarnings({"unchecked", "rawtypes"})
+        ArgumentCaptor<com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<Bill>> captor =
+                (ArgumentCaptor) ArgumentCaptor.forClass(
+                        com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper.class);
+        verify(billMapper).selectPage(any(), captor.capture());
+        var query = captor.getValue();
+        String sql = query.getSqlSegment();
+        assertThat(sql).contains("tenant_ref_id =", "fee_type LIKE", "due_date <=", "status =", "status IN",
+                "COALESCE(amount,0) + COALESCE(late_fee,0) - COALESCE(paid_amount,0) > 0");
+        // 请求的 direction=2 没被悄悄改写：与只收 direction=1 的范围取交集，应返回空集。
+        assertThat(sql.split("direction =", -1)).hasSize(3);
+        assertThat(query.getParamNameValuePairs().values()).contains(23L, 2, 1, 3, 4, 5, 6, "%保证金", LocalDate.now());
+        verify(billMapper, never()).update(any(), any());
+    }
+
+    @Test
+    @DisplayName("默认/关闭待收筛选及 billId 精确定位不附加欠款限制，结清历史仍可查询")
+    void outstandingFilterIsOptionalAndDoesNotHideLocatedBill() {
+        when(billMapper.selectPage(any(), any()))
+                .thenReturn(new com.baomidou.mybatisplus.extension.plugins.pagination.Page<>());
+
+        controller().page(1, 10, null, null, null, null, null, null, null, null, null, null);
+        controller().page(1, 10, null, null, null, null, null, null, null, null, null, false);
+        controller().page(1, 10, null, null, null, null, null, null, null, 17L, null, true);
+
+        @SuppressWarnings({"unchecked", "rawtypes"})
+        ArgumentCaptor<com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<Bill>> captor =
+                (ArgumentCaptor) ArgumentCaptor.forClass(
+                        com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper.class);
+        verify(billMapper, org.mockito.Mockito.times(3)).selectPage(any(), captor.capture());
+        for (var query : captor.getAllValues()) {
+            assertThat(query.getSqlSegment()).doesNotContain("COALESCE", "status IN", "direction =");
+        }
+        assertThat(captor.getAllValues().get(2).getParamNameValuePairs().values()).contains(17L);
+    }
+
+    @Test
+    @DisplayName("逾期入口排除零欠款，并包含已结清状态下仍待收滞纳金的账单，保留延期起算口径")
+    void overduePageRequiresPositiveOutstandingAndHonorsLateFeeStart() {
+        when(billMapper.selectPage(any(), any()))
+                .thenReturn(new com.baomidou.mybatisplus.extension.plugins.pagination.Page<>());
+
+        controller().overdue(1, 10);
+
+        @SuppressWarnings({"unchecked", "rawtypes"})
+        ArgumentCaptor<com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<Bill>> captor =
+                (ArgumentCaptor) ArgumentCaptor.forClass(
+                        com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper.class);
+        verify(billMapper).selectPage(any(), captor.capture());
+        var query = captor.getValue();
+        assertThat(query.getSqlSegment()).contains("direction =", "status IN", "due_date IS NOT NULL",
+                "COALESCE(amount,0) + COALESCE(late_fee,0) - COALESCE(paid_amount,0) > 0",
+                "GREATEST(due_date", "r.late_fee_start_date", "WHERE r.id = receivable_register_id)");
+        assertThat(query.getParamNameValuePairs().values()).containsExactlyInAnyOrder(1, 3, 4, 5, 6, LocalDate.now());
+        verify(billMapper, never()).update(any(), any());
     }
 
     // ---------- 重置(批量作废登记表账单) ----------

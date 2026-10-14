@@ -76,6 +76,7 @@ export const menuTree = [
   },
   {
     title: '财务', icon: 'Money', children: [
+      { title: '财务总览', path: '/finance/overview' },
       { title: '应收明细登记表', path: '/finance/receivable-register' },
       { title: '所有账单', path: '/finance/bill' },
       { title: '收银台', path: '/finance/cashier' },
