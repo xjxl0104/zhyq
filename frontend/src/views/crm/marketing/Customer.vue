@@ -21,6 +21,7 @@
     <div class="table-card">
       <div class="toolbar">
         <span class="hint">管理推荐归属、云仓承接和伙伴可见进度。云仓按单佣金由所属 P4 在小程序配置，可在此查看金额与分配明细。</span>
+        <el-button v-if="canViewProtection" type="warning" plain @click="openProtection">查看竞争保护白名单</el-button>
       </div>
       <el-table :data="list" v-loading="loading" border stripe>
         <el-table-column prop="name" label="客户 / 品牌 / 联系方式" min-width="180">
@@ -144,6 +145,28 @@
         </el-empty>
       </template>
     </el-drawer>
+
+    <el-drawer v-model="protection.visible" title="竞争保护白名单" size="720px">
+      <el-alert type="warning" :closable="false" show-icon class="mb"
+        title="名单包含加盟云仓的商业机密，仅园区管理员可查看；系统加密保存名单，并仅用于保护冲突校验。" />
+      <div class="protection-toolbar">
+        <el-select v-model="protection.warehouseId" clearable filterable placeholder="全部云仓" style="width: 260px" @change="protection.pageNo=1;loadProtection()">
+          <el-option v-for="w in protection.warehouses" :key="w.id" :value="w.id" :label="`${w.code} ${w.name}`" />
+        </el-select>
+        <el-button :loading="protection.loading" @click="loadProtection">刷新</el-button>
+      </div>
+      <el-alert v-if="protection.error" :title="protection.error" type="error" :closable="false" show-icon class="mb" />
+      <el-table :data="protection.rows" v-loading="protection.loading" border stripe>
+        <el-table-column prop="warehouseName" label="加盟云仓" min-width="180">
+          <template #default="{row}"><div>{{ row.warehouseName }}</div><div class="project-note">{{ row.warehouseCode }}</div></template>
+        </el-table-column>
+        <el-table-column prop="name" label="受保护的品牌 / 公司" min-width="220" show-overflow-tooltip />
+        <el-table-column prop="createTime" label="加入时间" width="170" />
+      </el-table>
+      <el-pagination class="pager" background layout="total, prev, pager, next, sizes"
+        :total="protection.total" v-model:current-page="protection.pageNo"
+        v-model:page-size="protection.pageSize" :page-sizes="[10,20,50]" @change="loadProtection" />
+    </el-drawer>
   </div>
 </template>
 
@@ -153,12 +176,13 @@ const canEdit=hasPermission('crm:marketing:customer:edit')
 
 import { reactive, ref, onMounted, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { mktCustomerApi, mktWarehouseApi } from '@/api/marketing'
+import { mktCompetitionProtectionApi, mktCustomerApi, mktWarehouseApi } from '@/api/marketing'
 import { useProjectStore } from '@/stores/project'
 import CustomerPricingDrawer from './CustomerPricingDrawer.vue'
 
 const projectStore = useProjectStore()
 const canDelete = computed(() => hasPermission('ROLE_admin'))
+const canViewProtection = computed(() => hasPermission('ROLE_admin'))
 const removal = reactive({ visible: false, row: null, busy: false, error: '' })
 function openDelete(row) {
   if (!hasPermission('ROLE_admin') || removal.busy) return
@@ -184,6 +208,29 @@ async function submitDelete() {
 const projectLabel = id => id == null ? '待分配园区' : (projectStore.projects.find(p => String(p.id) === String(id))?.name || `园区 #${id}`)
 const ASSIGN = {0:'待分派',1:'待商家确认',2:'已承接',3:'已拒绝'}
 const warehouses = ref([])
+const protection = reactive({ visible:false, loading:false, error:'', rows:[], total:0, pageNo:1, pageSize:20, warehouseId:null, warehouses:[] })
+async function openProtection() {
+  if (!canViewProtection.value) return
+  protection.visible = true; protection.error = ''
+  try {
+    const rows = (await mktWarehouseApi.page({ pageNo:1, pageSize:200 })).records
+    protection.warehouses = rows.filter(w => String(w.projectId) === String(projectStore.currentProjectId))
+  }
+  catch (error) { protection.error = error?.message || '云仓列表读取失败' }
+  await loadProtection()
+}
+async function loadProtection() {
+  if (!canViewProtection.value || !protection.visible) return
+  protection.loading = true; protection.error = ''
+  try {
+    const result = await mktCompetitionProtectionApi.page({
+      pageNo: protection.pageNo, pageSize: protection.pageSize,
+      warehouseId: protection.warehouseId || undefined
+    })
+    protection.rows = result.records; protection.total = result.total
+  } catch (error) { protection.error = error?.message || '白名单读取失败，请重试' }
+  finally { protection.loading = false }
+}
 const assignment = reactive({visible:false,id:null,warehouseId:null,reason:'',busy:false})
 const progress = reactive({visible:false,id:null,summary:'',busy:false})
 async function openAssignment(row) {

@@ -74,6 +74,11 @@ export const mktCustomerApi = {
   transferLock: (lockId, data) => request.post(`${BASE}/customer/lock/${lockId}/transfer`, data)
 }
 
+// Sensitive cross-warehouse competition protection list (server restricts to park admins).
+export const mktCompetitionProtectionApi = {
+  page: (params) => request.get(`${BASE}/competition-protection/page`, { params })
+}
+
 // 云仓服务合同
 export const mktContractApi = {
   page: (params) => request.get(`${BASE}/contract/page`, { params }),

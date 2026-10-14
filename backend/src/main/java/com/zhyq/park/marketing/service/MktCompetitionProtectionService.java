@@ -1,8 +1,11 @@
 package com.zhyq.park.marketing.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.zhyq.park.common.config.MyMetaObjectHandler;
 import com.zhyq.park.common.exception.BizException;
+import com.zhyq.park.common.result.PageResult;
 import com.zhyq.park.marketing.entity.MktCompetitionProtection;
 import com.zhyq.park.marketing.entity.MktWarehouse;
 import com.zhyq.park.marketing.mapper.MktCompetitionProtectionMapper;
@@ -15,6 +18,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.text.Normalizer;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -43,6 +47,41 @@ public class MktCompetitionProtectionService {
         return entries.selectList(owned(warehouse).orderByDesc(MktCompetitionProtection::getId)).stream()
                 .map(row -> Map.<String, Object>of("id", row.getId(), "name", encryption.decrypt(row.getNameEnc())))
                 .toList();
+    }
+
+    /** Restricted park-admin view. The project scope is mandatory; never expose another project's names. */
+    public PageResult<Map<String, Object>> adminPage(Long projectId, Long warehouseId, int pageNo, int pageSize) {
+        if (projectId == null) throw new BizException("请先选择园区，再查看竞争保护白名单");
+        List<MktWarehouse> projectWarehouses = warehouses.selectList(new LambdaQueryWrapper<MktWarehouse>()
+                .eq(MktWarehouse::getProjectId, projectId)
+                .select(MktWarehouse::getId, MktWarehouse::getName, MktWarehouse::getCode));
+        if (projectWarehouses.isEmpty()) return PageResult.of(0, List.of());
+
+        Map<Long, MktWarehouse> warehouseById = new HashMap<>();
+        projectWarehouses.forEach(w -> warehouseById.put(w.getId(), w));
+        if (warehouseId != null && !warehouseById.containsKey(warehouseId)) return PageResult.of(0, List.of());
+
+        LambdaQueryWrapper<MktCompetitionProtection> query = new LambdaQueryWrapper<MktCompetitionProtection>()
+                .eq(MktCompetitionProtection::getTenantId, MyMetaObjectHandler.DEFAULT_TENANT_ID)
+                .in(MktCompetitionProtection::getWarehouseId, warehouseById.keySet())
+                .eq(warehouseId != null, MktCompetitionProtection::getWarehouseId, warehouseId)
+                .orderByDesc(MktCompetitionProtection::getId);
+        IPage<MktCompetitionProtection> page = entries.selectPage(new Page<>(pageNo, pageSize), query);
+        List<Map<String, Object>> records = page.getRecords().stream().map(row -> {
+            MktWarehouse warehouse = warehouseById.get(row.getWarehouseId());
+            Map<String, Object> item = new HashMap<>();
+            item.put("id", row.getId());
+            item.put("warehouseId", row.getWarehouseId());
+            item.put("warehouseName", warehouse.getName());
+            item.put("warehouseCode", warehouse.getCode());
+            item.put("name", encryption.decrypt(row.getNameEnc()));
+            item.put("createTime", row.getCreateTime());
+            return item;
+        }).toList();
+        // Audit the access itself without writing confidential names to audit logs.
+        audit.log("protection.admin.view", "competition_protection", null,
+                "管理员查看园区竞争保护白名单（名单内容不写入审计）");
+        return PageResult.of(page.getTotal(), records);
     }
 
     @Transactional
