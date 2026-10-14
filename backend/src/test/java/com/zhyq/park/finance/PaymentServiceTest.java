@@ -73,6 +73,54 @@ class PaymentServiceTest {
     }
 
     @Test
+    @DisplayName("历史收款:到账时间与收据日期取实际到账日,记录操作人,且不投递到账事件")
+    void historicalPaymentUsesPayDateAndPublishesNoEvent() {
+        when(paymentMapper.selectOne(any())).thenReturn(null);
+        when(billMapper.selectById(1L)).thenReturn(bill("100.00", "0", null, 3));
+        when(paymentMapper.insert(any(Payment.class))).thenReturn(1);
+        when(billMapper.update(any(), any())).thenReturn(1);
+        java.time.LocalDateTime payTime = java.time.LocalDate.of(2026, 3, 15).atTime(12, 0);
+
+        Payment payment = service().历史收款(1L, new BigDecimal("100.00"), "转账", "HIS-A-1", payTime, "alice", "历史收款导入");
+
+        assertThat(payment.getPayTime()).isEqualTo(payTime);
+        assertThat(payment.getOperator()).isEqualTo("alice");
+        assertThat(payment.getRemark()).isEqualTo("历史收款导入");
+        ArgumentCaptor<com.zhyq.park.finance.entity.Flow> flow = ArgumentCaptor.forClass(com.zhyq.park.finance.entity.Flow.class);
+        verify(flowMapper).insert(flow.capture());
+        assertThat(flow.getValue().getFlowTime()).isEqualTo(payTime);
+        ArgumentCaptor<com.zhyq.park.finance.entity.Receipt> receipt = ArgumentCaptor.forClass(com.zhyq.park.finance.entity.Receipt.class);
+        verify(receiptMapper).insert(receipt.capture());
+        assertThat(receipt.getValue().getReceiptNo()).endsWith("-20260315");
+        verify(eventPublisher, never()).publishEvent(any(Object.class));
+    }
+
+    @Test
+    @DisplayName("历史收款:未来时间、缺幂等键直接拒绝，不碰任何数据")
+    void historicalPaymentRejectsFutureTimeAndMissingPayNo() {
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> service().历史收款(1L, BigDecimal.TEN, "转账", "HIS-A-1",
+                        java.time.LocalDateTime.now().plusDays(1), "alice", null))
+                .isInstanceOf(com.zhyq.park.common.exception.BizException.class);
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> service().历史收款(1L, BigDecimal.TEN, "转账", " ",
+                        java.time.LocalDateTime.now().minusDays(1), "alice", null))
+                .isInstanceOf(com.zhyq.park.common.exception.BizException.class);
+        verify(paymentMapper, never()).insert(any(Payment.class));
+    }
+
+    @Test
+    @DisplayName("普通收款仍然投递到账事件(佣金解冻依赖它)")
+    void normalPaymentStillPublishesEvent() {
+        when(paymentMapper.selectOne(any())).thenReturn(null);
+        when(billMapper.selectById(1L)).thenReturn(bill("100.00", "0", null, 3));
+        when(paymentMapper.insert(any(Payment.class))).thenReturn(1);
+        when(billMapper.update(any(), any())).thenReturn(1);
+
+        service().收款(1L, new BigDecimal("100.00"), "现金", "PN-EV");
+
+        verify(eventPublisher).publishEvent(any(Object.class));
+    }
+
+    @Test
     @DisplayName("同 payNo 重放:账单已结清也要返回原支付单,而不是报'状态不可收款'")
     void replaySamePayNoReturnsExistingEvenAfterSettle() {
         Payment existed = new Payment();

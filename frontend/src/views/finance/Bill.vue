@@ -90,6 +90,7 @@
         <el-tag v-if="query.contractId" closable @close="clearContract">仅合同 {{ contractLabel || `#${query.contractId}` }}</el-tag>
         <el-tag v-if="query.onlyOutstanding" closable @close="clearOutstanding">仅未结清应收</el-tag>
         <el-button type="warning" @click="calcLateFee"><el-icon><Money /></el-icon>计算滞纳金</el-button>
+        <el-button type="primary" plain @click="historyImport.visible = true"><el-icon><Upload /></el-icon>导入历史收款</el-button>
         <!-- 原来叫「重置」且摆在筛选栏里,和收支流水页「清筛选」那个重置同名同位,
              实际做的却是作废账单。改名 + 挪到动作区,避免点错 -->
         <el-button type="danger" plain @click="resetPushedBills">重置推送账单</el-button>
@@ -293,6 +294,7 @@
         <el-button type="primary" @click="submitInvoice">提交</el-button>
       </template>
     </el-dialog>
+    <PaymentHistoryImportDialog v-model="historyImport.visible" @done="refresh" />
   </div>
 </template>
 
@@ -305,6 +307,7 @@ import { money } from '@/utils/format'
 import { tenantApi } from '@/api/tenant'
 import { billOwe } from './cashierModel'
 import MobileRecordList from '@/components/MobileRecordList.vue'
+import PaymentHistoryImportDialog from './components/PaymentHistoryImportDialog.vue'
 import { useResponsive } from '@/composables/useResponsive'
 
 const { isMobile } = useResponsive()
@@ -331,6 +334,7 @@ const total = ref(0)
 const stats = reactive({ receivable: 0, received: 0, needReceive: 0, lateFee: 0, overdueCount: 0, overdueAmount: 0, maxOverdueDays: 0 })
 const EMPTY_FILTERS = { code: '', feeType: null, status: null, direction: null, tenantRefId: null, contractId: null, billId: null, onlyDue: false, onlyOutstanding: false }
 const query = reactive({ pageNo: 1, pageSize: 10, ...EMPTY_FILTERS })
+const historyImport = reactive({ visible: false })
 // 租客下拉用档案全量,结清的租客也要能查到他的历史账单
 const tenants = ref([])
 

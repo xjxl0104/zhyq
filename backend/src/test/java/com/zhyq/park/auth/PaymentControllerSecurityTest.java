@@ -3,6 +3,7 @@ package com.zhyq.park.auth;
 import com.zhyq.park.finance.controller.PaymentController;
 import com.zhyq.park.finance.entity.Payment;
 import com.zhyq.park.finance.mapper.PaymentMapper;
+import com.zhyq.park.finance.service.FinancePaymentImportService;
 import com.zhyq.park.finance.service.PaymentService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -34,14 +35,36 @@ class PaymentControllerSecurityTest {
     static class TestBeans {
         @Bean PaymentService paymentService() { return mock(PaymentService.class); }
         @Bean PaymentMapper paymentMapper() { return mock(PaymentMapper.class); }
-        @Bean PaymentController paymentController(PaymentService s, PaymentMapper m) {
-            return new PaymentController(s, m);
+        @Bean FinancePaymentImportService importService() { return mock(FinancePaymentImportService.class); }
+        @Bean PaymentController paymentController(PaymentService s, PaymentMapper m, FinancePaymentImportService i) {
+            return new PaymentController(s, m, i);
         }
     }
 
     @Autowired PaymentController controller;
     @Autowired PaymentService paymentService;
     @Autowired PaymentMapper paymentMapper;
+    @Autowired FinancePaymentImportService importService;
+
+    private static final org.springframework.mock.web.MockMultipartFile FILE =
+            new org.springframework.mock.web.MockMultipartFile("file", "x.csv", "text/csv", new byte[]{1});
+
+    @Test
+    @WithMockUser(authorities = "finance:bill:query")
+    void 历史收款导入_无收款权限_预览与确认都拒绝() {
+        assertThrows(AccessDeniedException.class, () -> controller.previewHistoryImport(FILE));
+        assertThrows(AccessDeniedException.class, () -> controller.confirmHistoryImport(FILE));
+        verifyNoInteractions(importService);
+    }
+
+    @Test
+    @WithMockUser(authorities = "finance:payment:pay")
+    void 历史收款导入_有收款权限_放行() {
+        assertDoesNotThrow(() -> controller.previewHistoryImport(FILE));
+        assertDoesNotThrow(() -> controller.confirmHistoryImport(FILE));
+        verify(importService).preview(FILE);
+        verify(importService).confirm(eq(FILE), any());
+    }
 
     @Test
     @WithMockUser(authorities = "finance:bill:query") // 权限不匹配
