@@ -28,6 +28,46 @@ describe('navigation access', () => {
     expect(paths.has('/system/user')).toBe(false)
   })
 
+  it('inherits finance overview from existing report page access and puts it first', () => {
+    const paths = allowedNavigationPaths([
+      { id: 51, name: '财务报表', type: 2, path: 'finance/report', status: 1 }
+    ])
+    const finance = visibleNavigation(paths).find(item => item.title === '财务')
+    expect(finance.children.map(item => [item.title, item.path])).toEqual([
+      ['财务总览', '/finance/overview'], ['财务报表', '/finance/report']
+    ])
+    expect(canAccessNavigation('/finance/overview', paths)).toBe(true)
+    expect(firstNavigationPath(paths)).toBe('/finance/overview')
+  })
+
+  it('shares report query access with overview without granting other finance pages', () => {
+    const paths = allowedNavigationPaths([
+      { id: 510, name: '财务报表-查询', type: 3, perm: 'finance:report:query', status: 1 }
+    ])
+    expect([...paths].sort()).toEqual(['/finance/overview', '/finance/report', '/suggestion/mine'])
+    expect(canAccessNavigation('/finance/cashier', paths)).toBe(false)
+    expect(canAccessNavigation('/finance/bill', paths)).toBe(false)
+  })
+
+  it('keeps overview hidden from unrelated finance grants and disabled report access', () => {
+    const paths = allowedNavigationPaths([
+      { id: 52, name: '财务报表', type: 2, path: '/finance/report', status: 0 },
+      { id: 511, name: '财务报表-查询', type: 3, perm: 'finance:report:query', status: 0 },
+      { id: 512, name: '账单-查询', type: 3, perm: 'finance:bill:query', status: 1 }
+    ])
+    expect(canAccessNavigation('/finance/bill', paths)).toBe(true)
+    expect(canAccessNavigation('/finance/overview', paths)).toBe(false)
+    expect(canAccessNavigation('/finance/report', paths)).toBe(false)
+  })
+
+  it('supports an explicitly granted overview page without adding report page access', () => {
+    const paths = allowedNavigationPaths([
+      { id: 513, name: '财务总览', type: 2, path: '/finance/overview', status: 1 }
+    ])
+    expect(canAccessNavigation('/finance/overview', paths)).toBe(true)
+    expect(canAccessNavigation('/finance/report', paths)).toBe(false)
+  })
+
   it('merges marketing pages into grouped sidebar entries with in-page tabs', () => {
     const marketing = visibleNavigation(new Set(), true).flatMap(top => top.children || []).find(item => item.title === '全民营销')
     expect(marketing.children.map(item => item.title)).toEqual(['看板', '伙伴', '客户', '云仓', '合同', '结算', '设置'])
