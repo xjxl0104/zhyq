@@ -60,6 +60,26 @@ describe('财务总览进入账单明细', () => {
     })
   })
 
+  it('合同收款全景按合同进入账单，关闭合同标签后恢复全部账单', async () => {
+    route.query = { contractId: '7', contractCode: 'HT-007', direction: '1' }
+    const wrapper = mountPage()
+    await flushPromises()
+    expect(requests[0]).toMatchObject({ pageNo: 1, contractId: 7, direction: 1, tenantRefId: null })
+    expect(wrapper.text()).toContain('仅合同 HT-007')
+    await wrapper.get('[aria-label="取消仅未结清应收"]').trigger('click')
+    await flushPromises()
+    expect(requests.at(-1)).toMatchObject({ contractId: null, direction: 1 })
+    expect(wrapper.text()).not.toContain('仅合同')
+  })
+
+  it.each(['0', '-1', 'abc'])('忽略无效合同 ID %s', async contractId => {
+    route.query = { contractId, contractCode: 'HT-X' }
+    const wrapper = mountPage()
+    await flushPromises()
+    expect(requests[0].contractId).toBeNull()
+    expect(wrapper.text()).not.toContain('仅合同')
+  })
+
   it('保证金类别与 onlyDue=1 可以传到现有账单筛选接口', async () => {
     route.query = { feeType: '保证金', onlyDue: '1' }
     mountPage()

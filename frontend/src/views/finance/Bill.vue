@@ -87,6 +87,7 @@
         </template>
       </el-alert>
       <div class="toolbar">
+        <el-tag v-if="query.contractId" closable @close="clearContract">仅合同 {{ contractLabel || `#${query.contractId}` }}</el-tag>
         <el-tag v-if="query.onlyOutstanding" closable @close="clearOutstanding">仅未结清应收</el-tag>
         <el-button type="warning" @click="calcLateFee"><el-icon><Money /></el-icon>计算滞纳金</el-button>
         <!-- 原来叫「重置」且摆在筛选栏里,和收支流水页「清筛选」那个重置同名同位,
@@ -328,7 +329,7 @@ const loading = ref(false)
 const list = ref([])
 const total = ref(0)
 const stats = reactive({ receivable: 0, received: 0, needReceive: 0, lateFee: 0, overdueCount: 0, overdueAmount: 0, maxOverdueDays: 0 })
-const EMPTY_FILTERS = { code: '', feeType: null, status: null, direction: null, tenantRefId: null, billId: null, onlyDue: false, onlyOutstanding: false }
+const EMPTY_FILTERS = { code: '', feeType: null, status: null, direction: null, tenantRefId: null, contractId: null, billId: null, onlyDue: false, onlyOutstanding: false }
 const query = reactive({ pageNo: 1, pageSize: 10, ...EMPTY_FILTERS })
 // 租客下拉用档案全量,结清的租客也要能查到他的历史账单
 const tenants = ref([])
@@ -337,6 +338,8 @@ const router = useRouter()
 // 关联记录用 billId 定位单张账单；财务总览带租客、费用及到期条件查看明细。
 const route = useRoute()
 const locatedBillId = ref(null)
+// 财务总览「合同收款全景」带合同过来时，标签显示合同号；合同号只用于展示，筛选以 contractId 为准。
+const contractLabel = ref('')
 function applyRouteLocate() {
   const positiveId = value => typeof value === 'string' && /^\d+$/.test(value)
     && Number.isSafeInteger(Number(value)) && Number(value) > 0 ? Number(value) : null
@@ -348,6 +351,8 @@ function applyRouteLocate() {
     return
   }
   query.tenantRefId = positiveId(route.query.tenantRefId)
+  query.contractId = positiveId(route.query.contractId)
+  contractLabel.value = query.contractId && typeof route.query.contractCode === 'string' ? route.query.contractCode.trim().slice(0, 64) : ''
   query.feeType = typeof route.query.feeType === 'string' ? route.query.feeType.trim() || null : null
   query.onlyDue = route.query.onlyDue === 'true' || route.query.onlyDue === '1'
   query.onlyOutstanding = route.query.onlyOutstanding === 'true' || route.query.onlyOutstanding === '1'
@@ -411,6 +416,11 @@ function clearFilters() {
 }
 function clearOutstanding() {
   query.onlyOutstanding = false
+  return search()
+}
+function clearContract() {
+  query.contractId = null
+  contractLabel.value = ''
   return search()
 }
 function showCollectionBills() {
