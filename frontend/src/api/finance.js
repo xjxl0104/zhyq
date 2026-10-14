@@ -27,7 +27,10 @@ export const paymentApi = {
   writeOff: (data) => request.post('/finance/payment/write-off', data),
   // 撤销收款(红冲):原单作废 + 负额红冲单 + 账单实收回退,留痕不删记录
   voidPay: (id, data) => request.post(`/finance/payment/${id}/void`, data || {}),
-  list: (billId) => request.get('/finance/payment/list', { params: { billId } })
+  list: (billId) => request.get('/finance/payment/list', { params: { billId } }),
+  // 历史收款导入：先预览（只计算不写入），整份文件零错误后再确认写入
+  previewHistory: (formData) => request.post('/finance/payment/history-import/preview', formData, { headers: { 'Content-Type': 'multipart/form-data' } }),
+  confirmHistory: (formData) => request.post('/finance/payment/history-import/confirm', formData, { headers: { 'Content-Type': 'multipart/form-data' } })
 }
 
 // 发票
