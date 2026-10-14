@@ -214,7 +214,7 @@ async function openProtection() {
   protection.visible = true; protection.error = ''
   try {
     const rows = (await mktWarehouseApi.page({ pageNo:1, pageSize:200 })).records
-    protection.warehouses = rows.filter(w => String(w.projectId) === String(projectStore.currentProjectId))
+    protection.warehouses = rows.filter(w => w.projectId == null || String(w.projectId) === String(projectStore.currentProjectId))
   }
   catch (error) { protection.error = error?.message || '云仓列表读取失败' }
   await loadProtection()

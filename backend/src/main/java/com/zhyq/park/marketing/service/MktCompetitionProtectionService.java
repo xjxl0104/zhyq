@@ -53,7 +53,9 @@ public class MktCompetitionProtectionService {
     public PageResult<Map<String, Object>> adminPage(Long projectId, Long warehouseId, int pageNo, int pageSize) {
         if (projectId == null) throw new BizException("请先选择园区，再查看竞争保护白名单");
         List<MktWarehouse> projectWarehouses = warehouses.selectList(new LambdaQueryWrapper<MktWarehouse>()
-                .eq(MktWarehouse::getProjectId, projectId)
+                // Historical warehouses may predate project scoping. Other marketing warehouse
+                // screens already treat those rows as belonging to the current park.
+                .and(q -> q.eq(MktWarehouse::getProjectId, projectId).or().isNull(MktWarehouse::getProjectId))
                 .select(MktWarehouse::getId, MktWarehouse::getName, MktWarehouse::getCode));
         if (projectWarehouses.isEmpty()) return PageResult.of(0, List.of());
 

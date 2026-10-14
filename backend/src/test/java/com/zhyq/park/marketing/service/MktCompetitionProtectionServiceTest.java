@@ -81,7 +81,14 @@ class MktCompetitionProtectionServiceTest {
         MktWarehouse warehouse = new MktWarehouse();
         warehouse.setId(7L); warehouse.setTenantId(2L); warehouse.setProjectId(9L);
         warehouse.setCode("WH-007"); warehouse.setName("测试云仓");
-        when(warehouses.selectList(any())).thenReturn(java.util.List.of(warehouse));
+        MktWarehouse legacyWarehouse = new MktWarehouse();
+        legacyWarehouse.setId(8L); legacyWarehouse.setTenantId(3L);
+        legacyWarehouse.setCode("WH-008"); legacyWarehouse.setName("历史云仓");
+        when(warehouses.selectList(any())).thenAnswer(invocation -> {
+            Wrapper<?> wrapper = invocation.getArgument(0);
+            assertThat(wrapper.getSqlSegment()).contains("project_id", "IS NULL");
+            return java.util.List.of(warehouse, legacyWarehouse);
+        });
         when(entries.selectPage(any(), any())).thenAnswer(invocation -> {
             Wrapper<?> wrapper = invocation.getArgument(1);
             assertThat(wrapper.getSqlSegment()).contains("warehouse_id").doesNotContain("tenant_id");
