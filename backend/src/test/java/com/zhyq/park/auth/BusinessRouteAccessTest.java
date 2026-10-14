@@ -45,4 +45,12 @@ class BusinessRouteAccessTest {
         assertThat(BusinessRouteAccess.allowed(path, "GET", Set.of("MENU:/finance/overview"))).isFalse();
         assertThat(BusinessRouteAccess.allowed(path, "GET", Set.of())).isFalse();
     }
+
+    @Test void contractCollectionSharesTheReportApiBoundary() {
+        String path = "/finance/report/contract-collection";
+        assertThat(BusinessRouteAccess.allowed(path, "GET", Set.of("finance:report:query"))).isTrue();
+        assertThat(BusinessRouteAccess.allowed(path, "GET", Set.of("MENU:/finance/report"))).isTrue();
+        assertThat(BusinessRouteAccess.allowed(path, "GET", Set.of("finance:bill:query"))).isFalse();
+        assertThat(BusinessRouteAccess.allowed(path, "GET", Set.of())).isFalse();
+    }
 }

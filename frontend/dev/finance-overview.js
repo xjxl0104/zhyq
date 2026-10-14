@@ -29,10 +29,50 @@ function overview(month) {
     feeStructure: empty ? [] : fees.map(([feeType, receivable, received]) => ({ feeType, receivable: n(receivable), received: n(received), outstanding: n(receivable - received) })), trend,
     topDebtors: empty ? [] : ['示例 · 云帆物流', '示例 · 晨星智能设备', '示例 · 青禾食品', '示例 · 新程供应链', '示例 · 盛远科技'].map((tenantName, index) => ({ tenantRefId: index + 1, tenantName, outstanding: n([176800, 132400, 98860, 74000, 56900][index]), overdueOutstanding: n([94000, 88000, 64540, 0, 40000][index]), billCount: [6, 5, 4, 3, 2][index] })) }
 }
+function contractCollection() {
+  const empty = variant === 'empty'
+  const large = variant === 'large' ? 80 : 1
+  const n = value => Math.round(value * large * 100) / 100
+  const fee = (feeType, receivable, received, overdue = 0, billCount = 1) => ({ feeType, receivable: n(receivable), received: n(received), outstanding: n(receivable - received), overdueOutstanding: n(overdue), billCount })
+  const row = (id, code, tenantName, status, state, fees, split = {}) => {
+    const sum = key => fees.reduce((total, item) => total + Number(item[key]), 0)
+    const outstanding = sum('outstanding')
+    const overdue = split.overdue ?? sum('overdueOutstanding')
+    const due = split.due ?? 0
+    return { key: id ? `contract:${id}` : `register:${code}`, contractId: id, contractCode: id ? code : null, tenantRefId: id || 99, tenantName, contractStatus: status,
+      startDate: '2026-01-01', endDate: '2027-12-31', state, receivable: sum('receivable'), received: sum('received'), outstanding,
+      overdueOutstanding: overdue, dueOutstanding: due, notDueOutstanding: Math.max(0, outstanding - overdue - due), billCount: fees.reduce((t, f) => t + f.billCount, 0), fees }
+  }
+  const contracts = empty ? [] : [
+    row(1, 'HT-2026-001', '示例 · 云帆物流', 5, 'overdue', [fee('租金', 360000, 240000, 94000, 6), fee('物业费', 72000, 48000, 0, 6), fee('租金保证金', 60000, 60000)], { due: 26000 }),
+    row(2, 'HT-2026-002', '示例 · 晨星智能设备', 5, 'overdue', [fee('租金', 240000, 150000, 60000, 5), fee('物业费', 58000, 30000, 28000, 5)]),
+    row(3, 'HT-2026-003', '示例 · 青禾食品', 5, 'overdue', [fee('租金', 180000, 120000, 40000, 4), fee('能源费', 24540, 0, 24540, 2)]),
+    row(4, 'HT-2026-004', '示例 · 新程供应链', 5, 'partial', [fee('租金', 200000, 140000, 0, 4), fee('物业费', 40000, 26000, 0, 4)], { due: 30000 }),
+    row(5, 'HT-2026-005', '示例 · 盛远科技', 5, 'partial', [fee('租金', 150000, 110000, 0, 3), fee('物业费', 30000, 20000, 0, 3)]),
+    row(6, 'HT-2026-006', '示例 · 北辰文创', 4, 'unpaid', [fee('租金', 90000, 0, 0, 1), fee('租金保证金', 30000, 0, 0, 1)], { due: 30000 }),
+    row(7, 'HT-2025-018', '示例 · 安途汽配', 8, 'settled', [fee('租金', 288000, 288000, 0, 12), fee('物业费', 57600, 57600, 0, 12)]),
+    row(8, 'HT-2025-022', '示例 · 繁星餐饮', 9, 'settled', [fee('租金', 96000, 96000, 0, 6)]),
+    row(9, 'HT-2026-007', '示例 · 绿洲生物', 5, 'settled', [fee('租金', 120000, 120000, 0, 4), fee('物业费', 24000, 24000, 0, 4)]),
+    row(null, 'R-11', '示例 · 未签约临时租户', null, 'partial', [fee('能源费', 12000, 4000, 0, 2)]),
+    row(10, 'HT-2023-031', '示例 · 历史合同（待补录）', 1, 'unbilled', []),
+    row(11, 'HT-2024-007', '示例 · 历史合同（审批中）', 2, 'unbilled', [])
+  ]
+  const count = state => contracts.filter(item => item.state === state).length
+  const total = key => contracts.reduce((sum, item) => sum + Number(item[key]), 0)
+  return { asOfDate: '2026-10-14', contracts, aging: [
+    { key: 'notDue', label: '未到期', amount: n(empty ? 0 : 200000), billCount: 9 }, { key: 'undated', label: '未设应收日', amount: 0, billCount: 0 },
+    { key: 'grace', label: '宽限期内', amount: n(empty ? 0 : 56000), billCount: 3 }, { key: 'd30', label: '逾期 1–30 天', amount: n(empty ? 0 : 128000), billCount: 7 },
+    { key: 'd90', label: '逾期 31–90 天', amount: n(empty ? 0 : 98540), billCount: 6 }, { key: 'd90plus', label: '逾期 90 天以上', amount: n(empty ? 0 : 60000), billCount: 5 }],
+    summary: { contractCount: contracts.filter(item => item.contractId).length, unlinkedGroups: contracts.filter(item => !item.contractId).length,
+      settled: count('settled'), partial: count('partial'), unpaid: count('unpaid'), overdue: count('overdue'), unbilled: count('unbilled'),
+      receivable: total('receivable'), received: total('received'), outstanding: total('outstanding'), overdueOutstanding: total('overdueOutstanding') } }
+}
 // Every Axios request is intercepted locally; no authentication or business API is called.
 request.defaults.adapter = async config => {
   if (config.url === '/finance/report/overview' && variant === 'error') throw new Error('示例：接口加载失败')
+  if (config.url === '/finance/report/contract-collection' && variant === 'error') throw new Error('示例：接口加载失败')
   const data = config.url === '/finance/report/overview' ? overview(config.params.month)
+    : config.url === '/finance/report/contract-collection' ? contractCollection()
     : config.url === '/building/project/list' ? [{ id: 1001, name: '园区示例项目' }] : null
   return { data: { code: 0, data }, status: 200, statusText: 'OK', headers: {}, config }
 }
