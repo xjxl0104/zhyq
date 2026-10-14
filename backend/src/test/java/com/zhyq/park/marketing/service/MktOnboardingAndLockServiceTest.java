@@ -3,6 +3,7 @@ package com.zhyq.park.marketing.service;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.conditions.Wrapper;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.zhyq.park.common.event.DomainEvent;
 import com.zhyq.park.common.exception.BizException;
 import com.zhyq.park.common.setting.BizSettings;
@@ -128,6 +129,34 @@ class MktOnboardingAndLockServiceTest {
             when(warehouseMapper.update(isNull(), any(Wrapper.class))).thenReturn(1);
             service.useManualOrders(7L);
             verify(auditService).log(eq("warehouse.orders.manual"), any(), eq(7L), any());
+        }
+
+        @Test
+        void onlineWarehouseCanSwitchToManualWithoutDiscardingErpConnection() {
+            when(warehouseMapper.update(isNull(), any(Wrapper.class))).thenReturn(0, 1);
+            service.useManualOrders(7L);
+            verify(auditService).log(eq("warehouse.orders.manual.switch"), any(), eq(7L), any());
+            verify(stepMapper, never()).update(isNull(), any(Wrapper.class));
+            ArgumentCaptor<Wrapper> updates = ArgumentCaptor.forClass(Wrapper.class);
+            verify(warehouseMapper, times(2)).update(isNull(), updates.capture());
+            String operationalSet = ((LambdaUpdateWrapper<?>) updates.getAllValues().get(1)).getSqlSet();
+            assertThat(operationalSet).contains("order_mode").doesNotContain("erp_status", "join_status");
+        }
+
+        @Test
+        void onlineWarehouseMustConnectErpBeforeSwitchingToIt() {
+            when(warehouseMapper.update(isNull(), any(Wrapper.class))).thenReturn(0, 0);
+            MktWarehouse w = completeWarehouse(); w.setJoinStatus(5); w.setErpStatus(3);
+            when(warehouseMapper.selectById(7L)).thenReturn(w);
+            assertThatThrownBy(() -> service.selectErpOrders(7L)).isInstanceOf(BizException.class)
+                    .hasMessageContaining("正式连接");
+        }
+
+        @Test
+        void connectedOnlineWarehouseCanSwitchToErp() {
+            when(warehouseMapper.update(isNull(), any(Wrapper.class))).thenReturn(0, 1);
+            service.selectErpOrders(7L);
+            verify(auditService).log(eq("warehouse.orders.erp.switch"), any(), eq(7L), any());
         }
 
         @Test

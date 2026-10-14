@@ -29,9 +29,17 @@
         <el-table-column label="加盟状态" width="110">
           <template #default="{ row }"><el-tag :type="joinType(row.joinStatus)">{{ JOIN[row.joinStatus] }}</el-tag><div v-if="row.joinStatus === 8" class="hint">预计删除：{{ row.deleteDueAt?.replace('T', ' ') }}<br />原因：{{ row.deleteReason }}</div></template>
         </el-table-column>
-        <el-table-column label="订单接入" width="140"><template #default="{ row }">{{ row.orderMode === 'manual' ? '手工导入出库单' : row.orderMode === 'erp' ? '外部 ERP' : '待选择' }}</template></el-table-column>
-        <el-table-column label="ERP" width="110">
-          <template #default="{ row }"><el-tag :type="erpType(row.erpStatus)" size="small">{{ ERP[row.erpStatus] }}</el-tag></template>
+        <el-table-column label="订单接入" width="170"><template #default="{ row }">
+          <el-select :model-value="row.orderMode" placeholder="待选择" size="small" style="width:145px" :disabled="acting || ![3,4,5,6].includes(row.joinStatus)" @change="mode => changeOrderMode(row, mode)">
+            <el-option label="手工导入出库单" value="manual" />
+            <el-option label="外部 ERP" value="erp" />
+          </el-select>
+        </template></el-table-column>
+        <el-table-column label="ERP" width="125">
+          <template #default="{ row }">
+            <el-tag :type="erpType(row.erpStatus)" size="small">{{ ERP[row.erpStatus] || '未知' }}</el-tag>
+            <el-button :disabled="acting || [7,8].includes(row.joinStatus)" link type="primary" size="small" class="erp-link" @click="openErp(row)">{{ row.erpStatus === 2 ? '管理连接' : '去连接' }}</el-button>
+          </template>
         </el-table-column>
         <el-table-column label="结算周期" width="90"><template #default="{ row }">{{ CYCLE[row.settleCycle] }}</template></el-table-column>
         <el-table-column label="操作" width="460" fixed="right">
@@ -43,8 +51,6 @@
               <el-button :disabled="acting" link type="danger" @click="withReason(row, 'rejectQualification', '驳回资质')">驳回</el-button>
             </template>
             <template v-else-if="row.joinStatus === 3">
-              <el-button :disabled="acting" link type="success" @click="act(row, 'useManual', '已启用手工导入模式')">{{ row.orderMode === 'erp' ? '切换手工导入' : '选择手工导入' }}</el-button>
-              <el-button :disabled="acting" link type="primary" @click="selectErp(row)">{{ row.orderMode === 'erp' ? '配置 ERP' : '选择 ERP' }}</el-button>
               <el-button :disabled="acting || row.erpStatus !== 2 || row.orderMode !== 'erp'" link type="success" @click="act(row, 'confirmErp', 'ERP 已确认，进入协议环节')">ERP 已联通，继续</el-button>
             </template>
             <el-button v-else-if="row.joinStatus === 4" link type="success" @click="signAgreement(row)">上传协议并上线</el-button>
@@ -191,7 +197,34 @@ async function submit() {
   try{if(form.id)await mktWarehouseApi.update(form);else await mktWarehouseApi.apply(form);ElMessage.success('已保存');dialog.visible=false;await load()}finally{saving.value=false}
 }
 async function act(row,fn,okMsg){if(acting.value)return;acting.value=true;try{await mktWarehouseApi[fn](row.id,fn==='passQualification'?{version:row.version}:undefined);ElMessage.success(okMsg);await load()}finally{acting.value=false}}
-async function selectErp(row){if(acting.value)return;acting.value=true;try{if(row.orderMode!=='erp')await mktWarehouseApi.selectErp(row.id);await router.push({path:'/crm/marketing/erp',query:{warehouseId:row.id,onboarding:1}})}finally{acting.value=false}}
+async function openErp(row) {
+  if (acting.value || [7, 8].includes(row.joinStatus)) return
+  const query = { warehouseId: row.id }
+  if (row.joinStatus === 3) query.onboarding = 1
+  await router.push({ path: '/crm/marketing/erp', query })
+}
+async function changeOrderMode(row, mode) {
+  if (acting.value || mode === row.orderMode) return
+  if (mode === 'erp' && row.joinStatus !== 3 && row.erpStatus !== 2) {
+    ElMessage.warning('请先完成 ERP 正式环境连接，连接成功后再切换接入方式')
+    await openErp(row)
+    return
+  }
+  const manual = mode === 'manual'
+  const message = manual
+    ? '切换后，新订单需要由运营人员手工导入出库单。ERP 凭证和历史日志会保留。'
+    : '切换后，新订单将通过已联通的外部 ERP 接入。请确认正式系统已准备好。'
+  try {
+    await ElMessageBox.confirm(message, `切换为${manual ? '手工导入' : '外部 ERP'}`, { type: 'warning', confirmButtonText: '确认切换' })
+    acting.value = true
+    await mktWarehouseApi[manual ? 'useManual' : 'selectErp'](row.id)
+    ElMessage.success(`已切换为${manual ? '手工导入出库单' : '外部 ERP'}`)
+    await load()
+    if (!manual && row.joinStatus === 3) await router.push({ path: '/crm/marketing/erp', query: { warehouseId: row.id, onboarding: 1 } })
+  } catch (e) {
+    if (e !== 'cancel' && e !== 'close') error.value = e.message || '订单接入方式切换失败'
+  } finally { acting.value = false }
+}
 async function withReason(row,fn,title){if(acting.value)return;try{const {value}=await ElMessageBox.prompt('请填写原因（写入审计）',title,{inputPattern:/\S+/,inputErrorMessage:'原因必填'});acting.value=true;await mktWarehouseApi[fn](row.id,{reason:value});ElMessage.success('已处理');await load()}catch(e){if(e!=='cancel'&&e!=='close')error.value=e.message||'操作失败'}finally{acting.value=false}}
 const agreement = reactive({ visible: false, row: null })
 function signAgreement(row) { agreement.row = row; agreement.visible = true }
@@ -213,4 +246,5 @@ onMounted(load)
 .pager { margin-top: 16px; justify-content: flex-end; }
 .project-note { margin-top: 4px; color: var(--el-text-color-secondary); font-size: 12px; }
 .hint { color: var(--el-text-color-secondary); font-size: 12px; margin-top: 16px; }
+.erp-link { display: block; margin: 4px 0 0; padding: 0; }
 </style>

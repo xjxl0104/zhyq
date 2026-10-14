@@ -119,10 +119,19 @@ public class MktWarehouseOnboardingService {
                 .eq(MktWarehouse::getId, warehouseId).eq(MktWarehouse::getJoinStatus, JS_ERP_CONNECTING)
                 .set(MktWarehouse::getJoinStatus, JS_PENDING_AGREEMENT)
                 .set(MktWarehouse::getOrderMode, "manual").set(MktWarehouse::getErpStatus, ERP_NONE));
+        if (updated == 1) {
+            passStep(warehouseId, STEP_ERP);
+            startStep(warehouseId, STEP_AGREEMENT);
+            auditService.log("warehouse.orders.manual", BIZ_TYPE, warehouseId, "采用运营 Excel 导入出库单，未连接外部 ERP");
+            return;
+        }
+        // 已进入协议或运营阶段后允许切换接单方式；ERP 凭证和连接状态保留，便于以后切回。
+        updated = warehouseMapper.update(null, new LambdaUpdateWrapper<MktWarehouse>()
+                .eq(MktWarehouse::getId, warehouseId)
+                .in(MktWarehouse::getJoinStatus, JS_PENDING_AGREEMENT, JS_ONLINE, JS_PAUSED)
+                .set(MktWarehouse::getOrderMode, "manual"));
         requireUpdated(updated, warehouseId);
-        passStep(warehouseId, STEP_ERP);
-        startStep(warehouseId, STEP_AGREEMENT);
-        auditService.log("warehouse.orders.manual", BIZ_TYPE, warehouseId, "采用运营 Excel 导入出库单，未连接外部 ERP");
+        auditService.log("warehouse.orders.manual.switch", BIZ_TYPE, warehouseId, "切换为运营手工导入出库单");
     }
 
     /** 选择 ERP 模式后进入 ERP 对接页；仍停留在接入阶段，直到正式环境真实联通。 */
@@ -131,8 +140,29 @@ public class MktWarehouseOnboardingService {
         int updated = warehouseMapper.update(null, new LambdaUpdateWrapper<MktWarehouse>()
                 .eq(MktWarehouse::getId, warehouseId).eq(MktWarehouse::getJoinStatus, JS_ERP_CONNECTING)
                 .set(MktWarehouse::getOrderMode, "erp"));
-        requireUpdated(updated, warehouseId);
-        auditService.log("warehouse.orders.erp.select", BIZ_TYPE, warehouseId, "选择外部 ERP 接入");
+        if (updated == 1) {
+            auditService.log("warehouse.orders.erp.select", BIZ_TYPE, warehouseId, "选择外部 ERP 接入");
+            return;
+        }
+        // 运营中的云仓只有在正式连接已由真实同步确认后才能启用 ERP，避免切换瞬间停止接单。
+        updated = warehouseMapper.update(null, new LambdaUpdateWrapper<MktWarehouse>()
+                .eq(MktWarehouse::getId, warehouseId)
+                .in(MktWarehouse::getJoinStatus, JS_PENDING_AGREEMENT, JS_ONLINE, JS_PAUSED)
+                .eq(MktWarehouse::getErpStatus, ERP_LIVE)
+                .set(MktWarehouse::getOrderMode, "erp"));
+        if (updated == 1) {
+            auditService.log("warehouse.orders.erp.switch", BIZ_TYPE, warehouseId, "切换为外部 ERP 订单接入");
+            return;
+        }
+        MktWarehouse current = require(warehouseId);
+        Integer currentStatus = current.getJoinStatus();
+        if ((Integer.valueOf(JS_PENDING_AGREEMENT).equals(currentStatus)
+                || Integer.valueOf(JS_ONLINE).equals(currentStatus)
+                || Integer.valueOf(JS_PAUSED).equals(currentStatus))
+                && !Integer.valueOf(ERP_LIVE).equals(current.getErpStatus())) {
+            throw new BizException("ERP 尚未完成正式连接，请先进入 ERP 对接完成配置和真实同步");
+        }
+        requireUpdated(0, warehouseId);
     }
 
     /** ERP 只能在收到正式环境的真实订单同步后通过，不提供人工伪造联通状态的入口。 */

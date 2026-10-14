@@ -11,6 +11,8 @@
     </div>
 
     <template v-if="warehouseId">
+      <el-alert :type="warehouse?.erpStatus === 2 ? 'success' : 'warning'" :closable="false" class="mb"
+        :title="warehouse?.erpStatus === 2 ? 'ERP 正式连接正常，可在此管理凭证、货主映射和同步日志。' : '连接步骤：签发凭证 → 切换正式环境 → 云仓 ERP 推送真实订单。系统收到有效正式订单后会自动标记为已联通。'" />
       <el-alert v-if="onboardingMode" type="info" :closable="false" class="mb"
         title="当前云仓选择了 ERP 接入：请签发正式凭证并完成正式环境订单同步。收到真实同步后，可确认并进入加盟协议环节。" />
       <div class="table-card">
@@ -21,7 +23,7 @@
           <el-button v-if="onboardingMode" link @click="load">刷新联通状态</el-button>
           <template v-if="cred">
             <el-button @click="resetSecret">重置密钥</el-button>
-            <el-button @click="toggleEnv">{{ cred.env === 1 ? '切正式' : '切回沙箱' }}</el-button>
+            <el-button @click="toggleEnv">{{ cred.env === 1 ? '切换正式环境' : '切回沙箱环境' }}</el-button>
             <el-button :type="cred.status === 1 ? 'warning' : 'success'" @click="toggleStatus">{{ cred.status === 1 ? '停用' : '启用' }}</el-button>
           </template>
           <el-button v-else type="primary" @click="issue">签发沙箱凭证</el-button>
