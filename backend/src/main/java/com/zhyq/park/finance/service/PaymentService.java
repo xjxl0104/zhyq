@@ -60,6 +60,28 @@ public class PaymentService {
      */
     @Transactional(rollbackFor = Exception.class)
     public Payment 收款(Long billId, BigDecimal amount, String payMethod, String payNo) {
+        return doPay(billId, amount, payMethod, payNo, LocalDateTime.now(), null, null, true);
+    }
+
+    /**
+     * 历史收款登记：与 {@link #收款} 走同一套校验（幂等、状态、超收、并发扣减）与同一套落账
+     * （支付单 + 账单实收 + 流水 + 收据），区别只有三点：到账时间用实际到账日、记录操作人与备注、
+     * 不投递到账事件（历史款项不应再触发全民营销佣金解冻）。
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public Payment 历史收款(Long billId, BigDecimal amount, String payMethod, String payNo,
+                         LocalDateTime payTime, String operator, String remark) {
+        if (payTime == null || payTime.isAfter(LocalDateTime.now())) {
+            throw new BizException("历史收款的到账时间不能为空或晚于现在");
+        }
+        if (!StringUtils.hasText(payNo)) {
+            throw new BizException("历史收款必须提供幂等键 payNo");
+        }
+        return doPay(billId, amount, payMethod, payNo, payTime, operator, remark, false);
+    }
+
+    private Payment doPay(Long billId, BigDecimal amount, String payMethod, String payNo,
+                          LocalDateTime payTime, String operator, String remark, boolean publishEvent) {
         // ① 幂等键必须最先查:同 payNo 重放要原样返回首次结果 —— 哪怕首次收款已把
         //    账单收满结清。放在状态校验之后的话,超时重试会撞上"当前账单状态不可收款",
         //    幂等键在唯一需要它的场景(重放)下反而失效
@@ -111,7 +133,9 @@ public class PaymentService {
         payment.setBillId(billId);
         payment.setAmount(amount);
         payment.setPayMethod(payMethod);
-        payment.setPayTime(LocalDateTime.now());
+        payment.setPayTime(payTime);
+        payment.setOperator(cut(operator, 32));
+        payment.setRemark(cut(remark, 255));
         try {
             paymentMapper.insert(payment);
         } catch (DuplicateKeyException e) {
@@ -146,21 +170,23 @@ public class PaymentService {
         flow.setBillId(billId);
         flow.setPaymentId(payment.getId());
         flow.setMatchStatus(1);
-        flow.setFlowTime(LocalDateTime.now());
+        flow.setFlowTime(payTime);
         flowMapper.insert(flow);
 
         // ④ 自动生成收据
         Receipt receipt = new Receipt();
-        receipt.setReceiptNo(buildReceiptNo(bill.getCode(), billId));
+        receipt.setReceiptNo(buildReceiptNo(bill.getCode(), billId, payTime.toLocalDate()));
         receipt.setPaymentId(payment.getId());
         receipt.setBillId(billId);
         receipt.setTenantRefId(bill.getTenantRefId());
         receipt.setAmount(amount);
-        receipt.setPayee("system");
+        receipt.setPayee(StringUtils.hasText(operator) ? cut(operator, 32) : "system");
         receiptMapper.insert(receipt);
 
         // ⑤ 到账事件:事务提交后才投递(监听方用 AFTER_COMMIT),全民营销靠它解冻租赁/服务合同的佣金
-        eventPublisher.publishEvent(new DomainEvent.PaymentReceived(billId, bill.getContractId(), LocalDateTime.now()));
+        if (publishEvent) {
+            eventPublisher.publishEvent(new DomainEvent.PaymentReceived(billId, bill.getContractId(), LocalDateTime.now()));
+        }
 
         return payment;
     }
@@ -333,8 +359,8 @@ public class PaymentService {
      *
      * <p>历史收据号不动:已经打印出去的号改了就对不上了。</p>
      */
-    private String buildReceiptNo(String billCode, Long billId) {
-        String day = LocalDate.now().format(DateTimeFormatter.BASIC_ISO_DATE);
+    private String buildReceiptNo(String billCode, Long billId, LocalDate payDate) {
+        String day = payDate.format(DateTimeFormatter.BASIC_ISO_DATE);
         String base = StringUtils.hasText(billCode) ? billCode.trim() : ("BILL" + billId);
         // receipt_no 是 VARCHAR(64):账单号过长时先给日期和序号留位置,
         // 不然超出部分会被 MySQL 静默截断,不同账单可能截出同一个号

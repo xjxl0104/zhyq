@@ -5,6 +5,7 @@ import com.zhyq.park.common.result.Result;
 import com.zhyq.park.finance.entity.Bill;
 import com.zhyq.park.finance.entity.Payment;
 import com.zhyq.park.finance.mapper.PaymentMapper;
+import com.zhyq.park.finance.service.FinancePaymentImportService;
 import com.zhyq.park.finance.service.PaymentService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -12,6 +13,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -25,6 +27,7 @@ public class PaymentController {
 
     private final PaymentService paymentService;
     private final PaymentMapper paymentMapper;
+    private final FinancePaymentImportService importService;
 
     @Operation(summary = "收款(事务:支付单+账单结清+流水;幂等键 payNo 可选)")
     @PreAuthorize("hasAuthority('finance:payment:pay')")
@@ -35,6 +38,20 @@ public class PaymentController {
         String payMethod = body.get("payMethod") == null ? null : body.get("payMethod").toString();
         String payNo = body.get("payNo") == null ? null : body.get("payNo").toString();
         return Result.ok(paymentService.收款(billId, amount, payMethod, payNo));
+    }
+
+    @Operation(summary = "历史收款导入·预览(只计算分摊，不写入任何数据)")
+    @PreAuthorize("hasAuthority('finance:payment:pay')")
+    @PostMapping("/history-import/preview")
+    public Result<FinancePaymentImportService.ImportReport> previewHistoryImport(@RequestParam("file") MultipartFile file) {
+        return Result.ok(importService.preview(file));
+    }
+
+    @Operation(summary = "历史收款导入·确认(整份文件零错误才写入；每笔等同一次收款，可红冲，重复上传自动跳过)")
+    @PreAuthorize("hasAuthority('finance:payment:pay')")
+    @PostMapping("/history-import/confirm")
+    public Result<FinancePaymentImportService.ImportReport> confirmHistoryImport(@RequestParam("file") MultipartFile file) {
+        return Result.ok(importService.confirm(file, username()));
     }
 
     /**
