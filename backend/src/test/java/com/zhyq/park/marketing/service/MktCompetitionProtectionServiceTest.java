@@ -3,6 +3,7 @@ package com.zhyq.park.marketing.service;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.conditions.Wrapper;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.zhyq.park.common.exception.BizException;
 import com.zhyq.park.marketing.entity.MktCompetitionProtection;
 import com.zhyq.park.marketing.entity.MktWarehouse;
@@ -27,6 +28,7 @@ class MktCompetitionProtectionServiceTest {
     MktCompetitionProtectionService service;
     @BeforeAll static void metadata() {
         TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new MybatisConfiguration(), ""), MktCompetitionProtection.class);
+        TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new MybatisConfiguration(), ""), MktWarehouse.class);
     }
     @BeforeEach void setup() {
         entries = mock(MktCompetitionProtectionMapper.class);
@@ -73,5 +75,20 @@ class MktCompetitionProtectionServiceTest {
         service = new MktCompetitionProtectionService(entries, warehouses, new FieldEncryptionService(""), audit);
         assertThatThrownBy(() -> service.add(7L, "秘密品牌")).isInstanceOf(BizException.class);
         verify(entries, never()).insert(any(MktCompetitionProtection.class));
+    }
+
+    @Test void adminPageUsesProjectWarehouseIdsAcrossWarehouseTenants() {
+        MktWarehouse warehouse = new MktWarehouse();
+        warehouse.setId(7L); warehouse.setTenantId(2L); warehouse.setProjectId(9L);
+        warehouse.setCode("WH-007"); warehouse.setName("测试云仓");
+        when(warehouses.selectList(any())).thenReturn(java.util.List.of(warehouse));
+        when(entries.selectPage(any(), any())).thenAnswer(invocation -> {
+            Wrapper<?> wrapper = invocation.getArgument(1);
+            assertThat(wrapper.getSqlSegment()).contains("warehouse_id").doesNotContain("tenant_id");
+            return new Page<MktCompetitionProtection>(1, 20, 0);
+        });
+
+        assertThat(service.adminPage(9L, null, 1, 20).getTotal()).isZero();
+        verify(audit).log(eq("protection.admin.view"), anyString(), isNull(), anyString());
     }
 }

@@ -62,7 +62,6 @@ public class MktCompetitionProtectionService {
         if (warehouseId != null && !warehouseById.containsKey(warehouseId)) return PageResult.of(0, List.of());
 
         LambdaQueryWrapper<MktCompetitionProtection> query = new LambdaQueryWrapper<MktCompetitionProtection>()
-                .eq(MktCompetitionProtection::getTenantId, MyMetaObjectHandler.DEFAULT_TENANT_ID)
                 .in(MktCompetitionProtection::getWarehouseId, warehouseById.keySet())
                 .eq(warehouseId != null, MktCompetitionProtection::getWarehouseId, warehouseId)
                 .orderByDesc(MktCompetitionProtection::getId);
