@@ -36,7 +36,7 @@ import java.util.Set;
 @RequiredArgsConstructor
 public class FinanceOverviewService {
 
-    private static final List<Integer> EFFECTIVE_STATUSES = List.of(3, 4, 5, 6);
+    static final List<Integer> EFFECTIVE_STATUSES = List.of(3, 4, 5, 6);
     private static final ZoneId BUSINESS_ZONE = ZoneId.of("Asia/Shanghai");
 
     private final BillMapper billMapper;
@@ -173,12 +173,12 @@ public class FinanceOverviewService {
                 overdueBillCount, depositOutstanding, feeStructure, List.copyOf(trend), topDebtors);
     }
 
-    private static boolean isEffective(Bill bill) {
+    static boolean isEffective(Bill bill) {
         return BillMetrics.isReceivable(bill) && !Integer.valueOf(1).equals(bill.getDeleted())
                 && bill.getStatus() != null && EFFECTIVE_STATUSES.contains(bill.getStatus());
     }
 
-    private static boolean isOverdue(LocalDate dueDate, LocalDate policyDate, LocalDate today) {
+    static boolean isOverdue(LocalDate dueDate, LocalDate policyDate, LocalDate today) {
         if (dueDate == null) return false;
         LocalDate start = policyDate != null && policyDate.isAfter(dueDate) ? policyDate : dueDate;
         return start.isBefore(today);

@@ -48,6 +48,7 @@ export const flowApi = {
 export const reportApi = {
   // 总览覆盖全部项目，明确覆盖 request 拦截器的当前项目参数。
   overview: (params) => request.get('/finance/report/overview', { params: { ...params, projectId: null } }),
+  contractCollection: () => request.get('/finance/report/contract-collection', { params: { projectId: null } }),
   summary: (params) => request.get('/finance/report/summary', { params })
 }
 
