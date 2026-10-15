@@ -44,6 +44,7 @@ import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class MktReferralOrderImportServiceTest {
+    private static final LocalDateTime ROW_SHIPPED_AT = LocalDateTime.of(2026, 9, 18, 10, 20);
 
     @Mock CustomerMapper customerMapper;
     @Mock MktServiceContractMapper contractMapper;
@@ -53,6 +54,8 @@ class MktReferralOrderImportServiceTest {
     @Mock MktCommissionService commissionService;
     @Mock BizSettings bizSettings;
     @Mock com.zhyq.park.marketing.mapper.MktWarehouseMapper warehouseMapper;
+    @Mock MktOutboundOrderStateService orderStateService;
+    @Mock org.springframework.transaction.PlatformTransactionManager transactions;
 
     MktReferralOrderImportService service;
 
@@ -69,10 +72,12 @@ class MktReferralOrderImportServiceTest {
     @BeforeEach
     void setUp() {
         service = new MktReferralOrderImportService(customerMapper, contractMapper, gradeMapper, pricingService, orderMapper,
-                commissionService, bizSettings, new ObjectMapper(), warehouseMapper, new MktContractTermsService(org.mockito.Mockito.mock(com.zhyq.park.marketing.mapper.MktServiceContractVersionMapper.class)));
+                commissionService, bizSettings, new ObjectMapper(), warehouseMapper, new MktContractTermsService(org.mockito.Mockito.mock(com.zhyq.park.marketing.mapper.MktServiceContractVersionMapper.class)), orderStateService, transactions);
+        lenient().when(transactions.getTransaction(any())).thenReturn(new org.springframework.transaction.support.SimpleTransactionStatus());
         lenient().when(pricingService.forAccrual(any())).thenReturn(pricing("0.753", "0.003"));
         var warehouse = new com.zhyq.park.marketing.entity.MktWarehouse(); warehouse.setId(7L); warehouse.setJoinStatus(5); warehouse.setFeeModel("{\"perOrder\":1,\"perItem\":0}");
         lenient().when(warehouseMapper.selectById(7L)).thenReturn(warehouse);
+        lenient().when(warehouseMapper.selectForUpdate(7L)).thenReturn(warehouse);
     }
 
     @Test
@@ -154,7 +159,7 @@ class MktReferralOrderImportServiceTest {
         assertThat(r.skipped()).isEqualTo(1);
         assertThat(r.imported()).isEqualTo(1);
         assertThat(r.errors()).hasSize(1).first().asString().contains("BAD");
-        verify(commissionService, times(1)).createAndSplit(any());
+        verify(commissionService, times(1)).createAndSplitInTransaction(any());
     }
 
     @Test
@@ -225,7 +230,7 @@ class MktReferralOrderImportServiceTest {
         assertThat(stored.getPoolAmount()).isZero(); assertThat(stored.getPoolFactor()).isZero();
         assertThat(stored.getQty()).isEqualTo(12); assertThat(stored.getPackages()).isEqualTo(3);
         assertThat(stored.getGoodsAmount()).isEqualByComparingTo("800.50"); assertThat(stored.getLogisticsNo()).isEqualTo("SF-DIRECT");
-        assertThat(stored.getEventTime()).isEqualTo(shipped); assertThat(stored.getStatus()).isEqualTo(2);
+        assertThat(stored.getEventTime()).isEqualTo(shipped.withNano(0)); assertThat(stored.getStatus()).isEqualTo(2);
         assertThat(stored.getRemark()).contains("不计佣", "不产生园区应收");
         org.mockito.Mockito.verifyNoInteractions(commissionService,gradeMapper);
     }
@@ -277,7 +282,7 @@ class MktReferralOrderImportServiceTest {
         assertThat(result.imported()).isEqualTo(2); assertThat(result.errors()).isEmpty();
         verify(orderMapper,times(1)).insert(any(MktReferralOrder.class));
         ArgumentCaptor<CommissionEvent> event=ArgumentCaptor.forClass(CommissionEvent.class);
-        verify(commissionService,times(1)).createAndSplit(event.capture());
+        verify(commissionService,times(1)).createAndSplitInTransaction(event.capture());
         assertThat(event.getValue().sourceNo()).isEqualTo("PARK-MIX");
         assertThat(event.getValue().poolAmount()).isEqualByComparingTo("0.50");
     }
@@ -302,16 +307,88 @@ class MktReferralOrderImportServiceTest {
         ArgumentCaptor<com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<MktReferralOrder>> query = ArgumentCaptor.forClass(com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper.class);
         verify(orderMapper).selectOne(query.capture());
         assertThat(query.getValue().getSqlSegment()).contains("warehouse_id");
+        assertThat(query.getValue().getSqlSegment()).contains("FOR UPDATE");
         assertThat(query.getValue().getParamNameValuePairs()).containsValue(7L);
         verify(orderMapper,never()).insert(any(MktReferralOrder.class));
     }
 
+    @Test void manualImportCannotResurrectAnErpCancelledOrder() {
+        when(customerMapper.selectOne(any())).thenReturn(customer(5L, null, null));
+        when(contractMapper.selectOne(any())).thenReturn(directContract());
+        when(orderStateService.isTerminal(7L, "CANCELLED")).thenReturn(true);
+        ImportResult result = service.importRows(List.of(row("CANCELLED")), null);
+        assertThat(result.imported()).isZero(); assertThat(result.skipped()).isEqualTo(1);
+        assertThat(result.errors()).isEmpty();
+        verify(orderMapper, never()).insert(any(MktReferralOrder.class));
+        org.mockito.Mockito.verifyNoInteractions(commissionService);
+        var sequence = org.mockito.Mockito.inOrder(warehouseMapper, orderMapper, orderStateService);
+        sequence.verify(warehouseMapper).selectForUpdate(7L);
+        sequence.verify(orderMapper).selectOne(any());
+        sequence.verify(orderStateService).isTerminal(7L, "CANCELLED");
+    }
+
+    @Test void mappedErpDirectShipmentUsesCustomerIdWithoutRequiringPhoneOrCreatingCommission() {
+        when(customerMapper.selectById(5L)).thenReturn(customer(5L, null, null));
+        when(contractMapper.selectOne(any())).thenReturn(directContract());
+        OutboundRow row = new OutboundRow("ERP-DIRECT", null, 2, 1, LocalDateTime.now().minusDays(1), "SF", null, null);
+        var result = service.ingestOutbound(row, null, 5L);
+        assertThat(result.created()).isTrue(); assertThat(result.terminal()).isFalse();
+        assertThat(result.order().getCustomerId()).isEqualTo(5L);
+        assertThat(result.order().getServiceFee()).isZero(); assertThat(result.order().getPoolAmount()).isZero();
+        verify(customerMapper, never()).selectOne(any());
+        org.mockito.Mockito.verifyNoInteractions(commissionService, pricingService);
+        verify(transactions).commit(any());
+    }
+
+    @Test void failedFinancialMutationRollsBackTheEntireSharedOrderTransaction() {
+        when(customerMapper.selectOne(any())).thenReturn(customer(5L,99L,"A"));
+        MktServiceContract park = directContract(); park.setSignMode(1); park.setPriceTable("{\"perOrder\":10}");
+        when(contractMapper.selectOne(any())).thenReturn(park);
+        when(commissionService.createAndSplitInTransaction(any())).thenThrow(new BizException("模拟佣金失败"));
+        ImportResult result = service.importRows(List.of(row("ROLLBACK")), null);
+        assertThat(result.imported()).isZero(); assertThat(result.errors()).singleElement().asString().contains("模拟佣金失败");
+        verify(transactions).rollback(any());
+        verify(transactions, never()).commit(any());
+    }
+
+    @Test void manualDuplicateCannotChangeRecordedFulfilmentFields() {
+        when(customerMapper.selectOne(any())).thenReturn(customer(5L, null, null));
+        when(contractMapper.selectOne(any())).thenReturn(directContract());
+        when(orderMapper.selectOne(any())).thenReturn(existingOrder());
+        List<OutboundRow> conflicts = List.of(
+                new OutboundRow("SAME", "13800000001", 2, 1, ROW_SHIPPED_AT, "SF", null, null),
+                new OutboundRow("SAME", "13800000001", 1, 2, ROW_SHIPPED_AT, "SF", null, null),
+                new OutboundRow("SAME", "13800000001", 1, 1, ROW_SHIPPED_AT.plusSeconds(1), "SF", null, null),
+                new OutboundRow("SAME", "13800000001", 1, 1, ROW_SHIPPED_AT, "DIFFERENT", null, null),
+                new OutboundRow("SAME", "13800000001", 1, 1, ROW_SHIPPED_AT, "SF", null, BigDecimal.ONE));
+        ImportResult result = service.importRows(conflicts, null);
+        assertThat(result.imported()).isZero(); assertThat(result.skipped()).isZero();
+        assertThat(result.errors()).hasSize(5).allMatch(error -> error.contains("ORDER_CONFLICT"));
+        verify(orderMapper, never()).insert(any(MktReferralOrder.class));
+        org.mockito.Mockito.verifyNoInteractions(commissionService);
+    }
+
+    @Test void erpMappedDuplicateUsesTheSameImmutableFulfilmentChecks() {
+        when(customerMapper.selectById(5L)).thenReturn(customer(5L, null, null));
+        when(contractMapper.selectOne(any())).thenReturn(directContract());
+        MktReferralOrder original = existingOrder(); original.setGoodsAmount(new BigDecimal("1.00"));
+        when(orderMapper.selectOne(any())).thenReturn(original);
+        OutboundRow same = new OutboundRow("SAME", null, 1, 1, ROW_SHIPPED_AT, "SF", null, new BigDecimal("1.0"));
+        var duplicate = service.ingestOutbound(same, null, 5L);
+        assertThat(duplicate.created()).isFalse(); assertThat(duplicate.order()).isSameAs(original);
+        OutboundRow changed = new OutboundRow("SAME", null, 4, 1, ROW_SHIPPED_AT, "SF", null, new BigDecimal("1.0"));
+        assertThatThrownBy(() -> service.ingestOutbound(changed, null, 5L)).isInstanceOf(BizException.class).hasMessageContaining("ORDER_CONFLICT");
+        verify(orderMapper, never()).insert(any(MktReferralOrder.class));
+        org.mockito.Mockito.verifyNoInteractions(commissionService);
+    }
+
     private static MktReferralOrder existingOrder() {
-        var order = new MktReferralOrder(); order.setId(55L); order.setWarehouseId(7L); order.setCustomerId(5L); order.setSourceId(20L); return order;
+        var order = new MktReferralOrder(); order.setId(55L); order.setWarehouseId(7L); order.setCustomerId(5L); order.setSourceId(20L);
+        order.setQty(1); order.setPackages(1); order.setEventTime(ROW_SHIPPED_AT); order.setLogisticsNo("SF"); order.setStatus(2); return order;
     }
 
     private static OutboundRow row(String no) {
-        return new OutboundRow(no, "13800000001", 1, 1, LocalDateTime.now(), "SF", null, null);
+        return new OutboundRow(no, "13800000001", 1, 1, ROW_SHIPPED_AT, "SF", null, null);
     }
 
     private static Customer customer(Long id, Long referrer, String grade) {

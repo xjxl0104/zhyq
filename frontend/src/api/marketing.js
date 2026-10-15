@@ -179,6 +179,8 @@ export const mktErpApi = {
   mappings: (warehouseId) => request.get(`${BASE}/erp/warehouse/${warehouseId}/mappings`),
   saveMapping: (warehouseId, data) => request.post(`${BASE}/erp/warehouse/${warehouseId}/mappings`, data),
   deleteMapping: (id) => request.delete(`${BASE}/erp/mappings/${id}`),
+  exceptions: (warehouseId, params) => request.get(`${BASE}/erp/warehouse/${warehouseId}/exceptions`, { params }),
+  retry: (warehouseId, inboxId, data) => request.post(`${BASE}/erp/warehouse/${warehouseId}/exceptions/${inboxId}/retry`, data),
   logs: (params) => request.get(`${BASE}/erp/logs`, { params })
 }
 

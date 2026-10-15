@@ -20,7 +20,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -34,23 +33,12 @@ public class ErpReliabilityService {
     private final MktErpEventInboxMapper inboxMapper;
     private final MktErpDeadLetterMapper deadMapper;
     private final MktErpReconcileSnapshotMapper reconcileMapper;
+    private final ErpConnectionService connectionService;
 
-    @Transactional
     public int heartbeat(LocalDateTime now) {
         int changed = 0;
         for (MktWarehouseErp erp : erpMapper.selectList(new LambdaQueryWrapper<>())) {
-            LocalDateTime last = erp.getLastSyncAt();
-            boolean stale = last == null || last.isBefore(now.minusHours(6));
-            MktWarehouse wh = warehouseMapper.selectById(erp.getWarehouseId());
-            if (wh == null) continue;
-            if (stale && !Integer.valueOf(MktWarehouseOnboardingService.ERP_DISCONNECTED).equals(wh.getErpStatus())) {
-                changed += warehouseMapper.update(null, new LambdaUpdateWrapper<MktWarehouse>().eq(MktWarehouse::getId, wh.getId())
-                        .set(MktWarehouse::getErpStatus, MktWarehouseOnboardingService.ERP_DISCONNECTED));
-            } else if (!stale && Integer.valueOf(MktWarehouseOnboardingService.ERP_DISCONNECTED).equals(wh.getErpStatus())) {
-                int status = Integer.valueOf(2).equals(erp.getEnv()) ? MktWarehouseOnboardingService.ERP_LIVE : MktWarehouseOnboardingService.ERP_SANDBOX;
-                changed += warehouseMapper.update(null, new LambdaUpdateWrapper<MktWarehouse>().eq(MktWarehouse::getId, wh.getId())
-                        .set(MktWarehouse::getErpStatus, status));
-            }
+            changed += connectionService.refresh(erp, now);
         }
         return changed;
     }
@@ -62,14 +50,21 @@ public class ErpReliabilityService {
         int moved = 0;
         for (MktErpEventInbox row : rows) {
             int attempts = row.getAttempts() == null ? 0 : row.getAttempts();
+            LambdaUpdateWrapper<MktErpEventInbox> transition = new LambdaUpdateWrapper<MktErpEventInbox>()
+                    .eq(MktErpEventInbox::getId, row.getId())
+                    .eq(MktErpEventInbox::getStatus, "RETRY")
+                    .le(MktErpEventInbox::getNextRetryAt, now)
+                    .set(MktErpEventInbox::getNextRetryAt, null);
             if (attempts >= MAX_ATTEMPTS) {
-                row.setStatus("DEAD"); row.setLastError("超过最大重试次数"); inboxMapper.updateById(row);
+                int changed = inboxMapper.update(null, transition.set(MktErpEventInbox::getStatus, "DEAD")
+                        .set(MktErpEventInbox::getLastError, "超过最大重试次数"));
+                if (changed == 0) continue;
                 MktErpDeadLetter dl = new MktErpDeadLetter(); dl.setInboxId(row.getId()); dl.setWarehouseId(row.getWarehouseId());
                 dl.setEventId(row.getEventId()); dl.setOrderNo(row.getOrderNo()); dl.setErrorCode("MAX_RETRY"); dl.setErrorMessage("超过最大重试次数"); dl.setAttempts(attempts); dl.setProjectId(row.getProjectId());
                 try { deadMapper.insert(dl); } catch (DuplicateKeyException ignored) { }
                 moved++;
             } else {
-                row.setStatus("RECEIVED"); row.setNextRetryAt(null); inboxMapper.updateById(row); moved++;
+                moved += inboxMapper.update(null, transition.set(MktErpEventInbox::getStatus, "RECEIVED"));
             }
         }
         return moved;
@@ -80,24 +75,19 @@ public class ErpReliabilityService {
         MktErpEventInbox row = inboxMapper.selectById(inboxId);
         if (row == null) throw new BizException("ERP 事件不存在");
         if ("PROCESSED".equals(row.getStatus())) return;
-        row.setStatus("RECEIVED"); row.setAttempts(0); row.setNextRetryAt(null); row.setLastError("人工重放:" + operator);
-        inboxMapper.updateById(row);
+        if ("PROCESSING".equals(row.getStatus())) throw new BizException("事件正在处理，请稍后刷新");
+        int changed = inboxMapper.update(null, new LambdaUpdateWrapper<MktErpEventInbox>()
+                .eq(MktErpEventInbox::getId, inboxId).eq(MktErpEventInbox::getStatus, row.getStatus())
+                .set(MktErpEventInbox::getStatus, "RECEIVED").set(MktErpEventInbox::getAttempts, 0)
+                .set(MktErpEventInbox::getNextRetryAt, null).set(MktErpEventInbox::getProcessedAt, null)
+                .set(MktErpEventInbox::getLastError, "人工重放:" + operator));
+        if (changed == 0) throw new BizException("事件状态已变化，请刷新后重试");
     }
 
-    @Transactional
+    /** Legacy amount estimates are not proof of an external reconciliation. */
+    @Deprecated
     public MktErpReconcileSnapshot snapshot(Long warehouseId, LocalDate start, LocalDate end,
                                             BigDecimal expected, BigDecimal actual, Long projectId) {
-        if (start == null || end == null || end.isBefore(start)) throw new BizException("对账周期无效");
-        BigDecimal e = expected == null ? BigDecimal.ZERO : expected;
-        BigDecimal a = actual == null ? BigDecimal.ZERO : actual;
-        BigDecimal diff = e.subtract(a).abs();
-        BigDecimal base = e.abs().max(BigDecimal.ONE);
-        BigDecimal ratio = diff.divide(base, 8, RoundingMode.HALF_UP);
-        MktErpReconcileSnapshot existing = reconcileMapper.selectOne(new LambdaQueryWrapper<MktErpReconcileSnapshot>()
-                .eq(MktErpReconcileSnapshot::getWarehouseId, warehouseId).eq(MktErpReconcileSnapshot::getPeriodStart, start).eq(MktErpReconcileSnapshot::getPeriodEnd, end).last("limit 1"));
-        if (existing != null) return existing;
-        MktErpReconcileSnapshot s = new MktErpReconcileSnapshot(); s.setWarehouseId(warehouseId); s.setPeriodStart(start); s.setPeriodEnd(end);
-        s.setExpectedAmount(e); s.setActualAmount(a); s.setDiffAmount(diff); s.setDiffRatio(ratio); s.setFrozen(ratio.compareTo(new BigDecimal("0.02")) >= 0 ? 1 : 0);
-        s.setReason(s.getFrozen() == 1 ? "对账差异达到 2%" : null); s.setProjectId(projectId); reconcileMapper.insert(s); return s;
+        throw new BizException("旧金额估算对账已停用，请录入外部 ERP 出库单数及凭据并完成周期对账确认");
     }
 }

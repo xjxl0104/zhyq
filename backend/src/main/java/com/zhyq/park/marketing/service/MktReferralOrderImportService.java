@@ -26,6 +26,8 @@ import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.ss.usermodel.WorkbookFactory;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -81,6 +83,8 @@ public class MktReferralOrderImportService {
     private final ObjectMapper objectMapper;
     private final com.zhyq.park.marketing.mapper.MktWarehouseMapper warehouseMapper;
     private final MktContractTermsService termsService;
+    private final MktOutboundOrderStateService orderStateService;
+    private final PlatformTransactionManager transactionManager;
 
     public record ImportResult(int imported, int skipped, List<String> errors) {
     }
@@ -89,6 +93,8 @@ public class MktReferralOrderImportService {
     public record OutboundRow(String orderNo, String customerPhone, int qty, int packages,
                               LocalDateTime shippedAt, String logisticsNo, String warehouseCode, BigDecimal goodsAmount) {
     }
+
+    public record OutboundResult(MktReferralOrder order, boolean created, boolean terminal) {}
 
     public ImportResult importWorkbook(MultipartFile file, Long projectId) {
         if (file == null || file.isEmpty()) {
@@ -158,27 +164,38 @@ public class MktReferralOrderImportService {
         int imported = 0;
         int skipped = 0;
         List<String> errors = new ArrayList<>();
-        int freezeDays = bizSettings.getInt(MODULE, "freeze_days", 7);
         for (int i = 0; i < rows.size(); i++) {
             OutboundRow row = rows.get(i);
             try {
-                ResolvedOutbound resolved = resolve(row, projectId);
-                if (orderExists(row.orderNo(), resolved)) {
-                    skipped++;
-                    continue;
-                }
-                if (Integer.valueOf(2).equals(resolved.contract().getSignMode())) {
-                    if (saveDirectOutbound(row, resolved, projectId)) imported++;
-                    else skipped++;
-                } else {
-                    commissionService.createAndSplit(toParkEvent(row, resolved, projectId, freezeDays));
-                    imported++;
-                }
+                OutboundResult result = ingestOutbound(row, projectId, null);
+                if (result.created()) imported++;
+                else skipped++;
             } catch (Exception ex) {
                 errors.add("出库单 " + row.orderNo() + ":" + ex.getMessage());
             }
         }
         return new ImportResult(imported, skipped, errors);
+    }
+
+    /** Manual rows and ERP shipments share one atomic ledger path and one warehouse lock. */
+    public OutboundResult ingestOutbound(OutboundRow row, Long projectId, Long mappedCustomerId) {
+        return new TransactionTemplate(transactionManager).execute(tx -> {
+            ResolvedOutbound found = resolve(row, projectId, mappedCustomerId);
+            MktWarehouse locked = warehouseMapper.selectForUpdate(found.warehouse().getId());
+            if (locked == null || !Integer.valueOf(5).equals(locked.getJoinStatus()))
+                throw new BizException("承接云仓未上线,不能导入出库单");
+            ResolvedOutbound resolved = new ResolvedOutbound(found.customer(), found.contract(), locked);
+            MktReferralOrder existing = existingOrder(row, resolved);
+            if (existing != null) return new OutboundResult(existing, false,
+                    !Integer.valueOf(MktCommissionService.ORDER_CONFIRMED).equals(existing.getStatus()));
+            if (orderStateService.isTerminal(locked.getId(), row.orderNo()))
+                return new OutboundResult(null, false, true);
+            if (Integer.valueOf(2).equals(resolved.contract().getSignMode()))
+                return saveDirectOutbound(row, resolved, projectId);
+            MktReferralOrder order = commissionService.createAndSplitInTransaction(toParkEvent(row, resolved,
+                    projectId, bizSettings.getInt(MODULE, "freeze_days", 7)));
+            return new OutboundResult(order, true, false);
+        });
     }
 
     /**
@@ -193,18 +210,24 @@ public class MktReferralOrderImportService {
 
     /** Both operating records and commission events must reference a real active contract and online warehouse. */
     private ResolvedOutbound resolve(OutboundRow row, Long projectId) {
+        return resolve(row, projectId, null);
+    }
+
+    private ResolvedOutbound resolve(OutboundRow row, Long projectId, Long mappedCustomerId) {
         if (row == null || !StringUtils.hasText(row.orderNo()) || row.orderNo().length() > 64)
             throw new BizException("出库单号必填且不能超过64字");
         if (row.qty() < 0 || row.packages() <= 0) throw new BizException("件数不能为负,包裹数必须为正整数");
         if (row.shippedAt() == null || row.shippedAt().isAfter(LocalDateTime.now().plusMinutes(5)))
             throw new BizException("请填写有效且不晚于当前时间的发货时间");
-        if (!StringUtils.hasText(row.customerPhone())) {
+        if (mappedCustomerId == null && !StringUtils.hasText(row.customerPhone())) {
             throw new BizException("缺客户手机号");
         }
-        Customer customer = customerMapper.selectOne(new LambdaQueryWrapper<Customer>()
-                .eq(Customer::getPhone, row.customerPhone()).last("limit 1"));
+        Customer customer = mappedCustomerId == null
+                ? customerMapper.selectOne(new LambdaQueryWrapper<Customer>()
+                    .eq(Customer::getPhone, row.customerPhone()).last("limit 1"))
+                : customerMapper.selectById(mappedCustomerId);
         if (customer == null) {
-            throw new BizException("手机号 " + row.customerPhone() + " 不是系统客户");
+            throw new BizException(mappedCustomerId == null ? "手机号 " + row.customerPhone() + " 不是系统客户" : "货主映射的客户不存在");
         }
         Long warehouseId = null;
         if (StringUtils.hasText(row.warehouseCode())) {
@@ -262,7 +285,7 @@ public class MktReferralOrderImportService {
         if (cost.signum() <= 0) throw new BizException("云仓应付费率尚未配置,请先核算成本");
         if (serviceFee.subtract(cost).subtract(pool).signum() < 0)
             throw new BizException("本单园区毛利为负(服务费−云仓成本−佣金),请核对合同报价和云仓费率");
-        LocalDateTime shipped = row.shippedAt() == null ? LocalDateTime.now() : row.shippedAt();
+        LocalDateTime shipped = (row.shippedAt() == null ? LocalDateTime.now() : row.shippedAt()).withNano(0);
         return new CommissionEvent(MktCommissionService.SOURCE_OUTBOUND, row.orderNo(), contract.getId(),
                 customer.getId(), contract.getPartnerId() == null ? customer.getReferrerId() : contract.getPartnerId(), gradeCode, rate, serviceFee, pool,
                 shipped, shipped.plusDays(freezeDays), contract.getProjectId() == null ? projectId : contract.getProjectId(), contract.getWarehouseId(),
@@ -270,7 +293,7 @@ public class MktReferralOrderImportService {
     }
 
     /** A direct-sign shipment is an operating record, never a commission event or park receivable. */
-    private boolean saveDirectOutbound(OutboundRow row, ResolvedOutbound resolved, Long projectId) {
+    private OutboundResult saveDirectOutbound(OutboundRow row, ResolvedOutbound resolved, Long projectId) {
         MktServiceContract contract = resolved.contract();
         MktReferralOrder order = new MktReferralOrder();
         order.setSourceType(MktCommissionService.SOURCE_OUTBOUND); order.setSourceNo(row.orderNo());
@@ -279,12 +302,13 @@ public class MktReferralOrderImportService {
         order.setPromoterId(null); order.setBaseMode(1); order.setBaseAmount(BigDecimal.ZERO);
         order.setServiceFee(BigDecimal.ZERO); order.setPoolAmount(BigDecimal.ZERO); order.setPoolFactor(BigDecimal.ZERO);
         order.setQty(row.qty()); order.setPackages(row.packages()); order.setGoodsAmount(row.goodsAmount()); order.setLogisticsNo(row.logisticsNo());
-        order.setStatus(MktCommissionService.ORDER_CONFIRMED); order.setEventTime(row.shippedAt()); order.setConfirmTime(LocalDateTime.now());
+        order.setStatus(MktCommissionService.ORDER_CONFIRMED); order.setEventTime(row.shippedAt().withNano(0)); order.setConfirmTime(LocalDateTime.now());
         order.setProjectId(contract.getProjectId() == null ? projectId : contract.getProjectId());
         order.setRemark("云仓直签运营出库记录，不计佣、不产生园区应收或云仓应付；平台费实际到账另行登记");
-        try { orderMapper.insert(order); return true; }
+        try { orderMapper.insert(order); return new OutboundResult(order, true, false); }
         catch (DuplicateKeyException concurrentImport) {
-            if (orderExists(row.orderNo(), resolved)) return false;
+            MktReferralOrder existing = existingOrder(row, resolved);
+            if (existing != null) return new OutboundResult(existing, false, false);
             throw concurrentImport;
         }
     }
@@ -318,17 +342,27 @@ public class MktReferralOrderImportService {
                 .setScale(2, java.math.RoundingMode.HALF_UP);
     }
 
-    private boolean orderExists(String orderNo, ResolvedOutbound resolved) {
+    private MktReferralOrder existingOrder(OutboundRow row, ResolvedOutbound resolved) {
         MktReferralOrder existing = orderMapper.selectOne(new LambdaQueryWrapper<MktReferralOrder>()
                 .eq(MktReferralOrder::getSourceType, MktCommissionService.SOURCE_OUTBOUND)
                 .eq(MktReferralOrder::getWarehouseId, resolved.warehouse().getId())
-                .eq(MktReferralOrder::getSourceNo, orderNo).last("limit 1"));
-        if (existing == null) return false;
+                .eq(MktReferralOrder::getSourceNo, row.orderNo()).last("limit 1 FOR UPDATE"));
+        if (existing == null) return null;
         if (!Objects.equals(existing.getWarehouseId(), resolved.warehouse().getId())
                 || !Objects.equals(existing.getCustomerId(), resolved.customer().getId())
                 || !Objects.equals(existing.getSourceId(), resolved.contract().getId()))
-            throw new BizException("该云仓出库单号已关联其他客户或合同，请核对原始单号");
-        return true;
+            throw new BizException("ORDER_CONFLICT:该云仓出库单号已关联其他客户或合同，请核对原始单号");
+        if (!Objects.equals(existing.getQty(), row.qty()) || !Objects.equals(existing.getPackages(), row.packages())
+                || existing.getEventTime() == null || !existing.getEventTime().withNano(0).equals(row.shippedAt().withNano(0))
+                || !Objects.equals(normalizedLogistics(existing.getLogisticsNo()), normalizedLogistics(row.logisticsNo()))
+                || !sameAmount(existing.getGoodsAmount(), row.goodsAmount()))
+            throw new BizException("ORDER_CONFLICT:同一云仓出库单号的件数、包裹数、发货时间、物流单号或货值与原记录不一致，请核对原始单据");
+        return existing;
+    }
+
+    private static String normalizedLogistics(String value) { return value == null || value.isBlank() ? null : value.trim(); }
+    private static boolean sameAmount(BigDecimal left, BigDecimal right) {
+        return left == null ? right == null : right != null && left.compareTo(right) == 0;
     }
 
     // ---------------- POI 工具(与 LeadImportService 同款) ----------------

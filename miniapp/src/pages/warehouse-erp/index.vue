@@ -5,10 +5,12 @@
       <view v-if="loading" class="wh-note">正在读取接入信息…</view>
       <template v-if="loaded">
         <view class="wh-status">{{ statusText }}</view>
+        <view class="wh-note">最近签名心跳：{{ erp.lastHeartbeatAt || '尚未收到有效签名请求' }}</view>
         <view class="wh-note">最近同步：{{ erp.lastSyncAt || '暂无同步记录' }}</view>
         <template v-if="erp.configured">
           <view class="wh-label">应用编号</view><text class="credential" selectable>{{ erp.appId }}</text>
           <view class="wh-note">{{ erp.env === 2 ? '正式环境' : '沙箱环境' }} · {{ erp.endpoint }}</view>
+          <view class="wh-note">ERP 无订单时也应每小时发送签名心跳。沙箱仅校验事件格式，不产生正式订单或佣金。</view>
           <button class="wh-secondary" @click="copy(erp.appId)">复制应用编号</button>
           <template v-if="secret">
             <view class="wh-label">接入密钥</view><text class="credential" selectable>{{ secret }}</text>
@@ -51,7 +53,8 @@ const erp = reactive({})
 const secret = ref('')
 const loaded = ref(false), loading = ref(false), busy = ref(''), error = ref(''), connectionMessage = ref('')
 const logsRows = ref([]), logsLoaded = ref(false), logsTotal = ref(0), logsPage = ref(1)
-const statusText = computed(() => !erp.configured ? '尚未配置接入凭证' : erp.status === 1 ? '接入凭证已启用' : '接入凭证已停用')
+const statusText = computed(() => !erp.configured ? '尚未配置接入凭证' : erp.status !== 1 ? '接入凭证已停用'
+  : ({ 0: '已配置，等待签名连接', 1: '沙箱连接正常', 2: '正式连接正常', 3: '签名心跳超时' }[erp.erpStatus] || '等待签名连接'))
 function applyErp(data) {
   // The API reveals a secret only once. Keep that value in this page's memory
   // when onShow refreshes the public credential metadata after copying.
@@ -81,8 +84,10 @@ async function ping() {
     const result = await warehouseApi.ping()
     if (!result.ok) throw new Error('服务连接失败，请重试')
     const state = { 0: '未接入', 1: '沙箱联调', 2: '正式联通', 3: '连接中断' }[result.erpStatus] || '待确认'
-    connectionMessage.value = '园区服务可访问；ERP 状态：' + state
+    connectionMessage.value = '园区服务可访问，此检查不验证 ERP 连接；最近签名状态：' + state
     erp.lastSyncAt = result.lastSyncAt
+    erp.lastHeartbeatAt = result.lastHeartbeatAt
+    erp.erpStatus = result.erpStatus
   } catch (e) { error.value = e.message || '服务连接失败，请重试' }
   finally { busy.value = '' }
 }

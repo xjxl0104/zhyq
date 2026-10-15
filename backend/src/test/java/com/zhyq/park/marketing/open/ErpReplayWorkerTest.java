@@ -47,7 +47,23 @@ class ErpReplayWorkerTest {
         return r;
     }
 
-    private MktWarehouseErp cred() { MktWarehouseErp c = new MktWarehouseErp(); c.setId(1L); c.setWarehouseId(11L); c.setAppId("wh_a"); return c; }
+    private MktWarehouseErp cred() { MktWarehouseErp c = new MktWarehouseErp(); c.setId(1L); c.setWarehouseId(11L); c.setAppId("wh_a"); c.setStatus(1); c.setEnv(2); return c; }
+
+    @Test void waitingMappingIsNeverOverwrittenWithProcessed() {
+        when(inbox.selectList(any())).thenReturn(List.of(row(5L, 0)));
+        when(erp.selectOne(any())).thenReturn(cred());
+        when(ingest.ingest(any(), any(), anyString())).thenReturn(new ErpOrderIngestService.IngestResult(true, null, false, "WAITING_MAPPING", "待映射"));
+        assertThat(worker().replayDue()).isEqualTo(1);
+        verify(inbox, never()).update(any(), any());
+    }
+
+    @Test void formalInboxDoesNotReplayWithSandboxCredential() {
+        when(inbox.selectList(any())).thenReturn(List.of(row(5L, 0)));
+        MktWarehouseErp sandbox = cred(); sandbox.setEnv(1);
+        when(erp.selectOne(any())).thenReturn(sandbox);
+        assertThat(worker().replayDue()).isZero();
+        verifyNoInteractions(ingest);
+    }
 
     @Test void replaysReceivedEventThroughIngest() {
         when(inbox.selectList(any())).thenReturn(List.of(row(5L, 0)));
@@ -60,14 +76,26 @@ class ErpReplayWorkerTest {
         verify(ingest).ingest(any(), any(), eq("d"));
     }
 
-    @Test void skipsWhenCredentialMissingKeepsReceived() {
+    @Test void missingCredentialIsDeadAndCannotStarveTheQueue() {
         when(inbox.selectList(any())).thenReturn(List.of(row(5L, 0)));
         when(erp.selectOne(any())).thenReturn(null);
 
         int n = worker().replayDue();
 
-        assertThat(n).isZero();
+        assertThat(n).isEqualTo(1);
         verify(ingest, never()).ingest(any(), any(), anyString());
+        verify(inbox).update(isNull(), any());
+    }
+
+    @Test void missingOriginalPayloadIsDeadAndCannotStarveTheQueue() {
+        MktErpEventInbox row = row(5L, 0); row.setPayloadJson(null);
+        when(inbox.selectList(any())).thenReturn(List.of(row));
+        when(erp.selectOne(any())).thenReturn(cred());
+        assertThat(worker().replayDue()).isEqualTo(1);
+        verifyNoInteractions(ingest);
+        ArgumentCaptor<com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<MktErpEventInbox>> update = ArgumentCaptor.forClass(com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper.class);
+        verify(inbox).update(isNull(), update.capture());
+        assertThat(com.zhyq.park.marketing.support.WrapperAssert.of(update.getValue()).setValue("status")).isEqualTo("DEAD");
     }
 
     @Test void failureAfterMaxAttemptsGoesToDead() {

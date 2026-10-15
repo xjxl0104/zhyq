@@ -41,6 +41,7 @@ public class ErpSignatureService {
     private final MktWarehouseErpMapper erpMapper;
     private final FieldEncryptionService encryption;
     private final JdbcTemplate jdbc;
+    private final ErpConnectionService connectionService;
 
     public sealed interface VerifyResult permits Ok, Fail {
     }
@@ -79,6 +80,9 @@ public class ErpSignatureService {
         }
         if (!consumeNonce(appId, nonce.trim())) {
             return new Fail("NONCE_REPLAY", "nonce 重复");
+        }
+        if (!connectionService.recordHeartbeat(cred, LocalDateTime.now())) {
+            return new Fail("CREDENTIAL_CHANGED", "凭证配置已变化，请重新获取配置后使用新 nonce 签名");
         }
         return new Ok(cred);
     }

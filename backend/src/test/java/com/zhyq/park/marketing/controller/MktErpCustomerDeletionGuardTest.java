@@ -3,10 +3,14 @@ package com.zhyq.park.marketing.controller;
 import com.zhyq.park.crm.entity.Customer;
 import com.zhyq.park.crm.mapper.CustomerMapper;
 import com.zhyq.park.marketing.entity.MktCustomerErpMap;
+import com.zhyq.park.marketing.entity.MktWarehouse;
+import com.zhyq.park.marketing.open.ErpConnectionService;
+import com.zhyq.park.marketing.open.ErpExceptionService;
 import com.zhyq.park.marketing.mapper.*;
 import com.zhyq.park.marketing.service.MktAuditService;
 import com.zhyq.park.receivable.service.FieldEncryptionService;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeEach;
 
 import java.util.Map;
 
@@ -18,8 +22,16 @@ class MktErpCustomerDeletionGuardTest {
     final CustomerMapper customers = mock(CustomerMapper.class);
     final MktCustomerErpMapMapper mappings = mock(MktCustomerErpMapMapper.class);
     final MktAuditService audit = mock(MktAuditService.class);
-    final MktErpController controller = new MktErpController(mock(MktWarehouseMapper.class), mock(MktWarehouseErpMapper.class),
-            mappings, mock(MktErpSyncLogMapper.class), mock(FieldEncryptionService.class), audit, customers);
+    final MktWarehouseMapper warehouses = mock(MktWarehouseMapper.class);
+    final ErpExceptionService exceptions = mock(ErpExceptionService.class);
+    final MktErpController controller = new MktErpController(warehouses, mock(MktWarehouseErpMapper.class),
+            mappings, mock(MktErpSyncLogMapper.class), mock(FieldEncryptionService.class), audit, customers,
+            mock(ErpConnectionService.class), exceptions);
+
+    @BeforeEach void warehouse() {
+        MktWarehouse w = new MktWarehouse(); w.setId(9L); w.setJoinStatus(5);
+        when(warehouses.selectForUpdate(9L)).thenReturn(w);
+    }
 
     @Test void missingCustomerCannotGainNewErpMappingAfterDeletion() {
         assertThatThrownBy(() -> controller.saveMapping(9L, Map.of("customerId", 42L, "customerCode", "TEST")))
@@ -32,9 +44,18 @@ class MktErpCustomerDeletionGuardTest {
         Customer customer = new Customer(); customer.setId(42L);
         when(customers.selectForUpdate(42L)).thenReturn(customer);
         controller.saveMapping(9L, Map.of("customerId", 42L, "customerCode", "TEST"));
-        var order = inOrder(customers, mappings);
+        var order = inOrder(warehouses, customers, mappings, exceptions);
+        order.verify(warehouses).selectForUpdate(9L);
         order.verify(customers).selectForUpdate(42L);
         order.verify(mappings).selectOne(any());
         order.verify(mappings).insert(any(MktCustomerErpMap.class));
+        order.verify(exceptions).enqueueForMapping(9L, "TEST");
+    }
+
+    @Test void missingCodeDoesNotBecomeLiteralNullMapping() {
+        Customer customer = new Customer(); customer.setId(42L);
+        when(customers.selectForUpdate(42L)).thenReturn(customer);
+        assertThatThrownBy(() -> controller.saveMapping(9L, Map.of("customerId", 42L))).hasMessageContaining("货主编码");
+        verifyNoInteractions(mappings, exceptions);
     }
 }
