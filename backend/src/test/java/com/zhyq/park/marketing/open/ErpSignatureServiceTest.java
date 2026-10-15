@@ -37,6 +37,7 @@ class ErpSignatureServiceTest {
     @Mock MktWarehouseErpMapper erpMapper;
     @Mock FieldEncryptionService encryption;
     @Mock JdbcTemplate jdbc;
+    @Mock ErpConnectionService connectionService;
     ErpSignatureService service;
 
     @BeforeAll
@@ -46,12 +47,13 @@ class ErpSignatureServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new ErpSignatureService(erpMapper, encryption, jdbc);
+        service = new ErpSignatureService(erpMapper, encryption, jdbc, connectionService);
         MktWarehouseErp cred = new MktWarehouseErp();
         cred.setId(1L); cred.setAppId("wh_test"); cred.setSecretEnc("enc"); cred.setStatus(1); cred.setWarehouseId(7L);
         lenient().when(erpMapper.selectOne(any(Wrapper.class))).thenReturn(cred);
         lenient().when(encryption.decrypt("enc")).thenReturn(SECRET);
         lenient().when(jdbc.update(anyString(), any(), any(), any())).thenReturn(1);
+        lenient().when(connectionService.recordHeartbeat(any(), any())).thenReturn(true);
     }
 
     @Test
@@ -59,6 +61,7 @@ class ErpSignatureServiceTest {
         String ts = now();
         String sig = ErpSignatureService.sign(SECRET, ts, "n1", BODY);
         assertThat(service.verify("wh_test", ts, "n1", sig, BODY)).isInstanceOf(ErpSignatureService.Ok.class);
+        verify(connectionService).recordHeartbeat(any(), any());
     }
 
     @Test
@@ -76,6 +79,7 @@ class ErpSignatureServiceTest {
         assertThat(r).isInstanceOf(ErpSignatureService.Fail.class);
         assertThat(((ErpSignatureService.Fail) r).code()).isEqualTo("SIGN_INVALID");
         verify(jdbc, never()).update(anyString(), any(), any(), any());
+        verify(connectionService, never()).recordHeartbeat(any(), any());
     }
 
     @Test
@@ -102,6 +106,16 @@ class ErpSignatureServiceTest {
         String sig = ErpSignatureService.sign(SECRET, ts, "n1", BODY);
         ErpSignatureService.VerifyResult r = service.verify("wh_test", ts, "n1", sig, BODY);
         assertThat(((ErpSignatureService.Fail) r).code()).isEqualTo("NONCE_REPLAY");
+        verify(connectionService, never()).recordHeartbeat(any(), any());
+    }
+
+    @Test
+    void credentialChangedDuringSignatureVerificationIsRejected() {
+        when(connectionService.recordHeartbeat(any(), any())).thenReturn(false);
+        String ts = now();
+        ErpSignatureService.VerifyResult result = service.verify("wh_test", ts, "fresh-nonce",
+                ErpSignatureService.sign(SECRET, ts, "fresh-nonce", BODY), BODY);
+        assertThat(((ErpSignatureService.Fail) result).code()).isEqualTo("CREDENTIAL_CHANGED");
     }
 
     @Test

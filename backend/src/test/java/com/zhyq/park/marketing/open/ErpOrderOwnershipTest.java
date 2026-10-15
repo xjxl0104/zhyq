@@ -10,6 +10,7 @@ import com.zhyq.park.marketing.entity.*;
 import com.zhyq.park.marketing.mapper.*;
 import com.zhyq.park.marketing.service.MktCommissionService;
 import com.zhyq.park.marketing.service.MktReferralOrderImportService;
+import com.zhyq.park.marketing.service.MktOutboundOrderStateService;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -32,16 +33,19 @@ class ErpOrderOwnershipTest {
     @Mock MktReferralOrderImportService importer;
     @Mock MktCommissionService commissions;
     @Mock BizSettings settings;
+    @Mock MktOutboundOrderStateService states;
     @InjectMocks ErpOrderIngestService service;
     @BeforeAll static void metadata() {
         var a = new MapperBuilderAssistant(new MybatisConfiguration(), "");
-        for (var c : List.of(MktWarehouse.class, MktWarehouseErp.class, MktErpEventInbox.class, MktReferralOrder.class))
+        for (var c : List.of(MktWarehouse.class, MktWarehouseErp.class, MktErpEventInbox.class, MktReferralOrder.class, MktErpUnmapped.class))
             TableInfoHelper.initTableInfo(a,c);
     }
     @BeforeEach void warehouse() {
-        var w = new MktWarehouse(); w.setId(1L); w.setCode("W1"); when(warehouses.selectById(1L)).thenReturn(w);
+        var w = new MktWarehouse(); w.setId(1L); w.setCode("W1"); w.setJoinStatus(5);
+        when(warehouses.selectForUpdate(1L)).thenReturn(w);
+        when(credentials.selectById(1L)).thenReturn(credential());
     }
-    MktWarehouseErp credential() { var c = new MktWarehouseErp(); c.setId(1L); c.setWarehouseId(1L); c.setAppId("app1"); return c; }
+    MktWarehouseErp credential() { var c = new MktWarehouseErp(); c.setId(1L); c.setWarehouseId(1L); c.setAppId("app1"); c.setEnv(2); c.setStatus(1); c.setConnectionRevision(0); c.setSecretEnc("encrypted"); return c; }
     com.fasterxml.jackson.databind.JsonNode event(String type) throws Exception {
         return new ObjectMapper().readTree("{\"event\":\"" + type + "\",\"event_id\":\"E1\",\"customer_code\":\"C1\",\"warehouse_code\":\"W1\",\"order_no\":\"SAME-NO\",\"occurred_at\":\"2026-09-21T10:00:00+08:00\"}");
     }

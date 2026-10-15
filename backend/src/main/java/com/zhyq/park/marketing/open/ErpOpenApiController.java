@@ -55,6 +55,7 @@ public class ErpOpenApiController {
             return ResponseEntity.badRequest().body(fail("BAD_PAYLOAD", "JSON 解析失败"));
         }
         ErpOrderIngestService.IngestResult r = ingestService.ingest(cred, ev, digest);
+        if (r.auditAfterRollback()) ingestService.logRolledBackFailure(cred, ev, digest, r);
         return r.ok() ? ResponseEntity.ok(ok(r)) : ResponseEntity.badRequest().body(fail(r.code(), r.msg()));
     }
 
@@ -83,7 +84,9 @@ public class ErpOpenApiController {
         }
         List<Map<String, Object>> results = new ArrayList<>();
         for (JsonNode ev : arr) {
-            ErpOrderIngestService.IngestResult r = ingestService.ingest(cred, ev, ErpSignatureService.sha256Hex(ev.toString()));
+            String eventDigest = ErpSignatureService.sha256Hex(ev.toString());
+            ErpOrderIngestService.IngestResult r = ingestService.ingest(cred, ev, eventDigest);
+            if (r.auditAfterRollback()) ingestService.logRolledBackFailure(cred, ev, eventDigest, r);
             Map<String, Object> m = r.ok() ? ok(r) : fail(r.code(), r.msg());
             m.put("order_no", ev.path("order_no").asText(null));
             results.add(m);
@@ -94,7 +97,7 @@ public class ErpOpenApiController {
         return ResponseEntity.ok(resp);
     }
 
-    @Operation(summary = "心跳(有事件即视为心跳;此接口供云仓自检连通与时间同步)")
+    @Operation(summary = "HTTP 连通与时间自检；不更新云仓 ERP 连接状态")
     @GetMapping("/ping")
     public Map<String, Object> ping() {
         Map<String, Object> m = new LinkedHashMap<>();
@@ -115,7 +118,7 @@ public class ErpOpenApiController {
         }
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("ok", true);
-        m.put("version", "1.0");
+        m.put("version", "1.1");
         m.put("events", List.of("order.created", "order.paid", "order.shipped", "order.returned", "order.refunded", "order.cancelled"));
         m.put("required", List.of("event", "order_no", "occurred_at", "warehouse_code", "customer_code"));
         m.put("shipped_required", List.of("qty", "packages", "logistics.tracking_no"));
@@ -129,6 +132,10 @@ public class ErpOpenApiController {
         m.put("ok", true);
         m.put("order_id", r.orderId());
         m.put("attributed", r.attributed());
+        m.put("status", r.status());
+        m.put("sandbox", r.sandbox());
+        if (r.code() != null) m.put("code", r.code());
+        if (r.msg() != null) m.put("msg", r.msg());
         return m;
     }
 

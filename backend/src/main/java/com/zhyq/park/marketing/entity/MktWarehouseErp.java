@@ -27,7 +27,11 @@ public class MktWarehouseErp extends BaseEntity {
     private String callbackUrl;
     /** 预留:拉取模式字段映射 */
     private String fieldMapping;
-    /** 最近一次收到事件 */
+    /** 最近一次通过签名与防重放校验的请求，与是否有订单无关 */
+    private LocalDateTime lastHeartbeatAt;
+    /** 环境、启停或密钥变更后递增，阻止在途旧凭证重新激活连接 */
+    private Integer connectionRevision;
+    /** 最近一次实际同步事件，不能用来判断连接是否存活 */
     private LocalDateTime lastSyncAt;
     private Integer failCount;
     private Long projectId;

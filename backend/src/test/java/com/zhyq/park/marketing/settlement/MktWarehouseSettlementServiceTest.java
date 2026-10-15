@@ -7,6 +7,7 @@ import com.zhyq.park.common.exception.BizException;
 import com.zhyq.park.marketing.entity.*;
 import com.zhyq.park.marketing.mapper.*;
 import com.zhyq.park.marketing.service.*;
+import com.zhyq.park.marketing.open.ErpReconciliationService;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -30,6 +31,7 @@ class MktWarehouseSettlementServiceTest {
     @Mock MktReferralOrderMapper orders;
     @Mock MktWarehouseMapper warehouses;
     @Mock MktErpReconcileSnapshotMapper reconcile;
+    @Mock ErpReconciliationService reconciliation;
     @Mock MktCommissionService commissions;
     @Mock MktNoticeService notices;
     @Mock MktPromoterCommissionMapper commissionRows;
@@ -49,7 +51,7 @@ class MktWarehouseSettlementServiceTest {
     }
     private MktWarehouseSettlementService service() {
         return new MktWarehouseSettlementService(settlements,lines,bills,payments,orders,warehouses,
-                reconcile,commissions,notices,commissionRows,billLines,contracts,grades,proofs,audit,new ObjectMapper());
+                reconcile,reconciliation,commissions,notices,commissionRows,billLines,contracts,grades,proofs,audit,new ObjectMapper());
     }
     @Test void latePaidBillCreatesSupplementWithoutChangingPaidBatch() {
         var old = settlement(4); when(settlements.selectOne(any())).thenReturn(old);
@@ -72,7 +74,8 @@ class MktWarehouseSettlementServiceTest {
     }
     @Test void cannotConfirmWhileRealReconciliationRemainsFrozen() {
         var s=settlement(2);when(settlements.selectById(40L)).thenReturn(s);
-        var snap=new MktErpReconcileSnapshot();snap.setFrozen(1);when(reconcile.selectOne(any())).thenReturn(snap);
+        var warehouse = new MktWarehouse(); warehouse.setOrderMode("erp");when(warehouses.selectOne(any())).thenReturn(warehouse);
+        when(reconciliation.requireConfirmed(11L,START,END)).thenThrow(new BizException("对账仍处于冻结状态"));
         assertThatThrownBy(()->service().confirm(40L,11L)).isInstanceOf(BizException.class).hasMessageContaining("冻结");
         verify(settlements,never()).update(any(),any());
     }
@@ -81,8 +84,44 @@ class MktWarehouseSettlementServiceTest {
         assertThatThrownBy(()->service().confirm(40L,12L)).isInstanceOf(BizException.class).hasMessageContaining("不属于");
         verifyNoInteractions(reconcile);
     }
+    @Test void switchingToManualDoesNotBypassAnExistingErpSnapshot() {
+        var s=settlement(2);s.setReconcileSnapshotId(100L);when(settlements.selectById(40L)).thenReturn(s);
+        var warehouse=new MktWarehouse();warehouse.setOrderMode("manual");when(warehouses.selectOne(any())).thenReturn(warehouse);
+        when(reconciliation.requireConfirmed(11L,START,END)).thenThrow(new BizException("订单已变化"));
+        assertThatThrownBy(()->service().confirm(40L,11L)).isInstanceOf(BizException.class).hasMessageContaining("已变化");
+        verify(settlements,never()).update(any(),any());
+    }
+    @Test void laterConfirmationRequiresExplicitRebindingBeforePayment() {
+        var s=settlement(3);s.setReconcileSnapshotId(100L);when(settlements.selectById(40L)).thenReturn(s);
+        var warehouse=new MktWarehouse();warehouse.setOrderMode("erp");when(warehouses.selectOne(any())).thenReturn(warehouse);
+        var confirmed=new MktErpReconcileSnapshot();confirmed.setId(101L);when(reconciliation.requireConfirmed(11L,START,END)).thenReturn(confirmed);
+        assertThatThrownBy(()->service().pay(40L,"P1","file:1",BigDecimal.TEN,"admin"))
+                .isInstanceOf(BizException.class).hasMessageContaining("版本已过期");
+        verifyNoInteractions(proofs);verify(settlements,never()).update(any(),any());
+    }
+    @Test void paidSettlementCanNeverBeReboundToANewSnapshot() {
+        when(settlements.selectById(40L)).thenReturn(settlement(4));
+        assertThatThrownBy(()->service().resolve(40L,"重新对账"))
+                .isInstanceOf(BizException.class).hasMessageContaining("已付款");
+        verifyNoInteractions(reconciliation);verify(settlements,never()).update(any(),any());
+    }
+    @Test void repeatedPaidReceiptRemainsIdempotentAfterLaterOrderChanges() {
+        var paid=settlement(4);paid.setPayNo("P1");paid.setPayProof("file:1");paid.setReconcileSnapshotId(100L);
+        when(settlements.selectById(40L)).thenReturn(paid);
+        service().pay(40L,"P1","file:1",BigDecimal.TEN,"admin");
+        verifyNoInteractions(reconciliation,proofs);verify(settlements,never()).update(any(),any());
+    }
+    @Test void waitingForWarehouseLockRereadsAnAlreadyPaidSettlement() {
+        var before=settlement(3);before.setReconcileSnapshotId(100L);
+        var paid=settlement(4);paid.setPayNo("P1");paid.setPayProof("file:1");paid.setReconcileSnapshotId(100L);
+        when(settlements.selectById(40L)).thenReturn(before,paid);
+        var warehouse=new MktWarehouse();warehouse.setOrderMode("erp");when(warehouses.selectOne(any())).thenReturn(warehouse);
+        service().pay(40L,"P1","file:1",BigDecimal.TEN,"admin");
+        verifyNoInteractions(reconciliation,proofs);verify(settlements,never()).update(any(),any());
+    }
     @Test void paymentRequiresConfirmedExactAmountAndProof() {
         var s=settlement(3);when(settlements.selectById(40L)).thenReturn(s);
+        var warehouse = new MktWarehouse(); warehouse.setOrderMode("manual");when(warehouses.selectOne(any())).thenReturn(warehouse);
         assertThatThrownBy(()->service().pay(40L,"P1","file:1",new BigDecimal("9.00"),"admin"))
                 .isInstanceOf(BizException.class).hasMessageContaining("实付金额");
         verifyNoInteractions(proofs);

@@ -22,4 +22,21 @@ class ErpEventContractTest {
         assertThatThrownBy(() -> ErpEventContract.parseAndValidate(mapper.readTree(json)))
                 .isInstanceOf(BizException.class).hasMessageContaining("必填");
     }
+
+    @Test void quantitiesCannotBeSilentlyTruncatedAndAmountsCannotBeCoerced() throws Exception {
+        var event = mapper.createObjectNode().put("event", "order.shipped").put("order_no", "O1")
+                .put("occurred_at", "2026-09-21T10:00:00+08:00").put("warehouse_code", "W1")
+                .put("customer_code", "C1").put("qty", 1.5).put("packages", 1);
+        event.putObject("logistics").put("tracking_no", "SF1");
+        assertThatThrownBy(() -> ErpEventContract.parseAndValidate(event)).isInstanceOf(BizException.class).hasMessageContaining("整数");
+        event.put("qty", 2); event.put("goods_amount", "10.00");
+        assertThatThrownBy(() -> ErpEventContract.parseAndValidate(event)).isInstanceOf(BizException.class).hasMessageContaining("goods_amount");
+    }
+
+    @Test void offsetTimestampsAreNormalizedToChinaBusinessDate() throws Exception {
+        var event = mapper.createObjectNode().put("event", "order.created").put("order_no", "O1")
+                .put("occurred_at", "2026-09-20T18:30:00Z").put("warehouse_code", "W1").put("customer_code", "C1");
+        assertThat(ErpEventContract.parseAndValidate(event).occurredAt())
+                .isEqualTo(java.time.LocalDateTime.of(2026, 9, 21, 2, 30));
+    }
 }

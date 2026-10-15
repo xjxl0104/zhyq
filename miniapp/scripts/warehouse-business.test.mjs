@@ -118,7 +118,7 @@ test('ERP 一次性密钥可显示，并在复制返回页面后的元数据刷�
   assert.equal(run('statusText.value'), '尚未配置接入凭证')
   await run('issue()')
   assert.equal(run('secret.value'), 'test-secret')
-  assert.equal(run('statusText.value'), '接入凭证已启用')
+  assert.equal(run('statusText.value'), '等待签名连接')
   await calls.onShow()
   assert.equal(run('secret.value'), 'test-secret')
   await run('issue()')
@@ -128,11 +128,20 @@ test('ERP 一次性密钥可显示，并在复制返回页面后的元数据刷�
 test('ERP 服务连接成功不会伪称 ERP 已联通，错误保留重试机会', async () => {
   const { run } = harness('erp', { ping: async () => ({ok:true,erpStatus:0,lastSyncAt:null}), issueSandbox: async () => { throw new Error('签发失败') }, erp: async () => ({configured:false}) })
   await run('load()'); await run('ping()')
-  assert.equal(run('connectionMessage.value'), '园区服务可访问；ERP 状态：未接入')
+  assert.equal(run('connectionMessage.value'), '园区服务可访问，此检查不验证 ERP 连接；最近签名状态：未接入')
   await run('issue()')
   assert.equal(run('busy.value'), '')
   assert.equal(run('error.value'), '签发失败')
   assert.equal(run('erp.configured'), false)
+})
+
+test('ERP 可在没有同步订单时保持正式签名连接，停用凭证优先显示停用', async () => {
+  const { run } = harness('erp', { erp: async () => ({configured:true,status:1,env:2,erpStatus:2,lastHeartbeatAt:'2026-10-15 09:00:00',lastSyncAt:null}) })
+  await run('load()')
+  assert.equal(run('statusText.value'), '正式连接正常')
+  assert.equal(run('erp.lastSyncAt'), null)
+  run('erp.status = 0')
+  assert.equal(run('statusText.value'), '接入凭证已停用')
 })
 
 const contractApi = (extra = {}) => ({ contracts: empty, agreement: async () => ({joinStatus:4}), customers: empty, ...extra })

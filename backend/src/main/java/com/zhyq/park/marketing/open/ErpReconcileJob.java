@@ -9,7 +9,13 @@ import org.springframework.stereotype.Component;
 @Component
 @RequiredArgsConstructor
 public class ErpReconcileJob {
-    private final ErpReliabilityService service;
+    private final ErpReconciliationService service;
     @Scheduled(cron = "0 30 2 * * ?")
-    public void run() { log.debug("[erp] reconcile snapshot job ready; snapshots are generated per settlement cycle"); }
+    public void run() {
+        for (var period : service.periodsToRefresh()) {
+            try { service.refreshPeriod(period.warehouseId(), period.periodStart(), period.periodEnd()); }
+            catch (Exception e) { log.warn("[erp] reconciliation refresh failed for warehouse {} period {} to {}",
+                    period.warehouseId(), period.periodStart(), period.periodEnd(), e); }
+        }
+    }
 }

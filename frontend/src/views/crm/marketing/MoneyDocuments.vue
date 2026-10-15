@@ -23,7 +23,7 @@
         <el-table-column label="操作" width="240" fixed="right"><template #default="{row}">
           <el-button link type="primary" @click="showLines(row)">明细</el-button>
           <el-button v-if="row.status === 3 && canPay" link type="success" @click="openPayment(row)">{{ isBill ? '登记到账' : '登记付款' }}</el-button>
-          <el-button v-if="canEdit && (row.status === 5 || (!isBill && row.status === 6))" link type="warning" @click="resolve(row)">处理后重发</el-button>
+          <el-button v-if="canEdit && (row.status === 5 || (!isBill && (row.status === 6 || (requiresReconciliation(row) && [2, 3].includes(row.status)))))" link type="warning" @click="resolve(row)">{{ !isBill && requiresReconciliation(row) ? '重新核对结算' : '处理后重发' }}</el-button>
           <el-button v-if="isBill ? row.receiptProof : row.payProof" link @click="downloadProof(isBill ? row.receiptProof : row.payProof)">凭证</el-button>
         </template></el-table-column>
       </el-table>
@@ -81,6 +81,7 @@ const tagType=s=>({2:'warning',3:'primary',4:'success',5:'danger',6:'danger'}[s]
 const query=reactive({pageNo:1,pageSize:20,warehouseId:null,status:null}), rows=ref([]),total=ref(0),loading=ref(false),saving=ref(false),error=ref('')
 const warehouses=ref([]),contracts=ref([]),choicesLoading=ref(false),parkContracts=computed(()=>contracts.value.filter(c=>c.signMode===1&&[4,5,6,7].includes(c.status))),directContracts=computed(()=>contracts.value.filter(c=>c.signMode===2&&[4,5,6,7].includes(c.status)))
 const warehouseName=id=>warehouses.value.find(w=>w.id===id)?.name||`云仓 #${id}`
+const requiresReconciliation=row=>!!row.reconcileSnapshotId || warehouses.value.some(w=>w.id===row.warehouseId && w.orderMode!=='manual')
 async function load(){loading.value=true;error.value='';try{const r=await api.value.page(query);rows.value=r.records||[];total.value=r.total||0}catch(e){error.value=e.message||'单据加载失败，请重试'}finally{loading.value=false}}
 function search(){query.pageNo=1;load()} function reset(){Object.assign(query,{pageNo:1,warehouseId:null,status:null});load()}
 const generation=reactive({visible:false,targetId:null,period:[]}),payment=reactive({visible:false,row:null,number:'',files:[]}),direct=reactive({visible:false,contractId:null,amount:'',paymentNo:'',files:[],period:[]})

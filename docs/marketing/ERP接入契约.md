@@ -1,4 +1,4 @@
-# 云仓 ERP 接入契约 v1.0
+# 云仓 ERP 接入契约 v1.1
 
 > 给加盟云仓技术人员。园区侧实现见 `backend/src/main/java/com/zhyq/park/marketing/open/`;业务规则见 `PARK-MKT-001-开发方案-V1.2.md` §2.6 / §5.3。
 > 当前只实现 **webhook 推送**(云仓主动推事件给园区)。拉取模式与文件模式暂不开放。
@@ -7,8 +7,9 @@
 
 1. 园区运营在后台「全民营销 › ERP 对接」为你的云仓**签发沙箱凭证**,把 `App-Id` 与 `Secret` 交给你(Secret 只显示一次,丢了只能重置)。
 2. 运营为每个客户录入你们 ERP 里的**货主编码**(`customer_code`)。订单归属只认这个编码,不认收件人手机号。
-3. 你方对接口发 3 张测试单(`shipped` / `refunded` / `cancelled` 各一),运营在日志里核对。
-4. 通过后运营把凭证**切正式**,同一 App-Id 与 Secret 不变。
+3. 沙箱凭证调用同一订单接口，返回逐条契约校验结果和 `sandbox=true`。不会写入正式 Inbox、订单、佣金或正式同步日志；通过格式校验不代表合同、定价、财务业务联调完成。
+4. 运营确认接入准备完成后把凭证**切正式**，同一 App-Id 与 Secret 不变；切换环境、启停或重置密钥都会要求重新验证连接。
+5. 正式 ERP 调用签名心跳验证连接，再按货主映射和真实合同推送业务事件；没有订单的时段也应定时发送心跳（建议每 30 分钟一次）。
 
 ## 2. 地址与鉴权
 
@@ -17,6 +18,7 @@ POST https://<园区域名>/api/open/v1/erp/order-event
 POST https://<园区域名>/api/open/v1/erp/orders/batch      # ≤ 500 条
 GET  https://<园区域名>/api/open/v1/erp/contract          # 需验签,body 为空串
 GET  https://<园区域名>/api/open/v1/erp/ping              # 不验签,返回 server_time 供校时
+GET  https://<园区域名>/api/open/v1/erp/heartbeat         # 验签,body 为空串,证明当前凭证连接有效
 ```
 
 每个请求四个头:
@@ -28,7 +30,7 @@ GET  https://<园区域名>/api/open/v1/erp/ping              # 不验签,返回
 | `X-Nonce` | 随机串(≤ 64 字符),**5 分钟内不得重复**,重复返回 `NONCE_REPLAY` |
 | `X-Signature` | `hex( HMAC-SHA256( secret, X-Timestamp + "\n" + X-Nonce + "\n" + body ) )`,大小写不敏感 |
 
-`body` 是**原始请求体字符串**,签名后不要再改动(不要格式化、不要重排字段)。GET `/contract` 的 body 按空串参与签名。
+`body` 是**原始请求体字符串**,签名后不要再改动(不要格式化、不要重排字段)。GET `/contract` 和 `/heartbeat` 的 body 按空串参与签名。匿名 `/ping` 仅供校时和 HTTP 可达检查，不会更新任何云仓连接状态。
 
 ```python
 # Python 示例
@@ -63,11 +65,12 @@ requests.post(url, data=body.encode(), headers={
 
 | 字段 | 必填 | 说明 |
 |---|---|---|
+| `event_id` | 建议显式提供 | 原始事件唯一标识；补映射、网络重发仍使用同一 ID 和同一内容，不能为重试伪造新事件 |
 | `event` | ✓ | `order.created` `order.paid` `order.shipped` `order.returned` `order.refunded` `order.cancelled` |
 | `order_no` | ✓ | 出库单号,云仓内唯一;拆单的子单各自一个单号,`parent_order_no` 填父单 |
 | `occurred_at` | ✓ | ISO-8601 带时区 |
 | `warehouse_code` | ✓ | 必须与 App-Id 对应的云仓编码一致,否则 `WH_MISMATCH` |
-| `customer_code` | shipped ✓ | 货主(园区客户)在你方 ERP 的编码 |
+| `customer_code` | ✓ | 货主(园区客户)在你方 ERP 的编码，所有事件需提供 |
 | `qty` / `packages` | shipped ✓ | 件数 / 包裹数。园区按客户合同单价表**自算服务费**:`perOrder × packages + perItem × qty`,不使用 `fee` |
 | `logistics.tracking_no` | shipped ✓ | 缺则拒绝(防刷单) |
 | `goods_amount` / `fee` / `items` | 可选 | 只做参考与对账 |
@@ -77,19 +80,21 @@ requests.post(url, data=body.encode(), headers={
 | 事件 | 园区动作 |
 |---|---|
 | `created` / `paid` | 只登记,不计佣 |
-| `shipped` | **计佣事件**:按 `customer_code` 归属 → 生成佣金(冻结,发货 + 冻结天数后自动解冻) |
+| `shipped` | 按货主编码匹配后与手工导入共用业务入口：园区签按客户定价产生冻结佣金；云仓直签仅记录运营出库，平台费到账另行计佣 |
 | `returned` | 退货入库:基数为服务费时**不扣回**(服务已发生) |
 | `refunded` | 服务费退款:扣回(未结算作废,已结算生负向流水) |
 | `cancelled` | 取消:同 refunded |
 
 - **幂等**:同一 `order_no` 的 `shipped` 重复推送返回 200 且不重复计佣。
-- **乱序**:`refunded` 先于 `shipped` 到达时,`refunded` 返回 200(无订单,不动作);之后 `shipped` 正常入账。请尽量按时间顺序推送。
-- **未映射**:`customer_code` 没有在园区登记 → 返回 200 `attributed=false`,记日志不计佣。运营补映射后请**重发**该单。
+- **乱序**：`refunded` / `cancelled` 即使先到也按云仓和出库单号记录终态；之后到达的发货不会生成订单佣金，手工补导也不能复活已撤单。确需重新履约应使用新的出库单号。
+- **未映射**：发货返回 200、`attributed=false`、`status=WAITING_MAPPING`，事件保留待匹配，不能据此推定为自有客户。保存映射会排队补处理，亦可按原 `event_id` 原内容重发；创建、付款等非发货事件不会误入待匹配队列。
 
 ## 5. 响应
 
 ```json
 200 {"ok":true,"order_id":123,"attributed":true}
+200 {"ok":true,"order_id":null,"attributed":false,"status":"WAITING_MAPPING","sandbox":false}
+200 {"ok":true,"order_id":null,"attributed":false,"sandbox":true,"code":"SANDBOX_VALIDATED"}
 400 {"ok":false,"code":"SIGN_INVALID|APP_DISABLED|BAD_PAYLOAD|WH_MISMATCH|NONCE_REPLAY|BIZ","msg":"..."}
 ```
 
@@ -114,10 +119,24 @@ requests.post(url, data=body.encode(), headers={
 
 ## 8. 可靠性与补映射
 
-- 园区先把每条事件写入 Inbox，再按 `warehouse_id + app_id + event_id` 做幂等处理；没有 `event_id` 时使用报文摘要、订单号和事件类型组合键。
-- 临时网络或数据库错误会进入重试队列，最多 5 次；超过次数进入死信。验签失败、字段错误、仓库不匹配等 4xx 不会自动重试。
-- `attributed=false` 的事件会进入未映射队列。运营补录 `customer_code` 后，可在后台按原订单重放；重放仍以事件业务键幂等，不会重复生成订单或佣金。
-- 云仓超过 6 小时没有合法事件或主动 ping 会显示断连；断连只阻止新的客户分配，不影响历史查询和已有结算快照。
-- 对账差异低于 2% 可继续结算；达到或超过 2% 时相关结算批次冻结，需运营复核后处理。
+- 正式有效事件按 `warehouse_id + app_id + event_id` 幂等；同 ID 内容变化会被拒绝。未提供 `event_id` 时沿用 `event:order_no:occurred_at` 回退键，推荐始终显式传入。
+- 已排队的后台补处理失败会退避重试，达到上限需人工处理；原请求发生 4xx 应修复数据，网络错误/5xx 由 ERP 重发。待匹配不消耗失败重试次数。
+- 后台新增“待处理事件”，补映射自动排队，人工重试必须填写原因。使用原事件、原报文，不要求 ERP 生成新的事件 ID。重放约每 3 分钟扫描一次；凭证停用或处于沙箱时不补记正式账务。
+- `lastHeartbeatAt` 是最近验签通信时间；`lastSyncAt` 是最近正式业务同步时间。超过 6 小时无签名通信才显示断连，无订单但心跳正常不会断连。配置改变后旧心跳立即失效，等待重新验签。
+- 连接正常仅表示当前凭证通信有效，不代表所有事件已经入账；应同时检查待处理事件和周期对账。
 
-沙箱测试接口只做契约校验和预览，不会进入正式 Inbox、订单、佣金或财务账单。正式事件仍必须使用本契约的 HMAC 头和原始 body 签名。
+## 9. 周期对账与结算
+
+当前提供人工录入 ERP 导出汇总的独立数据源核对流程，不假设任何第三方查询接口已经开放。
+
+1. 在后台 ERP 对接页选择云仓和结算期间，录入 ERP 导出的有效出库单数量及来源/凭据说明。
+2. 比较范围必须一致：本云仓、所选日期、系统登记客户范围的有效出库单；包含手工补单，排除已退款/取消的出库单。不是件数、包裹数，也不是包含未接入自有客户的全仓总量。
+3. 页面预览系统数量、差异及待处理事件。完成客户匹配、重试、补单或撤单处理后重新计算；不以“系统数量等于系统数量”替代独立外部数据。
+4. 保存草稿，零差异且没有待处理阻塞时确认。确认生成不可变版本；结算引用该版本。后续订单、映射或事件变化会使原确认失效，需要重新核对并确认。
+5. 未付款结算可按现有复核流程说明原因并使用新的确认版本，已经付款的历史快照不覆盖。旧的金额差异 2% 规则不作为新数量对账的放行条件。
+
+## 10. 发布与回归场景
+
+后端需先执行 Flyway V90–V92，再部署管理后台和小程序（V89 已由云山日发货量功能占用）。迁移保留历史业务数据；历史未映射发货可通过保存映射或异常台重试，不自动把未知客户认定为园区客户。已有连接状态会重置为待验证，由新的正式签名心跳重新确认；历史财务记录不会自动重算。
+
+上线联调至少覆盖：园区签/云仓直签、手工与 ERP 同单重复、缺映射后补齐、沙箱不入正式账、无订单但心跳正常、停用/换环境/重置密钥后旧连接失效、先撤单后发货、对账差异拦截、补单后旧对账确认失效、实际结算与付款。
