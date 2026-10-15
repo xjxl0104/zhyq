@@ -57,6 +57,12 @@ class MktWarehouseDeletionServiceTest {
         assertThatThrownBy(() -> service.request(7L,"误录")).hasMessageContaining("合同");
         verify(jdbc,never()).update(anyString(),any(Object[].class));
     }
+    @Test void activeYunshanMappingBlocksDeletionBeforeFreeze() {
+        when(jdbc.queryForList(contains("FROM crm_yunshan_volume_map"), eq(Long.class), eq(7L))).thenReturn(List.of(2L));
+        assertThatThrownBy(() -> service.request(7L, "误录")).hasMessageContaining("云山映射");
+        verify(jdbc, never()).update(anyString(), any(Object[].class));
+        verifyNoInteractions(audit);
+    }
     @Test void cancellationRestoresPreviousStateAndRetainsAudit() {
         w.setJoinStatus(8); w.setDeletePreviousStatus(2); w.setDeleteDueAt(LocalDateTime.now().plusDays(2));
         service.cancel(7L,"保留");

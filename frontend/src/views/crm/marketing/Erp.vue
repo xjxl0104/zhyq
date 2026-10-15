@@ -4,13 +4,16 @@
       <el-form :inline="true">
         <el-form-item label="云仓">
           <el-select v-model="warehouseId" placeholder="选择云仓" style="width: 260px" @change="load">
-            <el-option v-for="w in warehouses" :key="w.id" :label="`${w.code} ${w.name}`" :value="w.id" />
+            <el-option v-for="w in warehouses" :key="w.id" :label="`${w.code} ${w.name}`" :value="String(w.id)" />
           </el-select>
         </el-form-item>
       </el-form>
     </div>
 
     <template v-if="warehouseId">
+      <YunshanVolumePanel :warehouse-id="warehouseId" />
+      <h2 class="erp-heading">ERP 订单推送</h2>
+      <p class="hint">以下凭证和货主编码用于云仓 ERP 推送订单。上方云山发货量通过独立接口主动拉取，无需签发这里的凭证。</p>
       <el-alert :type="warehouse?.erpStatus === 2 ? 'success' : 'warning'" :closable="false" class="mb"
         :title="warehouse?.erpStatus === 2 ? 'ERP 正式连接正常，可在此管理凭证、货主映射和同步日志。' : '连接步骤：签发凭证 → 切换正式环境 → 云仓 ERP 推送真实订单。系统收到有效正式订单后会自动标记为已联通。'" />
       <el-alert v-if="onboardingMode" type="info" :closable="false" class="mb"
@@ -21,12 +24,12 @@
           <el-button v-if="onboardingMode" :disabled="!canConfirmErp" type="success" @click="confirmErp">正式 ERP 已联通，继续加盟</el-button>
           <el-tag v-if="onboardingMode && warehouse?.erpStatus !== 2" type="warning">等待正式环境真实同步</el-tag>
           <el-button v-if="onboardingMode" link @click="load">刷新联通状态</el-button>
-          <template v-if="cred">
+          <template v-if="cred && canConfig">
             <el-button @click="resetSecret">重置密钥</el-button>
             <el-button @click="toggleEnv">{{ cred.env === 1 ? '切换正式环境' : '切回沙箱环境' }}</el-button>
             <el-button :type="cred.status === 1 ? 'warning' : 'success'" @click="toggleStatus">{{ cred.status === 1 ? '停用' : '启用' }}</el-button>
           </template>
-          <el-button v-else type="primary" @click="issue">签发沙箱凭证</el-button>
+          <el-button v-else-if="!cred && canConfig" type="primary" @click="issue">签发沙箱凭证</el-button>
         </div>
         <el-descriptions v-if="cred" :column="2" border>
           <el-descriptions-item label="App-Id"><code>{{ cred.appId }}</code></el-descriptions-item>
@@ -45,14 +48,14 @@
       <div class="table-card">
         <div class="toolbar">
           <span class="title">货主编码映射(订单归属只认它)</span>
-          <el-button type="primary" @click="mapDialog.visible = true">新增映射</el-button>
+          <el-button v-if="canConfig" type="primary" @click="mapDialog.visible = true">新增映射</el-button>
         </div>
         <el-table :data="mappings" size="small" border>
           <el-table-column prop="customerId" label="客户 ID" width="100" />
           <el-table-column prop="customerCode" label="货主编码" width="200" />
           <el-table-column label="状态" width="80"><template #default="{ row }">{{ row.status === 1 ? '启用' : '停用' }}</template></el-table-column>
           <el-table-column prop="createTime" label="创建" width="160" />
-          <el-table-column label="操作" width="90"><template #default="{ row }"><el-popconfirm title="删除映射?" @confirm="deleteMapping(row.id)"><template #reference><el-button link type="danger">删除</el-button></template></el-popconfirm></template></el-table-column>
+          <el-table-column v-if="canConfig" label="操作" width="90"><template #default="{ row }"><el-popconfirm title="删除映射?" @confirm="deleteMapping(row.id)"><template #reference><el-button link type="danger">删除</el-button></template></el-popconfirm></template></el-table-column>
         </el-table>
         <p class="hint">未映射的 customer_code 视为云仓自有客户:记日志(UNMAPPED)、不计佣、不进园区结算。补映射后重发事件即可入账。</p>
       </div>
@@ -89,14 +92,17 @@
 import { ref, reactive, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { mktErpApi, mktWarehouseApi } from '@/api/marketing'
+import { mktErpApi, mktWarehouseApi, mktYunshanApi } from '@/api/marketing'
+import { hasPermission } from '@/utils/permission'
+import YunshanVolumePanel from './YunshanVolumePanel.vue'
 
 const origin = window.location.origin
 const route = useRoute()
 const router = useRouter()
 const onboardingMode = computed(() => route.query.onboarding === '1')
+const canConfig = computed(() => hasPermission('crm:marketing:erp:config'))
 const warehouses = ref([])
-const warehouseId = ref(route.query.warehouseId ? Number(route.query.warehouseId) : null)
+const warehouseId = ref(route.query.warehouseId ? String(route.query.warehouseId) : null)
 const warehouse = ref(null)
 const cred = ref(null)
 const secret = ref('')
@@ -106,26 +112,28 @@ const mapDialog = reactive({ visible: false, customerId: null, customerCode: '' 
 
 async function load() {
   secret.value = ''
-  ;[warehouse.value, cred.value, mappings.value] = await Promise.all([mktWarehouseApi.get(warehouseId.value), mktErpApi.get(warehouseId.value), mktErpApi.mappings(warehouseId.value)])
+  ;[warehouse.value, cred.value, mappings.value] = await Promise.all([mktYunshanApi.localWarehouse(warehouseId.value), mktErpApi.get(warehouseId.value), mktErpApi.mappings(warehouseId.value)])
   loadLogs()
 }
 async function loadLogs() {
   const r = await mktErpApi.logs({ warehouseId: warehouseId.value, ok: logOk.value, pageNo: logPage.value, pageSize: 20 })
   logs.value = r.records; logTotal.value = r.total
 }
-async function issue() { const r = await mktErpApi.issue(warehouseId.value); cred.value = r; secret.value = r.secret; ElMessage.success('已签发') }
+async function issue() { if (!canConfig.value) return; const r = await mktErpApi.issue(warehouseId.value); cred.value = r; secret.value = r.secret; ElMessage.success('已签发') }
 async function resetSecret() {
+  if (!canConfig.value) return
   await ElMessageBox.confirm('重置后旧密钥立即失效,云仓需更新配置。确认?', '重置密钥', { type: 'warning' })
   const r = await mktErpApi.resetSecret(warehouseId.value); secret.value = r.secret; ElMessage.success('已重置')
 }
-async function toggleEnv() { await mktErpApi.update(warehouseId.value, { env: cred.value.env === 1 ? 2 : 1 }); load() }
-async function toggleStatus() { await mktErpApi.update(warehouseId.value, { status: cred.value.status === 1 ? 0 : 1 }); load() }
+async function toggleEnv() { if (!canConfig.value) return; await mktErpApi.update(warehouseId.value, { env: cred.value.env === 1 ? 2 : 1 }); load() }
+async function toggleStatus() { if (!canConfig.value) return; await mktErpApi.update(warehouseId.value, { status: cred.value.status === 1 ? 0 : 1 }); load() }
 async function saveMapping() {
+  if (!canConfig.value) return
   if (!mapDialog.customerId || !mapDialog.customerCode.trim()) return ElMessage.error('请填完整')
   await mktErpApi.saveMapping(warehouseId.value, { customerId: mapDialog.customerId, customerCode: mapDialog.customerCode.trim() })
   ElMessage.success('已保存'); mapDialog.visible = false; mapDialog.customerCode = ''; mappings.value = await mktErpApi.mappings(warehouseId.value)
 }
-async function deleteMapping(id) { await mktErpApi.deleteMapping(id); mappings.value = await mktErpApi.mappings(warehouseId.value) }
+async function deleteMapping(id) { if (!canConfig.value) return; await mktErpApi.deleteMapping(id); mappings.value = await mktErpApi.mappings(warehouseId.value) }
 const copy = (t) => navigator.clipboard.writeText(t).then(() => ElMessage.success('已复制'))
 const canConfirmErp = computed(() => onboardingMode.value && warehouse.value?.joinStatus === 3 && warehouse.value?.orderMode === 'erp' && warehouse.value?.erpStatus === 2)
 async function confirmErp() {
@@ -135,7 +143,14 @@ async function confirmErp() {
 }
 
 onMounted(async () => {
-  warehouses.value = (await mktWarehouseApi.page({ pageNo: 1, pageSize: 200 })).records
+  let pageNo = 1, total = 0
+  do {
+    const result = await mktYunshanApi.localWarehouses({ pageNo, pageSize: 100 })
+    warehouses.value.push(...result.records)
+    total = Number(result.total)
+    if (!result.records.length) break
+    pageNo++
+  } while (warehouses.value.length < total)
   if (warehouseId.value) await load()
 })
 </script>
@@ -147,4 +162,5 @@ onMounted(async () => {
 .mb { margin: 12px 0; }
 .secret { font-size: 14px; word-break: break-all; margin-right: 8px; }
 .pager { margin-top: 12px; justify-content: flex-end; }
+.erp-heading { font-size: 18px; margin: 28px 0 8px; }
 </style>

@@ -81,6 +81,8 @@ public class MktWarehouseDeletionService {
                 "该云仓仍有未结束的服务合同，请先处理合同后再删除", id);
         block("SELECT id FROM crm_customer WHERE assigned_warehouse_id=? AND deleted=0 AND warehouse_assignment_status IN (1,2) LIMIT 1 FOR UPDATE",
                 "该云仓仍有待承接或在服客户，请先调整客户归属后再删除", id);
+        block("SELECT id FROM crm_yunshan_volume_map WHERE warehouse_id=? AND status=1 AND deleted=0 LIMIT 1 FOR UPDATE",
+                "该云仓仍在拉取云山发货量，请先停用云山映射后再删除", id);
     }
 
     private void block(String sql, String message, Long id) {

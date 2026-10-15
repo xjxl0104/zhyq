@@ -182,6 +182,24 @@ export const mktErpApi = {
   logs: (params) => request.get(`${BASE}/erp/logs`, { params })
 }
 
+// 云山主动拉取发货票数；云山凭证仅保存在服务端。
+const YUNSHAN = `${BASE}/yunshan`
+export const mktYunshanApi = {
+  config: () => request.get(`${YUNSHAN}/config`),
+  localWarehouses: (params) => request.get(`${YUNSHAN}/warehouses`, { params }),
+  localWarehouse: (id) => request.get(`${YUNSHAN}/warehouses/${id}`),
+  customers: (params) => request.get(`${YUNSHAN}/customers`, { params }),
+  owners: (params) => request.get(`${YUNSHAN}/entity/owners`, { params, timeout: 30000 }),
+  warehouses: (params) => request.get(`${YUNSHAN}/entity/warehouses`, { params, timeout: 30000 }),
+  maps: (warehouseId) => request.get(`${YUNSHAN}/warehouse/${warehouseId}/maps`),
+  createMap: (warehouseId, data) => request.post(`${YUNSHAN}/warehouse/${warehouseId}/maps`, data, { timeout: 180000 }),
+  setStatus: (id, status) => request.put(`${YUNSHAN}/maps/${id}/status`, { status }),
+  sync: (id, data) => request.post(`${YUNSHAN}/maps/${id}/sync`, data, { timeout: 180000 }),
+  volume: (params) => request.get(`${YUNSHAN}/volume`, { params }),
+  reconcile: (params) => request.get(`${YUNSHAN}/reconcile`, { params, timeout: 180000 }),
+  logs: (params) => request.get(`${YUNSHAN}/logs`, { params })
+}
+
 export const mktBillApi = {
   generateFixed: () => request.post(`${BASE}/bill/generate-fixed`),
   receive: (id,data) => request.post(`${BASE}/bill/${id}/receive`, data),

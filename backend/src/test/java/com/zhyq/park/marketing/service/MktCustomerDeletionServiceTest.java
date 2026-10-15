@@ -84,7 +84,7 @@ class MktCustomerDeletionServiceTest {
     }
 
     @ParameterizedTest
-    @CsvSource({"crm_service_contract,服务合同", "crm_referral_order,业务订单或佣金", "crm_customer_lock,成交记录", "crm_customer_erp_map,ERP"})
+    @CsvSource({"crm_service_contract,服务合同", "crm_referral_order,业务订单或佣金", "crm_customer_lock,成交记录", "crm_customer_erp_map,ERP", "crm_yunshan_volume_map,云山映射"})
     void dependenciesBlockBeforeMutationForAdminAndPartner(String table, String hint) {
         when(jdbc.queryForList(startsWith("SELECT id FROM " + table + " WHERE"), eq(Long.class), any(Object[].class)))
                 .thenReturn(List.of(99L));
@@ -106,12 +106,13 @@ class MktCustomerDeletionServiceTest {
     @Test void financialGuardsIncludeDeletedHistoryAndLockOnlyThisCustomer() {
         service.deleteAsAdmin(42L);
         ArgumentCaptor<String> sql = ArgumentCaptor.forClass(String.class);
-        verify(jdbc, times(4)).queryForList(sql.capture(), eq(Long.class), eq(42L));
+        verify(jdbc, times(5)).queryForList(sql.capture(), eq(Long.class), eq(42L));
         assertThat(sql.getAllValues()).allSatisfy(query -> assertThat(query).contains("customer_id=?", "FOR UPDATE"));
         assertThat(sql.getAllValues().get(0)).doesNotContain("deleted=");
         assertThat(sql.getAllValues().get(1)).doesNotContain("deleted=");
         assertThat(sql.getAllValues().get(2)).contains("status=3");
         assertThat(sql.getAllValues().get(3)).contains("deleted=0");
+        assertThat(sql.getAllValues().get(4)).contains("status=1", "deleted=0");
     }
 
     @Test void ordinaryCrmDeleteCannotBypassReferralOrAssignmentBoundary() {
