@@ -4,7 +4,7 @@
       <el-form :inline="true">
         <el-form-item label="云仓">
           <el-select v-model="warehouseId" :disabled="busy" placeholder="选择云仓" style="width: 260px" @change="changeWarehouse">
-            <el-option v-for="w in warehouses" :key="w.id" :label="`${w.code} ${w.name}`" :value="w.id" />
+            <el-option v-for="w in warehouses" :key="w.id" :label="`${w.code} ${w.name}`" :value="String(w.id)" />
           </el-select>
         </el-form-item>
       </el-form>
@@ -12,6 +12,9 @@
 
     <template v-if="warehouseId">
       <el-alert v-if="error" type="error" :closable="false" :title="error" class="mb" />
+      <YunshanVolumePanel :key="warehouseId" :warehouse-id="warehouseId" />
+      <h2 class="erp-heading">ERP 订单推送</h2>
+      <p class="hint">以下凭证和货主编码用于云仓 ERP 推送订单。上方云山发货量通过独立接口主动拉取，无需签发这里的凭证。</p>
       <el-alert :type="warehouse?.erpStatus === 2 ? 'success' : 'warning'" :closable="false" class="mb"
         :title="warehouse?.erpStatus === 2 ? '正式 ERP 最近有有效签名通信。请同时关注最近业务同步、待处理事件和周期对账。' : '连接步骤：签发沙箱凭证并校验 → 切换正式环境 → ERP 发送签名心跳。没有订单时仍可保持连接。'" />
       <el-alert v-if="onboardingMode" type="info" :closable="false" class="mb"
@@ -107,16 +110,17 @@
 import { ref, reactive, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { mktErpApi, mktWarehouseApi } from '@/api/marketing'
+import { mktErpApi, mktWarehouseApi, mktYunshanApi } from '@/api/marketing'
 import { hasPermission } from '@/utils/permission'
 import ErpReconciliation from './ErpReconciliation.vue'
+import YunshanVolumePanel from './YunshanVolumePanel.vue'
 
 const origin = window.location.origin
 const route = useRoute()
 const router = useRouter()
 const onboardingMode = computed(() => route.query.onboarding === '1')
 const warehouses = ref([])
-const warehouseId = ref(route.query.warehouseId ? Number(route.query.warehouseId) : null)
+const warehouseId = ref(route.query.warehouseId ? String(route.query.warehouseId) : null)
 const warehouse = ref(null)
 const cred = ref(null)
 const secret = ref('')
@@ -138,7 +142,7 @@ async function load() {
   try {
     // 凭证读取会核对实时心跳状态，再读取云仓，避免展示上一次的连接状态。
     const credential = await mktErpApi.get(target)
-    const [w, maps] = await Promise.all([mktWarehouseApi.get(target), mktErpApi.mappings(target)])
+    const [w, maps] = await Promise.all([mktYunshanApi.localWarehouse(target), mktErpApi.mappings(target)])
     if (request !== requestNo || target !== warehouseId.value) return
     warehouse.value = w; cred.value = credential; mappings.value = maps
     await Promise.all([loadLogs(), loadExceptions()])
@@ -164,8 +168,8 @@ async function loadExceptions() {
     if (target === warehouseId.value && request === exceptionRequestNo) { exceptions.value = r.records; exceptionTotal.value = r.total }
   } catch (e) { if (target === warehouseId.value && request === exceptionRequestNo) error.value = e.message || '待处理事件加载失败' }
 }
-async function action(fn) {
-  if (busy.value || loading.value) return
+async function action(fn, allowed = canConfigure.value) {
+  if (!allowed || busy.value || loading.value) return
   busy.value = true
   try { await fn() } catch (e) { if (e !== 'cancel' && e !== 'close') ElMessage.error(e.message || '操作失败，请重试') }
   finally { busy.value = false }
@@ -181,6 +185,7 @@ async function toggleEnv() { await action(async () => { await ElMessageBox.confi
 async function toggleStatus() { await action(async () => { await mktErpApi.update(warehouseId.value, { status: cred.value.status === 1 ? 0 : 1 }); await load() }) }
 function openMapping() { Object.assign(mapDialog, { visible:true, warehouseId:warehouseId.value, customerId:null, customerCode:'' }) }
 async function saveMapping() {
+  if (!canConfigure.value) return
   if (!mapDialog.customerId || !mapDialog.customerCode.trim()) return ElMessage.error('请填完整')
   if (mapDialog.warehouseId !== warehouseId.value) return ElMessage.error('云仓已切换，请重新打开映射表单')
   await action(async () => {
@@ -203,11 +208,18 @@ async function confirmErp() {
     await mktWarehouseApi.confirmErp(warehouseId.value)
     ElMessage.success('ERP 接入已确认，请继续上传加盟协议')
     await router.push('/crm/marketing/onboarding')
-  })
+  }, canAuditOnboarding.value)
 }
 
 onMounted(async () => {
-  warehouses.value = (await mktWarehouseApi.page({ pageNo: 1, pageSize: 200 })).records
+  let pageNo = 1, total = 0
+  do {
+    const result = await mktYunshanApi.localWarehouses({ pageNo, pageSize: 100 })
+    warehouses.value.push(...result.records)
+    total = Number(result.total)
+    if (!result.records.length) break
+    pageNo++
+  } while (warehouses.value.length < total)
   if (warehouseId.value) await load()
 })
 </script>
@@ -219,4 +231,5 @@ onMounted(async () => {
 .mb { margin: 12px 0; }
 .secret { font-size: 14px; word-break: break-all; margin-right: 8px; }
 .pager { margin-top: 12px; justify-content: flex-end; }
+.erp-heading { font-size: 18px; margin: 28px 0 8px; }
 </style>

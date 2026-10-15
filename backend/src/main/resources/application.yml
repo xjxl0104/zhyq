@@ -43,6 +43,14 @@ zhyq:
     mock-login: ${WX_WH_MOCK_LOGIN:false}
     appid: ${WX_WH_APPID:}
     secret: ${WX_WH_SECRET:}
+  yunshan:
+    # 云山外部接口(发货量查询)。三项都配齐才会定时拉取;凭证只放 .env,不进仓库
+    base-url: ${YUNSHAN_BASE_URL:}
+    app-id: ${YUNSHAN_APP_ID:}
+    # 云山提供的 RSA 公钥,PEM 或去掉头尾的 Base64 均可
+    public-key: ${YUNSHAN_PUBLIC_KEY:}
+    # 每天回拉最近 N 天(云山 T+1 出统计,可能有迟到修正)
+    sync-days: ${YUNSHAN_SYNC_DAYS:7}
   jwt:
     # 生产必须由环境变量提供,不留默认值(HS256 密钥,建议 >=32 字节随机串)
     secret: ${JWT_SECRET}

@@ -85,6 +85,8 @@ public class MktCustomerDeletionService {
                 "该客户已有成交记录，需保留业务档案，不能删除", id);
         block("SELECT id FROM crm_customer_erp_map WHERE customer_id=? AND deleted=0 LIMIT 1 FOR UPDATE",
                 "该客户已绑定 ERP 货主编码，请先解除映射后再删除", id);
+        block("SELECT id FROM crm_yunshan_volume_map WHERE customer_id=? AND status=1 AND deleted=0 LIMIT 1 FOR UPDATE",
+                "该客户仍在拉取云山发货量，请先停用云山映射后再删除", id);
 
         String operator = MktAuditService.currentOperator();
         int changed = jdbc.update("UPDATE crm_customer SET deleted=1, version=version+1, update_by=?, update_time=NOW() "
