@@ -93,12 +93,31 @@
       </template>
     </el-dialog>
 
-    <el-drawer v-model="steps.visible" :title="`加盟进度 · ${steps.row?.name || ''}`" size="480px">
-      <el-steps direction="vertical" :active="activeStep" finish-status="success">
-        <el-step v-for="s in steps.list" :key="s.step" :title="STEP[s.step]" :status="stepStatus(s)"
-                 ><template #description><p>{{ stepDesc(s) }}</p><WarehouseAttachments :model-value="parseFiles(s.attachments)" readonly /></template></el-step>
-      </el-steps>
-      <p class="hint">审核后可选择人工导入出库单，再提交已签署协议；外部 ERP 接入单独配置。</p>
+    <el-drawer v-model="steps.visible" :title="`加盟进度 · ${steps.row?.name || ''}`" size="480px" @close="closeSteps">
+      <div v-loading="steps.loading" class="progress-content">
+        <el-alert v-if="steps.error" :title="steps.error" type="error" :closable="false" />
+        <div class="progress-summary">
+          <el-tag v-if="!steps.loading && !steps.error" :type="joinType(steps.row?.joinStatus)">当前加盟状态：{{ JOIN[steps.row?.joinStatus] || '未知' }}</el-tag>
+          <el-button :loading="steps.loading" @click="openSteps(steps.row)">{{ steps.error ? '重试' : '刷新进度' }}</el-button>
+        </div>
+        <template v-if="!steps.loading && !steps.error">
+          <el-steps class="onboarding-history" direction="vertical" :active="activeStep" finish-status="success">
+            <el-step v-for="s in steps.list" :key="s.step" :title="s.step === 5 && inactiveProgress ? '上线（历史记录）' : STEP[s.step]" :status="stepStatus(s)">
+              <template #description><p>{{ stepDesc(s) }}</p><WarehouseAttachments :model-value="parseFiles(s.attachments)" readonly /></template>
+            </el-step>
+            <el-step v-if="inactiveProgress" :title="`当前状态：${JOIN[steps.row.joinStatus]}`" :status="steps.row.joinStatus === 7 ? 'error' : 'process'">
+              <template #description>
+                <p>{{ progressNotice }}</p>
+                <template v-if="steps.row.joinStatus === 8">
+                  <p>预计删除：{{ steps.row.deleteDueAt?.replace('T', ' ') || '待确认' }}</p>
+                  <p>删除原因：{{ steps.row.deleteReason || '未记录' }}</p>
+                </template>
+              </template>
+            </el-step>
+          </el-steps>
+          <p v-if="!inactiveProgress && steps.row?.joinStatus !== 5" class="hint">审核后可选择人工导入出库单，再提交已签署协议；外部 ERP 接入单独配置。</p>
+        </template>
+      </div>
     </el-drawer>
     <WarehouseAgreementUpload v-model:visible="agreement.visible" :warehouse="agreement.row" @saved="load" />
     <WarehouseMaintenance v-model="maintenanceVisible" />
@@ -229,15 +248,35 @@ async function withReason(row,fn,title){if(acting.value)return;try{const {value}
 const agreement = reactive({ visible: false, row: null })
 function signAgreement(row) { agreement.row = row; agreement.visible = true }
 
-const steps = reactive({ visible: false, row: null, list: [] })
+const steps = reactive({ visible: false, row: null, list: [], loading: false, error: '' })
+let stepsRequest = 0
 async function openSteps(row) {
-  steps.row = row
-  steps.list = await mktWarehouseApi.steps(row.id)
-  steps.visible = true
+  if (!row) return
+  const request = ++stepsRequest
+  Object.assign(steps, { row: { ...row }, list: [], visible: true, loading: true, error: '' })
+  try {
+    const [warehouse, history] = await Promise.all([mktWarehouseApi.get(row.id), mktWarehouseApi.steps(row.id)])
+    if (request !== stepsRequest) return
+    steps.row = warehouse
+    steps.list = history
+    const listed = list.value.find(item => item.id === warehouse.id)
+    if (listed) Object.assign(listed, warehouse)
+  } catch (e) {
+    if (request === stepsRequest) steps.error = e.message || '加盟进度读取失败，请重试'
+  } finally {
+    if (request === stepsRequest) steps.loading = false
+  }
 }
+function closeSteps() { ++stepsRequest; steps.loading = false }
+const inactiveProgress = computed(() => [6, 7, 8].includes(steps.row?.joinStatus))
+const progressNotice = computed(() => ({
+  6: '云仓已暂停，恢复后方可继续承接业务。此前已完成的加盟步骤保留。',
+  7: '云仓已退出，不再承接新业务。此前已完成的加盟步骤仅作为历史记录保留。',
+  8: '云仓已冻结，等待删除；冻结期内可撤销删除。此前的加盟记录保留。'
+}[steps.row?.joinStatus] || ''))
 const activeStep = computed(() => steps.list.filter(s => s.status === 2).length)
-const stepStatus = (s) => ({ 2: 'success', 3: 'error', 1: 'process' }[s.status] || 'wait')
-const stepDesc = (s) => (s.status === 3 ? `驳回:${s.rejectReason || ''}` : s.doneTime ? `完成于 ${s.doneTime}` : s.status === 1 ? '进行中' : '')
+const stepStatus = (s) => s.status === 1 && inactiveProgress.value ? 'wait' : ({ 2: 'success', 3: 'error', 1: 'process' }[s.status] || 'wait')
+const stepDesc = (s) => (s.status === 3 ? `驳回:${s.rejectReason || ''}` : s.doneTime ? `完成于 ${s.doneTime}` : s.status === 1 ? (inactiveProgress.value ? '当前未继续办理' : '进行中') : '')
 
 onMounted(load)
 </script>
@@ -247,4 +286,7 @@ onMounted(load)
 .project-note { margin-top: 4px; color: var(--el-text-color-secondary); font-size: 12px; }
 .hint { color: var(--el-text-color-secondary); font-size: 12px; margin-top: 16px; }
 .erp-link { display: block; margin: 4px 0 0; padding: 0; }
+.progress-content { min-height: 120px; }
+.progress-summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 24px; }
+.onboarding-history :deep(.el-step) { flex-basis: auto !important; min-height: 108px; }
 </style>
