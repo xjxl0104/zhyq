@@ -123,7 +123,20 @@ class MktCustomerAssignmentServiceTest {
         when(contracts.selectCount(any(Wrapper.class))).thenReturn(0L);
         when(customers.update(isNull(), any(Wrapper.class))).thenReturn(1);
         assertThat(service.contractClosed(11L)).isTrue();
+        ArgumentCaptor<Wrapper<Customer>> cap = ArgumentCaptor.forClass(Wrapper.class);
+        verify(customers).update(isNull(), cap.capture());
+        assertThat(((LambdaUpdateWrapper<?>)cap.getValue()).getSqlSet()).contains("assigned_warehouse_id", "warehouse_assignment_status", "status");
         verify(audit).log("customer.contract.closed", "customer", 11L, "有效服务合同已结束，返回跟进");
+    }
+
+    @Test void closureKeepsAssignmentWhenAnotherDraftStillNeedsWarehouse() {
+        customer.setStatus(2);
+        when(contracts.selectCount(any(Wrapper.class))).thenReturn(0L, 1L);
+        when(customers.update(isNull(), any(Wrapper.class))).thenReturn(1);
+        assertThat(service.contractClosed(11L)).isTrue();
+        ArgumentCaptor<Wrapper<Customer>> cap = ArgumentCaptor.forClass(Wrapper.class);
+        verify(customers).update(isNull(), cap.capture());
+        assertThat(((LambdaUpdateWrapper<?>)cap.getValue()).getSqlSet()).contains("status").doesNotContain("assigned_warehouse_id", "warehouse_assignment_status");
     }
 
     @Test
