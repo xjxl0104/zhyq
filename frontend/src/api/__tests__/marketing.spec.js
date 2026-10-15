@@ -47,6 +47,14 @@ afterAll(async () => {
   await new Promise(resolve => server.close(resolve))
 })
 
+it('contract deletion sends a DELETE body with the reason and authentication', async () => {
+  await mktContractApi.remove(9, { reason: '误录' })
+  expect(received.method).toBe('DELETE')
+  expect(received.url).toBe('/api/crm/marketing/contract/9')
+  expect(JSON.parse(received.body).reason).toBe('误录')
+  expect(received.authorization).toBe('Bearer mkt-test-token')
+})
+
 // 后端 settle 用 Map<String, List<Long>> 接;拦截器给对象体注入的 projectId 是数字,
 // Jackson 反序列化成 List 会 400。这里钉住:请求体里只能有 ids。
 it('settle sends only ids and does not get projectId injected into the body', async () => {

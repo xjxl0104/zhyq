@@ -106,13 +106,47 @@ class MktCustomerDeletionServiceTest {
     @Test void financialGuardsIncludeDeletedHistoryAndLockOnlyThisCustomer() {
         service.deleteAsAdmin(42L);
         ArgumentCaptor<String> sql = ArgumentCaptor.forClass(String.class);
-        verify(jdbc, times(5)).queryForList(sql.capture(), eq(Long.class), eq(42L));
+        verify(jdbc, times(8)).queryForList(sql.capture(), eq(Long.class), eq(42L));
         assertThat(sql.getAllValues()).allSatisfy(query -> assertThat(query).contains("customer_id=?", "FOR UPDATE"));
-        assertThat(sql.getAllValues().get(0)).doesNotContain("deleted=");
+        assertThat(sql.getAllValues().get(0)).contains("deleted=0", "status IN (1,2,3,4,5,6)");
         assertThat(sql.getAllValues().get(1)).doesNotContain("deleted=");
-        assertThat(sql.getAllValues().get(2)).contains("status=3");
-        assertThat(sql.getAllValues().get(3)).contains("deleted=0");
-        assertThat(sql.getAllValues().get(4)).contains("status=1", "deleted=0");
+        assertThat(sql.getAllValues().get(1)).contains("source_type<>4", "pc.status<>5", "withdrawn_amount");
+        assertThat(sql.getAllValues().subList(2,5)).allSatisfy(q -> assertThat(q).contains("JOIN crm_service_contract").doesNotContain("deleted="));
+        assertThat(sql.getAllValues().get(5)).contains("status=3");
+        assertThat(sql.getAllValues().get(6)).contains("deleted=0");
+        assertThat(sql.getAllValues().get(7)).contains("status=1", "deleted=0");
+    }
+
+    @Test void terminatedContractWithoutBusinessDoesNotBlockCustomerDeletion() {
+        when(jdbc.queryForList(startsWith("SELECT id FROM crm_service_contract WHERE"), eq(Long.class), eq(42L)))
+                .thenAnswer(invocation -> invocation.<String>getArgument(0).contains("status IN (1,2,3,4,5,6)") ? List.of() : List.of(99L));
+        service.deleteAsAdmin(42L);
+        verify(jdbc).update(startsWith("UPDATE crm_customer SET deleted=1"), anyString(), eq(42L));
+    }
+
+    @Test void adminCanCleanLegacySignedCloudCustomerAfterLastContractEnded() {
+        customer.setBizLine(2); customer.setStatus(2);
+        when(jdbc.queryForList(contains("status IN (7,8)"), eq(Long.class), eq(42L))).thenReturn(List.of(99L));
+        service.deleteAsAdmin(42L);
+        verify(jdbc).update(contains("AND status IN (1,2,3)"), anyString(), anyString(), anyString(), eq(42L));
+        verify(jdbc).update(startsWith("UPDATE crm_customer SET deleted=1"), anyString(), eq(42L));
+    }
+
+    @Test void legacyCleanupCannotBypassNewActiveContractOrBeInvokedByPartner() {
+        customer.setBizLine(2); customer.setStatus(2);
+        when(jdbc.queryForList(contains("status IN (7,8)"), eq(Long.class), eq(42L))).thenReturn(List.of(99L));
+        when(jdbc.queryForList(contains("status IN (1,2,3,4,5,6)"), eq(Long.class), eq(42L))).thenReturn(List.of(100L));
+        assertThatThrownBy(() -> service.deleteAsAdmin(42L)).hasMessageContaining("未结束");
+        login("mp:7");
+        assertThatThrownBy(() -> service.deleteOwnReferral(42L)).hasMessageContaining("已签约");
+        verify(jdbc, never()).update(anyString(), any(Object[].class));
+    }
+
+    @ParameterizedTest @org.junit.jupiter.params.provider.ValueSource(strings={"fin_bill", "crm_service_fee_bill", "crm_direct_sign_payment"})
+    void closedContractWithBillStillPreservesCustomer(String table) {
+        when(jdbc.queryForList(startsWith("SELECT b.id FROM " + table + " b"), eq(Long.class), eq(42L))).thenReturn(List.of(8L));
+        assertThatThrownBy(() -> service.deleteAsAdmin(42L)).hasMessageContaining("账单或收款");
+        verify(jdbc, never()).update(anyString(), any(Object[].class));
     }
 
     @Test void ordinaryCrmDeleteCannotBypassReferralOrAssignmentBoundary() {

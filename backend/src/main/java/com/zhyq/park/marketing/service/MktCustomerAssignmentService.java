@@ -137,8 +137,15 @@ public class MktCustomerAssignmentService {
     public boolean contractClosed(Long customerId) {
         Customer customer = requireLocked(customerId);
         if (activeContractCount(customerId) > 0) return false;
-        if (Integer.valueOf(2).equals(customer.getStatus())) {
-            requireUpdated(customers.update(null, versionGuard(customer).eq(Customer::getStatus, 2).set(Customer::getStatus, 1)));
+        boolean releaseAssignment = contracts.selectCount(new LambdaQueryWrapper<MktServiceContract>()
+                .eq(MktServiceContract::getCustomerId, customerId).in(MktServiceContract::getStatus, 1, 2, 3)) == 0;
+        boolean signed = Integer.valueOf(2).equals(customer.getStatus());
+        if (signed || (releaseAssignment && customer.getAssignedWarehouseId() != null)) {
+            LambdaUpdateWrapper<Customer> update = versionGuard(customer);
+            if (signed) update.set(Customer::getStatus, 1);
+            if (releaseAssignment) update.set(Customer::getAssignedWarehouseId, null)
+                    .set(Customer::getWarehouseAssignmentStatus, UNASSIGNED);
+            requireUpdated(customers.update(null, update));
             audit.log("customer.contract.closed", "customer", customerId, "有效服务合同已结束，返回跟进");
         }
         return true;

@@ -64,7 +64,7 @@
 
     <el-dialog v-model="removal.visible" title="删除推荐客户" width="min(460px, 92vw)" :close-on-click-modal="false" :close-on-press-escape="!removal.busy" :show-close="!removal.busy">
       <p class="delete-target">确认删除客户「{{ removal.row?.name }}」？</p>
-      <p class="delete-note">删除后将从客户列表移除并释放推荐锁定，操作记录保留。已关联合同、订单或佣金的客户无法删除。</p>
+      <p class="delete-note">删除后将从客户列表移除并释放推荐锁定，操作记录保留。已终止且无实际业务的合同不影响删除；仍有未结束合同、账单、业务订单或未作废佣金时需保留客户档案。</p>
       <el-alert v-if="removal.error" :title="removal.error" type="error" :closable="false" show-icon />
       <template #footer>
         <el-button :disabled="removal.busy" @click="removal.visible = false">取消</el-button>
