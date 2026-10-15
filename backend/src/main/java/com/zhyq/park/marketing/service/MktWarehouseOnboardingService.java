@@ -144,7 +144,7 @@ public class MktWarehouseOnboardingService {
             auditService.log("warehouse.orders.erp.select", BIZ_TYPE, warehouseId, "选择外部 ERP 接入");
             return;
         }
-        // 运营中的云仓只有在正式连接已由真实同步确认后才能启用 ERP，避免切换瞬间停止接单。
+        // 运营中的云仓只有在正式连接已由有效签名心跳确认后才能启用 ERP。
         updated = warehouseMapper.update(null, new LambdaUpdateWrapper<MktWarehouse>()
                 .eq(MktWarehouse::getId, warehouseId)
                 .in(MktWarehouse::getJoinStatus, JS_PENDING_AGREEMENT, JS_ONLINE, JS_PAUSED)
@@ -160,19 +160,19 @@ public class MktWarehouseOnboardingService {
                 || Integer.valueOf(JS_ONLINE).equals(currentStatus)
                 || Integer.valueOf(JS_PAUSED).equals(currentStatus))
                 && !Integer.valueOf(ERP_LIVE).equals(current.getErpStatus())) {
-            throw new BizException("ERP 尚未完成正式连接，请先进入 ERP 对接完成配置和真实同步");
+            throw new BizException("ERP 尚未完成正式连接，请先进入 ERP 对接完成配置并发送正式签名心跳");
         }
         requireUpdated(0, warehouseId);
     }
 
-    /** ERP 只能在收到正式环境的真实订单同步后通过，不提供人工伪造联通状态的入口。 */
+    /** ERP 只能在正式环境签名心跳确认联通后通过，不提供人工伪造联通状态的入口。 */
     @Transactional
     public void confirmErpOrders(Long warehouseId) {
         MktWarehouse current = require(warehouseId);
         if (!Integer.valueOf(JS_ERP_CONNECTING).equals(current.getJoinStatus()) || !"erp".equals(current.getOrderMode()))
             throw new BizException("请先选择外部 ERP 接入方式");
         if (!Integer.valueOf(ERP_LIVE).equals(current.getErpStatus()))
-            throw new BizException("ERP 尚未完成正式环境联通，请先完成 ERP 对接并收到正式同步事件");
+            throw new BizException("ERP 尚未完成正式环境联通，请先完成 ERP 对接并发送正式签名心跳");
         int updated = warehouseMapper.update(null, new LambdaUpdateWrapper<MktWarehouse>()
                 .eq(MktWarehouse::getId, warehouseId).eq(MktWarehouse::getJoinStatus, JS_ERP_CONNECTING)
                 .eq(MktWarehouse::getOrderMode, "erp").eq(MktWarehouse::getErpStatus, ERP_LIVE)

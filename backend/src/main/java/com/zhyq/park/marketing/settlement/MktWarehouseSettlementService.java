@@ -9,10 +9,12 @@ import com.zhyq.park.marketing.finance.MktServiceFeeBillService;
 import com.zhyq.park.marketing.mapper.*;
 import com.zhyq.park.marketing.service.*;
 import com.zhyq.park.marketing.engine.PoolCalculator;
+import com.zhyq.park.marketing.open.ErpReconciliationService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.annotation.Isolation;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
@@ -29,6 +31,7 @@ public class MktWarehouseSettlementService {
     private final MktReferralOrderMapper orderMapper;
     private final MktWarehouseMapper warehouseMapper;
     private final MktErpReconcileSnapshotMapper reconcileMapper;
+    private final ErpReconciliationService reconciliation;
     private final MktCommissionService commissionService;
     private final MktNoticeService noticeService;
     private final MktPromoterCommissionMapper commissionMapper;
@@ -52,8 +55,7 @@ public class MktWarehouseSettlementService {
                 .le(MktWarehouseSettlement::getPeriodStart, end).ge(MktWarehouseSettlement::getPeriodEnd, start)
                 .and(q -> q.ne(MktWarehouseSettlement::getPeriodStart, start).or().ne(MktWarehouseSettlement::getPeriodEnd, end))) > 0)
             throw new BizException("结算期间与已有批次重叠");
-        var snapshot = snapshot(warehouseId, start, end);
-        if (!"manual".equals(w.getOrderMode()) && snapshot == null) throw new BizException("ERP订单尚无对账结果,请先完成对账");
+        var snapshot = "manual".equals(w.getOrderMode()) ? null : reconciliation.requireConfirmed(warehouseId, start, end);
         BigDecimal perOrder = rate(w.getFeeModel(), "perOrder"), perItem = rate(w.getFeeModel(), "perItem");
         if (perOrder.add(perItem).signum() <= 0) throw new BizException("请先配置云仓应付单票/按件费率");
         List<MktServiceFeeBill> bills = billMapper.selectList(new LambdaQueryWrapper<MktServiceFeeBill>()
@@ -94,6 +96,7 @@ public class MktWarehouseSettlementService {
         s.setBatchNo("WH-SB-" + UUID.randomUUID().toString().replace("-", "").substring(0, 12));
         s.setPeriodStart(start); s.setPeriodEnd(end); s.setStatus(frozen ? FROZEN : PENDING);
         s.setFrozenReason(frozen ? snapshot.getReason() : null); s.setAmount(total); s.setProjectId(w.getProjectId());
+        s.setReconcileSnapshotId(snapshot == null ? null : snapshot.getId());
         try {
             settlementMapper.insert(s);
             for (var line : lines) { line.setSettlementId(s.getId()); lineMapper.insert(line); }
@@ -108,19 +111,37 @@ public class MktWarehouseSettlementService {
         if (s == null || (warehouseId != null && !Objects.equals(s.getWarehouseId(), warehouseId))) throw new BizException(403, "结算单不存在或不属于此云仓");
         return s;
     }
-    @Transactional public void confirm(Long id, Long warehouseId) {
-        var s = requireOwned(id, warehouseId); assertNotFrozen(s);
+    @Transactional(isolation = Isolation.READ_COMMITTED) public void confirm(Long id, Long warehouseId) {
+        var s = assertNotFrozen(requireOwned(id, warehouseId));
         if (change(id, warehouseId, PENDING, CONFIRMED, null)) noticeService.push(warehouseId, "settlement.confirmed", "结算单已确认", "结算单 #" + id + " 已确认", "settlement", id);
     }
     @Transactional public void dispute(Long id, Long warehouseId, String reason) {
         requireOwned(id, warehouseId); validateReason(reason);
         if (change(id, warehouseId, PENDING, DISPUTED, reason)) noticeService.push(warehouseId, "settlement.disputed", "结算争议已提交", reason, "settlement", id);
     }
-    @Transactional public void resolve(Long id, String reason) {
-        validateReason(reason); var s = requireOwned(id, null); assertNotFrozen(s);
-        if (!Set.of(DISPUTED, FROZEN).contains(s.getStatus())) throw new BizException("当前结算单无需处理争议或冻结");
+    @Transactional(isolation = Isolation.READ_COMMITTED) public void resolve(Long id, String reason) {
+        validateReason(reason); var s = requireOwned(id, null);
+        if (Integer.valueOf(PAID).equals(s.getStatus())) throw new BizException("已付款结算单保留原对账版本，差异须另行处理");
+        var warehouse = lockWarehouse(s.getWarehouseId());
+        s = requireOwned(id, s.getWarehouseId());
+        if (Integer.valueOf(PAID).equals(s.getStatus())) throw new BizException("已付款结算单保留原对账版本，差异须另行处理");
+        MktErpReconcileSnapshot current = null;
+        if (s.getReconcileSnapshotId() != null || !"manual".equals(warehouse.getOrderMode()))
+            current = reconciliation.requireConfirmed(s.getWarehouseId(), s.getPeriodStart(), s.getPeriodEnd());
+        boolean rebound = current != null && !Objects.equals(current.getId(), s.getReconcileSnapshotId());
+        if (!Set.of(DISPUTED, FROZEN).contains(s.getStatus()) && !rebound) throw new BizException("当前结算单无需处理争议或冻结");
+        if (rebound) {
+            // A changed order cannot be accepted just by replacing the reconciliation version.
+            assertSettlementOrdersValid(s);
+            settlementMapper.update(null, new LambdaUpdateWrapper<MktWarehouseSettlement>()
+                    .eq(MktWarehouseSettlement::getId, id).eq(MktWarehouseSettlement::getStatus, s.getStatus())
+                    .set(MktWarehouseSettlement::getReconcileSnapshotId, current.getId()));
+        }
         change(id, s.getWarehouseId(), s.getStatus(), PENDING, reason);
-        audit.log("warehouse.settlement.resolve", "settlement", id, reason);
+        Map<String, Object> before = new LinkedHashMap<>(), after = new LinkedHashMap<>();
+        before.put("status", s.getStatus()); before.put("reconcileSnapshotId", s.getReconcileSnapshotId());
+        after.put("status", PENDING); after.put("reconcileSnapshotId", current == null ? s.getReconcileSnapshotId() : current.getId());
+        audit.log("warehouse.settlement.resolve", "settlement", id, reason, before, after);
     }
     private boolean change(Long id, Long warehouseId, int from, int to, String reason) {
         int n = settlementMapper.update(null, new LambdaUpdateWrapper<MktWarehouseSettlement>().eq(MktWarehouseSettlement::getId, id)
@@ -129,10 +150,16 @@ public class MktWarehouseSettlementService {
         if (n == 0) { var s = requireOwned(id, warehouseId); if (Integer.valueOf(to).equals(s.getStatus())) return false; throw new BizException("结算单状态已变化"); }
         return true;
     }
-    @Transactional public void pay(Long id, String payNo, String payProof, BigDecimal amount, String operator) {
-        var s = requireOwned(id, null); assertNotFrozen(s);
+    @Transactional(isolation = Isolation.READ_COMMITTED) public void pay(Long id, String payNo, String payProof, BigDecimal amount, String operator) {
+        var s = requireOwned(id, null);
         if (payNo == null || payNo.isBlank() || payNo.length() > 64) throw new BizException("付款流水号须为1–64字");
         if (amount == null || amount.compareTo(s.getAmount()) != 0) throw new BizException("实付金额须与本结算单一致");
+        if (Integer.valueOf(PAID).equals(s.getStatus())) {
+            if (Objects.equals(payNo, s.getPayNo()) && Objects.equals(payProof, s.getPayProof())) return;
+            throw new BizException("结算单已付款且凭证不一致");
+        }
+        s = assertNotFrozen(s);
+        if (amount.compareTo(s.getAmount()) != 0) throw new BizException("实付金额须与本结算单一致");
         if (Integer.valueOf(PAID).equals(s.getStatus())) {
             if (Objects.equals(payNo, s.getPayNo()) && Objects.equals(payProof, s.getPayProof())) return;
             throw new BizException("结算单已付款且凭证不一致");
@@ -198,13 +225,60 @@ public class MktWarehouseSettlementService {
     }
     public MktDirectSignPayment recordPayment(Long contractId, Long warehouseId, String paymentNo, BigDecimal amount) { throw new BizException("请上传平台费到账凭证"); }
 
-    private void assertNotFrozen(MktWarehouseSettlement s) {
-        var snap = snapshot(s.getWarehouseId(), s.getPeriodStart(), s.getPeriodEnd());
-        if (snap != null && Integer.valueOf(1).equals(snap.getFrozen())) throw new BizException("对账仍处于冻结状态,请先解决对账差异");
+    private MktWarehouseSettlement assertNotFrozen(MktWarehouseSettlement s) {
+        var warehouse = lockWarehouse(s.getWarehouseId());
+        s = requireOwned(s.getId(), s.getWarehouseId());
+        if (Integer.valueOf(PAID).equals(s.getStatus())) return s;
+        if (s.getReconcileSnapshotId() != null || !"manual".equals(warehouse.getOrderMode())) {
+            var current = reconciliation.requireConfirmed(s.getWarehouseId(), s.getPeriodStart(), s.getPeriodEnd());
+            if (!Objects.equals(current.getId(), s.getReconcileSnapshotId()))
+                throw new BizException("结算引用的对账版本已过期，请填写处理说明并重新核对结算");
+            assertSettlementOrdersValid(s);
+        }
+        return s;
     }
-    private MktErpReconcileSnapshot snapshot(Long warehouseId, LocalDate start, LocalDate end) {
-        return reconcileMapper.selectOne(new LambdaQueryWrapper<MktErpReconcileSnapshot>().eq(MktErpReconcileSnapshot::getWarehouseId, warehouseId)
-                .eq(MktErpReconcileSnapshot::getPeriodStart, start).eq(MktErpReconcileSnapshot::getPeriodEnd, end).last("limit 1"));
+    private MktWarehouse lockWarehouse(Long warehouseId) {
+        var warehouse = warehouseMapper.selectOne(new LambdaQueryWrapper<MktWarehouse>().eq(MktWarehouse::getId, warehouseId).last("FOR UPDATE"));
+        if (warehouse == null) throw new BizException("云仓不存在");
+        return warehouse;
+    }
+    private void assertSettlementOrdersValid(MktWarehouseSettlement settlement) {
+        var settlementLines = lineMapper.selectList(new LambdaQueryWrapper<MktWarehouseSettlementLine>()
+                .eq(MktWarehouseSettlementLine::getSettlementId, settlement.getId()));
+        if (settlementLines.isEmpty()) throw new BizException("结算明细缺失，请先核对原结算单");
+        BigDecimal lineTotal = BigDecimal.ZERO;
+        for (var line : settlementLines) {
+            if (line.getAmount() == null || line.getAmount().signum() < 0) throw new BizException("结算明细金额无效");
+            lineTotal = lineTotal.add(line.getAmount());
+            var bill = billMapper.selectById(line.getBillId());
+            if (bill == null || !Objects.equals(bill.getWarehouseId(), settlement.getWarehouseId())
+                    || !Integer.valueOf(MktServiceFeeBillService.SETTLED).equals(bill.getStatus()))
+                throw new BizException("结算关联账单已变化，请先处理账单差异");
+            int qty = 0, packages = 0;
+            BigDecimal commissions = BigDecimal.ZERO;
+            var details = billLineMapper.selectList(new LambdaQueryWrapper<MktServiceFeeBillLine>().eq(MktServiceFeeBillLine::getBillId, bill.getId()));
+            if (details.isEmpty()) throw new BizException("结算账单缺少出库明细");
+            for (var detail : details) {
+                var order = orderMapper.selectById(detail.getReferralOrderId());
+                if (order == null || !Objects.equals(order.getWarehouseId(), settlement.getWarehouseId()) || !Integer.valueOf(2).equals(order.getStatus())
+                        || order.getQty() == null || order.getPackages() == null || order.getPoolAmount() == null)
+                    throw new BizException("结算中的出库单已撤销或变化，不能仅通过重新对账放行付款");
+                qty = Math.addExact(qty, order.getQty()); packages = Math.addExact(packages, order.getPackages());
+                commissions = commissions.add(order.getPoolAmount());
+            }
+            try {
+                var frozen = json.readTree(line.getSnapshotJson());
+                if (frozen.path("qty").asInt(-1) != qty || frozen.path("packages").asInt(-1) != packages)
+                    throw new BizException("结算中的出库数量已变化，请先处理结算差异");
+                if (!frozen.path("serviceFee").isNumber() || !frozen.path("commission").isNumber() || bill.getAmount() == null
+                        || frozen.path("serviceFee").decimalValue().compareTo(bill.getAmount()) != 0
+                        || frozen.path("commission").decimalValue().compareTo(commissions) != 0)
+                    throw new BizException("结算中的收入或佣金已变化，请先处理结算差异");
+            } catch (BizException e) { throw e; }
+            catch (Exception e) { throw new BizException("结算成本快照缺失或无效"); }
+        }
+        if (settlement.getAmount() == null || lineTotal.compareTo(settlement.getAmount()) != 0)
+            throw new BizException("结算明细合计与应付金额不符，请先处理差异");
     }
     private BigDecimal rate(String model, String field) {
         try { var n = json.readTree(model); var v = n.get(field); if (v == null) return BigDecimal.ZERO;

@@ -39,6 +39,9 @@ public class ErpReplayWorker {
     public int replayDue() {
         List<MktErpEventInbox> rows = inboxMapper.selectList(new LambdaQueryWrapper<MktErpEventInbox>()
                 .eq(MktErpEventInbox::getStatus, "RECEIVED").isNull(MktErpEventInbox::getNextRetryAt)
+                .notExists("SELECT 1 FROM crm_warehouse_erp e WHERE e.warehouse_id = crm_erp_event_inbox.warehouse_id "
+                        + "AND e.app_id = crm_erp_event_inbox.app_id AND e.deleted = 0 "
+                        + "AND (COALESCE(e.status, 0) <> 1 OR COALESCE(e.env, 0) <> 2)")
                 .orderByAsc(MktErpEventInbox::getId).last("limit " + REPLAY_BATCH));
         int done = 0;
         for (MktErpEventInbox row : rows) {
@@ -51,32 +54,28 @@ public class ErpReplayWorker {
         return done;
     }
 
-    /** @return 是否真的尝试了重放(false = 找不到凭证/无原文,保持 RECEIVED 等人工处理) */
+    /** @return Whether this row was processed, including explicit dead-letter decisions. */
     private boolean replayOne(MktErpEventInbox row) throws Exception {
         MktWarehouseErp cred = erpMapper.selectOne(new LambdaQueryWrapper<MktWarehouseErp>()
                 .eq(MktWarehouseErp::getWarehouseId, row.getWarehouseId())
                 .eq(MktWarehouseErp::getAppId, row.getAppId()).last("limit 1"));
-        if (cred == null) return false;   // 凭证已重置/停用
-        if (row.getPayloadJson() == null) return false;
+        if (cred == null) { markDead(row, "原应用凭据已不存在，请核对原事件和应用配置后人工处理"); return true; }
+        if (!Integer.valueOf(1).equals(cred.getStatus()) || !Integer.valueOf(2).equals(cred.getEnv()))
+            return false; // Configuration may have changed since selection; never consume with sandbox credentials.
+        if (row.getPayloadJson() == null || row.getPayloadJson().isBlank()) {
+            markDead(row, "缺少原事件内容，无法安全重放；请 ERP 使用原 event_id 和原内容重新推送"); return true;
+        }
         JsonNode ev = objectMapper.readTree(row.getPayloadJson());
-        // 重放前置 PROCESSING;ingest 按业务键查重,已处理的不会重复入账
-        inboxMapper.update(null, new LambdaUpdateWrapper<MktErpEventInbox>()
-                .eq(MktErpEventInbox::getId, row.getId()).set(MktErpEventInbox::getStatus, "PROCESSING"));
+        // Ingest acquires the warehouse lock and owns the state transition. Do not regress a concurrent success.
         ErpOrderIngestService.IngestResult r;
         try {
             r = ingestService.ingest(cred, ev, row.getPayloadDigest());
+            if (r != null && r.auditAfterRollback()) ingestService.logRolledBackFailure(cred, ev, row.getPayloadDigest(), r);
         } catch (Exception e) {
             markRetry(row, e.getMessage());
             return true;
         }
-        if (r != null && r.ok()) {
-            // ingest 内部已把 inbox 置 PROCESSED;这里只兜底(未映射等分支也视作处理完成)
-            inboxMapper.update(null, new LambdaUpdateWrapper<MktErpEventInbox>()
-                    .eq(MktErpEventInbox::getId, row.getId())
-                    .set(MktErpEventInbox::getStatus, "PROCESSED")
-                    .set(MktErpEventInbox::getProcessedAt, LocalDateTime.now())
-                    .set(MktErpEventInbox::getLastError, r.attributed() ? null : "UNMAPPED"));
-        } else {
+        if (r == null || !r.ok()) {
             markRetry(row, r == null ? "重放失败" : r.msg());
         }
         return true;
@@ -86,6 +85,7 @@ public class ErpReplayWorker {
         int attempts = (row.getAttempts() == null ? 0 : row.getAttempts()) + 1;
         LambdaUpdateWrapper<MktErpEventInbox> w = new LambdaUpdateWrapper<MktErpEventInbox>()
                 .eq(MktErpEventInbox::getId, row.getId())
+                .in(MktErpEventInbox::getStatus, "RECEIVED", "RETRY", "PROCESSING")
                 .set(MktErpEventInbox::getAttempts, attempts)
                 .set(MktErpEventInbox::getLastError, error);
         if (attempts >= MAX_ATTEMPTS) {
@@ -96,5 +96,12 @@ public class ErpReplayWorker {
             w.set(MktErpEventInbox::getStatus, "RETRY").set(MktErpEventInbox::getNextRetryAt, LocalDateTime.now().plusMinutes(backoffMin));
         }
         inboxMapper.update(null, w);
+    }
+
+    private void markDead(MktErpEventInbox row, String error) {
+        inboxMapper.update(null, new LambdaUpdateWrapper<MktErpEventInbox>()
+                .eq(MktErpEventInbox::getId, row.getId()).eq(MktErpEventInbox::getStatus, "RECEIVED")
+                .set(MktErpEventInbox::getStatus, "DEAD").set(MktErpEventInbox::getNextRetryAt, null)
+                .set(MktErpEventInbox::getLastError, error));
     }
 }

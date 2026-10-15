@@ -12,4 +12,5 @@ public class MktWarehouseSettlement extends BaseEntity {
     private Long warehouseId; private String batchNo; private LocalDate periodStart; private LocalDate periodEnd;
     private String payNo; private String payProof; private java.time.LocalDateTime paidAt; private String paidBy;
     private Integer status; private BigDecimal amount; private String frozenReason; private Long projectId;
+    private Long reconcileSnapshotId;
 }
