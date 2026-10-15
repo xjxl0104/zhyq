@@ -67,6 +67,7 @@
               <el-button link type="warning" @click="reasonAct(row, 'amendCancel', '取消变更')">取消变更</el-button>
             </template>
             <el-button v-else-if="row.status === 7" link type="success" @click="renew(row)">续签</el-button>
+            <el-button v-else-if="row.status === 8 && canDelete" link type="danger" @click="openDelete(row)">删除</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -75,6 +76,13 @@
                      v-model:page-size="query.pageSize" :page-sizes="[10,20,50]" @change="load" />
     </div>
 
+    <el-dialog v-model="removal.visible" title="删除已终止合同" width="520px" :close-on-click-modal="!removal.busy" :close-on-press-escape="!removal.busy" :show-close="!removal.busy">
+      <p>{{ removal.row?.contractNo }} · {{ removal.row?.customerName }}</p>
+      <el-alert title="删除后从合同列表移除，原始档案和操作记录保留。有账单、业务订单或未作废佣金的合同不能删除。" type="warning" :closable="false" />
+      <el-form label-position="top"><el-form-item label="删除原因" required><el-input v-model="removal.reason" type="textarea" :rows="3" maxlength="500" show-word-limit :disabled="removal.busy" /></el-form-item></el-form>
+      <el-alert v-if="removal.error" :title="removal.error" type="error" :closable="false" />
+      <template #footer><el-button :disabled="removal.busy" @click="removal.visible=false">取消</el-button><el-button type="danger" :loading="removal.busy" @click="submitDelete">确认删除</el-button></template>
+    </el-dialog>
     <!-- 起草 / 编辑 -->
     <el-dialog v-model="dialog.visible" :title="dialog.title" width="680px" :close-on-click-modal="!saving" :close-on-press-escape="!saving" :show-close="!saving">
       <el-alert v-if="dialog.amending" title="提交已签署的变更条款后，系统按生效日期记录新版本。原签约主体、计费模式、起始日和保证金保持不变。" type="info" :closable="false" show-icon class="amend-notice" />
@@ -151,7 +159,8 @@
 </template>
 
 <script setup>
-import { reactive, ref, onMounted } from 'vue'
+import { reactive, ref, onMounted, computed } from 'vue'
+import { hasPermission } from '@/utils/permission'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { mktContractApi, mktWarehouseApi, mktTemplateApi, mktCustomerApi } from '@/api/marketing'
 import { money } from '@/utils/format'
@@ -176,6 +185,28 @@ const total = ref(0)
 const query = reactive({ pageNo: 1, pageSize: 10, keyword: '', status: null, signMode: null })
 const warehouses = ref([])
 const templates = ref([])
+
+const canDelete = computed(() => hasPermission('ROLE_admin'))
+const removal = reactive({ visible: false, row: null, reason: '', error: '', busy: false })
+function openDelete(row) {
+  if (!canDelete.value || row.status !== 8 || removal.busy) return
+  Object.assign(removal, { visible: true, row, reason: '', error: '' })
+}
+async function submitDelete() {
+  if (!canDelete.value || removal.busy || removal.row?.status !== 8) return
+  const reason = removal.reason.trim()
+  if (!reason || reason.length > 500) { removal.error = '删除原因必填且不能超过500字'; return }
+  removal.busy = true; removal.error = ''
+  try {
+    await mktContractApi.remove(removal.row.id, { reason })
+    removal.visible = false
+    if (detail.row?.id === removal.row.id) detail.visible = false
+    ElMessage.success('合同已删除，原始档案及操作记录已保留')
+    if (list.value.length === 1 && query.pageNo > 1) query.pageNo--
+    await load()
+  } catch (error) { removal.error = error?.message || '删除失败，请重试' }
+  finally { removal.busy = false }
+}
 
 async function load() {
   loading.value = true

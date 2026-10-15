@@ -105,7 +105,7 @@
     <el-dialog v-model="removal.visible" :title="removal.cancel ? '撤销云仓删除' : '删除加盟云仓'" width="min(92vw, 520px)"
       :close-on-click-modal="false" :close-on-press-escape="!removal.busy" :show-close="!removal.busy">
       <p>{{ removal.cancel ? '撤销删除' : '确认删除' }}云仓「{{ removal.row?.name }}」（{{ removal.row?.code }}）？</p>
-      <el-alert :closable="false" type="warning" :title="removal.cancel ? '撤销后恢复申请删除前的加盟状态。' : '提交后立即冻结登录和新增业务，7天内可撤销；到期自动从业务列表移除，历史档案及维护记录保留。'" />
+      <el-alert :closable="false" type="warning" :title="removal.cancel ? '撤销后恢复申请删除前的加盟状态；已退回待分派的客户需重新分派。' : '提交后立即冻结登录和新增业务，7天内可撤销；到期自动从业务列表移除。无未结束合同的客户退回待分派，历史档案及维护记录保留。普通暂停不会启动删除倒计时。'" />
       <el-input v-model="removal.reason" type="textarea" :rows="4" maxlength="500" show-word-limit :disabled="removal.busy" :placeholder="removal.cancel ? '请填写撤销原因（必填）' : '请填写删除原因（必填）'" style="margin-top:16px" />
       <el-alert v-if="removal.error" :title="removal.error" type="error" :closable="false" />
       <template #footer><el-button :disabled="removal.busy" @click="removal.visible=false">取消</el-button><el-button :type="removal.cancel ? 'primary' : 'danger'" :loading="removal.busy" @click="submitDelete">{{ removal.cancel ? '确认撤销' : '提交并冻结7天' }}</el-button></template>

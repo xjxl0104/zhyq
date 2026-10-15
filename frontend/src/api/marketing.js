@@ -96,6 +96,7 @@ export const mktContractApi = {
   amendCancel: (id, data) => request.post(`${BASE}/contract/${id}/amend-cancel`, data),
   renew: (id, data) => request.post(`${BASE}/contract/${id}/renew`, data),
   terminate: (id, data) => request.post(`${BASE}/contract/${id}/terminate`, data),
+  remove: (id, data) => request.delete(`${BASE}/contract/${id}`, { data }),
   void: (id, data) => request.post(`${BASE}/contract/${id}/void`, data)
 }
 

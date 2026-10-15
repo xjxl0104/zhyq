@@ -30,7 +30,7 @@ public class MktCustomerDeletionService {
     @Transactional
     @PreAuthorize("hasRole('admin')")
     public void deleteAsAdmin(Long id) {
-        delete(requireLocked(id), "管理员删除推荐客户");
+        delete(requireLocked(id), "管理员删除推荐客户", true);
     }
 
     @Transactional
@@ -47,7 +47,7 @@ public class MktCustomerDeletionService {
                 && (Integer.valueOf(MktCustomerAssignmentService.PENDING).equals(assignment)
                 || Integer.valueOf(MktCustomerAssignmentService.ACCEPTED).equals(assignment)))
             throw new BizException(409, "该客户已分派给云仓承接，不能自行删除，请联系园区运营处理");
-        delete(customer, "园区伙伴删除自己推荐的客户");
+        delete(customer, "园区伙伴删除自己推荐的客户", false);
     }
 
     @Transactional
@@ -58,7 +58,7 @@ public class MktCustomerDeletionService {
             throw new BizException(403, "推荐客户请由管理员在全民营销中删除，或由推荐伙伴在小程序中删除");
         block("SELECT id FROM crm_customer_lock WHERE customer_id=? LIMIT 1 FOR UPDATE",
                 "该客户关联营销业务，请到全民营销处理", id);
-        delete(customer, "删除意向客户");
+        delete(customer, "删除意向客户", false);
     }
 
     private Customer requireLocked(Long id) {
@@ -67,21 +67,33 @@ public class MktCustomerDeletionService {
         return customer;
     }
 
-    private void delete(Customer customer, String reason) {
+    private void delete(Customer customer, String reason, boolean admin) {
         Long id = customer.getId();
         // 跟进记录属于 source_lead_id；保留已转化线索与客户的对应关系，不能只删一端。
         if (customer.getSourceLeadId() != null)
             throw new BizException(409, "该客户由 CRM 线索转化，需保留线索及跟进记录，请标记流失");
-        if (Integer.valueOf(2).equals(customer.getStatus()))
+        // 兼容旧版终止后残留的已签约状态/成交锁：仅园区管理员、云仓业务且有结束合同证明。
+        // 后面仍检查所有未结束合同及财务，不允许靠历史终止合同绕过当前履约。
+        boolean closedCloudContract = admin && Integer.valueOf(2).equals(customer.getBizLine())
+                && !jdbc.queryForList("SELECT id FROM crm_service_contract WHERE customer_id=? AND status IN (7,8) LIMIT 1 FOR UPDATE", Long.class, id).isEmpty();
+        if (Integer.valueOf(2).equals(customer.getStatus()) && !closedCloudContract)
             throw new BizException(409, "该客户已签约，需保留客户及履约档案，不能删除");
 
         // 创建合同、分派、转移及成交使用相同客户行锁；FOR UPDATE 读取最新提交结果，
         // 包括逻辑删除的财务历史，避免旧的 REPEATABLE READ 快照遗漏关联记录。
-        block("SELECT id FROM crm_service_contract WHERE customer_id=? LIMIT 1 FOR UPDATE",
-                "该客户已关联服务合同，需保留合同档案，不能删除", id);
-        block("SELECT id FROM crm_referral_order WHERE customer_id=? LIMIT 1 FOR UPDATE",
+        block("SELECT id FROM crm_service_contract WHERE customer_id=? AND deleted=0 AND status IN (1,2,3,4,5,6) LIMIT 1 FOR UPDATE",
+                "该客户仍有未结束的服务合同，请先处理合同后再删除", id);
+        block("SELECT id FROM crm_referral_order WHERE customer_id=? AND (source_type IS NULL OR source_type<>4 OR EXISTS "
+                        + "(SELECT 1 FROM crm_promoter_commission pc WHERE pc.referral_order_id=crm_referral_order.id "
+                        + "AND (pc.status IS NULL OR pc.status<>5 OR COALESCE(pc.withdrawn_amount,0)>0))) LIMIT 1 FOR UPDATE",
                 "该客户已有业务订单或佣金记录，需保留财务档案，不能删除", id);
-        block("SELECT id FROM crm_customer_lock WHERE customer_id=? AND status=3 LIMIT 1 FOR UPDATE",
+        // 已终止合同不再阻止清理空客户，但其历史账单仍须保护（含逻辑删除记录）。
+        for (String table : java.util.List.of("fin_bill", "crm_service_fee_bill", "crm_direct_sign_payment")) {
+            block("SELECT b.id FROM " + table + " b JOIN crm_service_contract c ON c.id=b.contract_id WHERE c.customer_id=?"
+                            + (table.equals("fin_bill") ? " AND b.source='mkt_service'" : "") + " LIMIT 1 FOR UPDATE",
+                    "该客户的合同已有账单或收款记录，需保留财务档案，不能删除", id);
+        }
+        if (!closedCloudContract) block("SELECT id FROM crm_customer_lock WHERE customer_id=? AND status=3 LIMIT 1 FOR UPDATE",
                 "该客户已有成交记录，需保留业务档案，不能删除", id);
         block("SELECT id FROM crm_customer_erp_map WHERE customer_id=? AND deleted=0 LIMIT 1 FOR UPDATE",
                 "该客户已绑定 ERP 货主编码，请先解除映射后再删除", id);
@@ -94,7 +106,8 @@ public class MktCustomerDeletionService {
         if (changed != 1) throw new BizException(409, "客户已变化，请刷新后重试");
         // 释放活动锁归还伙伴配额；历史记录仍在数据库中，普通业务查询不再显示。
         jdbc.update("UPDATE crm_customer_lock SET status=4, released_reason=?, released_by=?, released_at=NOW(), "
-                + "version=version+1, update_by=?, update_time=NOW() WHERE customer_id=? AND deleted=0 AND status IN (1,2)",
+                + "version=version+1, update_by=?, update_time=NOW() WHERE customer_id=? AND deleted=0 AND status IN "
+                + (closedCloudContract ? "(1,2,3)" : "(1,2)"),
                 reason, operator, operator, id);
         jdbc.update("UPDATE crm_customer_lock SET deleted=1, version=version+1, update_by=?, update_time=NOW() "
                 + "WHERE customer_id=? AND deleted=0", operator, id);

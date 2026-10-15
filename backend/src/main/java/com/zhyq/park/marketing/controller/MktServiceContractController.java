@@ -20,6 +20,7 @@ import com.zhyq.park.marketing.mapper.MktServiceContractMapper;
 import com.zhyq.park.marketing.mapper.MktServiceContractVersionMapper;
 import com.zhyq.park.marketing.mapper.MktWarehouseMapper;
 import com.zhyq.park.marketing.service.MktServiceContractService;
+import com.zhyq.park.marketing.service.MktServiceContractDeletionService;
 import com.zhyq.park.marketing.service.MktWarehouseFileService;
 import com.zhyq.park.marketing.service.MktWarehouseOnboardingService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -75,6 +76,7 @@ public class MktServiceContractController {
     private final MktWarehouseMapper warehouseMapper;
     private final CustomerMapper customerMapper;
     private final MktServiceContractService contractService;
+    private final MktServiceContractDeletionService deletionService;
     private final MktWarehouseOnboardingService onboardingService;
     private final BizSettings bizSettings;
     private final MktWarehouseFileService files;
@@ -201,6 +203,11 @@ public class MktServiceContractController {
     @Operation(summary = "续签") @PreAuthorize("hasAuthority('crm:marketing:contract:edit')") @PostMapping("/{id}/renew")
     public Result<Void> renew(@PathVariable Long id, @RequestBody Map<String, String> body) {
         contractService.renew(id, LocalDate.parse(body.get("startDate")), LocalDate.parse(body.get("endDate"))); return Result.ok();
+    }
+
+    @Operation(summary = "删除已终止的空合同") @PreAuthorize("hasRole('admin')") @DeleteMapping("/{id}")
+    public Result<Void> delete(@PathVariable Long id, @RequestBody Map<String, String> body) {
+        deletionService.delete(id, body.get("reason")); return Result.ok();
     }
 
     @Operation(summary = "终止(clawback_days 内扣回签约奖)") @PreAuthorize("hasAuthority('crm:marketing:contract:audit')") @PostMapping("/{id}/terminate")

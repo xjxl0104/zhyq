@@ -47,10 +47,23 @@ class MktWarehouseDeletionServiceTest {
             assertThatThrownBy(() -> service.request(7L,reason)).hasMessageContaining("500字");
         verifyNoInteractions(warehouses,jdbc,audit);
     }
-    @Test void servingCustomersBlockRequestBeforeFreeze() {
+    @Test void customersWithoutUnfinishedContractsReturnToUnassignedAndAreAudited() {
         when(jdbc.queryForList(contains("FROM crm_customer WHERE"),eq(Long.class),eq(7L))).thenReturn(List.of(2L));
+        service.request(7L,"误录");
+        verify(jdbc).update(contains("assigned_warehouse_id=NULL,warehouse_assignment_status=0"),eq("system"),eq(2L),eq(7L));
+        verify(audit).logRequired(eq("warehouse.delete.request"),eq(w),eq("误录"),any(),argThat(after -> ((Map<?,?>)after).get("releasedCustomerIds").equals(List.of(2L))));
+    }
+    @Test void customersWithOtherUnfinishedContractsStillBlockFreeze() {
+        when(jdbc.queryForList(contains("FROM crm_customer WHERE"),eq(Long.class),eq(7L))).thenReturn(List.of(2L));
+        when(jdbc.queryForList(contains("FROM crm_service_contract WHERE customer_id"),eq(Long.class),eq(2L))).thenReturn(List.of(99L));
         assertThatThrownBy(() -> service.request(7L,"误录")).hasMessageContaining("客户归属");
         verify(jdbc,never()).update(anyString(),any(Object[].class)); verifyNoInteractions(audit);
+    }
+    @Test void dueLegacyFrozenWarehouseAlsoReleasesIdleCustomers() {
+        w.setJoinStatus(8); w.setDeleteDueAt(LocalDateTime.now().minusMinutes(1));
+        when(jdbc.queryForList(contains("FROM crm_customer WHERE"),eq(Long.class),eq(7L))).thenReturn(List.of(2L));
+        assertThat(service.completeDue(7L)).isTrue();
+        verify(jdbc).update(contains("assigned_warehouse_id=NULL"),eq("system"),eq(2L),eq(7L));
     }
     @Test void unfinishedContractsBlockRequest() {
         when(jdbc.queryForList(contains("FROM crm_service_contract"),eq(Long.class),eq(7L))).thenReturn(List.of(2L));
