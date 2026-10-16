@@ -28,7 +28,7 @@ public class MktWarehouse extends BaseEntity {
     private String categories;
     /** 1申请 2资质审核 3ERP对接中 4待签协议 5已上线 6暂停 7退出 */
     private Integer joinStatus;
-    /** 8 = 删除冻结期，禁止登录及新增业务。 */
+    /** 兼容旧版删除记录；状态 8 禁止登录及新增业务，由任务补处理归档。 */
     private LocalDateTime deleteRequestedAt;
     private LocalDateTime deleteDueAt;
     private String deleteReason;

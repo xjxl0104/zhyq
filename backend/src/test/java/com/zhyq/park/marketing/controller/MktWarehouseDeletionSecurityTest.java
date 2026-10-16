@@ -31,16 +31,14 @@ class MktWarehouseDeletionSecurityTest {
     @Autowired MktWarehouseController controller;
     @Autowired MktWarehouseDeletionService deletion;
     @Test @WithMockUser(roles = "admin")
-    void administratorMayRequestAndCancelDeletion() {
+    void administratorMayDeleteImmediately() {
         assertThat(controller.delete(7L,Map.of("reason","误录")).getCode()).isZero();
-        assertThat(controller.cancelDelete(7L,Map.of("reason","保留")).getCode()).isZero();
-        verify(deletion).request(7L,"误录"); verify(deletion).cancel(7L,"保留");
+        verify(deletion).request(7L,"误录");
     }
     @Test @WithMockUser(authorities = {"crm:marketing:warehouse:edit","crm:marketing:warehouse:audit"})
-    void ordinaryEditorCannotDeleteOrCancel() {
+    void ordinaryEditorCannotDelete() {
         assertThatThrownBy(() -> controller.delete(8L,Map.of("reason","误录"))).isInstanceOf(AccessDeniedException.class);
-        assertThatThrownBy(() -> controller.cancelDelete(8L,Map.of("reason","保留"))).isInstanceOf(AccessDeniedException.class);
-        verify(deletion,never()).request(eq(8L),any()); verify(deletion,never()).cancel(eq(8L),any());
+        verify(deletion,never()).request(eq(8L),any());
     }
     @Test @WithMockUser(roles = "WH")
     void warehouseIdentityCannotDeleteOrReadAdminMaintenanceRecords() {

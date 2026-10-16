@@ -35,7 +35,7 @@ import java.util.*;
 import java.util.function.IntFunction;
 
 /** 主动拉取云山日汇总，沿用 ERP 查询/配置权限；不创建佣金或订单。 */
-@Tag(name = "全民营销-云山发货量")
+@Tag(name = "全民营销-发货量同步（云山云仓接口）")
 @RestController
 @RequestMapping("/crm/marketing/yunshan")
 @RequiredArgsConstructor
@@ -59,7 +59,7 @@ public class MktYunshanController {
     public record VolumeResult(List<MktYunshanDailyVolume> records, long total, String totalConsignNum,
                                int daysWithData, int daysMissing, String dataState) {}
 
-    @Operation(summary = "云山配置状态（不返回凭证）")
+    @Operation(summary = "云山云仓接口配置状态（不返回凭证）")
     @GetMapping("/config") @PreAuthorize("hasAuthority('crm:marketing:erp:query')")
     public Result<Map<String, Object>> config() {
         return Result.ok(Map.of("configured", client.configured(), "baseUrl", client.baseUrl(), "appId", client.maskedAppId()));
@@ -115,7 +115,7 @@ public class MktYunshanController {
                 .map(c -> new CustomerOption(c.getId(), c.getName())).toList()));
     }
 
-    @Operation(summary = "云仓的云山实体映射")
+    @Operation(summary = "云仓的发货量客户关联")
     @GetMapping("/warehouse/{warehouseId}/maps") @PreAuthorize("hasAuthority('crm:marketing:erp:query')")
     public Result<List<Map<String, Object>>> mappings(@PathVariable Long warehouseId) {
         List<MktYunshanVolumeMap> rows = maps.selectList(new LambdaQueryWrapper<MktYunshanVolumeMap>()
@@ -126,7 +126,7 @@ public class MktYunshanController {
         return Result.ok(rows.stream().map(m -> mappingView(m, names.get(m.getCustomerId()))).toList());
     }
 
-    @Operation(summary = "新增云山实体组合映射")
+    @Operation(summary = "新增发货量客户关联")
     @PostMapping("/warehouse/{warehouseId}/maps") @PreAuthorize("hasAuthority('crm:marketing:erp:config')")
     @Transactional
     public Result<Void> createMapping(@PathVariable Long warehouseId, @Valid @RequestBody MapInput input) {
@@ -147,7 +147,7 @@ public class MktYunshanController {
         try {
             if (maps.insert(mapping) != 1) throw new BizException("保存映射失败，请重试");
         } catch (DuplicateKeyException e) {
-            throw new BizException("该云山货主与仓库组合已绑定，请查看原映射（停用的映射可重新启用）");
+            throw new BizException("该接口货主与作业仓库组合已绑定，请查看原映射（停用的映射可重新启用）");
         }
         audit.log("yunshan.mapping.create", "yunshan_map", mapping.getId(), "新增发货量映射", null,
                 Map.of("customerId", customer.getId(), "warehouseId", warehouseId,
@@ -155,7 +155,7 @@ public class MktYunshanController {
         return Result.ok();
     }
 
-    @Operation(summary = "启停云山映射（保留历史）")
+    @Operation(summary = "启停发货量客户关联（保留历史）")
     @PutMapping("/maps/{id}/status") @PreAuthorize("hasAuthority('crm:marketing:erp:config')")
     @Transactional
     public Result<Void> status(@PathVariable Long id, @Valid @RequestBody StatusInput input) {
@@ -222,7 +222,7 @@ public class MktYunshanController {
 
     private MktYunshanVolumeMap requireMap(Long id) {
         MktYunshanVolumeMap map = maps.selectById(id);
-        if (map == null) throw new BizException("云山映射不存在");
+        if (map == null) throw new BizException("发货量客户关联不存在");
         return map;
     }
     private static void requireUsableWarehouse(MktWarehouse warehouse) {

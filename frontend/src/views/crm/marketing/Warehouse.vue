@@ -27,7 +27,7 @@
         <el-table-column prop="contact" label="联系人" width="100" />
         <el-table-column prop="phone" label="电话" width="130" />
         <el-table-column label="加盟状态" width="110">
-          <template #default="{ row }"><el-tag :type="joinType(row.joinStatus)">{{ JOIN[row.joinStatus] }}</el-tag><div v-if="row.joinStatus === 8" class="hint">预计删除：{{ row.deleteDueAt?.replace('T', ' ') }}<br />原因：{{ row.deleteReason }}</div></template>
+          <template #default="{ row }"><el-tag :type="joinType(row.joinStatus)">{{ JOIN[row.joinStatus] }}</el-tag><div v-if="row.joinStatus === 8" class="hint">历史待删除记录，正在处理<br />原因：{{ row.deleteReason }}</div></template>
         </el-table-column>
         <el-table-column label="订单接入" width="170"><template #default="{ row }">
           <el-select :model-value="row.orderMode" placeholder="待选择" size="small" style="width:145px" :disabled="acting || ![3,4,5,6].includes(row.joinStatus)" @change="mode => changeOrderMode(row, mode)">
@@ -57,8 +57,8 @@
             <el-button v-else-if="row.joinStatus === 5" link type="warning" @click="withReason(row, 'pause', '暂停云仓')">暂停</el-button>
             <el-button v-else-if="row.joinStatus === 6" link type="success" @click="act(row, 'resume', '已恢复')">恢复</el-button>
             <el-button v-if="[5, 6].includes(row.joinStatus)" link type="danger" @click="withReason(row, 'exit', '云仓退出')">退出</el-button>
-            <el-button v-if="canDelete && row.joinStatus !== 8" :disabled="acting" link type="danger" @click="openDelete(row)">删除</el-button>
-            <el-button v-if="canDelete && row.joinStatus === 8" :disabled="acting" link type="primary" @click="openDelete(row, true)">撤销删除</el-button>
+            <el-button v-if="canDelete" :disabled="acting" link type="danger" @click="openDelete(row)">删除</el-button>
+
           </template>
         </el-table-column>
       </el-table>
@@ -109,7 +109,7 @@
               <template #description>
                 <p>{{ progressNotice }}</p>
                 <template v-if="steps.row.joinStatus === 8">
-                  <p>预计删除：{{ steps.row.deleteDueAt?.replace('T', ' ') || '待确认' }}</p>
+                  <p>历史待删除记录，正在处理；也可在列表中立即删除。</p>
                   <p>删除原因：{{ steps.row.deleteReason || '未记录' }}</p>
                 </template>
               </template>
@@ -121,13 +121,13 @@
     </el-drawer>
     <WarehouseAgreementUpload v-model:visible="agreement.visible" :warehouse="agreement.row" @saved="load" />
     <WarehouseMaintenance v-model="maintenanceVisible" />
-    <el-dialog v-model="removal.visible" :title="removal.cancel ? '撤销云仓删除' : '删除加盟云仓'" width="min(92vw, 520px)"
+    <el-dialog v-model="removal.visible" title="删除加盟云仓" width="min(92vw, 520px)"
       :close-on-click-modal="false" :close-on-press-escape="!removal.busy" :show-close="!removal.busy">
-      <p>{{ removal.cancel ? '撤销删除' : '确认删除' }}云仓「{{ removal.row?.name }}」（{{ removal.row?.code }}）？</p>
-      <el-alert :closable="false" type="warning" :title="removal.cancel ? '撤销后恢复申请删除前的加盟状态；已退回待分派的客户需重新分派。' : '提交后立即冻结登录和新增业务，7天内可撤销；到期自动从业务列表移除。无未结束合同的客户退回待分派，历史档案及维护记录保留。普通暂停不会启动删除倒计时。'" />
-      <el-input v-model="removal.reason" type="textarea" :rows="4" maxlength="500" show-word-limit :disabled="removal.busy" :placeholder="removal.cancel ? '请填写撤销原因（必填）' : '请填写删除原因（必填）'" style="margin-top:16px" />
+      <p>确认删除云仓「{{ removal.row?.name }}」（{{ removal.row?.code }}）？</p>
+      <el-alert :closable="false" type="warning" title="确认后立即从业务列表移除并停用关联账号和接入权限，删除后不可撤销。无未结束合同的客户退回待分派，历史档案及维护记录保留。" />
+      <el-input v-model="removal.reason" type="textarea" :rows="4" maxlength="500" show-word-limit :disabled="removal.busy" placeholder="请填写删除原因（必填）" style="margin-top:16px" />
       <el-alert v-if="removal.error" :title="removal.error" type="error" :closable="false" />
-      <template #footer><el-button :disabled="removal.busy" @click="removal.visible=false">取消</el-button><el-button :type="removal.cancel ? 'primary' : 'danger'" :loading="removal.busy" @click="submitDelete">{{ removal.cancel ? '确认撤销' : '提交并冻结7天' }}</el-button></template>
+      <template #footer><el-button :disabled="removal.busy" @click="removal.visible=false">取消</el-button><el-button type="danger" :loading="removal.busy" @click="submitDelete">立即删除</el-button></template>
     </el-dialog>
   </div>
 </template>
@@ -160,10 +160,10 @@ const total = ref(0)
 const query = reactive({ pageNo: 1, pageSize: 10, keyword: '', joinStatus: null })
 const canDelete = computed(() => hasPermission('ROLE_admin'))
 const maintenanceVisible = ref(false)
-const removal = reactive({ visible: false, row: null, cancel: false, reason: '', busy: false, error: '' })
-function openDelete(row, cancel = false) {
+const removal = reactive({ visible: false, row: null, reason: '', busy: false, error: '' })
+function openDelete(row) {
   if (!canDelete.value || acting.value || removal.busy) return
-  Object.assign(removal, { visible: true, row, cancel, reason: '', error: '' })
+  Object.assign(removal, { visible: true, row, reason: '', error: '' })
 }
 async function submitDelete() {
   if (!canDelete.value || removal.busy || !removal.row) return
@@ -171,8 +171,8 @@ async function submitDelete() {
   if (!reason || reason.length > 500) { removal.error = '操作原因必填且不能超过500字'; return }
   removal.busy = true; removal.error = ''
   try {
-    await mktWarehouseApi[removal.cancel ? 'cancelDelete' : 'remove'](removal.row.id, { reason })
-    ElMessage.success(removal.cancel ? '已撤销删除' : '云仓已冻结，7天后自动删除')
+    await mktWarehouseApi.remove(removal.row.id, { reason })
+    ElMessage.success('云仓已删除，立即生效')
     removal.visible = false; await load()
   } catch (e) { removal.error = e.message || '操作失败，请重试' }
   finally { removal.busy = false }
@@ -272,7 +272,7 @@ const inactiveProgress = computed(() => [6, 7, 8].includes(steps.row?.joinStatus
 const progressNotice = computed(() => ({
   6: '云仓已暂停，恢复后方可继续承接业务。此前已完成的加盟步骤保留。',
   7: '云仓已退出，不再承接新业务。此前已完成的加盟步骤仅作为历史记录保留。',
-  8: '云仓已冻结，等待删除；冻结期内可撤销删除。此前的加盟记录保留。'
+  8: '历史待删除记录，系统将自动处理；也可在列表中立即删除。此前的加盟记录保留。'
 }[steps.row?.joinStatus] || ''))
 const activeStep = computed(() => steps.list.filter(s => s.status === 2).length)
 const stepStatus = (s) => s.status === 1 && inactiveProgress.value ? 'wait' : ({ 2: 'success', 3: 'error', 1: 'process' }[s.status] || 'wait')
