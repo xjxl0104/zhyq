@@ -47,7 +47,7 @@ class MktYunshanControllerTest {
     @Test void rejectsUnauthorizedCombinationBeforeSavingMapping() {
         when(client.owners(null, "003", 1)).thenReturn(new YunshanClient.EntityPage(List.of(new YunshanClient.Entity("001", "货主")), 1, 1));
         when(client.warehouses(null, "001", 1)).thenReturn(new YunshanClient.EntityPage(List.of(), 0, 0));
-        assertThatThrownBy(() -> controller.createMapping(7L, new MktYunshanController.MapInput(2L, "001", "003")))
+        assertThatThrownBy(() -> controller.createMapping(7L, new MktYunshanController.MapInput(2L, "001", "003", true)))
                 .hasMessageContaining("未获云山授权");
         verifyNoInteractions(maps, audit, customers, warehouses);
     }
@@ -56,14 +56,62 @@ class MktYunshanControllerTest {
         when(client.owners(null, "003", 1)).thenReturn(new YunshanClient.EntityPage(List.of(new YunshanClient.Entity("other", "其他")), 2, 2));
         when(client.owners(null, "003", 2)).thenReturn(new YunshanClient.EntityPage(List.of(new YunshanClient.Entity("0009007199254740993", "授权货主")), 2, 2));
         when(client.warehouses(null, "0009007199254740993", 1)).thenReturn(new YunshanClient.EntityPage(List.of(new YunshanClient.Entity("003", "授权仓库")), 1, 1));
-        Customer c = new Customer(); c.setId(2L); when(customers.selectForUpdate(2L)).thenReturn(c);
+        Customer c = new Customer(); c.setId(2L); c.setName(" 授权货主 "); when(customers.selectForUpdate(2L)).thenReturn(c);
         MktWarehouse w = new MktWarehouse(); w.setId(7L); w.setTenantId(1L); w.setJoinStatus(5);
         when(warehouses.selectForUpdate(7L)).thenReturn(w);
         when(maps.insert(any(MktYunshanVolumeMap.class))).thenAnswer(i -> { i.<MktYunshanVolumeMap>getArgument(0).setId(10L); return 1; });
-        controller.createMapping(7L, new MktYunshanController.MapInput(2L, "0009007199254740993", "003"));
+        controller.createMapping(7L, new MktYunshanController.MapInput(2L, "0009007199254740993", "003", true));
         verify(maps).insert(argThat((MktYunshanVolumeMap m) -> m.getParentOwnerNo().equals("0009007199254740993")
                 && m.getParentWarehouseName().equals("授权仓库") && m.getCustomerId().equals(2L) && m.getWarehouseId().equals(7L)));
         verify(audit).log(eq("yunshan.mapping.create"), eq("yunshan_map"), eq(10L), anyString(), isNull(), any());
+    }
+
+    @Test void independentCustomerCannotBindAnUnrelatedOwnerEvenWhenConfirmed() {
+        when(client.owners(null, "003", 1)).thenReturn(new YunshanClient.EntityPage(
+                List.of(new YunshanClient.Entity("001", "广东泽浩棒棒猪科技股份有限公司")), 1, 1));
+        when(client.warehouses(null, "001", 1)).thenReturn(new YunshanClient.EntityPage(
+                List.of(new YunshanClient.Entity("003", "华南一区-新华一部")), 1, 1));
+        Customer customer = new Customer(); customer.setId(2L); customer.setName("超级棒棒猪");
+        when(customers.selectForUpdate(2L)).thenReturn(customer);
+
+        assertThatThrownBy(() -> controller.createMapping(7L, new MktYunshanController.MapInput(2L, "001", "003", true)))
+                .hasMessageContaining("名称不一致").hasMessageContaining("独立客户");
+        verifyNoInteractions(maps, warehouses, audit);
+    }
+
+    @Test void explicitConfirmationIsRequiredBeforeCallingTheDirectory() {
+        assertThatThrownBy(() -> controller.createMapping(7L, new MktYunshanController.MapInput(2L, "001", "003", null)))
+                .hasMessageContaining("确认");
+        assertThatThrownBy(() -> controller.createMapping(7L, new MktYunshanController.MapInput(2L, "001", "003", false)))
+                .hasMessageContaining("确认");
+        verifyNoInteractions(client, maps, customers, warehouses, audit);
+    }
+
+    @Test void existingMismatchedMappingCannotBeEnabledEvenIfAlreadyActive() {
+        MktYunshanVolumeMap map = new MktYunshanVolumeMap(); map.setId(10L); map.setStatus(1);
+        map.setCustomerId(2L); map.setParentOwnerName("广东泽浩棒棒猪科技股份有限公司");
+        when(maps.selectById(10L)).thenReturn(map);
+        Customer customer = new Customer(); customer.setId(2L); customer.setName("超级棒棒猪");
+        when(customers.selectForUpdate(2L)).thenReturn(customer);
+
+        assertThatThrownBy(() -> controller.status(10L, new MktYunshanController.StatusInput(1)))
+                .hasMessageContaining("名称不一致");
+        verify(maps, never()).update(isNull(), any());
+        verifyNoInteractions(warehouses, audit, volumes);
+    }
+
+    @Test void mappingListMarksMismatchedIdentitiesWithoutDeletingHistory() {
+        MktYunshanVolumeMap map = new MktYunshanVolumeMap(); map.setId(10L); map.setCustomerId(2L);
+        map.setParentOwnerName("广东泽浩棒棒猪科技股份有限公司");
+        Customer customer = new Customer(); customer.setId(2L); customer.setName("超级棒棒猪");
+        when(maps.selectList(any())).thenReturn(List.of(map));
+        when(customers.selectBatchIds(any())).thenReturn(List.of(customer));
+
+        var rows = controller.mappings(7L).getData();
+        assertThat(rows).hasSize(1);
+        assertThat(rows.get(0)).containsEntry("identityMismatch", true).containsEntry("customerName", "超级棒棒猪");
+        verifyNoInteractions(volumes, audit);
+        verify(maps, never()).update(isNull(), any());
     }
 
     @Test void volumeTotalsCoverAllPagesPreserveLongPrecisionAndDoNotInventMissingDates() throws Exception {
@@ -130,6 +178,16 @@ class MktYunshanControllerTest {
         mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put("/crm/marketing/yunshan/maps/10/status")
                         .contentType("application/json").content("{\"status\":2}"))
                 .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isBadRequest());
+        verifyNoInteractions(client, maps, customers, warehouses, audit);
+    }
+
+    @Test void missingOrFalseIdentityConfirmationFailsRequestValidation() throws Exception {
+        var mvc = org.springframework.test.web.servlet.setup.MockMvcBuilders.standaloneSetup(controller).build();
+        for (String flag : List.of("", ",\"identityConfirmed\":null", ",\"identityConfirmed\":false")) {
+            mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/crm/marketing/yunshan/warehouse/7/maps")
+                            .contentType("application/json").content("{\"customerId\":2,\"parentOwnerNo\":\"001\",\"parentWarehouseNo\":\"003\"" + flag + "}"))
+                    .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isBadRequest());
+        }
         verifyNoInteractions(client, maps, customers, warehouses, audit);
     }
 

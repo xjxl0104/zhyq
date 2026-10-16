@@ -48,6 +48,10 @@ public class MktWarehouseDeletionService {
                 + "delete_due_at=?,delete_reason=?,version=version+1,update_by=?,update_time=NOW() "
                 + "WHERE id=? AND deleted=0 AND join_status=?", now, now, note, op, id, w.getJoinStatus());
         changed(changed);
+        jdbc.update("UPDATE crm_customer_operation_warehouse SET status=0,version=version+1,update_by=?,update_time=NOW() "
+                + "WHERE warehouse_id=? AND deleted=0 AND status=1", op, id);
+        jdbc.update("UPDATE crm_operation_warehouse SET status=0,version=version+1,update_by=?,update_time=NOW() "
+                + "WHERE warehouse_id=? AND deleted=0 AND status=1", op, id);
         jdbc.update("UPDATE crm_marketing_credential SET username=CONCAT('~deleted_',id),registration_phone=NULL,password_hash='!deleted',"
                 + "status=0,deleted=1,version=version+1,update_by=?,update_time=NOW() WHERE identity_type='wh' AND identity_id=? AND deleted=0", op, id);
         jdbc.update("UPDATE crm_warehouse_contact SET openid=NULL,status=0,deleted=1,version=version+1,update_by=?,update_time=NOW() WHERE warehouse_id=? AND deleted=0", op, id);

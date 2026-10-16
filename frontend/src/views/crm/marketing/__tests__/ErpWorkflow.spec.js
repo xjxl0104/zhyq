@@ -14,6 +14,7 @@ vi.mock('vue-router', () => ({useRoute:() => ({query:{warehouseId:'9'}}), useRou
 vi.mock('element-plus', async (importOriginal) => ({...(await importOriginal()),ElMessage:{success:vi.fn(),error:vi.fn()},ElMessageBox:{confirm:vi.fn(),prompt:vi.fn()}}))
 vi.mock('../ErpReconciliation.vue', () => ({default:{template:'<div />'}}))
 vi.mock('../YunshanVolumePanel.vue', () => ({default:{template:'<div />'}}))
+vi.mock('../CustomerOperationWarehousePanel.vue', () => ({default:{template:'<div />'}}))
 
 const pending = () => {let resolve; const promise = new Promise(r => {resolve=r});return {promise,resolve}}
 const wrappers=[]

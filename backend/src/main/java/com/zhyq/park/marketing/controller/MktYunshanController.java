@@ -3,6 +3,8 @@ package com.zhyq.park.marketing.controller;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
 import com.zhyq.park.common.exception.BizException;
 import com.zhyq.park.common.config.MyMetaObjectHandler;
 import com.zhyq.park.common.result.PageResult;
@@ -51,11 +53,12 @@ public class MktYunshanController {
 
     public record MapInput(@NotNull @Positive Long customerId,
                            @NotBlank @Pattern(regexp = "[A-Za-z0-9_-]{1,32}") String parentOwnerNo,
-                           @NotBlank @Pattern(regexp = "[A-Za-z0-9_-]{1,32}") String parentWarehouseNo) {}
+                           @NotBlank @Pattern(regexp = "[A-Za-z0-9_-]{1,32}") String parentWarehouseNo,
+                           @NotNull @AssertTrue(message = "请核对并确认接口货主确为该客户") Boolean identityConfirmed) {}
     public record StatusInput(@NotNull @Min(0) @Max(1) Integer status) {}
     public record SyncInput(@NotNull LocalDate startDate, @NotNull LocalDate endDate) {}
-    public record CustomerOption(Long id, String name) {}
-    public record WarehouseOption(Long id, String code, String name, Integer joinStatus, String orderMode, Integer erpStatus) {}
+    public record CustomerOption(@JsonSerialize(using = ToStringSerializer.class) Long id, String name) {}
+    public record WarehouseOption(@JsonSerialize(using = ToStringSerializer.class) Long id, String code, String name, Integer joinStatus, String orderMode, Integer erpStatus) {}
     public record VolumeResult(List<MktYunshanDailyVolume> records, long total, String totalConsignNum,
                                int daysWithData, int daysMissing, String dataState) {}
 
@@ -130,6 +133,7 @@ public class MktYunshanController {
     @PostMapping("/warehouse/{warehouseId}/maps") @PreAuthorize("hasAuthority('crm:marketing:erp:config')")
     @Transactional
     public Result<Void> createMapping(@PathVariable Long warehouseId, @Valid @RequestBody MapInput input) {
+        if (!Boolean.TRUE.equals(input.identityConfirmed())) throw new BizException("请核对并确认接口货主确为该客户");
         YunshanClient.Entity owner = findEntity(input.parentOwnerNo(), page -> client.owners(null, input.parentWarehouseNo(), page));
         YunshanClient.Entity remoteWarehouse = findEntity(input.parentWarehouseNo(),
                 page -> client.warehouses(null, input.parentOwnerNo(), page));
@@ -137,6 +141,7 @@ public class MktYunshanController {
         // 与客户/云仓删除流程共用行锁，避免刚创建的映射指向已删除主体。
         Customer customer = customers.selectForUpdate(input.customerId());
         if (customer == null) throw new BizException("客户不存在或已删除");
+        YunshanVolumeSyncService.requireMatchingIdentity(customer.getName(), owner.name());
         MktWarehouse warehouse = warehouses.selectForUpdate(warehouseId);
         requireUsableWarehouse(warehouse);
         MktYunshanVolumeMap mapping = new MktYunshanVolumeMap();
@@ -151,7 +156,7 @@ public class MktYunshanController {
         }
         audit.log("yunshan.mapping.create", "yunshan_map", mapping.getId(), "新增发货量映射", null,
                 Map.of("customerId", customer.getId(), "warehouseId", warehouseId,
-                        "parentOwnerNo", owner.no(), "parentWarehouseNo", remoteWarehouse.no()));
+                        "parentOwnerNo", owner.no(), "parentWarehouseNo", remoteWarehouse.no(), "identityConfirmed", true));
         return Result.ok();
     }
 
@@ -161,7 +166,9 @@ public class MktYunshanController {
     public Result<Void> status(@PathVariable Long id, @Valid @RequestBody StatusInput input) {
         MktYunshanVolumeMap mapping = requireMap(id);
         if (input.status() == 1) {
-            if (customers.selectForUpdate(mapping.getCustomerId()) == null) throw new BizException("客户不存在或已删除");
+            Customer customer = customers.selectForUpdate(mapping.getCustomerId());
+            if (customer == null) throw new BizException("客户不存在或已删除");
+            YunshanVolumeSyncService.requireMatchingIdentity(customer.getName(), mapping.getParentOwnerName());
             requireUsableWarehouse(warehouses.selectForUpdate(mapping.getWarehouseId()));
         }
         if (Objects.equals(mapping.getStatus(), input.status())) return Result.ok();
@@ -253,6 +260,7 @@ public class MktYunshanController {
         out.put("customerName", name == null ? "客户已删除" : name);
         out.put("parentOwnerNo", m.getParentOwnerNo()); out.put("parentOwnerName", m.getParentOwnerName());
         out.put("parentWarehouseNo", m.getParentWarehouseNo()); out.put("parentWarehouseName", m.getParentWarehouseName());
+        out.put("identityMismatch", !YunshanVolumeSyncService.namesMatch(name, m.getParentOwnerName()));
         out.put("status", m.getStatus()); out.put("lastSyncAt", m.getLastSyncAt()); out.put("lastSyncOk", m.getLastSyncOk());
         return out;
     }

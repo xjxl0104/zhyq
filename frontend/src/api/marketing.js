@@ -187,6 +187,14 @@ export const mktErpApi = {
 
 // 云山主动拉取发货票数；云山凭证仅保存在服务端。
 const YUNSHAN = `${BASE}/yunshan`
+export const mktWarehouseOperationsApi = {
+  sites: (warehouseId, params) => request.get(`${BASE}/warehouse-operations/${warehouseId}/sites`, { params }),
+  createSite: (warehouseId, data) => request.post(`${BASE}/warehouse-operations/${warehouseId}/sites`, data),
+  links: (warehouseId, params) => request.get(`${BASE}/warehouse-operations/${warehouseId}/links`, { params }),
+  createLink: (warehouseId, data) => request.post(`${BASE}/warehouse-operations/${warehouseId}/links`, data),
+  setLinkStatus: (warehouseId, id, data) => request.put(`${BASE}/warehouse-operations/${warehouseId}/links/${id}/status`, data)
+}
+
 export const mktYunshanApi = {
   config: () => request.get(`${YUNSHAN}/config`),
   localWarehouses: (params) => request.get(`${YUNSHAN}/warehouses`, { params }),

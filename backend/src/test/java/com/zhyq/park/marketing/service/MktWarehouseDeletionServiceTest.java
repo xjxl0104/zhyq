@@ -31,7 +31,7 @@ class MktWarehouseDeletionServiceTest {
         var due = ArgumentCaptor.forClass(LocalDateTime.class);
         verify(jdbc).update(contains("deleted=1,join_status=7"),requested.capture(),due.capture(),eq("误录"),eq("system"),eq(7L),eq(5));
         assertThat(due.getValue()).isEqualTo(requested.getValue());
-        for (String table : List.of("crm_marketing_credential","crm_warehouse_contact","crm_warehouse_erp","crm_competition_protection"))
+        for (String table : List.of("crm_marketing_credential","crm_warehouse_contact","crm_warehouse_erp","crm_competition_protection", "crm_customer_operation_warehouse", "crm_operation_warehouse"))
             verify(jdbc).update(startsWith("UPDATE " + table + " SET"),eq("system"),eq(7L));
         verify(audit).logRequired(eq("warehouse.delete.complete"),eq(w),eq("误录"),any(Map.class),any(Map.class));
         verify(jdbc,never()).update(startsWith("DELETE"),any(Object[].class));
