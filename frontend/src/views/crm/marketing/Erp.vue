@@ -14,12 +14,12 @@
       <el-alert v-if="error" type="error" :closable="false" :title="error" class="mb" />
       <CustomerOperationWarehousePanel :key="warehouseId" :warehouse-id="warehouseId" :warehouse-name="warehouse?.name || warehouses.find(w => String(w.id) === warehouseId)?.name || ''" />
       <el-collapse v-model="sourcePanels" class="mb">
-        <el-collapse-item title="云山接口同步（单独配置数据来源）" name="yunshan">
+        <el-collapse-item title="云仓发货量同步（单独配置数据来源）" name="yunshan">
           <YunshanVolumePanel v-if="sourcePanels.includes('yunshan')" :key="warehouseId" :warehouse-id="warehouseId" :warehouse-name="warehouse?.name || warehouses.find(w => String(w.id) === warehouseId)?.name || ''" />
         </el-collapse-item>
       </el-collapse>
       <h2 class="erp-heading">ERP 订单推送</h2>
-      <p class="hint">以下凭证和货主编码用于加盟云仓的 ERP 系统推送订单明细。客户和作业仓库可以先建档，再按实际数据来源配置接入。</p>
+      <p class="hint">接收加盟云仓 ERP 推送的逐笔订单。接入凭证用于验证来源，货主编码映射用于确定订单归属。客户和作业仓库可以先建档，再按实际数据来源配置接入。</p>
       <el-alert :type="warehouse?.erpStatus === 2 ? 'success' : 'warning'" :closable="false" class="mb"
         :title="warehouse?.erpStatus === 2 ? '正式 ERP 最近有有效签名通信。请同时关注最近业务同步、待处理事件和周期对账。' : '连接步骤：签发沙箱凭证并校验 → 切换正式环境 → ERP 发送签名心跳。没有订单时仍可保持连接。'" />
       <el-alert v-if="onboardingMode" type="info" :closable="false" class="mb"
@@ -59,8 +59,8 @@
           <el-button v-if="canConfigure" :disabled="busy" type="primary" @click="openMapping">新增映射</el-button>
         </div>
         <el-table :data="mappings" size="small" border>
-          <el-table-column prop="customerId" label="客户 ID" width="100" />
-          <el-table-column prop="customerCode" label="货主编码" width="200" />
+          <el-table-column prop="customerId" label="客户 ID（本系统）" width="150" />
+          <el-table-column prop="customerCode" label="货主编码（云仓 ERP）" width="220" />
           <el-table-column label="状态" width="80"><template #default="{ row }">{{ row.status === 1 ? '启用' : '停用' }}</template></el-table-column>
           <el-table-column prop="createTime" label="创建" width="160" />
           <el-table-column v-if="canConfigure" label="操作" width="90"><template #default="{ row }"><el-popconfirm title="删除映射?" @confirm="deleteMapping(row.id)"><template #reference><el-button :disabled="busy" link type="danger">删除</el-button></template></el-popconfirm></template></el-table-column>
@@ -101,10 +101,11 @@
       </div>
     </template>
 
-    <el-dialog v-model="mapDialog.visible" title="新增货主编码映射" width="420px">
-      <el-form label-width="90px">
-        <el-form-item label="客户 ID" required><el-input-number v-model="mapDialog.customerId" :min="1" style="width: 100%" /></el-form-item>
-        <el-form-item label="货主编码" required><el-input v-model="mapDialog.customerCode" placeholder="云仓 ERP 里该客户的编码" /></el-form-item>
+    <el-dialog v-model="mapDialog.visible" title="新增货主编码映射" width="min(560px, calc(100vw - 32px))">
+      <p class="hint">客户 ID 是本系统的客户编号，货主编码是同一客户在云仓 ERP 中的编号。请核实后关联，不能用其他客户代替。</p>
+      <el-form label-width="160px">
+        <el-form-item label="客户 ID（本系统）" required><el-input-number v-model="mapDialog.customerId" :min="1" style="width: 100%" /></el-form-item>
+        <el-form-item label="货主编码（云仓 ERP）" required><el-input v-model="mapDialog.customerCode" placeholder="云仓 ERP 里该客户的编码" /></el-form-item>
       </el-form>
       <template #footer><el-button :disabled="busy" @click="mapDialog.visible = false">取消</el-button><el-button :loading="busy" :disabled="busy" type="primary" @click="saveMapping">保存</el-button></template>
     </el-dialog>
