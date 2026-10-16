@@ -1,25 +1,25 @@
 <template>
   <section v-if="canQuery" class="table-card yunshan-panel" aria-labelledby="yunshan-title">
     <div class="toolbar">
-      <h2 id="yunshan-title" class="title">发货量同步</h2>
+      <h2 id="yunshan-title" class="title">云山接口发货量</h2>
       <el-tag v-if="config" :type="config.configured ? 'success' : 'warning'">{{ config.configured ? '已配置' : '待配置' }}</el-tag>
       <el-button :loading="loading.maps" @click="refresh">刷新</el-button>
-      <el-button v-if="canConfig" type="primary" :disabled="!config?.configured" @click="openMap">新增客户关联</el-button>
+      <el-button v-if="canConfig" type="primary" :disabled="!config?.configured" @click="openMap">配置接口同步</el-button>
     </div>
     <p class="hint">按客户（货主）和作业仓库查看每日发货票数。统计在次日生成，当前用于同步和对账。</p>
-    <p class="hint">数据来源：加盟云仓“云山”提供的发货量接口。当前关联加盟云仓：{{ warehouseName || '当前所选云仓' }}。接口目录由当前应用的授权范围决定，切换加盟云仓不会切换接口账号。</p>
+    <p class="hint">数据来源：云山接口的共享连接。仅供确实使用该数据来源的客户配置，不代表当前加盟云仓已接入。客户和作业仓库建档请使用上方“客户与作业仓库”。</p>
     <el-alert v-if="config && !config.configured" type="warning" :closable="false" title="云山云仓的发货量接口尚未配置，请联系管理员配置后再关联客户或同步数据。历史快照仍可查询。" />
     <p v-if="config?.configured" class="config-note">接口：{{ config.baseUrl }}<span v-if="config.appId"> · 应用：{{ config.appId }}</span></p>
     <el-alert v-if="errors.maps" type="error" :closable="false" :title="errors.maps" />
-    <el-table v-loading="loading.maps" :data="maps" size="small" border empty-text="暂无客户关联，请先选择客户并关联对应的作业仓库。">
+    <el-table v-loading="loading.maps" :data="maps" size="small" border empty-text="暂无云山接口同步配置，不影响客户与作业仓库建档。">
       <el-table-column prop="customerName" label="客户（货主）" min-width="130"><template #default="{ row }">{{ row.customerName || row.customerId }}</template></el-table-column>
-      <el-table-column label="该客户的接口记录" min-width="170"><template #default="{ row }"><div>{{ row.parentOwnerName || '未命名客户' }}</div><div class="entity-no">{{ row.parentOwnerNo }}</div></template></el-table-column>
+      <el-table-column label="接口返回的货主" min-width="170"><template #default="{ row }"><div>{{ row.parentOwnerName || '未命名客户' }}</div><div class="entity-no">{{ row.parentOwnerNo }}</div><el-tag v-if="row.identityMismatch" type="danger">客户身份不一致，已阻止同步</el-tag></template></el-table-column>
       <el-table-column label="作业仓库" min-width="170"><template #default="{ row }"><div>{{ row.parentWarehouseName || '未命名仓库' }}</div><div class="entity-no">{{ row.parentWarehouseNo }}</div></template></el-table-column>
       <el-table-column label="每日拉取" width="90"><template #default="{ row }"><el-tag :type="row.status === 1 ? 'success' : 'info'">{{ row.status === 1 ? '启用' : '停用' }}</el-tag></template></el-table-column>
       <el-table-column label="最近拉取" min-width="180"><template #default="{ row }">{{ row.lastSyncAt || '尚未拉取' }}<el-tag v-if="row.lastSyncOk != null" class="sync-state" :type="row.lastSyncOk === 1 ? 'success' : 'danger'">{{ row.lastSyncOk === 1 ? '成功' : '失败' }}</el-tag></template></el-table-column>
       <el-table-column label="操作" :width="canConfig ? 150 : 80" fixed="right"><template #default="{ row }">
         <el-button link type="primary" @click="selectMap(row.id)">查看</el-button>
-        <el-button v-if="canConfig" link :type="row.status === 1 ? 'warning' : 'success'" :loading="statusBusy === String(row.id)" @click="toggleStatus(row)">{{ row.status === 1 ? '停用' : '启用' }}</el-button>
+        <el-button v-if="canConfig" link :type="row.status === 1 ? 'warning' : 'success'" :disabled="row.status !== 1 && row.identityMismatch" :loading="statusBusy === String(row.id)" @click="toggleStatus(row)">{{ row.status === 1 ? '停用' : '启用' }}</el-button>
       </template></el-table-column>
     </el-table>
 
@@ -30,7 +30,7 @@
           <el-option v-for="item in maps" :key="item.id" :value="String(item.id)" :label="mapLabel(item)" />
         </el-select></el-form-item>
         <el-form-item label="发货日期"><el-date-picker v-model="dateRange" class="date-range" type="daterange" value-format="YYYY-MM-DD" range-separator="至" start-placeholder="开始日期" end-placeholder="结束日期" :clearable="false" :disabled-date="disabledDate" @change="changeRange" /></el-form-item>
-        <el-form-item><el-button :loading="loading.volume" @click="queryVolume">查询快照</el-button><el-button v-if="canConfig" type="primary" :disabled="!config?.configured || selectedMap?.status !== 1" :loading="loading.sync" @click="sync">补拉此区间</el-button><el-button :disabled="!config?.configured || loading.sync" :loading="loading.reconcile" @click="reconcile">只读对账</el-button></el-form-item>
+        <el-form-item><el-button :loading="loading.volume" @click="queryVolume">查询快照</el-button><el-button v-if="canConfig" type="primary" :disabled="!config?.configured || selectedMap?.status !== 1 || selectedMap?.identityMismatch" :loading="loading.sync" @click="sync">补拉此区间</el-button><el-button :disabled="!config?.configured || loading.sync || selectedMap?.identityMismatch" :loading="loading.reconcile" @click="reconcile">只读对账</el-button></el-form-item>
       </el-form>
       <p class="hint range-hint">北京时间，单次最多 92 天。停用关联后保留历史快照；缺少统计的日期不视作零票。</p>
       <el-alert v-if="errors.volume" type="error" :closable="false" :title="errors.volume" />
@@ -80,8 +80,8 @@
       <el-pagination class="pager" background layout="total, prev, pager, next" :total="logTotal" v-model:current-page="logPage" :page-size="20" @current-change="loadLogs" />
     </template>
 
-    <el-dialog v-model="mapDialog.visible" title="新增发货量客户关联" width="min(560px, calc(100vw - 32px))" :close-on-click-modal="false" @closed="closeMap">
-      <p class="dialog-hint">加盟云仓：{{ warehouseName || '当前所选云仓' }}。客户就是货主，只需选择一次。</p>
+    <el-dialog v-model="mapDialog.visible" title="配置云山接口同步" width="min(560px, calc(100vw - 32px))" :close-on-click-modal="false" @closed="closeMap">
+      <p class="dialog-hint">加盟云仓：{{ warehouseName || '当前所选云仓' }}。仅为该客户本人配置数据来源，不得使用其他客户的发货数据。</p>
       <el-form label-position="top" @submit.prevent="saveMap">
         <el-form-item label="客户（货主）" required>
           <el-select v-model="mapDialog.customerId" filterable remote :remote-method="searchCustomers" :loading="loading.customers" :disabled="loading.owners || loading.save" placeholder="搜索已录入的客户" class="full-width" @change="matchCustomer">
@@ -91,14 +91,14 @@
         </el-form-item>
         <template v-if="mapDialog.customerId && directoryState.ownersLoaded">
           <el-alert :type="selectedOwner ? 'info' : 'warning'" :closable="false" :title="customerLinkNotice" />
-          <el-button link type="primary" :disabled="loading.save || loading.warehouses" @click="ownerPickerVisible = !ownerPickerVisible">{{ ownerPickerVisible ? '收起接口关联' : selectedOwner ? '核对或更正接口关联' : '关联该客户的接口记录' }}</el-button>
-          <el-form-item v-if="ownerPickerVisible" label="同一客户在接口中的记录"><el-select v-model="mapDialog.parentOwnerNo" filterable :disabled="loading.save" placeholder="核对名称与编号，选择该客户对应的记录" class="full-width" @change="selectInterfaceCustomer"><el-option v-for="item in owners" :key="item.no" :label="`${item.name} · ${item.no}`" :value="String(item.no)" /></el-select></el-form-item>
+          <el-form-item v-if="matchingOwners.length > 1" label="同名候选（须核实身份）"><el-select v-model="mapDialog.parentOwnerNo" filterable :disabled="loading.save" placeholder="核对接口编号后选择" class="full-width" @change="selectInterfaceCustomer"><el-option v-for="item in matchingOwners" :key="item.no" :label="`${item.name} · ${item.no}`" :value="String(item.no)" /></el-select></el-form-item>
         </template>
-        <el-form-item label="作业仓库" required>
+        <el-form-item label="接口中的作业仓库" required>
           <span v-if="directoryState.warehousesLoaded && entityWarehouses.length === 1">{{ entityWarehouses[0].name }}（已自动选择）</span>
-          <el-select v-else v-model="mapDialog.parentWarehouseNo" filterable :loading="loading.warehouses" :disabled="!mapDialog.parentOwnerNo || loading.warehouses || loading.save" placeholder="选择客户后显示可用仓库" class="full-width"><el-option v-for="item in entityWarehouses" :key="item.no" :label="`${item.name} · ${item.no}`" :value="String(item.no)" /></el-select>
+          <el-select v-else v-model="mapDialog.parentWarehouseNo" filterable :loading="loading.warehouses" :disabled="!mapDialog.parentOwnerNo || loading.warehouses || loading.save" placeholder="选择客户后显示可用仓库" class="full-width" @change="mapDialog.identityConfirmed = false"><el-option v-for="item in entityWarehouses" :key="item.no" :label="`${item.name} · ${item.no}`" :value="String(item.no)" /></el-select>
         </el-form-item>
         <p v-if="directoryState.warehousesLoaded" class="hint" role="status">该客户可用 {{ entityWarehouses.length }} 个作业仓库{{ entityWarehouses.length === 0 ? '，待接口授权：请核对该客户的仓库查询权限。' : entityWarehouses.length === 1 ? '；如需其他仓库，请核对接口授权。' : '，请选择实际承接业务的仓库。' }}</p>
+        <el-checkbox v-if="selectedOwner" v-model="mapDialog.identityConfirmed" :disabled="loading.save">我已核实以上接口编号及仓库属于所选客户</el-checkbox>
       </el-form>
       <el-alert v-if="errors.directory" type="error" :closable="false" :title="errors.directory" />
       <el-alert v-if="errors.save" type="error" :closable="false" :title="errors.save" />
@@ -125,19 +125,22 @@ const config = ref(null), maps = ref([]), mapId = ref(''), volume = ref(null), r
 const logs = ref([]), logTotal = ref(0), logPage = ref(1), volumePage = ref(1), statusBusy = ref('')
 const loading = reactive({ maps: false, volume: false, logs: false, sync: false, reconcile: false, owners: false, warehouses: false, customers: false, save: false })
 const errors = reactive({ maps: '', volume: '', logs: '', sync: '', reconcile: '', directory: '', save: '' })
-const mapDialog = reactive({ visible: false, customerId: '', parentOwnerNo: '', parentWarehouseNo: '' })
+const mapDialog = reactive({ visible: false, customerId: '', parentOwnerNo: '', parentWarehouseNo: '', identityConfirmed: false })
 const owners = ref([]), entityWarehouses = ref([]), customers = ref([]), customerTotal = ref(0), customerPage = ref(1), customerKeyword = ref('')
 const directoryState = reactive({ ownersLoaded: false, warehousesLoaded: false })
-const selectedCustomer = ref(null), ownerPickerVisible = ref(false), ownerMatchKind = ref('')
-const selectedOwner = computed(() => owners.value.find(item => String(item.no) === mapDialog.parentOwnerNo))
+const selectedCustomer = ref(null), ownerMatchKind = ref('')
+const matchingOwners = computed(() => {
+  const name = selectedCustomer.value?.name?.trim()
+  return name ? owners.value.filter(item => item.name?.trim() === name) : []
+})
+const selectedOwner = computed(() => matchingOwners.value.find(item => String(item.no) === mapDialog.parentOwnerNo))
 const customerLinkNotice = computed(() => {
   if (selectedOwner.value) {
-    const prefix = ownerMatchKind.value === 'existing' ? '已沿用此前关联' : ownerMatchKind.value === 'name' ? '已匹配同名接口记录，请核对后保存' : '已选择对应接口记录，请核对后保存'
-    return `${prefix}：${selectedOwner.value.name}（${selectedOwner.value.no}）。`
+    return `同名候选：${selectedOwner.value.name}（${selectedOwner.value.no}）。同名不代表同一主体，请核实编号和实际业务归属后确认。`
   }
   return ownerMatchKind.value === 'ambiguous'
-    ? '待关联接口记录：找到多个可能对应的记录，请核对该客户的接口编号后选择。'
-    : '待关联接口记录：当前目录中没有可明确对应的客户记录。名称不一致时可手动关联；目录中没有该客户时，需云山云仓管理员开放查询权限。'
+    ? '找到多个同名候选，请核对该客户的接口编号后选择，不能仅凭名称确定身份。'
+    : '当前接口没有该客户的同名记录，不能选择其他客户代替。请先完成客户与作业仓库建档，再由接口提供方核对客户名称、编号和授权。'
 })
 const versions = { maps: 0, volume: 0, logs: 0, reconcile: 0, directory: 0, customers: 0 }
 let disposed = false
@@ -145,7 +148,7 @@ const today = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai'
 const shiftDate = (date, days) => new Date(Date.parse(`${date}T00:00:00Z`) + days * 86400000).toISOString().slice(0, 10)
 const dateRange = ref([shiftDate(today(), -7), shiftDate(today(), -1)])
 const selectedMap = computed(() => maps.value.find(item => String(item.id) === mapId.value))
-const canSaveMap = computed(() => canConfig.value && mapDialog.customerId && owners.value.some(item => String(item.no) === mapDialog.parentOwnerNo) && entityWarehouses.value.some(item => String(item.no) === mapDialog.parentWarehouseNo) && !loading.warehouses && !loading.owners)
+const canSaveMap = computed(() => canConfig.value && mapDialog.customerId && selectedOwner.value && mapDialog.identityConfirmed && entityWarehouses.value.some(item => String(item.no) === mapDialog.parentWarehouseNo) && !loading.warehouses && !loading.owners)
 const syncMessage = computed(() => !syncResult.value ? '' : `补拉完成：${syncResult.value.daysFetched} 天，修正 ${syncResult.value.daysChanged} 天，缺失 ${syncResult.value.daysMissing} 天（保留原快照）。`)
 const mapLabel = item => `${item.customerName || item.customerId} · ${item.parentOwnerName || item.parentOwnerNo} / ${item.parentWarehouseName || item.parentWarehouseNo}`
 const formatCount = (value, empty = '—') => value == null || value === '' ? empty : String(value).replace(/\B(?=(\d{3})+(?!\d))/g, ',')
@@ -196,7 +199,7 @@ async function loadLogs() {
   finally { if (version === versions.logs) loading.logs = false }
 }
 async function sync() {
-  if (!canConfig.value || !config.value?.configured || loading.sync || selectedMap.value?.status !== 1) return
+  if (!canConfig.value || !config.value?.configured || loading.sync || selectedMap.value?.status !== 1 || selectedMap.value?.identityMismatch) return
   const params = rangeParams(); if (!params) return
   const warehouse = props.warehouseId, target = mapId.value, range = dateRange.value.join('/'); loading.sync = true; errors.sync = ''; syncResult.value = null
   versions.reconcile++; reconciliation.value = null; loading.reconcile = false; errors.reconcile = ''
@@ -209,7 +212,7 @@ async function sync() {
   finally { loading.sync = false }
 }
 async function reconcile() {
-  if (!canQuery.value || !config.value?.configured || loading.reconcile || loading.sync) return
+  if (!canQuery.value || !config.value?.configured || loading.reconcile || loading.sync || selectedMap.value?.identityMismatch) return
   const params = rangeParams(); if (!params) return
   const version = ++versions.reconcile; loading.reconcile = true; errors.reconcile = ''; reconciliation.value = null
   try { const result = await mktYunshanApi.reconcile(params); if (!disposed && version === versions.reconcile) reconciliation.value = result }
@@ -217,7 +220,7 @@ async function reconcile() {
   finally { if (version === versions.reconcile) loading.reconcile = false }
 }
 async function toggleStatus(row) {
-  if (!canConfig.value || statusBusy.value) return
+  if (!canConfig.value || statusBusy.value || (row.status !== 1 && row.identityMismatch)) return
   statusBusy.value = String(row.id); const warehouse = props.warehouseId
   try { await mktYunshanApi.setStatus(String(row.id), row.status === 1 ? 0 : 1); if (warehouse === props.warehouseId && !disposed) row.status = row.status === 1 ? 0 : 1 }
   catch (error) { if (!disposed) errors.maps = error.message || '状态更新失败，请重试。' }
@@ -236,15 +239,15 @@ async function allEntities(method, params, version) {
 }
 async function openMap() {
   if (!canConfig.value || !config.value?.configured) return
-  Object.assign(mapDialog, { visible: true, customerId: '', parentOwnerNo: '', parentWarehouseNo: '' }); owners.value = []; entityWarehouses.value = []; errors.directory = ''; errors.save = ''
-  selectedCustomer.value = null; ownerPickerVisible.value = false; ownerMatchKind.value = ''
+  Object.assign(mapDialog, { visible: true, customerId: '', parentOwnerNo: '', parentWarehouseNo: '', identityConfirmed: false }); owners.value = []; entityWarehouses.value = []; errors.directory = ''; errors.save = ''
+  selectedCustomer.value = null; ownerMatchKind.value = ''
   customerPage.value = 1; customerKeyword.value = ''; loadCustomers()
   await reloadDirectory()
 }
 async function reloadDirectory() {
   if (!canConfig.value || !config.value?.configured || !mapDialog.visible || loading.save) return
   const version = ++versions.directory; loading.owners = true; loading.warehouses = false
-  owners.value = []; entityWarehouses.value = []; mapDialog.parentOwnerNo = ''; mapDialog.parentWarehouseNo = ''; errors.directory = ''
+  owners.value = []; entityWarehouses.value = []; mapDialog.parentOwnerNo = ''; mapDialog.parentWarehouseNo = ''; mapDialog.identityConfirmed = false; errors.directory = ''
   directoryState.ownersLoaded = false; directoryState.warehousesLoaded = false
   try { const rows = await allEntities(mktYunshanApi.owners, {}, version); if (rows) { owners.value = rows; directoryState.ownersLoaded = true } }
   catch (error) { if (version === versions.directory && !disposed) errors.directory = error.message || '授权货主加载失败，请关闭后重试。' }
@@ -256,25 +259,15 @@ async function matchCustomer() {
   const id = mapDialog.customerId
   selectedCustomer.value = customers.value.find(item => String(item.id) === id)
     || (String(selectedCustomer.value?.id) === id ? selectedCustomer.value : null)
-  mapDialog.parentOwnerNo = ''; ownerPickerVisible.value = false; ownerMatchKind.value = ''; errors.save = ''
-  // 已确认的编号关联优先；只按完整名称匹配候选，不以简称或相似名称猜测客户身份。
-  const previous = [...new Set(maps.value.filter(item => String(item.customerId) === id).map(item => String(item.parentOwnerNo)))]
-  if (previous.length === 1) {
-    const owner = owners.value.find(item => String(item.no) === previous[0])
-    if (owner) { mapDialog.parentOwnerNo = String(owner.no); ownerMatchKind.value = 'existing' }
-    // 既有编号已不在授权范围时，不用同名的另一个编号替代。
-  } else if (previous.length > 1) {
-    ownerMatchKind.value = 'ambiguous'
-  } else {
-    const name = selectedCustomer.value?.name?.trim()
-    const matches = name ? owners.value.filter(item => item.name?.trim() === name) : []
-    if (matches.length === 1) { mapDialog.parentOwnerNo = String(matches[0].no); ownerMatchKind.value = 'name' }
-    else if (matches.length > 1) ownerMatchKind.value = 'ambiguous'
-  }
+  mapDialog.parentOwnerNo = ''; mapDialog.identityConfirmed = false; ownerMatchKind.value = ''; errors.save = ''
+  // 旧关联可能就是错绑，不能作为身份凭据；严格同名也只给候选，必须单独确认。
+  if (matchingOwners.value.length === 1) { mapDialog.parentOwnerNo = String(matchingOwners.value[0].no); ownerMatchKind.value = 'name' }
+  else if (matchingOwners.value.length > 1) ownerMatchKind.value = 'ambiguous'
   await changeOwner()
 }
 async function selectInterfaceCustomer() { ownerMatchKind.value = 'manual'; await changeOwner() }
 async function changeOwner() {
+  mapDialog.identityConfirmed = false
   mapDialog.parentWarehouseNo = ''; entityWarehouses.value = []; errors.directory = ''; const version = ++versions.directory
   directoryState.warehousesLoaded = false; loading.warehouses = false
   if (!mapDialog.parentOwnerNo) return
@@ -301,7 +294,7 @@ async function saveMap() {
   if (!canSaveMap.value || loading.save) return
   const warehouse = props.warehouseId; loading.save = true; errors.save = ''
   try {
-    await mktYunshanApi.createMap(String(warehouse), { customerId: mapDialog.customerId, parentOwnerNo: mapDialog.parentOwnerNo, parentWarehouseNo: mapDialog.parentWarehouseNo })
+    await mktYunshanApi.createMap(String(warehouse), { customerId: mapDialog.customerId, parentOwnerNo: mapDialog.parentOwnerNo, parentWarehouseNo: mapDialog.parentWarehouseNo, identityConfirmed: true })
     if (!disposed && warehouse === props.warehouseId) { ElMessage.success('发货量客户关联已保存'); mapDialog.visible = false; await refresh() }
   } catch (error) { if (!disposed && warehouse === props.warehouseId) errors.save = error.message || '客户关联保存失败，请重试。' }
   finally { loading.save = false }

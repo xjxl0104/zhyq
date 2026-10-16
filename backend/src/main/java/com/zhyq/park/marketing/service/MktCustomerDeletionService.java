@@ -104,6 +104,8 @@ public class MktCustomerDeletionService {
         int changed = jdbc.update("UPDATE crm_customer SET deleted=1, version=version+1, update_by=?, update_time=NOW() "
                 + "WHERE id=? AND deleted=0", operator, id);
         if (changed != 1) throw new BizException(409, "客户已变化，请刷新后重试");
+        jdbc.update("UPDATE crm_customer_operation_warehouse SET status=0,version=version+1,update_by=?,update_time=NOW() "
+                + "WHERE customer_id=? AND deleted=0 AND status=1", operator, id);
         // 释放活动锁归还伙伴配额；历史记录仍在数据库中，普通业务查询不再显示。
         jdbc.update("UPDATE crm_customer_lock SET status=4, released_reason=?, released_by=?, released_at=NOW(), "
                 + "version=version+1, update_by=?, update_time=NOW() WHERE customer_id=? AND deleted=0 AND status IN "

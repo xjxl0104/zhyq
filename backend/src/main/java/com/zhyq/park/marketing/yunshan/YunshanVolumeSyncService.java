@@ -79,6 +79,7 @@ public class YunshanVolumeSyncService {
             MktYunshanVolumeMap mapping = requireMapping(mapId);
             try {
                 requireActiveSubjects(mapping);
+                requireMatchingIdentity(mapMapper.selectCustomerName(mapping.getCustomerId(), TENANT, false), mapping.getParentOwnerName());
                 Snapshot remote = fetch(mapping, start, end);
                 return transaction.execute(status -> save(mapping, start, end, triggerType, remote));
             } catch (RuntimeException failure) {
@@ -113,6 +114,7 @@ public class YunshanVolumeSyncService {
         lock.lock();
         try {
             MktYunshanVolumeMap mapping = requireMapping(mapId);
+            requireMatchingIdentity(mapMapper.selectCustomerName(mapping.getCustomerId(), TENANT, false), mapping.getParentOwnerName());
             YunshanClient.Summary summary = client.summary(mapping.getParentOwnerNo(), mapping.getParentWarehouseNo(), start, end);
             validateSummary(summary);
             Snapshot daily = fetch(mapping, start, end);
@@ -219,14 +221,18 @@ public class YunshanVolumeSyncService {
     }
 
     private MktYunshanSyncLog save(MktYunshanVolumeMap requested, LocalDate start, LocalDate end, int triggerType, Snapshot remote) {
+        // 与配置/客户删除保持客户行优先的加锁顺序；核对之后直到事务结束客户名称不能被改动。
+        String customerName = mapMapper.selectCustomerName(requested.getCustomerId(), TENANT, true);
         MktYunshanVolumeMap mapping = mapMapper.selectForUpdate(requested.getId(), TENANT);
         if (mapping == null || !Objects.equals(requested.getCustomerId(), mapping.getCustomerId())
                 || !Objects.equals(requested.getWarehouseId(), mapping.getWarehouseId())
                 || !Objects.equals(requested.getParentOwnerNo(), mapping.getParentOwnerNo())
+                || !Objects.equals(requested.getParentOwnerName(), mapping.getParentOwnerName())
                 || !Objects.equals(requested.getParentWarehouseNo(), mapping.getParentWarehouseNo())) {
             throw new BizException("映射在拉取期间发生变化，请重新拉取");
         }
         requireActiveSubjects(mapping);
+        requireMatchingIdentity(customerName, mapping.getParentOwnerName());
         List<MktYunshanDailyVolume> local = localRows(mapping.getId(), start, end, true);
         Map<LocalDate, MktYunshanDailyVolume> existing = new HashMap<>();
         for (MktYunshanDailyVolume row : local) existing.put(row.getStatDate(), row);
@@ -279,6 +285,18 @@ public class YunshanVolumeSyncService {
     private void requireActiveSubjects(MktYunshanVolumeMap mapping) {
         if (!Integer.valueOf(1).equals(mapping.getStatus())) throw new BizException("映射已停用，请先启用后再同步");
         if (mapMapper.countAvailableSubjects(mapping.getId(), TENANT) != 1) throw new BizException("映射关联的客户或云仓已删除、退出或冻结，请停用映射");
+    }
+
+    /** 同名只是最低校验条件，不代表已经证实为同一主体；新建关联仍须人工核对确认。 */
+    public static boolean namesMatch(String customerName, String ownerName) {
+        return customerName != null && ownerName != null && !customerName.trim().isEmpty()
+                && customerName.trim().equals(ownerName.trim());
+    }
+
+    public static void requireMatchingIdentity(String customerName, String ownerName) {
+        if (!namesMatch(customerName, ownerName)) {
+            throw new BizException("客户名称与接口货主名称不一致，不能关联或同步；请核对各自身份，不能将独立客户合并");
+        }
     }
 
     private void markSync(Long mapId, int ok, LocalDateTime now) {
