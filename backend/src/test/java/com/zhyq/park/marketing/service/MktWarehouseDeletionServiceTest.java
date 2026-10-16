@@ -1,6 +1,5 @@
 package com.zhyq.park.marketing.service;
 
-import com.zhyq.park.auth.JwtAccountService;
 import com.zhyq.park.common.exception.BizException;
 import com.zhyq.park.marketing.entity.MktWarehouse;
 import com.zhyq.park.marketing.mapper.MktWarehouseMapper;
@@ -26,21 +25,22 @@ class MktWarehouseDeletionServiceTest {
         when(jdbc.queryForList(anyString(),eq(Long.class),any(Object[].class))).thenReturn(List.of());
         when(jdbc.update(anyString(),any(Object[].class))).thenReturn(1);
     }
-    @Test void requestFreezesImmediatelyAndSchedulesExactlySevenDaysWithoutRemovingCredentials() {
+    @Test void requestDeletesImmediatelyAndRevokesAccessWithoutGracePeriod() {
         service.request(7L, " 误录 ");
         var requested = ArgumentCaptor.forClass(LocalDateTime.class);
         var due = ArgumentCaptor.forClass(LocalDateTime.class);
-        verify(jdbc).update(contains("delete_previous_status=join_status,join_status=8"),requested.capture(),due.capture(),eq("误录"),eq("system"),eq(7L));
-        assertThat(due.getValue()).isEqualTo(requested.getValue().plusDays(7));
-        verify(jdbc,never()).update(contains("crm_marketing_credential"),any(Object[].class));
-        verify(audit).logRequired(eq("warehouse.delete.request"),eq(w),eq("误录"),any(Map.class),any(Map.class));
-        w.setJoinStatus(8);
-        assertThatThrownBy(() -> JwtAccountService.assertWarehouseActive(w)).hasMessageContaining("冻结待删除");
+        verify(jdbc).update(contains("deleted=1,join_status=7"),requested.capture(),due.capture(),eq("误录"),eq("system"),eq(7L),eq(5));
+        assertThat(due.getValue()).isEqualTo(requested.getValue());
+        for (String table : List.of("crm_marketing_credential","crm_warehouse_contact","crm_warehouse_erp","crm_competition_protection"))
+            verify(jdbc).update(startsWith("UPDATE " + table + " SET"),eq("system"),eq(7L));
+        verify(audit).logRequired(eq("warehouse.delete.complete"),eq(w),eq("误录"),any(Map.class),any(Map.class));
+        verify(jdbc,never()).update(startsWith("DELETE"),any(Object[].class));
+        verify(jdbc,never()).update(contains("UPDATE crm_service_contract"),any(Object[].class));
     }
-    @Test void repeatedRequestDoesNotResetDeadline() {
-        w.setJoinStatus(8);
-        assertThatThrownBy(() -> service.request(7L,"重复")).hasMessageContaining("重复");
-        verifyNoInteractions(jdbc,audit);
+    @Test void administratorCanImmediatelyDeleteLegacyPendingWarehouse() {
+        w.setJoinStatus(8); w.setDeleteDueAt(LocalDateTime.now().plusDays(7));
+        service.request(7L,"立即删除");
+        verify(jdbc).update(contains("deleted=1,join_status=7"),any(LocalDateTime.class),any(LocalDateTime.class),eq("立即删除"),eq("system"),eq(7L),eq(8));
     }
     @Test void reasonsRequiredAndBoundedBeforeDatabaseAccess() {
         for (String reason : new String[]{null," ","原".repeat(501)})
@@ -51,9 +51,9 @@ class MktWarehouseDeletionServiceTest {
         when(jdbc.queryForList(contains("FROM crm_customer WHERE"),eq(Long.class),eq(7L))).thenReturn(List.of(2L));
         service.request(7L,"误录");
         verify(jdbc).update(contains("assigned_warehouse_id=NULL,warehouse_assignment_status=0"),eq("system"),eq(2L),eq(7L));
-        verify(audit).logRequired(eq("warehouse.delete.request"),eq(w),eq("误录"),any(),argThat(after -> ((Map<?,?>)after).get("releasedCustomerIds").equals(List.of(2L))));
+        verify(audit).logRequired(eq("warehouse.delete.complete"),eq(w),eq("误录"),any(),argThat(after -> ((Map<?,?>)after).get("releasedCustomerIds").equals(List.of(2L))));
     }
-    @Test void customersWithOtherUnfinishedContractsStillBlockFreeze() {
+    @Test void customersWithOtherUnfinishedContractsStillBlockDeletion() {
         when(jdbc.queryForList(contains("FROM crm_customer WHERE"),eq(Long.class),eq(7L))).thenReturn(List.of(2L));
         when(jdbc.queryForList(contains("FROM crm_service_contract WHERE customer_id"),eq(Long.class),eq(2L))).thenReturn(List.of(99L));
         assertThatThrownBy(() -> service.request(7L,"误录")).hasMessageContaining("客户归属");
@@ -62,7 +62,7 @@ class MktWarehouseDeletionServiceTest {
     @Test void dueLegacyFrozenWarehouseAlsoReleasesIdleCustomers() {
         w.setJoinStatus(8); w.setDeleteDueAt(LocalDateTime.now().minusMinutes(1));
         when(jdbc.queryForList(contains("FROM crm_customer WHERE"),eq(Long.class),eq(7L))).thenReturn(List.of(2L));
-        assertThat(service.completeDue(7L)).isTrue();
+        assertThat(service.completePending(7L)).isTrue();
         verify(jdbc).update(contains("assigned_warehouse_id=NULL"),eq("system"),eq(2L),eq(7L));
     }
     @Test void unfinishedContractsBlockRequest() {
@@ -70,35 +70,32 @@ class MktWarehouseDeletionServiceTest {
         assertThatThrownBy(() -> service.request(7L,"误录")).hasMessageContaining("合同");
         verify(jdbc,never()).update(anyString(),any(Object[].class));
     }
-    @Test void activeYunshanMappingBlocksDeletionBeforeFreeze() {
+    @Test void activeYunshanMappingBlocksDeletion() {
         when(jdbc.queryForList(contains("FROM crm_yunshan_volume_map"), eq(Long.class), eq(7L))).thenReturn(List.of(2L));
-        assertThatThrownBy(() -> service.request(7L, "误录")).hasMessageContaining("云山映射");
+        assertThatThrownBy(() -> service.request(7L, "误录")).hasMessageContaining("发货量客户关联");
         verify(jdbc, never()).update(anyString(), any(Object[].class));
         verifyNoInteractions(audit);
     }
-    @Test void cancellationRestoresPreviousStateAndRetainsAudit() {
-        w.setJoinStatus(8); w.setDeletePreviousStatus(2); w.setDeleteDueAt(LocalDateTime.now().plusDays(2));
-        service.cancel(7L,"保留");
-        verify(jdbc).update(contains("join_status=delete_previous_status"),eq("system"),eq(7L));
-        verify(audit).logRequired(eq("warehouse.delete.cancel"),eq(w),eq("保留"),any(Map.class),any(Map.class));
-    }
-    @Test void cancellationAfterDeadlineIsRejectedEvenBeforeScheduledRun() {
-        w.setJoinStatus(8); w.setDeleteDueAt(LocalDateTime.now().minusSeconds(1));
-        assertThatThrownBy(() -> service.cancel(7L,"保留")).hasMessageContaining("7天冻结期");
-        verifyNoInteractions(jdbc,audit);
-    }
-    @Test void earlyOrRepeatedJobCannotDelete() {
-        assertThat(service.completeDue(7L)).isFalse();
-        w.setJoinStatus(8); w.setDeleteDueAt(LocalDateTime.now().plusMinutes(1));
-        assertThat(service.completeDue(7L)).isFalse();
+    @Test void repeatedDeletionOfArchivedWarehouseIsRejected() {
         when(warehouses.selectForUpdate(7L)).thenReturn(null);
-        assertThat(service.completeDue(7L)).isFalse();
+        assertThatThrownBy(() -> service.request(7L,"重复")).hasMessageContaining("已删除");
         verifyNoInteractions(jdbc,audit);
     }
-    @Test void dueDeletionRevokesAllAccessRemovesProtectionAndPreservesFinancialArchives() {
-        w.setJoinStatus(8); w.setDeleteDueAt(LocalDateTime.now().minusSeconds(1)); w.setDeleteReason("误录");
-        assertThat(service.completeDue(7L)).isTrue();
-        verify(jdbc).update(contains("SET deleted=1,join_status=7"),eq("system"),eq(7L));
+    @Test void legacyPendingWithoutDeadlineIsStillCompleted() {
+        w.setJoinStatus(8);
+        assertThat(service.completePending(7L)).isTrue();
+        verify(audit).logRequired(eq("warehouse.delete.complete"),eq(w),isNull(),any(),any());
+    }
+    @Test void jobSkipsActiveAndAlreadyArchivedWarehouses() {
+        assertThat(service.completePending(7L)).isFalse();
+        when(warehouses.selectForUpdate(7L)).thenReturn(null);
+        assertThat(service.completePending(7L)).isFalse();
+        verifyNoInteractions(jdbc,audit);
+    }
+    @Test void legacyPendingDeletionDoesNotWaitForOldDeadlineAndPreservesArchives() {
+        w.setJoinStatus(8); w.setDeleteDueAt(LocalDateTime.now().plusDays(7)); w.setDeleteReason("误录");
+        assertThat(service.completePending(7L)).isTrue();
+        verify(jdbc).update(contains("deleted=1,join_status=7"),any(LocalDateTime.class),any(LocalDateTime.class),eq("误录"),eq("system"),eq(7L),eq(8));
         for (String table : List.of("crm_marketing_credential","crm_warehouse_contact","crm_warehouse_erp","crm_competition_protection"))
             verify(jdbc).update(startsWith("UPDATE " + table + " SET"),eq("system"),eq(7L));
         verify(jdbc,never()).update(startsWith("DELETE"),any(Object[].class));

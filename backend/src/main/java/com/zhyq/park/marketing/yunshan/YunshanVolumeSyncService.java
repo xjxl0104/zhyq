@@ -272,7 +272,7 @@ public class YunshanVolumeSyncService {
     private MktYunshanVolumeMap requireMapping(Long mapId) {
         MktYunshanVolumeMap mapping = mapMapper.selectOne(new LambdaQueryWrapper<MktYunshanVolumeMap>()
                 .eq(MktYunshanVolumeMap::getId, mapId).eq(MktYunshanVolumeMap::getTenantId, TENANT));
-        if (mapping == null) throw new BizException("云山映射不存在");
+        if (mapping == null) throw new BizException("发货量客户关联不存在");
         return mapping;
     }
 
@@ -298,7 +298,7 @@ public class YunshanVolumeSyncService {
     }
 
     private ReentrantLock lockFor(Long mapId) {
-        if (mapId == null || mapId <= 0) throw new BizException("请选择有效的云山映射");
+        if (mapId == null || mapId <= 0) throw new BizException("请选择有效的发货量客户关联");
         return locks[Math.floorMod(mapId.hashCode(), locks.length)];
     }
 

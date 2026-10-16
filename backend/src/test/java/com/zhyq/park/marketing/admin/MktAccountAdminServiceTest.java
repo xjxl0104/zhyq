@@ -76,7 +76,7 @@ class MktAccountAdminServiceTest {
         assertThatThrownBy(() -> service.delete("wh",7L,"误建账号")).hasMessageContaining("在服客户");
         verify(jdbc,never()).update(anyString(),any(Object[].class)); verifyNoInteractions(audits);
     }
-    @Test void warehouseDeletionAlwaysUsesSevenDayGracePeriod() {
+    @Test void warehouseDeletionUsesSharedImmediateDeletion() {
         service.delete("wh",7L,"误建账号");
         verify(warehouseDeletion).request(7L,"误建账号");
         verify(jdbc,never()).update(anyString(),any(Object[].class));

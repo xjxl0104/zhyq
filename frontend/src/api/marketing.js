@@ -112,7 +112,7 @@ export const mktTemplateApi = {
 // 云仓 + 加盟
 export const mktWarehouseApi = {
   remove: (id, data) => request.delete(`${BASE}/warehouse/${id}`, { data }),
-  cancelDelete: (id, data) => request.post(`${BASE}/warehouse/${id}/delete/cancel`, data),
+
   maintenance: (params) => request.get(`${BASE}/warehouse/maintenance`, { params }),
   page: (params) => request.get(`${BASE}/warehouse/page`, { params }),
   online: () => request.get(`${BASE}/warehouse/online`),

@@ -1,6 +1,6 @@
 <template>
   <el-drawer v-model="visible" title="加盟云仓维护记录" size="min(94vw, 1100px)">
-    <p class="note">保留云仓新增、申请删除、撤销及正式删除记录。已删除云仓仍可查询。</p>
+    <p class="note">保留云仓新增、删除及历史申请、撤销记录。已删除云仓仍可查询。</p>
     <div class="filters"><el-input v-model="query.keyword" clearable placeholder="云仓名称或编码" maxlength="100" @keyup.enter="search" /><el-button type="primary" :loading="loading" @click="search">查询</el-button></div>
     <el-alert v-if="error" :title="error" type="error" :closable="false" />
     <el-table :data="rows" v-loading="loading" border>
@@ -9,7 +9,7 @@
       <el-table-column prop="operator" label="操作人" width="110" />
       <el-table-column prop="createTime" label="操作时间" width="175" />
       <el-table-column prop="reason" label="操作原因" min-width="180" />
-      <el-table-column label="状态变化 / 计划删除时间" min-width="200"><template #default="{row}">{{ STATUS[parse(row.beforeJson).status] || '—' }} → {{ STATUS[parse(row.afterJson).status] || '—' }}<div v-if="parse(row.afterJson).deleteDueAt" class="note">{{ parse(row.afterJson).deleteDueAt.replace('T', ' ') }}</div></template></el-table-column>
+      <el-table-column label="状态变化 / 删除时间" min-width="200"><template #default="{row}">{{ STATUS[parse(row.beforeJson).status] || '—' }} → {{ STATUS[parse(row.afterJson).status] || '—' }}<div v-if="parse(row.afterJson).deleteDueAt" class="note">{{ parse(row.afterJson).deleteDueAt.replace('T', ' ') }}</div></template></el-table-column>
     </el-table>
     <el-pagination class="pager" background layout="total, prev, pager, next" :total="total" v-model:current-page="query.pageNo" :page-size="query.pageSize" @change="load" />
   </el-drawer>
@@ -20,7 +20,7 @@ import { mktWarehouseApi } from '@/api/marketing'
 const props = defineProps({ modelValue: Boolean })
 const emit = defineEmits(['update:modelValue'])
 const visible = computed({ get: () => props.modelValue, set: value => emit('update:modelValue', value) })
-const ACTION = { 'warehouse.apply': '新增云仓', 'warehouse.delete.request': '申请删除并冻结', 'warehouse.delete.cancel': '撤销删除', 'warehouse.delete.complete': '到期正式删除', 'account.delete': '历史账号删除' }
+const ACTION = { 'warehouse.apply': '新增云仓', 'warehouse.delete.request': '申请删除并冻结', 'warehouse.delete.cancel': '撤销删除', 'warehouse.delete.complete': '正式删除', 'account.delete': '历史账号删除' }
 const STATUS = { 1: '申请', 2: '资质审核', 3: '待配置订单接入', 4: '待签协议', 5: '已上线', 6: '暂停', 7: '已退出/删除', 8: '冻结待删除' }
 const query = reactive({ pageNo: 1, pageSize: 20, keyword: '' })
 const rows = ref([]), total = ref(0), loading = ref(false), error = ref('')
