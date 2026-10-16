@@ -16,4 +16,15 @@ public interface MktYunshanVolumeMapMapper extends BaseMapper<MktYunshanVolumeMa
             WHERE m.id=#{id} AND m.tenant_id=#{tenantId} AND m.deleted=0
             """)
     int countAvailableSubjects(@Param("id") Long id, @Param("tenantId") Long tenantId);
+
+    /** 提交同步结果时锁定客户行，避免客户改名与身份核对之间出现竞态。 */
+    @Select("""
+            <script>
+            SELECT name FROM crm_customer
+            WHERE id=#{customerId} AND tenant_id=#{tenantId} AND deleted=0
+            <if test="locked">FOR UPDATE</if>
+            </script>
+            """)
+    String selectCustomerName(@Param("customerId") Long customerId, @Param("tenantId") Long tenantId,
+                              @Param("locked") boolean locked);
 }

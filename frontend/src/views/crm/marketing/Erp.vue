@@ -12,9 +12,14 @@
 
     <template v-if="warehouseId">
       <el-alert v-if="error" type="error" :closable="false" :title="error" class="mb" />
-      <YunshanVolumePanel :key="warehouseId" :warehouse-id="warehouseId" :warehouse-name="warehouse?.name || warehouses.find(w => String(w.id) === warehouseId)?.name || ''" />
+      <CustomerOperationWarehousePanel :key="warehouseId" :warehouse-id="warehouseId" :warehouse-name="warehouse?.name || warehouses.find(w => String(w.id) === warehouseId)?.name || ''" />
+      <el-collapse v-model="sourcePanels" class="mb">
+        <el-collapse-item title="云山接口同步（单独配置数据来源）" name="yunshan">
+          <YunshanVolumePanel v-if="sourcePanels.includes('yunshan')" :key="warehouseId" :warehouse-id="warehouseId" :warehouse-name="warehouse?.name || warehouses.find(w => String(w.id) === warehouseId)?.name || ''" />
+        </el-collapse-item>
+      </el-collapse>
       <h2 class="erp-heading">ERP 订单推送</h2>
-      <p class="hint">以下凭证和货主编码用于加盟云仓的 ERP 系统推送订单明细。上方发货量同步使用云山云仓提供的独立查询接口；使用该查询接口无需签发下方的订单推送凭证。</p>
+      <p class="hint">以下凭证和货主编码用于加盟云仓的 ERP 系统推送订单明细。客户和作业仓库可以先建档，再按实际数据来源配置接入。</p>
       <el-alert :type="warehouse?.erpStatus === 2 ? 'success' : 'warning'" :closable="false" class="mb"
         :title="warehouse?.erpStatus === 2 ? '正式 ERP 最近有有效签名通信。请同时关注最近业务同步、待处理事件和周期对账。' : '连接步骤：签发沙箱凭证并校验 → 切换正式环境 → ERP 发送签名心跳。没有订单时仍可保持连接。'" />
       <el-alert v-if="onboardingMode" type="info" :closable="false" class="mb"
@@ -111,6 +116,7 @@ import { ref, reactive, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { mktErpApi, mktWarehouseApi, mktYunshanApi } from '@/api/marketing'
+import CustomerOperationWarehousePanel from './CustomerOperationWarehousePanel.vue'
 import { hasPermission } from '@/utils/permission'
 import ErpReconciliation from './ErpReconciliation.vue'
 import YunshanVolumePanel from './YunshanVolumePanel.vue'
@@ -122,6 +128,7 @@ const onboardingMode = computed(() => route.query.onboarding === '1')
 const warehouses = ref([])
 const warehouseId = ref(route.query.warehouseId ? String(route.query.warehouseId) : null)
 const warehouse = ref(null)
+const sourcePanels = ref([])
 const cred = ref(null)
 const secret = ref('')
 const busy = ref(false), loading = ref(false), error = ref('')

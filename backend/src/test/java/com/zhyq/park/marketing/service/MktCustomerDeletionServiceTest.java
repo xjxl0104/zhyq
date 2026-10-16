@@ -43,6 +43,7 @@ class MktCustomerDeletionServiceTest {
     @Test void ownFollowingCustomerCanBeDeletedIncludingPendingOrAcceptedAssignmentAndOrdinaryLocks() {
         login("mp:7");
         service.deleteOwnReferral(42L);
+        verify(jdbc).update(startsWith("UPDATE crm_customer_operation_warehouse SET status=0"), anyString(), eq(42L));
         var order = inOrder(customers, jdbc, audits);
         order.verify(customers).selectForUpdate(42L);
         verify(jdbc).update(startsWith("UPDATE crm_customer SET deleted=1"), eq("mp:7"), eq(42L));

@@ -60,9 +60,11 @@ class YunshanVolumeSyncServiceTest {
         service = new YunshanVolumeSyncService(client, mapMapper, volumeMapper, logMapper, transactions);
         mapping = new MktYunshanVolumeMap(); mapping.setId(1L); mapping.setTenantId(1L); mapping.setStatus(1);
         mapping.setCustomerId(2L); mapping.setWarehouseId(3L); mapping.setParentOwnerNo("000001"); mapping.setParentWarehouseNo("9007199254740993");
+        mapping.setParentOwnerName("授权货主");
         lenient().when(mapMapper.selectOne(any())).thenReturn(mapping);
         lenient().when(mapMapper.selectForUpdate(1L, 1L)).thenReturn(mapping);
         lenient().when(mapMapper.countAvailableSubjects(1L, 1L)).thenReturn(1);
+        lenient().when(mapMapper.selectCustomerName(eq(2L), eq(1L), anyBoolean())).thenReturn("授权货主");
         lenient().when(mapMapper.update(isNull(), any())).thenReturn(1);
         lenient().when(volumeMapper.selectList(any())).thenReturn(List.of());
         lenient().when(volumeMapper.insert(any(MktYunshanDailyVolume.class))).thenReturn(1);
@@ -235,6 +237,45 @@ class YunshanVolumeSyncServiceTest {
         assertThatThrownBy(this::sync).hasMessageContaining("停用");
         verifyNoInteractions(volumeMapper);
         verify(transactions).rollback(any());
+    }
+
+    @Test void existingMismatchedIdentityBlocksBothManualAndScheduledSyncBeforeRemoteFetch() {
+        mapping.setParentOwnerName("广东泽浩棒棒猪科技股份有限公司");
+        when(mapMapper.selectCustomerName(2L, 1L, false)).thenReturn("超级棒棒猪");
+
+        assertThatThrownBy(this::sync).hasMessageContaining("名称不一致");
+        var failed = service.sync(1L, START, END, YunshanVolumeSyncService.TRIGGER_SCHEDULED);
+        assertThat(failed.getOk()).isZero();
+        assertThat(failed.getErrorMsg()).contains("独立客户");
+        verifyNoInteractions(client, volumeMapper);
+        verify(logMapper, times(2)).insert(argThat((MktYunshanSyncLog entry) -> entry.getOk() == 0));
+    }
+
+    @Test void customerIdentityIsLockedAndRecheckedAtCommitAfterRemoteFetch() {
+        respond(page(List.of(day(0, 10)), 1, 1, 10));
+        when(mapMapper.selectCustomerName(2L, 1L, true)).thenReturn("另一个独立客户");
+
+        assertThatThrownBy(this::sync).hasMessageContaining("名称不一致");
+        verifyNoInteractions(volumeMapper);
+        verify(transactions).rollback(any());
+        var ordering = inOrder(mapMapper);
+        ordering.verify(mapMapper).selectCustomerName(2L, 1L, true);
+        ordering.verify(mapMapper).selectForUpdate(1L, 1L);
+    }
+
+    @Test void mismatchedHistoricalMappingCannotFetchRemoteReconciliation() {
+        when(mapMapper.selectCustomerName(2L, 1L, false)).thenReturn("超级棒棒猪");
+        assertThatThrownBy(() -> service.reconcile(1L, START, END)).hasMessageContaining("名称不一致");
+        verifyNoInteractions(client, volumeMapper, logMapper, transactions);
+    }
+
+    @Test void identityCheckRequiresExactNonblankFullNameWithOnlyOuterSpacesIgnored() {
+        assertThat(YunshanVolumeSyncService.namesMatch(" 授权货主 ", "授权货主")).isTrue();
+        assertThat(YunshanVolumeSyncService.namesMatch("超级棒棒猪", "广东泽浩棒棒猪科技股份有限公司")).isFalse();
+        assertThat(YunshanVolumeSyncService.namesMatch("客户A", "客户a")).isFalse();
+        assertThat(YunshanVolumeSyncService.namesMatch("客户 甲", "客户甲")).isFalse();
+        assertThat(YunshanVolumeSyncService.namesMatch(" ", " ")).isFalse();
+        assertThat(YunshanVolumeSyncService.namesMatch(null, null)).isFalse();
     }
 
     @Test void rangeValidationUsesShanghaiTodayAndIncludesBothEndpoints() {
