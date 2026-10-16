@@ -1,17 +1,17 @@
 <template>
   <section v-if="canQuery" class="table-card yunshan-panel" aria-labelledby="yunshan-title">
     <div class="toolbar">
-      <h2 id="yunshan-title" class="title">云山接口发货量</h2>
+      <h2 id="yunshan-title" class="title">云仓发货量同步</h2>
       <el-tag v-if="config" :type="config.configured ? 'success' : 'warning'">{{ config.configured ? '已配置' : '待配置' }}</el-tag>
       <el-button :loading="loading.maps" @click="refresh">刷新</el-button>
       <el-button v-if="canConfig" type="primary" :disabled="!config?.configured" @click="openMap">配置接口同步</el-button>
     </div>
-    <p class="hint">按客户（货主）和作业仓库查看每日发货票数。统计在次日生成，当前用于同步和对账。</p>
-    <p class="hint">数据来源：云山接口的共享连接。仅供确实使用该数据来源的客户配置，不代表当前加盟云仓已接入。客户和作业仓库建档请使用上方“客户与作业仓库”。</p>
-    <el-alert v-if="config && !config.configured" type="warning" :closable="false" title="云山云仓的发货量接口尚未配置，请联系管理员配置后再关联客户或同步数据。历史快照仍可查询。" />
+    <p class="hint">按客户和作业仓库同步每日发货票数，并核对数据。统计在次日生成。</p>
+    <p class="hint">数据来源：云山接口。当前使用共享连接，仅供确实使用该数据来源的客户配置，不代表当前加盟云仓已接入。客户和作业仓库建档请使用上方“客户与作业仓库”。</p>
+    <el-alert v-if="config && !config.configured" type="warning" :closable="false" title="云仓发货量同步尚未配置，请联系管理员配置数据来源后再关联客户或同步数据。历史快照仍可查询。" />
     <p v-if="config?.configured" class="config-note">接口：{{ config.baseUrl }}<span v-if="config.appId"> · 应用：{{ config.appId }}</span></p>
     <el-alert v-if="errors.maps" type="error" :closable="false" :title="errors.maps" />
-    <el-table v-loading="loading.maps" :data="maps" size="small" border empty-text="暂无云山接口同步配置，不影响客户与作业仓库建档。">
+    <el-table v-loading="loading.maps" :data="maps" size="small" border empty-text="暂无云仓发货量同步配置，不影响客户与作业仓库建档。">
       <el-table-column prop="customerName" label="客户（货主）" min-width="130"><template #default="{ row }">{{ row.customerName || row.customerId }}</template></el-table-column>
       <el-table-column label="接口返回的货主" min-width="170"><template #default="{ row }"><div>{{ row.parentOwnerName || '未命名客户' }}</div><div class="entity-no">{{ row.parentOwnerNo }}</div><el-tag v-if="row.identityMismatch" type="danger">客户身份不一致，已阻止同步</el-tag></template></el-table-column>
       <el-table-column label="作业仓库" min-width="170"><template #default="{ row }"><div>{{ row.parentWarehouseName || '未命名仓库' }}</div><div class="entity-no">{{ row.parentWarehouseNo }}</div></template></el-table-column>
@@ -80,7 +80,7 @@
       <el-pagination class="pager" background layout="total, prev, pager, next" :total="logTotal" v-model:current-page="logPage" :page-size="20" @current-change="loadLogs" />
     </template>
 
-    <el-dialog v-model="mapDialog.visible" title="配置云山接口同步" width="min(560px, calc(100vw - 32px))" :close-on-click-modal="false" @closed="closeMap">
+    <el-dialog v-model="mapDialog.visible" title="配置云仓发货量同步" width="min(560px, calc(100vw - 32px))" :close-on-click-modal="false" @closed="closeMap">
       <p class="dialog-hint">加盟云仓：{{ warehouseName || '当前所选云仓' }}。仅为该客户本人配置数据来源，不得使用其他客户的发货数据。</p>
       <el-form label-position="top" @submit.prevent="saveMap">
         <el-form-item label="客户（货主）" required>

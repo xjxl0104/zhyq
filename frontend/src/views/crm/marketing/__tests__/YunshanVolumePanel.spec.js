@@ -165,8 +165,9 @@ describe('发货量同步与云山云仓接口授权边界', () => {
   it('明确区分加盟云仓与接口目录，显示单一授权选项的来源', async () => {
     permissions.add('crm:marketing:erp:config')
     const wrapper = mount(); await flushPromises(); await wrapper.vm.openMap(); await flushPromises()
-    expect(wrapper.text()).toContain('云山接口发货量')
-    expect(wrapper.text()).toContain('云山接口的共享连接')
+    expect(wrapper.text()).toContain('云仓发货量同步')
+    expect(wrapper.text()).toContain('按客户和作业仓库同步每日发货票数，并核对数据。统计在次日生成。')
+    expect(wrapper.text()).toContain('数据来源：云山接口。当前使用共享连接')
     expect(wrapper.text()).toContain('不代表当前加盟云仓已接入')
     expect(wrapper.text()).toContain('加盟云仓：云山')
     expect(wrapper.text()).toContain('当前接口开放 1 个客户的查询权限')
