@@ -16,9 +16,9 @@ public class MktWarehouseDeletionJob {
 
     @Scheduled(initialDelay = 60_000, fixedDelay = 60_000)
     public void run() {
-        for (Long id : jdbc.queryForList("SELECT id FROM crm_warehouse WHERE deleted=0 AND join_status=8 AND delete_due_at<=NOW() ORDER BY delete_due_at LIMIT 100", Long.class)) {
-            try { deletion.completeDue(id); }
-            catch (Exception e) { log.error("云仓到期删除失败 warehouseId={}", id, e); }
+        for (Long id : jdbc.queryForList("SELECT id FROM crm_warehouse WHERE deleted=0 AND join_status=8 ORDER BY delete_due_at LIMIT 100", Long.class)) {
+            try { deletion.completePending(id); }
+            catch (Exception e) { log.error("历史待删除云仓归档失败 warehouseId={}", id, e); }
         }
     }
 }

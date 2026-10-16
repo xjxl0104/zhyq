@@ -50,7 +50,8 @@ describe('加盟进度与当前状态一致', () => {
     expect(w.text()).toContain(`当前加盟状态：${label}`)
     expect(w.findAll('article').at(-1).text()).toContain(`当前状态：${label}`)
     if (joinStatus === 8) {
-      expect(w.text()).toContain('预计删除：2026-10-23 12:00:00')
+      expect(w.text()).toContain('历史待删除记录，正在处理')
+      expect(w.text()).not.toContain('2026-10-23')
       expect(w.text()).toContain('删除原因：误录')
     }
   })

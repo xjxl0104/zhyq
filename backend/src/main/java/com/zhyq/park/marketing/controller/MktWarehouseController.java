@@ -42,16 +42,10 @@ public class MktWarehouseController {
     private final com.zhyq.park.marketing.service.MktWarehouseDeletionService deletion;
     private final org.springframework.jdbc.core.JdbcTemplate jdbc;
 
-    @Operation(summary = "申请删除：冻结7天后正式归档")
+    @Operation(summary = "删除云仓：立即归档并停用关联访问权限")
     @PreAuthorize("hasRole('admin')") @DeleteMapping("/{id}")
     public Result<Void> delete(@PathVariable Long id, @RequestBody Map<String, String> body) {
         deletion.request(id, body.get("reason")); return Result.ok();
-    }
-
-    @Operation(summary = "冻结期撤销删除")
-    @PreAuthorize("hasRole('admin')") @PostMapping("/{id}/delete/cancel")
-    public Result<Void> cancelDelete(@PathVariable Long id, @RequestBody Map<String, String> body) {
-        deletion.cancel(id, body.get("reason")); return Result.ok();
     }
 
     @Operation(summary = "加盟云仓维护记录：包含已删除云仓")

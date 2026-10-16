@@ -84,7 +84,7 @@ class MktCustomerDeletionServiceTest {
     }
 
     @ParameterizedTest
-    @CsvSource({"crm_service_contract,服务合同", "crm_referral_order,业务订单或佣金", "crm_customer_lock,成交记录", "crm_customer_erp_map,ERP", "crm_yunshan_volume_map,云山映射"})
+    @CsvSource({"crm_service_contract,服务合同", "crm_referral_order,业务订单或佣金", "crm_customer_lock,成交记录", "crm_customer_erp_map,ERP", "crm_yunshan_volume_map,发货量客户关联"})
     void dependenciesBlockBeforeMutationForAdminAndPartner(String table, String hint) {
         when(jdbc.queryForList(startsWith("SELECT id FROM " + table + " WHERE"), eq(Long.class), any(Object[].class)))
                 .thenReturn(List.of(99L));

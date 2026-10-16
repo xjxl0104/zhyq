@@ -2,9 +2,9 @@
   <div class="page-container mkt-page">
     <div class="search-bar">
       <el-form :inline="true">
-        <el-form-item label="云仓">
-          <el-select v-model="warehouseId" :disabled="busy" placeholder="选择云仓" style="width: 260px" @change="changeWarehouse">
-            <el-option v-for="w in warehouses" :key="w.id" :label="`${w.code} ${w.name}`" :value="String(w.id)" />
+        <el-form-item label="加盟云仓">
+          <el-select v-model="warehouseId" :disabled="busy" placeholder="选择加盟云仓" style="width: 260px" @change="changeWarehouse">
+            <el-option v-for="w in warehouses" :key="w.id" :label="`${w.name} · ${w.code}`" :value="String(w.id)" />
           </el-select>
         </el-form-item>
       </el-form>
@@ -12,9 +12,9 @@
 
     <template v-if="warehouseId">
       <el-alert v-if="error" type="error" :closable="false" :title="error" class="mb" />
-      <YunshanVolumePanel :key="warehouseId" :warehouse-id="warehouseId" />
+      <YunshanVolumePanel :key="warehouseId" :warehouse-id="warehouseId" :warehouse-name="warehouse?.name || warehouses.find(w => String(w.id) === warehouseId)?.name || ''" />
       <h2 class="erp-heading">ERP 订单推送</h2>
-      <p class="hint">以下凭证和货主编码用于云仓 ERP 推送订单。上方云山发货量通过独立接口主动拉取，无需签发这里的凭证。</p>
+      <p class="hint">以下凭证和货主编码用于加盟云仓的 ERP 系统推送订单明细。上方发货量同步使用云山云仓提供的独立查询接口；使用该查询接口无需签发下方的订单推送凭证。</p>
       <el-alert :type="warehouse?.erpStatus === 2 ? 'success' : 'warning'" :closable="false" class="mb"
         :title="warehouse?.erpStatus === 2 ? '正式 ERP 最近有有效签名通信。请同时关注最近业务同步、待处理事件和周期对账。' : '连接步骤：签发沙箱凭证并校验 → 切换正式环境 → ERP 发送签名心跳。没有订单时仍可保持连接。'" />
       <el-alert v-if="onboardingMode" type="info" :closable="false" class="mb"
