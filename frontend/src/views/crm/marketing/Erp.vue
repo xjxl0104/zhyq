@@ -59,7 +59,9 @@
           <el-button v-if="canConfigure" :disabled="busy" type="primary" @click="openMapping">新增映射</el-button>
         </div>
         <el-table :data="mappings" size="small" border>
-          <el-table-column prop="customerId" label="客户 ID（本系统）" width="150" />
+          <el-table-column label="客户名称（本系统）" min-width="220">
+            <template #default="{ row }"><div>{{ row.customerName || '客户名称暂不可用' }}</div><div class="customer-id">客户编号：{{ row.customerId }}</div></template>
+          </el-table-column>
           <el-table-column prop="customerCode" label="货主编码（云仓 ERP）" width="220" />
           <el-table-column label="状态" width="80"><template #default="{ row }">{{ row.status === 1 ? '启用' : '停用' }}</template></el-table-column>
           <el-table-column prop="createTime" label="创建" width="160" />
@@ -101,19 +103,26 @@
       </div>
     </template>
 
-    <el-dialog v-model="mapDialog.visible" title="新增货主编码映射" width="min(560px, calc(100vw - 32px))">
-      <p class="hint">客户 ID 是本系统的客户编号，货主编码是同一客户在云仓 ERP 中的编号。请核实后关联，不能用其他客户代替。</p>
+    <el-dialog v-model="mapDialog.visible" title="新增货主编码映射" width="min(560px, calc(100vw - 32px))" :close-on-click-modal="!busy" :close-on-press-escape="!busy" :show-close="!busy" @close="closeMapping">
+      <p class="hint">选择已录入的客户名称，再填写该客户在云仓 ERP 中的货主编码即可。客户编号由系统自动关联，无需手填；同名客户请核对编号。</p>
       <el-form label-width="160px">
-        <el-form-item label="客户 ID（本系统）" required><el-input-number v-model="mapDialog.customerId" :min="1" style="width: 100%" /></el-form-item>
-        <el-form-item label="货主编码（云仓 ERP）" required><el-input v-model="mapDialog.customerCode" placeholder="云仓 ERP 里该客户的编码" /></el-form-item>
+        <el-form-item label="客户名称（本系统）" required>
+          <el-select v-model="mapDialog.customerId" filterable remote :remote-method="searchCustomers" :loading="customerLoading" :disabled="busy" placeholder="输入客户名称搜索并选择" style="width: 100%" @change="selectCustomer">
+            <el-option v-for="customer in customerOptions" :key="customer.id" :label="customer.name" :value="String(customer.id)"><span>{{ customer.name }}</span><span class="customer-option-id">编号：{{ customer.id }}</span></el-option>
+            <template #footer><el-pagination small layout="prev, pager, next" :total="customerTotal" :page-size="20" :disabled="customerLoading || busy" v-model:current-page="customerPage" @current-change="loadCustomers" /></template>
+          </el-select>
+          <div v-if="selectedCustomer" class="customer-id">已选：{{ selectedCustomer.name }} · 客户编号：{{ selectedCustomer.id }}</div>
+        </el-form-item>
+        <el-alert v-if="customerError" :title="customerError" type="error" :closable="false"><el-button link type="primary" @click="loadCustomers">重新加载客户</el-button></el-alert>
+        <el-form-item label="货主编码（云仓 ERP）" required><el-input v-model="mapDialog.customerCode" :disabled="busy" maxlength="64" placeholder="云仓 ERP 里该客户的编码" /></el-form-item>
       </el-form>
-      <template #footer><el-button :disabled="busy" @click="mapDialog.visible = false">取消</el-button><el-button :loading="busy" :disabled="busy" type="primary" @click="saveMapping">保存</el-button></template>
+      <template #footer><el-button :disabled="busy" @click="mapDialog.visible = false">取消</el-button><el-button :loading="busy" :disabled="!canSaveMapping" type="primary" @click="saveMapping">保存</el-button></template>
     </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, computed } from 'vue'
+import { ref, reactive, onMounted, onBeforeUnmount, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { mktErpApi, mktWarehouseApi, mktYunshanApi } from '@/api/marketing'
@@ -140,6 +149,13 @@ const exceptionStatus = { WAITING_MAPPING:'待匹配客户', RETRY:'等待重试
 const mappings = ref([])
 const logs = ref([]); const logTotal = ref(0); const logPage = ref(1); const logOk = ref(null)
 const mapDialog = reactive({ visible: false, warehouseId: null, customerId: null, customerCode: '' })
+const customers = ref([]), selectedCustomer = ref(null), customerLoading = ref(false), customerError = ref('')
+const customerKeyword = ref(''), customerPage = ref(1), customerTotal = ref(0)
+let customerRequestNo = 0
+const customerOptions = computed(() => selectedCustomer.value && !customers.value.some(c => String(c.id) === String(selectedCustomer.value.id))
+  ? [selectedCustomer.value, ...customers.value] : customers.value)
+const canSaveMapping = computed(() => canConfigure.value && !busy.value && !loading.value && !customerLoading.value && !customerError.value
+  && selectedCustomer.value && String(selectedCustomer.value.id) === mapDialog.customerId && !!mapDialog.customerCode.trim())
 let requestNo = 0, logRequestNo = 0, exceptionRequestNo = 0
 
 async function load() {
@@ -158,6 +174,7 @@ async function load() {
   finally { if (request === requestNo) loading.value = false }
 }
 function changeWarehouse() {
+  closeMapping()
   mapDialog.visible = false; logPage.value = 1; exceptionPage.value = 1
   logs.value = []; exceptions.value = []; logTotal.value = 0; exceptionTotal.value = 0
   return load()
@@ -191,11 +208,30 @@ async function resetSecret() {
 }
 async function toggleEnv() { await action(async () => { await ElMessageBox.confirm('切换环境后需重新发送签名心跳。正式环境将按真实合同处理订单，请先完成联调。', '切换 ERP 环境', { type:'warning' }); await mktErpApi.update(warehouseId.value, { env: cred.value.env === 1 ? 2 : 1 }); await load() }) }
 async function toggleStatus() { await action(async () => { await mktErpApi.update(warehouseId.value, { status: cred.value.status === 1 ? 0 : 1 }); await load() }) }
-function openMapping() { Object.assign(mapDialog, { visible:true, warehouseId:warehouseId.value, customerId:null, customerCode:'' }) }
+function openMapping() {
+  Object.assign(mapDialog, { visible:true, warehouseId:warehouseId.value, customerId:null, customerCode:'' })
+  selectedCustomer.value = null; customers.value = []; customerKeyword.value = ''; customerPage.value = 1; customerTotal.value = 0
+  return loadCustomers()
+}
+function closeMapping() { customerRequestNo++; customerLoading.value = false }
+function selectCustomer(id) { selectedCustomer.value = customerOptions.value.find(c => String(c.id) === id) || null }
+function searchCustomers(keyword) { customerKeyword.value = keyword; customerPage.value = 1; return loadCustomers() }
+async function loadCustomers() {
+  const request = ++customerRequestNo, target = mapDialog.warehouseId
+  if (!mapDialog.visible) return
+  customerLoading.value = true; customerError.value = ''; customers.value = []; customerTotal.value = 0
+  try {
+    const result = await mktYunshanApi.customers({ keyword: customerKeyword.value, pageNo: customerPage.value, pageSize: 20 })
+    if (request !== customerRequestNo || !mapDialog.visible || target !== warehouseId.value) return
+    customers.value = result.records; customerTotal.value = Number(result.total)
+  } catch (e) { if (request === customerRequestNo && mapDialog.visible) customerError.value = e.message || '客户加载失败，请重试' }
+  finally { if (request === customerRequestNo) customerLoading.value = false }
+}
+onBeforeUnmount(() => { customerRequestNo++ })
 async function saveMapping() {
   if (!canConfigure.value) return
-  if (!mapDialog.customerId || !mapDialog.customerCode.trim()) return ElMessage.error('请填完整')
   if (mapDialog.warehouseId !== warehouseId.value) return ElMessage.error('云仓已切换，请重新打开映射表单')
+  if (!canSaveMapping.value) return ElMessage.error('请从列表选择客户，并填写对应的货主编码')
   await action(async () => {
     const result = await mktErpApi.saveMapping(warehouseId.value, { customerId: mapDialog.customerId, customerCode: mapDialog.customerCode.trim() })
     ElMessage.success(result?.queued ? `已保存，${result.queued} 条事件已排队补处理` : '映射已保存'); mapDialog.visible = false; await load()
@@ -240,4 +276,6 @@ onMounted(async () => {
 .secret { font-size: 14px; word-break: break-all; margin-right: 8px; }
 .pager { margin-top: 12px; justify-content: flex-end; }
 .erp-heading { font-size: 18px; margin: 28px 0 8px; }
+.customer-id { color: var(--el-text-color-secondary); font-size: 12px; overflow-wrap: anywhere; }
+.customer-option-id { margin-left: 12px; color: var(--el-text-color-secondary); font-size: 12px; }
 </style>
