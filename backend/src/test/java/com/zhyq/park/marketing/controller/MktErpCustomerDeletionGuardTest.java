@@ -11,14 +11,24 @@ import com.zhyq.park.marketing.service.MktAuditService;
 import com.zhyq.park.receivable.service.FieldEncryptionService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.BeforeAll;
+import com.baomidou.mybatisplus.core.MybatisConfiguration;
+import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
+import org.apache.ibatis.builder.MapperBuilderAssistant;
 
 import java.util.Map;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 class MktErpCustomerDeletionGuardTest {
+    @BeforeAll static void tables() {
+        var assistant = new MapperBuilderAssistant(new MybatisConfiguration(), "");
+        TableInfoHelper.initTableInfo(assistant, Customer.class);
+        TableInfoHelper.initTableInfo(assistant, MktCustomerErpMap.class);
+    }
     final CustomerMapper customers = mock(CustomerMapper.class);
     final MktCustomerErpMapMapper mappings = mock(MktCustomerErpMapMapper.class);
     final MktAuditService audit = mock(MktAuditService.class);
@@ -57,5 +67,27 @@ class MktErpCustomerDeletionGuardTest {
         when(customers.selectForUpdate(42L)).thenReturn(customer);
         assertThatThrownBy(() -> controller.saveMapping(9L, Map.of("customerId", 42L))).hasMessageContaining("货主编码");
         verifyNoInteractions(mappings, exceptions);
+    }
+
+    @Test void mappingListUsesCurrentCustomerNamesByIdAndPreservesMissingCustomers() {
+        MktCustomerErpMap first = new MktCustomerErpMap(); first.setCustomerId(42L); first.setCustomerCode("OWNER-A");
+        MktCustomerErpMap second = new MktCustomerErpMap(); second.setCustomerId(43L); second.setCustomerCode("OWNER-B");
+        MktCustomerErpMap missing = new MktCustomerErpMap(); missing.setCustomerId(44L); missing.setCustomerCode("OWNER-C");
+        when(mappings.selectList(any())).thenReturn(List.of(first, second, missing));
+        Customer a = new Customer(); a.setId(42L); a.setName("同名客户");
+        Customer b = new Customer(); b.setId(43L); b.setName("同名客户");
+        when(customers.selectList(any())).thenReturn(List.of(b, a));
+        var result = controller.mappings(9L).getData();
+        assertThat(result).extracting(MktCustomerErpMap::getCustomerId).containsExactly(42L, 43L, 44L);
+        assertThat(result).extracting(MktCustomerErpMap::getCustomerName).containsExactly("同名客户", "同名客户", null);
+        assertThat(result).extracting(MktCustomerErpMap::getCustomerCode).containsExactly("OWNER-A", "OWNER-B", "OWNER-C");
+        verify(customers, times(1)).selectList(any());
+        verifyNoInteractions(audit, exceptions);
+    }
+
+    @Test void emptyMappingsDoNotLoadAllCustomers() {
+        when(mappings.selectList(any())).thenReturn(List.of());
+        assertThat(controller.mappings(9L).getData()).isEmpty();
+        verifyNoInteractions(customers);
     }
 }

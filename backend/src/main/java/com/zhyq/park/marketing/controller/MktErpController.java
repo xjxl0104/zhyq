@@ -6,6 +6,7 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.zhyq.park.common.exception.BizException;
 import com.zhyq.park.crm.mapper.CustomerMapper;
+import com.zhyq.park.crm.entity.Customer;
 import org.springframework.transaction.annotation.Transactional;
 import com.zhyq.park.common.result.PageResult;
 import com.zhyq.park.common.result.Result;
@@ -121,7 +122,16 @@ public class MktErpController {
 
     @Operation(summary = "货主编码映射列表") @PreAuthorize("hasAuthority('crm:marketing:erp:query')") @GetMapping("/warehouse/{warehouseId}/mappings")
     public Result<List<MktCustomerErpMap>> mappings(@PathVariable Long warehouseId) {
-        return Result.ok(mapMapper.selectList(new LambdaQueryWrapper<MktCustomerErpMap>().eq(MktCustomerErpMap::getWarehouseId, warehouseId).orderByDesc(MktCustomerErpMap::getId)));
+        List<MktCustomerErpMap> rows = mapMapper.selectList(new LambdaQueryWrapper<MktCustomerErpMap>()
+                .eq(MktCustomerErpMap::getWarehouseId, warehouseId).orderByDesc(MktCustomerErpMap::getId));
+        var ids = rows.stream().map(MktCustomerErpMap::getCustomerId).filter(java.util.Objects::nonNull).distinct().toList();
+        if (!ids.isEmpty()) {
+            Map<Long, String> names = new HashMap<>();
+            customerMapper.selectList(new LambdaQueryWrapper<Customer>().select(Customer::getId, Customer::getName)
+                    .in(Customer::getId, ids)).forEach(customer -> names.put(customer.getId(), customer.getName()));
+            rows.forEach(row -> row.setCustomerName(names.get(row.getCustomerId())));
+        }
+        return Result.ok(rows);
     }
 
     @Operation(summary = "新增/更新映射(客户在该云仓 ERP 的货主编码)") @PreAuthorize("hasAuthority('crm:marketing:erp:config')") @PostMapping("/warehouse/{warehouseId}/mappings")
