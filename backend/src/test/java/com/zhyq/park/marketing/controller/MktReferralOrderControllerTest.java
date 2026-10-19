@@ -19,7 +19,7 @@ class MktReferralOrderControllerTest {
     @Test void billedOrderMustUseFinancialCorrectionInsteadOfDirectVoid(){
         var orders=mock(MktReferralOrderMapper.class);var lines=mock(MktServiceFeeBillLineMapper.class);var commissions=mock(MktCommissionService.class);
         when(orders.update(isNull(),any())).thenReturn(1);when(lines.selectCount(any())).thenReturn(1L);
-        var controller=new MktReferralOrderController(orders,mock(MktPromoterCommissionMapper.class),mock(MktPromoterMapper.class),mock(CustomerMapper.class),mock(MktReferralOrderImportService.class),commissions,mock(MktAuditService.class),lines);
+        var controller=new MktReferralOrderController(orders,mock(MktPromoterCommissionMapper.class),mock(MktPromoterMapper.class),mock(CustomerMapper.class),mock(MktServiceContractMapper.class),mock(MktWarehouseMapper.class),mock(MktReferralOrderImportService.class),commissions,mock(MktAuditService.class),lines);
         assertThatThrownBy(()->controller.voidOrder(7L,Map.of("reason","退款"))).isInstanceOf(BizException.class).hasMessageContaining("联系财务");
         verifyNoInteractions(commissions);
         var inOrder=inOrder(orders,lines);inOrder.verify(orders).update(isNull(),any());inOrder.verify(lines).selectCount(any());
