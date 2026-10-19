@@ -135,6 +135,8 @@ export const mktWarehouseApi = {
 // 计佣订单
 export const mktOrderApi = {
   page: (params) => request.get(`${BASE}/order/page`, { params }),
+  // 按服务合同汇总(合同号/伙伴/客户/云仓筛选,聚合订单数/服务费/佣金池)
+  contractSummary: (params) => request.get(`${BASE}/order/contract-summary`, { params }),
   get: (id) => request.get(`${BASE}/order/${id}`),
   importExcel: (formData) => upload(`${BASE}/order/import`, formData),
   // 接口有鉴权，裸 <a href> 不带 token；通过 axios 获取 blob。
