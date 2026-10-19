@@ -67,6 +67,10 @@ public class MktReferralOrderController {
     private final MktAuditService auditService;
     private final com.zhyq.park.marketing.mapper.MktServiceFeeBillLineMapper billLines;
 
+    /** sourceId 指向 crm_service_contract.id 的来源:出库单/平台费收款/签约奖;租赁签约的 sourceId 指向 biz_contract。 */
+    private static final List<Integer> SERVICE_CONTRACT_SOURCES = List.of(MktCommissionService.SOURCE_OUTBOUND,
+            MktCommissionService.SOURCE_PLATFORM_FEE, MktCommissionService.SOURCE_CONTRACT_BONUS);
+
     @Operation(summary = "分页(附客户/伙伴/合同/云仓信息)")
     @PreAuthorize("hasAuthority('crm:marketing:order:query')")
     @GetMapping("/page")
@@ -90,14 +94,13 @@ public class MktReferralOrderController {
                 .and(projectId != null, q -> q.eq(MktReferralOrder::getProjectId, projectId).or().isNull(MktReferralOrder::getProjectId))
                 .orderByDesc(MktReferralOrder::getId);
         if (StringUtils.hasText(contractNo)) {
-            // 合同号模糊 → 出库单等事件的 sourceId 存的是 crm_service_contract.id;
-            // 租赁签约(sourceType=1)的 sourceId 指向 biz_contract,不参与合同号匹配。
+            // 合同号模糊 → 只匹配 sourceId 指向服务合同的来源;租赁签约不参与合同号匹配。
             List<Long> contractIds = serviceContractMapper.selectList(new LambdaQueryWrapper<MktServiceContract>()
                             .like(MktServiceContract::getContractNo, contractNo)
                             .select(MktServiceContract::getId))
                     .stream().map(MktServiceContract::getId).collect(Collectors.toList());
             if (contractIds.isEmpty()) return Result.ok(PageResult.of(0, Collections.emptyList()));
-            qw.in(MktReferralOrder::getSourceId, contractIds).ne(MktReferralOrder::getSourceType, 1);
+            qw.in(MktReferralOrder::getSourceId, contractIds).in(MktReferralOrder::getSourceType, SERVICE_CONTRACT_SOURCES);
         }
         IPage<MktReferralOrder> p = orderMapper.selectPage(new Page<>(pageNo, pageSize), qw);
         return Result.ok(PageResult.of(p.getTotal(), p.getRecords().stream().map(this::enrich).collect(Collectors.toList())));
@@ -171,16 +174,20 @@ public class MktReferralOrderController {
         return Result.ok(PageResult.of(cp.getTotal(), rows));
     }
 
-    /** 一批合同 → 出库单(source_type=2)聚合:总单量/已确认单量/服务费合计/佣金池合计/最近事件时间。 */
+    /**
+     * 一批合同 → 出库单(source_type=2)聚合:总单量/已确认单量/服务费合计/佣金池合计/最近事件时间。
+     * 金额只计已确认订单,与服务费账单、营销看板同口径;作废/退款的订单不能留在合计里。
+     */
     private Map<Long, Map<String, Object>> aggregateByContract(List<MktServiceContract> contracts) {
         if (contracts.isEmpty()) return Map.of();
         List<Long> ids = contracts.stream().map(MktServiceContract::getId).collect(Collectors.toList());
+        String confirmed = "status = " + MktCommissionService.ORDER_CONFIRMED;
         QueryWrapper<MktReferralOrder> gw = new QueryWrapper<MktReferralOrder>()
                 .select("source_id",
                         "COUNT(*) AS orderCount",
-                        "SUM(CASE WHEN status = " + MktCommissionService.ORDER_CONFIRMED + " THEN 1 ELSE 0 END) AS confirmedCount",
-                        "IFNULL(SUM(service_fee), 0) AS serviceFeeSum",
-                        "IFNULL(SUM(pool_amount), 0) AS poolSum",
+                        "SUM(CASE WHEN " + confirmed + " THEN 1 ELSE 0 END) AS confirmedCount",
+                        "IFNULL(SUM(CASE WHEN " + confirmed + " THEN service_fee ELSE 0 END), 0) AS serviceFeeSum",
+                        "IFNULL(SUM(CASE WHEN " + confirmed + " THEN pool_amount ELSE 0 END), 0) AS poolSum",
                         "MAX(event_time) AS lastEventTime")
                 .eq("source_type", MktCommissionService.SOURCE_OUTBOUND)
                 .in("source_id", ids)
@@ -273,8 +280,8 @@ public class MktReferralOrderController {
             MktWarehouse w = warehouseMapper.selectById(o.getWarehouseId());
             if (w != null) { m.put("warehouseName", w.getName()); m.put("warehouseCode", w.getCode()); }
         }
-        // 出库单类事件 sourceId = crm_service_contract.id → 带出合同号与签约方式
-        if (o.getSourceId() != null && Integer.valueOf(MktCommissionService.SOURCE_OUTBOUND).equals(o.getSourceType())) {
+        // 出库单/平台费/签约奖的 sourceId = crm_service_contract.id → 带出合同号与签约方式(与合同号筛选同口径)
+        if (o.getSourceId() != null && SERVICE_CONTRACT_SOURCES.contains(o.getSourceType())) {
             MktServiceContract sc = serviceContractMapper.selectById(o.getSourceId());
             if (sc != null) {
                 m.put("contractId", sc.getId());
