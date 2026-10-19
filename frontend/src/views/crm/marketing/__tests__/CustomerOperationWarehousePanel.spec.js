@@ -128,7 +128,7 @@ describe('客户与手动作业仓库建档', () => {
     await wrapper.vm.searchCustomers('超级棒棒猪'); finishOld({ records: [existingCustomer], total: 1 }); await pending
     expect(wrapper.vm.customers).toEqual([newCustomer])
     wrapper.vm.customerPage = 2; await wrapper.vm.loadCustomers()
-    expect(mktYunshanApi.customers).toHaveBeenLastCalledWith({ keyword: '超级棒棒猪', pageNo: 2, pageSize: 20 })
+    expect(mktYunshanApi.customers).toHaveBeenLastCalledWith(expect.objectContaining({ keyword: '超级棒棒猪', pageNo: 2, pageSize: 20 }))
     await wrapper.vm.searchSites('广州'); wrapper.vm.sitePage = 2; await wrapper.vm.loadSites()
     expect(mktWarehouseOperationsApi.sites).toHaveBeenLastCalledWith(warehouseId, { keyword: '广州', pageNo: 2, pageSize: 20, status: 1 })
   })

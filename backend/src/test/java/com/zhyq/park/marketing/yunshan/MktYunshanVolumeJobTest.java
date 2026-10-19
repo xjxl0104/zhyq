@@ -22,12 +22,17 @@ class MktYunshanVolumeJobTest {
         TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new MybatisConfiguration(), ""), MktYunshanVolumeMap.class);
     }
 
-    @Test void missingCredentialsSkipsAllDatabaseWork() {
+    @Test void missingSharedCredentialsStillRunsCustomerDedicatedConnections() {
         var client = mock(YunshanClient.class);
         var mapper = mock(MktYunshanVolumeMapMapper.class);
         var service = mock(YunshanVolumeSyncService.class);
+        var shared = new MktYunshanVolumeMap(); shared.setId(1L);
+        var dedicated = new MktYunshanVolumeMap(); dedicated.setId(2L); dedicated.setConnectionBaseUrl("https://customer.example/api");
+        when(mapper.selectList(any())).thenReturn(List.of(shared, dedicated));
         new MktYunshanVolumeJob(client, mapper, service, 7).run();
-        verifyNoInteractions(mapper, service);
+        LocalDate today = LocalDate.now(YunshanVolumeSyncService.SHANGHAI);
+        verify(service).sync(2L, today.minusDays(7), today.minusDays(1), 1);
+        verify(service, never()).sync(eq(1L), any(), any(), anyInt());
     }
 
     @Test void invalidWindowSkipsInsteadOfClampingSilently() {

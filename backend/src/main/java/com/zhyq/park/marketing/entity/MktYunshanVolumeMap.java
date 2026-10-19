@@ -14,6 +14,13 @@ import java.time.LocalDateTime;
 public class MktYunshanVolumeMap extends BaseEntity {
     private Long customerId;
     private Long warehouseId;
+    private Long operationWarehouseId;
+    private String operationWarehouseName;
+    private String connectionBaseUrl;
+    @com.fasterxml.jackson.annotation.JsonIgnore
+    private String connectionAppIdEnc;
+    @com.fasterxml.jackson.annotation.JsonIgnore
+    private String connectionPublicKeyEnc;
     private String parentOwnerNo;
     private String parentOwnerName;
     private String parentWarehouseNo;

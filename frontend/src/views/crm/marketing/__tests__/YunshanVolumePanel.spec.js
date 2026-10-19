@@ -4,7 +4,7 @@ import YunshanVolumePanel from '../YunshanVolumePanel.vue'
 import { mktYunshanApi } from '@/api/marketing'
 const { permissions } = vi.hoisted(() => ({ permissions: new Set() }))
 vi.mock('@/utils/permission', () => ({ hasPermission: permission => permissions.has(permission) }))
-vi.mock('@/api/marketing', () => ({ mktYunshanApi: Object.fromEntries(['config', 'maps', 'customers', 'owners', 'warehouses', 'createMap', 'setStatus', 'volume', 'logs', 'sync', 'reconcile'].map(key => [key, vi.fn()])) }))
+vi.mock('@/api/marketing', () => ({ mktYunshanApi: Object.fromEntries(['directory', 'customerSites', 'config', 'maps', 'customers', 'owners', 'warehouses', 'createMap', 'setStatus', 'volume', 'logs', 'sync', 'reconcile'].map(key => [key, vi.fn()])) }))
 vi.mock('element-plus', async original => ({ ...await original(), ElMessage: { success: vi.fn(), warning: vi.fn() } }))
 const map = { id: '9007199254740993', customerId: '9007199254740995', customerName: '棒棒猪', parentOwnerNo: '0009007199254740993', parentOwnerName: '棒棒猪', parentWarehouseNo: '000123', parentWarehouseName: '授权仓库', status: 1, identityMismatch: false }
 const wrappers = []
@@ -29,11 +29,88 @@ beforeEach(() => {
   mktYunshanApi.customers.mockResolvedValue({ records: [{ id: map.customerId, name: '棒棒猪' }], total: 21 })
   mktYunshanApi.owners.mockResolvedValue({ records: [{ no: map.parentOwnerNo, name: map.customerName }], pages: 1, total: 1 })
   mktYunshanApi.warehouses.mockResolvedValue({ records: [{ no: map.parentWarehouseNo, name: '授权仓库' }], pages: 1, total: 1 })
+  mktYunshanApi.customerSites.mockResolvedValue([{ id: 'SITE-1', name: '本地作业仓库' }])
+  mktYunshanApi.directory.mockImplementation((warehouseId, { customerId, connection, ...params }) => params.parentOwnerNo
+    ? mktYunshanApi.warehouses(params) : mktYunshanApi.owners(params))
   mktYunshanApi.createMap.mockResolvedValue(null)
   mktYunshanApi.setStatus.mockResolvedValue(null)
 })
 afterEach(() => wrappers.splice(0).forEach(wrapper => wrapper.unmount()))
 describe('发货量同步与云山云仓接口授权边界', () => {
+  it('客户列表按当前云仓查询，自动关联本地唯一仓库', async () => {
+    permissions.add('crm:marketing:erp:config')
+    const wrapper = mount(); await flushPromises(); await wrapper.vm.openMap(); await flushPromises()
+    expect(mktYunshanApi.customers).toHaveBeenCalledWith({ warehouseId: '9007199254740997', keyword: '', pageNo: 1, pageSize: 20 })
+    expect(mktYunshanApi.directory).not.toHaveBeenCalled()
+    wrapper.vm.mapDialog.customerId = map.customerId; await wrapper.vm.matchCustomer()
+    expect(mktYunshanApi.customerSites).toHaveBeenCalledWith('9007199254740997', map.customerId)
+    expect(wrapper.vm.mapDialog.operationWarehouseId).toBe('SITE-1')
+    expect(wrapper.text()).toContain('本地作业仓库（已自动关联）')
+  })
+  it('多仓需要明确选择，无建档关系不能保存', async () => {
+    permissions.add('crm:marketing:erp:config')
+    mktYunshanApi.customerSites.mockResolvedValue([{ id: 'A', name: '一仓' }, { id: 'B', name: '二仓' }])
+    const wrapper = mount(); await flushPromises(); await wrapper.vm.openMap(); await flushPromises()
+    wrapper.vm.mapDialog.customerId = map.customerId; await wrapper.vm.matchCustomer()
+    wrapper.vm.mapDialog.identityConfirmed = true
+    expect(wrapper.vm.mapDialog.operationWarehouseId).toBe('')
+    expect(wrapper.vm.canSaveMap).toBeFalsy()
+    wrapper.vm.mapDialog.operationWarehouseId = 'B'; expect(wrapper.vm.canSaveMap).toBeTruthy()
+    mktYunshanApi.customerSites.mockResolvedValue([]); await wrapper.vm.matchCustomer()
+    wrapper.vm.mapDialog.identityConfirmed = true; await wrapper.vm.saveMap()
+    expect(mktYunshanApi.createMap).not.toHaveBeenCalled()
+  })
+  it('切换客户后忽略旧客户的仓库响应', async () => {
+    permissions.add('crm:marketing:erp:config')
+    const wrapper = mount(); await flushPromises(); await wrapper.vm.openMap(); await flushPromises()
+    let finishOld
+    mktYunshanApi.customerSites.mockImplementationOnce(() => new Promise(resolve => { finishOld = resolve }))
+    wrapper.vm.mapDialog.customerId = map.customerId; const old = wrapper.vm.matchCustomer()
+    wrapper.vm.mapDialog.customerId = 'NEW'; await wrapper.vm.matchCustomer()
+    finishOld([{ id: 'OLD', name: '旧客户仓库' }]); await old
+    expect(wrapper.vm.localSites.map(row => row.id)).toEqual(['SITE-1'])
+    expect(wrapper.vm.mapDialog.operationWarehouseId).toBe('SITE-1')
+  })
+  it('无共享配置仍可填写专用接口，修改凭证必须重新验证', async () => {
+    permissions.add('crm:marketing:erp:config')
+    mktYunshanApi.config.mockResolvedValue({ configured: false, baseUrl: '', appId: '' })
+    const wrapper = mount(); await flushPromises(); await wrapper.vm.openMap(); await flushPromises()
+    expect(wrapper.vm.mapDialog.visible).toBe(true)
+    expect(wrapper.vm.connection.mode).toBe('CUSTOM')
+    wrapper.vm.mapDialog.customerId = map.customerId; await wrapper.vm.matchCustomer()
+    expect(mktYunshanApi.directory).not.toHaveBeenCalled()
+    Object.assign(wrapper.vm.connection, { baseUrl: 'https://customer.example/api', appId: 'customer-app', publicKey: 'public-key' })
+    await wrapper.vm.reloadDirectory(); wrapper.vm.mapDialog.identityConfirmed = true
+    expect(wrapper.vm.canSaveMap).toBeTruthy()
+    wrapper.vm.connection.appId = 'changed-app'
+    expect(wrapper.vm.canSaveMap).toBeFalsy()
+    expect(wrapper.vm.owners).toEqual([])
+  })
+  it('保存后自动同步新配置，专用接口不依赖共享连接', async () => {
+    permissions.add('crm:marketing:erp:config')
+    mktYunshanApi.config.mockResolvedValue({ configured: false, baseUrl: '', appId: '' })
+    const wrapper = mount(); await flushPromises(); await wrapper.vm.openMap(); await flushPromises()
+    wrapper.vm.mapDialog.customerId = map.customerId; await wrapper.vm.matchCustomer()
+    Object.assign(wrapper.vm.connection, { baseUrl: 'https://customer.example/api', appId: 'customer-app', publicKey: 'public-key' })
+    await wrapper.vm.reloadDirectory(); wrapper.vm.mapDialog.identityConfirmed = true
+    mktYunshanApi.createMap.mockResolvedValue(map.id)
+    mktYunshanApi.maps.mockResolvedValue([{ ...map, connectionMode: 'CUSTOM' }])
+    mktYunshanApi.sync.mockResolvedValue({ daysFetched: 7, daysChanged: 0, daysMissing: 0 })
+    await wrapper.vm.saveMap()
+    expect(mktYunshanApi.sync).toHaveBeenCalledWith(map.id, expect.objectContaining({ startDate: expect.any(String), endDate: expect.any(String) }))
+    expect(wrapper.vm.connection.appId).toBe('')
+    expect(wrapper.vm.connection.publicKey).toBe('')
+  })
+  it('更换客户清除上一客户的专用接口凭证', async () => {
+    permissions.add('crm:marketing:erp:config')
+    const wrapper = mount(); await flushPromises(); await wrapper.vm.openMap()
+    wrapper.vm.mapDialog.customerId = map.customerId; await wrapper.vm.matchCustomer()
+    Object.assign(wrapper.vm.connection, { mode: 'CUSTOM', baseUrl: 'https://customer.example/api', appId: 'previous-app', publicKey: 'previous-key' })
+    wrapper.vm.mapDialog.customerId = 'OTHER'; await wrapper.vm.matchCustomer()
+    expect(wrapper.vm.connection.appId).toBe('')
+    expect(wrapper.vm.connection.publicKey).toBe('')
+    expect(wrapper.vm.canSaveMap).toBeFalsy()
+  })
   it('同名仅作为候选，唯一仓库可带出但必须明确确认身份才允许保存', async () => {
     permissions.add('crm:marketing:erp:config')
     mktYunshanApi.maps.mockResolvedValue([])
@@ -52,7 +129,7 @@ describe('发货量同步与云山云仓接口授权边界', () => {
     wrapper.vm.mapDialog.identityConfirmed = true
     await wrapper.vm.saveMap()
     expect(mktYunshanApi.createMap).toHaveBeenCalledWith('9007199254740997', {
-      customerId: map.customerId, parentOwnerNo: map.parentOwnerNo, parentWarehouseNo: map.parentWarehouseNo, identityConfirmed: true
+      operationWarehouseId: 'SITE-1', connection: { mode: 'SHARED', baseUrl: 'https://example.test/api', appId: '', publicKey: '' }, customerId: map.customerId, parentOwnerNo: map.parentOwnerNo, parentWarehouseNo: map.parentWarehouseNo, identityConfirmed: true
     })
   })
   it('超级棒棒猪是独立客户，不能选择广东泽浩棒棒猪代替或强行确认后保存', async () => {
@@ -134,7 +211,7 @@ describe('发货量同步与云山云仓接口授权边界', () => {
     expect(wrapper.vm.mapDialog.parentOwnerNo).toBe(map.parentOwnerNo)
     expect(wrapper.vm.canSaveMap).toBeFalsy()
 
-    wrapper.vm.owners.push({ no: 'CLIENT-B', name: '独立客户乙' })
+    mktYunshanApi.owners.mockResolvedValue({ records: [{ no: 'CLIENT-B', name: '独立客户乙' }], pages: 1, total: 1 })
     wrapper.vm.mapDialog.identityConfirmed = true
     wrapper.vm.mapDialog.customerId = '42'; await wrapper.vm.matchCustomer()
     expect(wrapper.vm.mapDialog.parentOwnerNo).toBe('CLIENT-B')
@@ -167,8 +244,9 @@ describe('发货量同步与云山云仓接口授权边界', () => {
     const wrapper = mount(); await flushPromises(); await wrapper.vm.openMap(); await flushPromises()
     expect(wrapper.text()).toContain('云仓发货量同步')
     expect(wrapper.text()).toContain('按客户和作业仓库同步每日发货票数，并核对数据。统计在次日生成。')
-    expect(wrapper.text()).toContain('数据来源：云山接口。当前使用共享连接')
-    expect(wrapper.text()).toContain('不代表当前加盟云仓已接入')
+    expect(wrapper.text()).toContain('目前支持云山接口协议')
+    expect(wrapper.text()).toContain('当前云仓有效合同下的客户')
+    wrapper.vm.mapDialog.customerId = map.customerId; await wrapper.vm.matchCustomer()
     expect(wrapper.text()).toContain('加盟云仓：云山')
     expect(wrapper.text()).toContain('当前接口开放 1 个客户的查询权限')
     expect(wrapper.text()).toContain('一个客户可以在多个作业仓库发货')
@@ -199,6 +277,7 @@ describe('发货量同步与云山云仓接口授权边界', () => {
   it('区分接口读取失败和空授权目录，失败后不能保留旧选项', async () => {
     permissions.add('crm:marketing:erp:config')
     const wrapper = mount(); await flushPromises(); await wrapper.vm.openMap()
+    wrapper.vm.mapDialog.customerId = map.customerId
     mktYunshanApi.owners.mockRejectedValueOnce(new Error('目录读取失败'))
     await wrapper.vm.reloadDirectory(); await flushPromises()
     expect(wrapper.text()).toContain('目录读取失败')
@@ -229,13 +308,13 @@ describe('发货量同步与云山云仓接口授权边界', () => {
     permissions.add('crm:marketing:erp:config')
     mktYunshanApi.owners.mockImplementation(({ current }) => Promise.resolve({ records: current === 1 ? [{ no: 'OTHER', name: '其他货主' }] : [{ no: map.parentOwnerNo, name: map.customerName }], pages: 2, total: 2 }))
     const wrapper = mount(); await flushPromises(); await wrapper.vm.openMap(); await flushPromises()
-    expect(mktYunshanApi.owners.mock.calls.map(([params]) => params.current)).toEqual([1, 2])
     wrapper.vm.mapDialog.customerId = map.customerId; await wrapper.vm.matchCustomer()
+    expect(mktYunshanApi.owners.mock.calls.map(([params]) => params.current)).toEqual([1, 2])
     expect(mktYunshanApi.warehouses).toHaveBeenCalledWith({ parentOwnerNo: map.parentOwnerNo, current: 1 })
     wrapper.vm.mapDialog.identityConfirmed = true
     wrapper.vm.mapDialog.parentWarehouseNo = 'UNAUTHORIZED'; await wrapper.vm.saveMap(); expect(mktYunshanApi.createMap).not.toHaveBeenCalled()
     wrapper.vm.mapDialog.parentWarehouseNo = map.parentWarehouseNo; await wrapper.vm.saveMap()
-    expect(mktYunshanApi.createMap).toHaveBeenCalledWith('9007199254740997', { customerId: map.customerId, parentOwnerNo: map.parentOwnerNo, parentWarehouseNo: map.parentWarehouseNo, identityConfirmed: true })
+    expect(mktYunshanApi.createMap).toHaveBeenCalledWith('9007199254740997', { operationWarehouseId: 'SITE-1', connection: { mode: 'SHARED', baseUrl: 'https://example.test/api', appId: '', publicKey: '' }, customerId: map.customerId, parentOwnerNo: map.parentOwnerNo, parentWarehouseNo: map.parentWarehouseNo, identityConfirmed: true })
   })
   it('切换货主清空旧仓库，忽略旧货主的迟到目录', async () => {
     permissions.add('crm:marketing:erp:config')
@@ -252,7 +331,7 @@ describe('发货量同步与云山云仓接口授权边界', () => {
     permissions.add('crm:marketing:erp:config')
     const wrapper = mount(); await flushPromises(); await wrapper.vm.openMap(); await flushPromises()
     await wrapper.vm.searchCustomers('棒棒猪'); wrapper.vm.customerPage = 2; await wrapper.vm.loadCustomers()
-    expect(mktYunshanApi.customers).toHaveBeenLastCalledWith({ keyword: '棒棒猪', pageNo: 2, pageSize: 20 })
+    expect(mktYunshanApi.customers).toHaveBeenLastCalledWith({ warehouseId: '9007199254740997', keyword: '棒棒猪', pageNo: 2, pageSize: 20 })
   })
   it('切换云仓后旧请求不能覆盖新客户快照', async () => {
     const wrapper = mount(); await flushPromises()
