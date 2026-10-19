@@ -44,9 +44,9 @@ import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -125,12 +125,24 @@ public class MktReferralOrderController {
         List<MktServiceContract> contracts = cp.getRecords();
 
         Map<Long, Map<String, Object>> agg = aggregateByContract(contracts);
-        Map<Long, String> customerNames = namesByIds(contracts.stream()
-                .map(MktServiceContract::getCustomerId).collect(Collectors.toSet()), customerMapper::selectBatchIds, Customer::getName);
-        Map<Long, String> partnerNames = namesByIds(contracts.stream()
-                .map(MktServiceContract::getPartnerId).collect(Collectors.toSet()), promoterMapper::selectBatchIds, MktPromoter::getName);
-        Map<Long, String> warehouseNames = namesByIds(contracts.stream()
-                .map(MktServiceContract::getWarehouseId).collect(Collectors.toSet()), warehouseMapper::selectBatchIds, MktWarehouse::getName);
+        Map<Long, String> customerNames = new HashMap<>();
+        Set<Long> customerIds = contracts.stream().map(MktServiceContract::getCustomerId)
+                .filter(Objects::nonNull).collect(Collectors.toSet());
+        if (!customerIds.isEmpty()) {
+            for (Customer c : customerMapper.selectBatchIds(customerIds)) customerNames.put(c.getId(), c.getName());
+        }
+        Map<Long, String> partnerNames = new HashMap<>();
+        Set<Long> partnerIds = contracts.stream().map(MktServiceContract::getPartnerId)
+                .filter(Objects::nonNull).collect(Collectors.toSet());
+        if (!partnerIds.isEmpty()) {
+            for (MktPromoter p : promoterMapper.selectBatchIds(partnerIds)) partnerNames.put(p.getId(), p.getName());
+        }
+        Map<Long, String> warehouseNames = new HashMap<>();
+        Set<Long> warehouseIds = contracts.stream().map(MktServiceContract::getWarehouseId)
+                .filter(Objects::nonNull).collect(Collectors.toSet());
+        if (!warehouseIds.isEmpty()) {
+            for (MktWarehouse w : warehouseMapper.selectBatchIds(warehouseIds)) warehouseNames.put(w.getId(), w.getName());
+        }
 
         List<Map<String, Object>> rows = new ArrayList<>();
         for (MktServiceContract c : contracts) {
@@ -182,16 +194,6 @@ public class MktReferralOrderController {
             result.put(Long.valueOf(sid.toString()), clean);
         }
         return result;
-    }
-
-    private <T> Map<Long, String> namesByIds(Set<Long> ids, java.util.function.Function<Set<Long>, List<T>> loader,
-                                             java.util.function.Function<T, Long> idGetter,
-                                             java.util.function.Function<T, String> nameGetter) {
-        Map<Long, String> names = new HashMap<>();
-        Set<Long> valid = ids == null ? new HashSet<>() : ids.stream().filter(java.util.Objects::nonNull).collect(Collectors.toSet());
-        if (valid.isEmpty()) return names;
-        for (T t : loader.apply(valid)) names.put(idGetter.apply(t), nameGetter.apply(t));
-        return names;
     }
 
     @Operation(summary = "详情") @PreAuthorize("hasAuthority('crm:marketing:order:query')") @GetMapping("/{id}")
