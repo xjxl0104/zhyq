@@ -144,15 +144,15 @@
           <el-table-column prop="warehouseName" label="主仓" min-width="130"><template #default="{ row }">{{ row.warehouseName || '—' }}</template></el-table-column>
           <el-table-column label="计佣订单数" width="100" align="right"><template #default="{ row }">{{ row.orderCount ?? 0 }}</template></el-table-column>
           <el-table-column label="已确认" width="80" align="right"><template #default="{ row }">{{ row.confirmedCount ?? 0 }}</template></el-table-column>
-          <el-table-column label="服务费合计(元)" width="130" align="right"><template #default="{ row }">{{ money(row.serviceFeeSum) }}</template></el-table-column>
-          <el-table-column label="佣金池合计(元)" width="130" align="right"><template #default="{ row }">{{ money(row.poolSum) }}</template></el-table-column>
+          <el-table-column label="已确认服务费(元)" width="130" align="right"><template #default="{ row }">{{ money(row.serviceFeeSum) }}</template></el-table-column>
+          <el-table-column label="已确认佣金池(元)" width="130" align="right"><template #default="{ row }">{{ money(row.poolSum) }}</template></el-table-column>
           <el-table-column prop="lastEventTime" label="最近出库时间" width="160"><template #default="{ row }">{{ row.lastEventTime || '—' }}</template></el-table-column>
           <el-table-column label="合同有效期" width="210"><template #default="{ row }">{{ (row.startDate || '—') + ' ~ ' + (row.endDate || '—') }}</template></el-table-column>
         </el-table>
         <el-pagination class="pager" background layout="total, prev, pager, next, sizes"
                        :total="summaryTotal" v-model:current-page="squery.pageNo"
                        v-model:page-size="squery.pageSize" :page-sizes="[10,20,50]" @change="loadSummary" />
-        <p class="hint pager-hint">点击任意合同行可跳到「订单明细」并按该合同过滤。汇总只统计出库单类计佣事件(来源=出库单)。</p>
+        <p class="hint pager-hint">点击任意合同行可跳到「订单明细」并按该合同过滤。汇总只统计出库单类计佣事件(来源=出库单)；金额只计已确认订单，与服务费账单口径一致。</p>
       </div>
     </template>
 
@@ -181,7 +181,7 @@ import CommissionBasis from './CommissionBasis.vue'
 const SRC = { 1: '租赁签约', 2: '出库单', 3: '平台费收款', 4: '签约奖', 5: '增值服务' }
 const ST = { 1: '待确认', 2: '已确认', 3: '已退款', 4: '已取消', 5: '无归属' }
 const CST = { 1: '冻结', 2: '可结算', 3: '已结算', 4: '已提现', 5: '作废' }
-const SIGN = { 1: '园区签', 2: '直签' }
+const SIGN = { 1: '园区签', 2: '云仓直签' }
 const SVT = { 1: '仓储', 2: '代发', 3: '仓配' }
 const FM = { 1: '仓租', 2: '单票', 3: '按件', 4: '包月' }
 const stType = (s) => ({ 1: 'warning', 2: 'success', 3: 'danger', 4: 'info', 5: 'danger' }[s] || 'info')
