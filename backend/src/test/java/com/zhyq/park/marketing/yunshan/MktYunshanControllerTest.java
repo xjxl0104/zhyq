@@ -36,8 +36,15 @@ class MktYunshanControllerTest {
     final MktWarehouseMapper warehouses = mock(MktWarehouseMapper.class);
     final CustomerMapper customers = mock(CustomerMapper.class);
     final MktAuditService audit = mock(MktAuditService.class);
-    final MktYunshanController controller = new MktYunshanController(client, sync, maps, volumes, logs, warehouses, customers, audit);
+    final YunshanCustomerScope scope = mock(YunshanCustomerScope.class);
+    final YunshanConnections connections = mock(YunshanConnections.class);
+    final MktYunshanController controller = new MktYunshanController(client, sync, maps, volumes, logs, warehouses, customers, audit, scope, connections);
 
+    @org.junit.jupiter.api.BeforeEach void setupScope() {
+        var site = new MktOperationWarehouse(); site.setId(99L); site.setName("本地仓库");
+        when(scope.requireSite(any(), any(), any())).thenReturn(site);
+        when(connections.preview(any())).thenReturn(client);
+    }
     @BeforeAll static void metadata() {
         var assistant = new MapperBuilderAssistant(new MybatisConfiguration(), "");
         for (Class<?> entity : List.of(MktYunshanVolumeMap.class, MktYunshanDailyVolume.class, Customer.class, MktWarehouse.class))
@@ -47,9 +54,26 @@ class MktYunshanControllerTest {
     @Test void rejectsUnauthorizedCombinationBeforeSavingMapping() {
         when(client.owners(null, "003", 1)).thenReturn(new YunshanClient.EntityPage(List.of(new YunshanClient.Entity("001", "货主")), 1, 1));
         when(client.warehouses(null, "001", 1)).thenReturn(new YunshanClient.EntityPage(List.of(), 0, 0));
-        assertThatThrownBy(() -> controller.createMapping(7L, new MktYunshanController.MapInput(2L, "001", "003", true)))
+        assertThatThrownBy(() -> controller.createMapping(7L, new MktYunshanController.MapInput(2L, "001", "003", true, 99L, new YunshanConnections.Input("SHARED", null, null, null))))
                 .hasMessageContaining("未获云山授权");
         verifyNoInteractions(maps, audit, customers, warehouses);
+    }
+
+    @Test void unsignedOrUnlinkedCustomerIsRejectedBeforeAnyExternalRequest() {
+        doThrow(new com.zhyq.park.common.exception.BizException("没有有效的已签合同"))
+            .when(scope).requireSite(7L, 2L, 99L);
+        assertThatThrownBy(() -> controller.createMapping(7L, new MktYunshanController.MapInput(
+            2L, "001", "003", true, 99L, new YunshanConnections.Input("SHARED", null, null, null))))
+            .hasMessageContaining("已签合同");
+        verifyNoInteractions(client, maps, audit);
+    }
+
+    @Test void directoryPreviewAlsoRequiresContractWithCurrentWarehouse() {
+        doThrow(new com.zhyq.park.common.exception.BizException("没有有效的已签合同"))
+            .when(scope).requireSigned(7L, 2L);
+        assertThatThrownBy(() -> controller.directory(7L, new MktYunshanController.DirectoryInput(
+            2L, new YunshanConnections.Input("SHARED", null, null, null), null, 1))).hasMessageContaining("已签合同");
+        verifyNoInteractions(client);
     }
 
     @Test void createsMappingWithAuthoritativeNamesAndFiltersWarehouseByOwnerAcrossPages() {
@@ -60,7 +84,7 @@ class MktYunshanControllerTest {
         MktWarehouse w = new MktWarehouse(); w.setId(7L); w.setTenantId(1L); w.setJoinStatus(5);
         when(warehouses.selectForUpdate(7L)).thenReturn(w);
         when(maps.insert(any(MktYunshanVolumeMap.class))).thenAnswer(i -> { i.<MktYunshanVolumeMap>getArgument(0).setId(10L); return 1; });
-        controller.createMapping(7L, new MktYunshanController.MapInput(2L, "0009007199254740993", "003", true));
+        controller.createMapping(7L, new MktYunshanController.MapInput(2L, "0009007199254740993", "003", true, 99L, new YunshanConnections.Input("SHARED", null, null, null)));
         verify(maps).insert(argThat((MktYunshanVolumeMap m) -> m.getParentOwnerNo().equals("0009007199254740993")
                 && m.getParentWarehouseName().equals("授权仓库") && m.getCustomerId().equals(2L) && m.getWarehouseId().equals(7L)));
         verify(audit).log(eq("yunshan.mapping.create"), eq("yunshan_map"), eq(10L), anyString(), isNull(), any());
@@ -74,15 +98,15 @@ class MktYunshanControllerTest {
         Customer customer = new Customer(); customer.setId(2L); customer.setName("超级棒棒猪");
         when(customers.selectForUpdate(2L)).thenReturn(customer);
 
-        assertThatThrownBy(() -> controller.createMapping(7L, new MktYunshanController.MapInput(2L, "001", "003", true)))
+        assertThatThrownBy(() -> controller.createMapping(7L, new MktYunshanController.MapInput(2L, "001", "003", true, 99L, new YunshanConnections.Input("SHARED", null, null, null))))
                 .hasMessageContaining("名称不一致").hasMessageContaining("独立客户");
         verifyNoInteractions(maps, warehouses, audit);
     }
 
     @Test void explicitConfirmationIsRequiredBeforeCallingTheDirectory() {
-        assertThatThrownBy(() -> controller.createMapping(7L, new MktYunshanController.MapInput(2L, "001", "003", null)))
+        assertThatThrownBy(() -> controller.createMapping(7L, new MktYunshanController.MapInput(2L, "001", "003", null, 99L, new YunshanConnections.Input("SHARED", null, null, null))))
                 .hasMessageContaining("确认");
-        assertThatThrownBy(() -> controller.createMapping(7L, new MktYunshanController.MapInput(2L, "001", "003", false)))
+        assertThatThrownBy(() -> controller.createMapping(7L, new MktYunshanController.MapInput(2L, "001", "003", false, 99L, new YunshanConnections.Input("SHARED", null, null, null))))
                 .hasMessageContaining("确认");
         verifyNoInteractions(client, maps, customers, warehouses, audit);
     }

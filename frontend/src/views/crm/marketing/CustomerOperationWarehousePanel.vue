@@ -118,7 +118,7 @@ async function loadCustomers() {
   loading.customers = true; errors.customers = ''
   const valid = () => current(context, warehouse) && dialog === linkEpoch && version === versions.customers && linkDialog.visible
   try {
-    const result = await mktYunshanApi.customers({ keyword: customerKeyword.value, pageNo: customerPage.value, pageSize: 20 })
+    const result = await mktYunshanApi.customers({ warehouseId: warehouseKey.value, keyword: customerKeyword.value, pageNo: customerPage.value, pageSize: 20 })
     if (!valid()) return
     customers.value = (result.records || []).filter(row => idOf(row.id)); customerTotal.value = Number(result.total || 0)
   } catch (error) { if (valid()) { customers.value = []; errors.customers = error.message || '客户加载失败，请重新搜索。' } }

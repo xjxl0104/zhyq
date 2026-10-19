@@ -29,7 +29,6 @@ public class MktYunshanVolumeJob {
 
     @Scheduled(cron = "0 30 9 * * ?", zone = "Asia/Shanghai")
     public void run() {
-        if (!client.configured()) return;
         if (syncDays < 1 || syncDays > 92) {
             log.error("[yunshan] sync-days 必须为1至92，已跳过定时同步");
             return;
@@ -38,6 +37,7 @@ public class MktYunshanVolumeJob {
         for (MktYunshanVolumeMap mapping : mapMapper.selectList(new LambdaQueryWrapper<MktYunshanVolumeMap>()
                 .eq(MktYunshanVolumeMap::getTenantId, MyMetaObjectHandler.DEFAULT_TENANT_ID)
                 .eq(MktYunshanVolumeMap::getStatus, 1).orderByAsc(MktYunshanVolumeMap::getId))) {
+            if (mapping.getConnectionBaseUrl() == null && !client.configured()) continue;
             try {
                 syncService.sync(mapping.getId(), today.minusDays(syncDays), today.minusDays(1), YunshanVolumeSyncService.TRIGGER_SCHEDULED);
             } catch (RuntimeException failure) {

@@ -44,8 +44,10 @@ zhyq:
     appid: ${WX_WH_APPID:}
     secret: ${WX_WH_SECRET:}
   yunshan:
-    # 云山外部接口(发货量查询)。三项都配齐才会定时拉取;凭证只放 .env,不进仓库
+    # 共享云山接口；客户专用连接通过 ERP 页面配置并加密保存。
     base-url: ${YUNSHAN_BASE_URL:}
+    # 额外可信接口来源（scheme://host[:port]，逗号分隔）；共享接口来源默认可信。
+    allowed-origins: ${YUNSHAN_ALLOWED_ORIGINS:}
     app-id: ${YUNSHAN_APP_ID:}
     # 云山提供的 RSA 公钥,PEM 或去掉头尾的 Base64 均可
     public-key: ${YUNSHAN_PUBLIC_KEY:}

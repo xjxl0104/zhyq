@@ -42,7 +42,8 @@ public class YunshanVolumeSyncService {
     private static final String NO_STAT_DATA = "NO_STAT_DATA";
     private static final Long TENANT = MyMetaObjectHandler.DEFAULT_TENANT_ID;
 
-    private final YunshanClient client;
+    private final YunshanConnections connections;
+    private final YunshanCustomerScope customerScope;
     private final MktYunshanVolumeMapMapper mapMapper;
     private final MktYunshanDailyVolumeMapper volumeMapper;
     private final MktYunshanSyncLogMapper logMapper;
@@ -50,10 +51,11 @@ public class YunshanVolumeSyncService {
     // 单实例部署。条带锁覆盖远端读取和提交，避免同一映射旧响应覆盖新响应，且不积累锁对象。
     private final ReentrantLock[] locks = new ReentrantLock[64];
 
-    public YunshanVolumeSyncService(YunshanClient client, MktYunshanVolumeMapMapper mapMapper,
+    public YunshanVolumeSyncService(YunshanConnections connections, YunshanCustomerScope customerScope, MktYunshanVolumeMapMapper mapMapper,
                                    MktYunshanDailyVolumeMapper volumeMapper, MktYunshanSyncLogMapper logMapper,
                                    PlatformTransactionManager transactionManager) {
-        this.client = client;
+        this.connections = connections;
+        this.customerScope = customerScope;
         this.mapMapper = mapMapper;
         this.volumeMapper = volumeMapper;
         this.logMapper = logMapper;
@@ -115,6 +117,8 @@ public class YunshanVolumeSyncService {
         try {
             MktYunshanVolumeMap mapping = requireMapping(mapId);
             requireMatchingIdentity(mapMapper.selectCustomerName(mapping.getCustomerId(), TENANT, false), mapping.getParentOwnerName());
+            requireScope(mapping);
+            YunshanClient client = connections.forMapping(mapping);
             YunshanClient.Summary summary = client.summary(mapping.getParentOwnerNo(), mapping.getParentWarehouseNo(), start, end);
             validateSummary(summary);
             Snapshot daily = fetch(mapping, start, end);
@@ -165,6 +169,7 @@ public class YunshanVolumeSyncService {
                                 String reason) { }
 
     private Snapshot fetch(MktYunshanVolumeMap mapping, LocalDate start, LocalDate end) {
+        YunshanClient client = connections.forMapping(mapping);
         long rangeDays = ChronoUnit.DAYS.between(start, end) + 1;
         YunshanClient.DailyPage first = client.daily(mapping.getParentOwnerNo(), mapping.getParentWarehouseNo(), start, end, 1);
         validatePageHeader(first, rangeDays);
@@ -285,6 +290,13 @@ public class YunshanVolumeSyncService {
     private void requireActiveSubjects(MktYunshanVolumeMap mapping) {
         if (!Integer.valueOf(1).equals(mapping.getStatus())) throw new BizException("映射已停用，请先启用后再同步");
         if (mapMapper.countAvailableSubjects(mapping.getId(), TENANT) != 1) throw new BizException("映射关联的客户或云仓已删除、退出或冻结，请停用映射");
+        requireScope(mapping);
+    }
+
+    private void requireScope(MktYunshanVolumeMap mapping) {
+        customerScope.requireSigned(mapping.getWarehouseId(), mapping.getCustomerId());
+        if (mapping.getOperationWarehouseId() != null)
+            customerScope.requireSite(mapping.getWarehouseId(), mapping.getCustomerId(), mapping.getOperationWarehouseId());
     }
 
     /** 同名只是最低校验条件，不代表已经证实为同一主体；新建关联仍须人工核对确认。 */
