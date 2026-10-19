@@ -107,7 +107,7 @@ public class PasswordAuthService {
         String invite = identity == Identity.MP
                 ? MktPromoterService.requireRegistrationInvite(request.inviteCode()) : null;
         if (findByUsername(identity, username) != null) throw new BizException(409, "该账号已注册，请直接登录");
-        if (phone != null) rejectExistingPhone(phone);
+        if (phone != null) rejectExistingPhone(identity, phone);
         // Hash before creating business records; the surrounding transaction also rolls back conflicts.
         String hash = encodePassword(request.password());
         Long identityId;
@@ -203,10 +203,11 @@ public class PasswordAuthService {
         catch (DuplicateKeyException e) { throw new BizException(409, "账号或手机号已注册，请登录已有账号"); }
     }
 
-    private void rejectExistingPhone(String phone) {
-        boolean exists = promoters.selectCount(new LambdaQueryWrapper<MktPromoter>().eq(MktPromoter::getPhone, phone)) > 0
-                || warehouses.selectCount(new LambdaQueryWrapper<MktWarehouse>().eq(MktWarehouse::getPhone, phone)) > 0
-                || contacts.selectCount(new LambdaQueryWrapper<MktWarehouseContact>().eq(MktWarehouseContact::getPhone, phone)) > 0;
+    private void rejectExistingPhone(Identity identity, String phone) {
+        boolean exists = identity == Identity.MP
+                ? promoters.selectCount(new LambdaQueryWrapper<MktPromoter>().eq(MktPromoter::getPhone, phone)) > 0
+                : warehouses.selectCount(new LambdaQueryWrapper<MktWarehouse>().eq(MktWarehouse::getPhone, phone)) > 0
+                    || contacts.selectCount(new LambdaQueryWrapper<MktWarehouseContact>().eq(MktWarehouseContact::getPhone, phone)) > 0;
         if (exists) throw new BizException(409, "该手机号已有业务档案，请通过原微信登录后设置账号密码，或联系园区运营；不能凭填写手机号合并身份");
     }
 

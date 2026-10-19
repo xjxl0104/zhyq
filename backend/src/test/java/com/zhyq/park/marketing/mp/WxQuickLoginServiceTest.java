@@ -165,11 +165,8 @@ class WxQuickLoginServiceTest {
         verifyNoInteractions(promoterService);
     }
 
-    @Test void warehousePhoneBindingChecksOtherRolesAndSelfReportedAccounts() {
+    @Test void warehousePhoneBindingStillRejectsSelfReportedAccounts() {
         session(); when(provider.exchangePhone("app", "secret", "phone-code")).thenReturn("13800138000");
-        when(promoters.selectCount(any())).thenReturn(1L);
-        assertThatThrownBy(() -> service.login(WH, request("phone-code"), "ip")).hasMessageContaining("伙伴身份");
-        when(promoters.selectCount(any())).thenReturn(0L);
         MktWarehouse w = warehouse(41L, 2);
         when(warehouses.selectList(any())).thenReturn(List.of(w));
         doThrow(new BizException("待核验")).when(guard).assertCanBind("wh", 41L);
@@ -190,6 +187,63 @@ class WxQuickLoginServiceTest {
         verify(contacts).insert(argThat((MktWarehouseContact c) -> "verified-openid".equals(c.getOpenid())
                 && "13800138000".equals(c.getPhone()) && Long.valueOf(41L).equals(c.getWarehouseId())));
         verifyNoInteractions(onboarding);
+    }
+
+    @Test void sameVerifiedPhoneAndWechatCanLoginBothExistingIdentitiesWithSeparateTokens() {
+        session(); when(provider.exchangePhone("app", "secret", "phone-code")).thenReturn("13800138000");
+        MktPromoter p = partner(31L, 1, null); p.setPhone("13800138000");
+        MktWarehouse w = warehouse(41L, 5); w.setPhone("13800138000");
+        when(promoters.selectOne(any())).thenReturn(null, p);
+        when(warehouses.selectList(any())).thenReturn(List.of(w));
+        // Existing cross-portal records used to incorrectly block either login.
+        lenient().when(promoters.selectCount(any())).thenReturn(1L);
+        lenient().when(warehouses.selectCount(any())).thenReturn(1L);
+        when(promoters.update(isNull(), any())).thenReturn(1);
+        when(warehouses.update(isNull(), any())).thenReturn(1);
+        when(jwt.issueForIdentity("mp", 31L)).thenReturn("partner-token");
+        when(jwt.issueForIdentity("wh", 41L)).thenReturn("warehouse-token");
+        assertThat(service.login(MP, request("phone-code"), "ip")).containsEntry("token", "partner-token");
+        assertThat(service.login(WH, request("phone-code"), "ip"))
+                .containsEntry("token", "warehouse-token").containsEntry("warehouseId", 41L);
+        assertThat(p.getOpenid()).isEqualTo("verified-openid");
+        assertThat(w.getContactOpenid()).isEqualTo("verified-openid");
+        verify(guard).assertCanBind("mp", 31L); verify(guard).assertCanBind("wh", 41L);
+        verifyNoInteractions(promoterService, onboarding);
+    }
+
+    @Test void warehouseOwnerCanRegisterNewPartnerWithoutModifyingWarehouse() {
+        session(); when(provider.exchangePhone("app", "secret", "phone-code")).thenReturn("13800138000");
+        lenient().when(warehouses.selectCount(any())).thenReturn(1L);
+        doAnswer(call -> { MktPromoter p = call.getArgument(0); p.setId(31L); p.setStatus(1); return p; })
+                .when(promoterService).register(any(), eq("ABCD2345"), eq("mp"));
+        assertThat(service.login(MP, request("phone-code"), "ip")).containsEntry("registered", true);
+        verify(jwt).issueForIdentity("mp", 31L);
+        verifyNoInteractions(warehouses, contacts, onboarding);
+    }
+
+    @Test void partnerCanApplyForWarehouseWithoutModifyingPartner() {
+        session(); createWarehouse();
+        when(provider.exchangePhone("app", "secret", "phone-code")).thenReturn("13800138000");
+        lenient().when(promoters.selectCount(any())).thenReturn(1L);
+        assertThat(service.login(WH, request("phone-code"), "ip")).containsEntry("warehouseId", 41L);
+        verify(onboarding).apply(argThat(w -> "13800138000".equals(w.getPhone())));
+        verify(jwt).issueForIdentity("wh", 41L);
+        verifyNoInteractions(promoters, promoterService);
+    }
+
+    @Test void dualIdentityDoesNotAllowTakingAnotherWechatOwnerOrAmbiguousWarehouse() {
+        session(); when(provider.exchangePhone("app", "secret", "phone-code")).thenReturn("13800138000");
+        MktWarehouse w = warehouse(41L, 5); w.setContactOpenid("another-owner");
+        when(warehouses.selectList(any())).thenReturn(List.of(w));
+        assertThatThrownBy(() -> service.login(WH, request("phone-code"), "ip")).hasMessageContaining("其他微信");
+        w.setContactOpenid(null);
+        when(contacts.selectCount(any())).thenReturn(1L);
+        assertThatThrownBy(() -> service.login(WH, request("phone-code"), "ip")).hasMessageContaining("其他微信");
+        when(warehouses.selectList(any())).thenReturn(List.of(w, warehouse(42L, 5)));
+        assertThatThrownBy(() -> service.login(WH, request("phone-code"), "ip")).hasMessageContaining("多个云仓");
+        verify(warehouses, never()).update(any(), any());
+        verify(contacts, never()).insert(any(MktWarehouseContact.class));
+        verifyNoInteractions(jwt, onboarding, promoters);
     }
 
     @Test void explicitMockModeIsTheOnlyWayToUsePlainPhone() {

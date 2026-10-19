@@ -5,7 +5,6 @@ import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.zhyq.park.auth.JwtService;
 import com.zhyq.park.auth.JwtAccountService;
 import com.zhyq.park.common.exception.BizException;
-import com.zhyq.park.marketing.entity.MktPromoter;
 import com.zhyq.park.marketing.entity.MktWarehouse;
 import com.zhyq.park.marketing.entity.MktWarehouseContact;
 import com.zhyq.park.marketing.mapper.MktPromoterMapper;
@@ -113,9 +112,7 @@ public class WhAuthService {
 
     private LoginResult bindPhoneInternal(String openid, String phone) {
         if (!StringUtils.hasText(openid) || phone == null || !phone.matches("^1\\d{10}$")) throw new BizException("手机号格式不正确");
-        // A phone already belonging to a partner is never silently converted into a warehouse identity.
-        MktPromoter partner = promoterMapper.selectOne(new LambdaQueryWrapper<MktPromoter>().eq(MktPromoter::getPhone, phone).last("limit 1"));
-        if (partner != null) throw new BizException(409, "该手机号已绑定伙伴身份,请使用身份选择");
+        // Resolve only warehouse ownership; a separate partner identity may use the same verified phone.
         MktWarehouse w = warehouseMapper.selectOne(new LambdaQueryWrapper<MktWarehouse>().eq(MktWarehouse::getPhone, phone).last("limit 1"));
         if (w == null) return new LoginResult(false, null, openid, null);
         JwtAccountService.assertWarehouseActive(w);
