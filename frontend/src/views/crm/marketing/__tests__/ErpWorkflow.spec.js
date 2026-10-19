@@ -67,7 +67,7 @@ describe('ERP 维护操作绑定当前云仓与原事件',()=>{
     Object.assign(w.vm.mapDialog,{customerId:'43',customerCode:'OWNER-B'});w.vm.selectCustomer('43')
     mktYunshanApi.customers.mockResolvedValue({records:[{id:'9007199254740993',name:'另一客户'}],total:25})
     w.vm.customerPage=2;await w.vm.loadCustomers()
-    expect(mktYunshanApi.customers).toHaveBeenLastCalledWith({keyword:'',pageNo:2,pageSize:20})
+    expect(mktYunshanApi.customers).toHaveBeenLastCalledWith(expect.objectContaining({keyword:'',pageNo:2,pageSize:20}))
     expect(w.vm.customerOptions.map(c=>c.id)).toEqual(['43','9007199254740993'])
     await w.vm.saveMapping()
     expect(mktErpApi.saveMapping).toHaveBeenCalledWith('9',{customerId:'43',customerCode:'OWNER-B'})

@@ -196,6 +196,8 @@ export const mktWarehouseOperationsApi = {
 }
 
 export const mktYunshanApi = {
+  customerSites: (warehouseId, customerId) => request.get(`${YUNSHAN}/warehouse/${warehouseId}/customers/${customerId}/sites`),
+  directory: (warehouseId, data) => request.post(`${YUNSHAN}/warehouse/${warehouseId}/directory`, data, { timeout: 30000 }),
   config: () => request.get(`${YUNSHAN}/config`),
   localWarehouses: (params) => request.get(`${YUNSHAN}/warehouses`, { params }),
   localWarehouse: (id) => request.get(`${YUNSHAN}/warehouses/${id}`),

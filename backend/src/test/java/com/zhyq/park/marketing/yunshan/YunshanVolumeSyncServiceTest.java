@@ -42,6 +42,8 @@ class YunshanVolumeSyncServiceTest {
     private static final LocalDate END = START.plusDays(2);
     private static final LocalDateTime AS_OF = LocalDateTime.of(2026, 1, 4, 2, 0);
     @Mock YunshanClient client;
+    @Mock YunshanConnections connections;
+    @Mock YunshanCustomerScope scope;
     @Mock MktYunshanVolumeMapMapper mapMapper;
     @Mock MktYunshanDailyVolumeMapper volumeMapper;
     @Mock MktYunshanSyncLogMapper logMapper;
@@ -57,7 +59,8 @@ class YunshanVolumeSyncServiceTest {
     }
 
     @BeforeEach void setUp() {
-        service = new YunshanVolumeSyncService(client, mapMapper, volumeMapper, logMapper, transactions);
+        service = new YunshanVolumeSyncService(connections, scope, mapMapper, volumeMapper, logMapper, transactions);
+        lenient().when(connections.forMapping(any())).thenReturn(client);
         mapping = new MktYunshanVolumeMap(); mapping.setId(1L); mapping.setTenantId(1L); mapping.setStatus(1);
         mapping.setCustomerId(2L); mapping.setWarehouseId(3L); mapping.setParentOwnerNo("000001"); mapping.setParentWarehouseNo("9007199254740993");
         mapping.setParentOwnerName("授权货主");
@@ -71,6 +74,26 @@ class YunshanVolumeSyncServiceTest {
         lenient().when(volumeMapper.updateById(any(MktYunshanDailyVolume.class))).thenReturn(1);
         lenient().when(logMapper.insert(any(MktYunshanSyncLog.class))).thenReturn(1);
         lenient().when(transactions.getTransaction(any())).thenAnswer(i -> new SimpleTransactionStatus());
+    }
+
+    @Test void expiredContractBlocksManualSyncAndReconciliationBeforeExternalCalls() {
+        doThrow(new BizException("客户合同已失效")).when(scope).requireSigned(3L, 2L);
+        assertThatThrownBy(() -> sync()).hasMessageContaining("合同已失效");
+        assertThatThrownBy(() -> service.reconcile(1L, START, END)).hasMessageContaining("合同已失效");
+        verifyNoInteractions(client);
+        verify(volumeMapper, never()).insert(any(MktYunshanDailyVolume.class));
+    }
+
+    @Test void configuredMappingUsesItsOwnClientForSummaryAndDailyRequests() {
+        YunshanClient dedicated = mock(YunshanClient.class);
+        when(connections.forMapping(mapping)).thenReturn(dedicated);
+        when(dedicated.summary(any(), any(), any(), any())).thenReturn(new YunshanClient.Summary(0, "NO_STAT_DATA", null, null));
+        when(dedicated.daily(any(), any(), any(), any(), eq(1)))
+            .thenReturn(new YunshanClient.DailyPage(List.of(), 0, 0, 0, "NO_STAT_DATA", null, null));
+        service.reconcile(1L, START, END);
+        verifyNoInteractions(client);
+        verify(dedicated).summary("000001", "9007199254740993", START, END);
+        verify(dedicated).daily("000001", "9007199254740993", START, END, 1);
     }
 
     @Test void mergesEveryPageBeforeWritingAnyDailyRecord() {

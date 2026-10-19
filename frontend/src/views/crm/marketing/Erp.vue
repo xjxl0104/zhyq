@@ -221,7 +221,7 @@ async function loadCustomers() {
   if (!mapDialog.visible) return
   customerLoading.value = true; customerError.value = ''; customers.value = []; customerTotal.value = 0
   try {
-    const result = await mktYunshanApi.customers({ keyword: customerKeyword.value, pageNo: customerPage.value, pageSize: 20 })
+    const result = await mktYunshanApi.customers({ warehouseId: String(warehouseId.value), keyword: customerKeyword.value, pageNo: customerPage.value, pageSize: 20 })
     if (request !== customerRequestNo || !mapDialog.visible || target !== warehouseId.value) return
     customers.value = result.records; customerTotal.value = Number(result.total)
   } catch (e) { if (request === customerRequestNo && mapDialog.visible) customerError.value = e.message || '客户加载失败，请重试' }
