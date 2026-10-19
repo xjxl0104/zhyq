@@ -83,9 +83,7 @@ public class WxQuickLoginService {
                 .eq(MktPromoter::getOpenid, openid).last("limit 1"));
         if (existing != null) return partnerResult(existing);
         if (phone != null) {
-            if (warehouses.selectCount(new LambdaQueryWrapper<MktWarehouse>().eq(MktWarehouse::getPhone, phone)) > 0
-                    || contacts.selectCount(new LambdaQueryWrapper<MktWarehouseContact>().eq(MktWarehouseContact::getPhone, phone)) > 0)
-                throw new BizException(409, "该手机号已绑定云仓身份，请选择云仓身份登录");
+            // The selected portal owns its identity; the same verified phone may also own a warehouse.
             existing = promoters.selectOne(new LambdaQueryWrapper<MktPromoter>().eq(MktPromoter::getPhone, phone).last("limit 1"));
             if (existing != null) {
                 JwtAccountService.assertPromoterActive(existing);
@@ -129,8 +127,7 @@ public class WxQuickLoginService {
             return warehouseResult(existing);
         }
         if (phone != null) {
-            if (promoters.selectCount(new LambdaQueryWrapper<MktPromoter>().eq(MktPromoter::getPhone, phone)) > 0)
-                throw new BizException(409, "该手机号已绑定伙伴身份，请选择园区伙伴身份登录");
+            // Partner records never block or grant access to a warehouse identity.
             List<MktWarehouse> matches = warehouses.selectList(new LambdaQueryWrapper<MktWarehouse>().eq(MktWarehouse::getPhone, phone));
             if (matches.size() > 1) throw new BizException(409, "该手机号关联多个云仓，请联系园区运营核验");
             if (!matches.isEmpty()) {

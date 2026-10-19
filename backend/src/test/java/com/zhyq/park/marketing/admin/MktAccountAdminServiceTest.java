@@ -86,13 +86,30 @@ class MktAccountAdminServiceTest {
             MktPromoter p = i.getArgument(0); p.setId(7L); p.setInviteCode("ABCD2345"); return p;
         });
         when(credentials.insert(any(MktCredential.class))).thenReturn(1);
-        var result = service.create(new MktAccountAdminService.CreateRequest("mp","新伙伴",null," NEWUSER ","secret-value",null,"新增"));
+        var result = service.create(new MktAccountAdminService.CreateRequest("mp","新伙伴","13800138000"," NEWUSER ","secret-value",null,"新增"));
+        verify(jdbc).queryForList("SELECT id FROM crm_promoter WHERE phone=? AND deleted=0", Long.class, "13800138000");
         assertThat(result).containsEntry("username","newuser").doesNotContainKeys("password","token","superAdmin");
         var c = ArgumentCaptor.forClass(MktCredential.class); verify(credentials).insert(c.capture());
         assertThat(c.getValue().getPasswordHash()).startsWith("{bcrypt-sha256}").doesNotContain("secret-value");
         assertThat(c.getValue().getAgreedAt()).isNull();
         var a = ArgumentCaptor.forClass(SysAudit.class); verify(audits).insert(a.capture());
         assertThat(a.getValue().getAfterJson()).doesNotContain("secret-value","password");
+    }
+    @Test void warehouseCreationChecksOnlyWarehousePhoneOwnership() {
+        when(warehouses.apply(any())).thenAnswer(i -> {
+            MktWarehouse w = i.getArgument(0); w.setId(9L); w.setJoinStatus(2); return w;
+        });
+        when(credentials.insert(any(MktCredential.class))).thenReturn(1);
+        var result = service.create(new MktAccountAdminService.CreateRequest("wh","云仓","13800138000","warehouse-user","secret-value",null,"新增云仓身份"));
+        assertThat(result).containsEntry("id",9L).containsEntry("type","wh");
+        verify(jdbc).queryForList("SELECT id FROM crm_warehouse WHERE phone=? AND deleted=0 UNION ALL SELECT id FROM crm_warehouse_contact WHERE phone=? AND deleted=0", Long.class, "13800138000", "13800138000");
+        verifyNoInteractions(promoters);
+    }
+    @Test void existingSameIdentityPhoneStillCannotCreateDuplicateManagedAccount() {
+        when(jdbc.queryForList("SELECT id FROM crm_promoter WHERE phone=? AND deleted=0", Long.class, "13800138000")).thenReturn(List.of(11L));
+        assertThatThrownBy(() -> service.create(new MktAccountAdminService.CreateRequest("mp","伙伴","13800138000","new-user","secret-value",null,"新增")))
+                .hasMessageContaining("同类身份");
+        verifyNoInteractions(promoters,warehouses,credentials,audits);
     }
     @Test void auditFailureAbortsMutationTransaction() {
         when(audits.insert(any(SysAudit.class))).thenReturn(0);
