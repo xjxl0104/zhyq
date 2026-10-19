@@ -76,8 +76,13 @@ public class MktAccountAdminService {
         if (password == null || password.isEmpty()) throw new BizException(400, "请填写初始密码");
         if (password.length() > 4096) throw new BizException(400, "初始密码过长");
         String phone = MktSelfProfileService.optionalPhone(request.phone());
-        if (phone != null && !jdbc.queryForList("SELECT id FROM crm_promoter WHERE phone=? AND deleted=0 UNION ALL SELECT id FROM crm_warehouse WHERE phone=? AND deleted=0 UNION ALL SELECT id FROM crm_warehouse_contact WHERE phone=? AND deleted=0",
-                Long.class, phone, phone, phone).isEmpty()) throw new BizException(409, "手机号已有账号，请管理现有账号");
+        if (phone != null) {
+            boolean occupied = "mp".equals(request.type())
+                    ? !jdbc.queryForList("SELECT id FROM crm_promoter WHERE phone=? AND deleted=0", Long.class, phone).isEmpty()
+                    : !jdbc.queryForList("SELECT id FROM crm_warehouse WHERE phone=? AND deleted=0 UNION ALL SELECT id FROM crm_warehouse_contact WHERE phone=? AND deleted=0",
+                        Long.class, phone, phone).isEmpty();
+            if (occupied) throw new BizException(409, "手机号已有同类身份账号，请管理现有账号");
+        }
         String parent = request.parentInviteCode() == null || request.parentInviteCode().isBlank() ? null
                 : MktPromoterService.requireRegistrationInvite(request.parentInviteCode());
         Long id;

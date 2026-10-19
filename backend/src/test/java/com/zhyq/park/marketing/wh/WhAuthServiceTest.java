@@ -57,16 +57,18 @@ class WhAuthServiceTest {
         verifyNoInteractions(warehouses);
     }
 
-    @Test void partnerPhoneCannotBecomeWarehouseIdentity() {
+    @Test void partnerPhoneCanBindItsSeparateWarehouseIdentity() {
         MktPromoter p = new MktPromoter(); p.setPhone("13800138000");
-        when(promoters.selectOne(any())).thenReturn(p);
+        lenient().when(promoters.selectOne(any())).thenReturn(p);
+        when(warehouses.selectOne(any())).thenReturn(warehouse(11L, null, null, "13800138000"));
+        when(jwt.issueForIdentity("wh", 11L)).thenReturn("wh-token");
         WhAuthService service = new WhAuthService(jwt, warehouses, promoters, audit,
                 (a, s, c) -> new WxSessionClient.Session("openid", "session"),
                 (key, encrypted, iv) -> "13800138000", contacts, phoneBindingGuard);
         service.setMockLogin(true);
-        assertThatThrownBy(() -> service.bindPhone("openid", "13800138000"))
-                .isInstanceOf(BizException.class).hasMessageContaining("伙伴身份");
-        verify(warehouses, never()).update(any(), any());
+        assertThat(service.bindPhone("openid", "13800138000").token()).isEqualTo("wh-token");
+        verify(phoneBindingGuard).assertCanBind("wh", 11L);
+        verifyNoInteractions(promoters);
     }
 
     @Test void secondWechatResolvesThroughContactTable() {

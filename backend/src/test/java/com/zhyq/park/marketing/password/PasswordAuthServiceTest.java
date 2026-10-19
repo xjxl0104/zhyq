@@ -69,6 +69,7 @@ class PasswordAuthServiceTest {
     @AfterEach void clear() { SecurityContextHolder.clearContext(); }
 
     @Test void partnerRegistrationCreatesBusinessProfileAndBcryptCredential() {
+        lenient().when(warehouses.selectCount(any())).thenReturn(1L);
         when(promoterService.register(any(), eq("ABCD2345"), eq("mp"))).thenAnswer(invocation -> {
             MktPromoter p = invocation.getArgument(0); p.setId(31L); p.setStatus(1);
             when(promoters.selectById(31L)).thenReturn(p); return p;
@@ -90,6 +91,7 @@ class PasswordAuthServiceTest {
         assertThat(profile.getValue().getInviteDeadline()).isNull();
         assertThat(jwt.parse((String) result.get("token")).getSubject()).isEqualTo("mp:31");
         assertThat(result).doesNotContainKeys("password", "passwordHash", "registrationPhone");
+        verifyNoInteractions(warehouses, contacts);
     }
 
     @Test void partnerRegistrationRejectsMissingOrMalformedInviteBeforePersistence() {
@@ -103,6 +105,7 @@ class PasswordAuthServiceTest {
     }
 
     @Test void warehouseRegistrationUsesExistingApplicationWorkflow() {
+        lenient().when(promoters.selectCount(any())).thenReturn(1L);
         when(warehouseService.apply(any())).thenAnswer(invocation -> {
             MktWarehouse w = invocation.getArgument(0); w.setId(41L); w.setJoinStatus(2);
             when(warehouses.selectById(41L)).thenReturn(w); return w;
@@ -119,6 +122,7 @@ class PasswordAuthServiceTest {
         assertThat(claims).doesNotContainKey("auth");
         assertThat(claims.get("subjectType")).isEqualTo("wh");
         assertThat(jwt.authenticate(claims).authorities()).containsExactly("ROLE_WH");
+        verifyNoInteractions(promoters, promoterService);
     }
 
     @ParameterizedTest

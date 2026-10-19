@@ -126,11 +126,12 @@ public class MktSelfProfileService {
 
     private void reserveUnverifiedPhone(String type, Long id, String phone) {
         if (phone == null) return;
-        boolean occupied = promoters.selectCount(new LambdaQueryWrapper<MktPromoter>().eq(MktPromoter::getPhone, phone)
-                    .ne("mp".equals(type), MktPromoter::getId, id)) > 0
-                || warehouses.selectCount(new LambdaQueryWrapper<MktWarehouse>().eq(MktWarehouse::getPhone, phone)
-                    .ne("wh".equals(type), MktWarehouse::getId, id)) > 0
-                || contacts.selectCount(new LambdaQueryWrapper<MktWarehouseContact>().eq(MktWarehouseContact::getPhone, phone)) > 0;
+        boolean occupied = "mp".equals(type)
+                ? promoters.selectCount(new LambdaQueryWrapper<MktPromoter>().eq(MktPromoter::getPhone, phone)
+                    .ne(MktPromoter::getId, id)) > 0
+                : warehouses.selectCount(new LambdaQueryWrapper<MktWarehouse>().eq(MktWarehouse::getPhone, phone)
+                    .ne(MktWarehouse::getId, id)) > 0
+                    || contacts.selectCount(new LambdaQueryWrapper<MktWarehouseContact>().eq(MktWarehouseContact::getPhone, phone)) > 0;
         if (occupied) throw phoneConflict();
         // WeChat-only profiles already retain an immutable openid owner. Their first self-reported
         // phone never grants another WeChat identity access, and cannot be changed again here.

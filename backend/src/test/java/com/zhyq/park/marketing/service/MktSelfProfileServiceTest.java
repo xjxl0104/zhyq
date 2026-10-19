@@ -63,6 +63,7 @@ class MktSelfProfileServiceTest {
     }
 
     @Test void delayedWarehousePhoneIsMarkedUnverifiedAndOnlyUpdatesItsOwnProfile() {
+        lenient().when(promoters.selectCount(any())).thenReturn(1L);
         MktWarehouse warehouse = warehouse(2);
         when(warehouses.selectOne(any())).thenReturn(warehouse);
         when(credentials.selectOne(any())).thenReturn(credential());
@@ -77,18 +78,19 @@ class MktSelfProfileServiceTest {
         assertThat(saved).containsEntry("profileComplete", true).containsEntry("joinStatus", 2);
         verify(credentials).update(isNull(), any());
         verify(contacts, never()).insert(any(MktWarehouseContact.class));
+        verifyNoInteractions(promoters);
     }
 
     @Test void existingPhoneOrConcurrentCredentialReservationCannotBeClaimed() {
         MktWarehouse warehouse = warehouse(2);
         when(warehouses.selectOne(any())).thenReturn(warehouse);
         when(credentials.selectOne(any())).thenReturn(credential());
-        when(promoters.selectCount(any())).thenReturn(1L);
+        when(warehouses.selectCount(any())).thenReturn(1L);
         assertThatThrownBy(() -> service.updateWarehouse(41L, Map.of("phone", "13800138000")))
                 .isInstanceOf(BizException.class).hasMessageContaining("不能凭填写手机号合并身份");
         verify(warehouses, never()).update(any(), any());
         verify(credentials, never()).update(any(), any());
-        when(promoters.selectCount(any())).thenReturn(0L);
+        when(warehouses.selectCount(any())).thenReturn(0L);
         when(credentials.update(isNull(), any())).thenThrow(new DuplicateKeyException("duplicate"));
         assertThatThrownBy(() -> service.updateWarehouse(41L, Map.of("phone", "13800138000")))
                 .isInstanceOf(BizException.class).hasMessageContaining("已有业务档案");
