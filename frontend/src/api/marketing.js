@@ -150,7 +150,9 @@ export const mktCommissionApi = {
   page: (params) => request.get(`${BASE}/commission/page`, { params }),
   settle: (ids) => postRaw(`${BASE}/commission/settle`, { ids }),
   void: (id, data) => request.post(`${BASE}/commission/${id}/void`, data),
-  batches: (params) => request.get(`${BASE}/commission/batches`, { params })
+  batches: (params) => request.get(`${BASE}/commission/batches`, { params }),
+  // 按合同月结:每月 3-10 号结算该合同上个月的出库单佣金
+  settleContract: (data) => postRaw(`${BASE}/commission/settle-contract`, data)
 }
 
 // 提现
@@ -230,5 +232,7 @@ export const mktSettlementApi = {
   lines: (id) => request.get(`${BASE}/settlement/${id}/lines`),
   resolve: (id, data) => request.post(`${BASE}/settlement/${id}/resolve`, data),
   pay: (id, data) => request.post(`${BASE}/settlement/${id}/pay`, data),
-  directPayment: (data) => request.post(`${BASE}/settlement/direct-payment`, data)
+  directPayment: (data) => request.post(`${BASE}/settlement/direct-payment`, data),
+  // 票数对账:ERP(云山)发货票数 vs 系统计佣订单数
+  ticketReconcile: (params) => request.get(`${BASE}/settlement/ticket-reconcile`, { params })
 }
