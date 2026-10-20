@@ -1,5 +1,6 @@
 <template>
   <div class="login-page">
+    <div class="login-stage">
     <div class="login-panel">
       <div class="brand">
         <div class="brand-mark"><el-icon :size="26"><OfficeBuilding /></el-icon></div>
@@ -20,6 +21,8 @@
       </el-form>
 
     </div>
+    </div>
+    <IcpFooter />
   </div>
 </template>
 
@@ -29,6 +32,7 @@ import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { User, Lock } from '@element-plus/icons-vue'
 import request from '@/utils/request'
+import IcpFooter from '@/components/IcpFooter.vue'
 import { useAccessStore } from '@/stores/access'
 import { firstNavigationPath } from '@/utils/navigationAccess'
 
@@ -69,12 +73,13 @@ async function submit() {
 
 <style scoped>
 .login-page {
-  min-height: 100vh; min-height: 100dvh; padding: 24px 16px; display: flex; align-items: center; justify-content: center;
+  min-height: 100vh; min-height: 100dvh; padding: 24px 16px 0; display: flex; flex-direction: column; align-items: center;
   background:
     radial-gradient(ellipse 60% 50% at 20% 20%, rgba(99,102,241,0.18), transparent),
     radial-gradient(ellipse 50% 40% at 85% 75%, rgba(34,211,238,0.14), transparent),
     #0f1222;
 }
+.login-stage { flex: 1; width: 100%; display: flex; align-items: center; justify-content: center; }
 .login-panel {
   width: min(400px, 100%); background: rgba(255,255,255,0.98); border-radius: 18px;
   padding: 44px 40px 32px; box-shadow: 0 24px 60px rgba(0,0,0,0.35);
@@ -90,11 +95,11 @@ async function submit() {
 .brand-text p { margin: 2px 0 0; font-size: 12px; color: #9aa1ac; letter-spacing: 2px; }
 .login-btn { width: 100%; height: 44px; font-size: 15px; letter-spacing: 6px; margin-top: 4px; }
 @media (max-width: 767px), (max-width: 1023px) and (max-height: 500px) {
-  .login-page { padding: max(20px, env(safe-area-inset-top)) 20px max(20px, env(safe-area-inset-bottom)); }
+  .login-page { padding: max(20px, env(safe-area-inset-top)) 20px 0; }
   .login-panel { padding: 32px 24px; }
   .brand { gap: 10px; }
   .brand-text h1 { font-size: 18px; letter-spacing: 0; }
   .brand-text p { letter-spacing: .5px; }
 }
-@media (max-height: 480px) { .login-page { align-items: flex-start; } }
+@media (max-height: 480px) { .login-stage { align-items: flex-start; } }
 </style>
