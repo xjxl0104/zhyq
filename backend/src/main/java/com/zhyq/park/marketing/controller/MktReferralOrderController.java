@@ -68,6 +68,9 @@ public class MktReferralOrderController {
     private final com.zhyq.park.marketing.mapper.MktServiceFeeBillLineMapper billLines;
     private final com.zhyq.park.marketing.service.MktCustomerPricingService pricingService;
     private final com.zhyq.park.marketing.service.MktAdminActorService adminActorService;
+    /** 云山(ERP)每日发货票数；非构造注入，缺省时计佣订单数回退为 0。 */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.zhyq.park.marketing.mapper.MktYunshanDailyVolumeMapper yunshanVolumes;
 
     /** sourceId 指向 crm_service_contract.id 的来源:出库单/平台费收款/签约奖;租赁签约的 sourceId 指向 biz_contract。 */
     private static final List<Integer> SERVICE_CONTRACT_SOURCES = List.of(MktCommissionService.SOURCE_OUTBOUND,
@@ -130,6 +133,7 @@ public class MktReferralOrderController {
         List<MktServiceContract> contracts = cp.getRecords();
 
         Map<Long, Map<String, Object>> agg = aggregateByContract(contracts);
+        Map<Long, Long> erpTickets = erpTicketsByContract(contracts);
         Map<Long, String> customerNames = new HashMap<>();
         Set<Long> customerIds = contracts.stream().map(MktServiceContract::getCustomerId)
                 .filter(Objects::nonNull).collect(Collectors.toSet());
@@ -166,7 +170,8 @@ public class MktReferralOrderController {
             m.put("warehouseId", c.getWarehouseId());
             m.put("warehouseName", warehouseNames.get(c.getWarehouseId()));
             Map<String, Object> a = agg.getOrDefault(c.getId(), Map.of());
-            m.put("orderCount", a.getOrDefault("orderCount", 0));
+            // 计佣订单数 = 该客户在合同有效期内、该合同主仓的云仓(ERP)发货票数
+            m.put("orderCount", erpTickets.getOrDefault(c.getId(), 0L));
             m.put("confirmedCount", a.getOrDefault("confirmedCount", 0));
             m.put("serviceFeeSum", a.getOrDefault("serviceFeeSum", BigDecimal.ZERO));
             m.put("poolSum", a.getOrDefault("poolSum", BigDecimal.ZERO));
@@ -174,6 +179,32 @@ public class MktReferralOrderController {
             rows.add(m);
         }
         return Result.ok(PageResult.of(cp.getTotal(), rows));
+    }
+
+    /** 合同 → 该客户在合同有效期内、该合同主仓的云山发货票数合计；各客户使用各自的 ERP 数据。 */
+    private Map<Long, Long> erpTicketsByContract(List<MktServiceContract> contracts) {
+        Map<Long, Long> result = new HashMap<>();
+        if (yunshanVolumes == null || contracts.isEmpty()) return result;
+        Set<Long> customerIds = contracts.stream().map(MktServiceContract::getCustomerId)
+                .filter(Objects::nonNull).collect(Collectors.toSet());
+        if (customerIds.isEmpty()) return result;
+        List<com.zhyq.park.marketing.entity.MktYunshanDailyVolume> rows = yunshanVolumes.selectList(
+                new LambdaQueryWrapper<com.zhyq.park.marketing.entity.MktYunshanDailyVolume>()
+                        .in(com.zhyq.park.marketing.entity.MktYunshanDailyVolume::getCustomerId, customerIds));
+        for (MktServiceContract c : contracts) {
+            long sum = 0;
+            for (com.zhyq.park.marketing.entity.MktYunshanDailyVolume row : rows) {
+                if (!Objects.equals(row.getCustomerId(), c.getCustomerId())) continue;
+                if (c.getWarehouseId() != null && row.getWarehouseId() != null
+                        && !Objects.equals(row.getWarehouseId(), c.getWarehouseId())) continue;
+                if (row.getStatDate() == null) continue;
+                if (c.getStartDate() != null && row.getStatDate().isBefore(c.getStartDate())) continue;
+                if (c.getEndDate() != null && row.getStatDate().isAfter(c.getEndDate())) continue;
+                sum += row.getConsignNum() == null ? 0 : row.getConsignNum();
+            }
+            result.put(c.getId(), sum);
+        }
+        return result;
     }
 
     /**
