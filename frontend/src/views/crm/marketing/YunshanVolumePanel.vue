@@ -51,6 +51,28 @@
       </el-table>
       <el-pagination class="pager" background layout="total, prev, pager, next" :total="Number(volume?.total || 0)" v-model:current-page="volumePage" :page-size="20" @current-change="loadVolume" />
 
+      <div class="monthly-section">
+        <div class="toolbar logs-heading"><h3 class="title">月度发货量汇总</h3></div>
+        <el-form class="query-form" :inline="true" @submit.prevent>
+          <el-form-item label="客户"><el-select v-model="monthly.customerId" clearable placeholder="全部客户" aria-label="选择统计客户" class="map-select" @change="loadMonthly">
+            <el-option v-for="item in monthlyCustomers" :key="item.id" :value="item.id" :label="item.name" />
+          </el-select></el-form-item>
+          <el-form-item label="年份"><el-date-picker v-model="monthly.year" type="year" value-format="YYYY" :clearable="false" aria-label="选择统计年份" @change="loadMonthly" /></el-form-item>
+          <el-form-item><el-button :loading="monthly.loading" @click="loadMonthly">刷新汇总</el-button></el-form-item>
+        </el-form>
+        <el-alert v-if="monthly.error" type="error" :closable="false" :title="monthly.error" />
+        <div class="volume-summary" aria-live="polite">
+          <span>{{ monthly.year }} 年累计发货 <strong>{{ formatCount(monthly.yearTotal, '0') }} 票</strong></span>
+          <span>{{ monthly.customerId ? '当前客户' : '全部客户' }} · 有快照 {{ monthly.days }} 天</span>
+        </div>
+        <el-table v-loading="monthly.loading" :data="monthly.rows" size="small" border empty-text="暂无月度汇总。">
+          <el-table-column prop="month" label="年月" width="120" />
+          <el-table-column label="发货票数" min-width="190" align="right"><template #default="{ row }">{{ row.daysWithData ? formatCount(row.tickets) : '无快照' }}</template></el-table-column>
+          <el-table-column prop="daysWithData" label="有快照天数" width="120" align="right" />
+        </el-table>
+        <p class="hint">按发货日期的自然月汇总本地快照；不同客户使用各自 ERP 对接的数据，不选客户则汇总当前云仓全部客户。无快照的月份不代表零发货。</p>
+      </div>
+
       <div v-if="reconciliation || errors.reconcile || loading.reconcile" class="reconcile-section" v-loading="loading.reconcile">
         <h3>只读对账结果</h3>
         <el-alert v-if="errors.reconcile" type="error" :closable="false" :title="errors.reconcile" />
@@ -170,7 +192,7 @@ const customerLinkNotice = computed(() => {
     ? '找到多个同名候选，请核对该客户的接口编号后选择，不能仅凭名称确定身份。'
     : '当前接口没有该客户的同名记录，不能选择其他客户代替。请先完成客户与作业仓库建档，再由接口提供方核对客户名称、编号和授权。'
 })
-const versions = { maps: 0, volume: 0, logs: 0, reconcile: 0, directory: 0, customers: 0, sites: 0 }
+const versions = { monthly: 0, maps: 0, volume: 0, logs: 0, reconcile: 0, directory: 0, customers: 0, sites: 0 }
 let disposed = false
 const today = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date())
 const shiftDate = (date, days) => new Date(Date.parse(`${date}T00:00:00Z`) + days * 86400000).toISOString().slice(0, 10)
@@ -196,13 +218,25 @@ function resetDetails() {
   for (const key of ['volume', 'logs', 'reconcile']) { versions[key]++; loading[key] = false; errors[key] = '' }
   volume.value = null; reconciliation.value = null; syncResult.value = null; errors.sync = ''; logs.value = []; logTotal.value = 0
 }
+const monthly = reactive({ customerId: null, year: String(new Date().getFullYear()), rows: [], yearTotal: 0, days: 0, loading: false, error: '' })
+const monthlyCustomers = computed(() => [...new Map(maps.value.map(item => [item.customerId, { id: item.customerId, name: item.customerName || String(item.customerId) }])).values()])
+async function loadMonthly() {
+  if (!canQuery.value || !props.warehouseId) return
+  const version = ++versions.monthly; monthly.loading = true; monthly.error = ''
+  try {
+    const result = await mktYunshanApi.monthly({ warehouseId: props.warehouseId, customerId: monthly.customerId || undefined, year: Number(monthly.year) })
+    if (disposed || version !== versions.monthly) return
+    monthly.rows = result.months || []; monthly.yearTotal = result.yearTotal ?? 0; monthly.days = result.daysWithData ?? 0
+  } catch (error) { if (!disposed && version === versions.monthly) { monthly.rows = []; monthly.yearTotal = 0; monthly.days = 0; monthly.error = error.message || '月度汇总查询失败，请重试。' } }
+  finally { if (version === versions.monthly) monthly.loading = false }
+}
 async function refresh() {
   if (!canQuery.value || !props.warehouseId) return
   const version = ++versions.maps; loading.maps = true; errors.maps = ''
   try {
     const [settings, rows] = await Promise.all([mktYunshanApi.config(), mktYunshanApi.maps(String(props.warehouseId))])
     if (disposed || version !== versions.maps) return
-    config.value = settings; maps.value = rows
+    config.value = settings; maps.value = rows; loadMonthly()
     if (!rows.some(item => String(item.id) === mapId.value)) mapId.value = rows.length ? String(rows[0].id) : ''
     if (mapId.value) await changeMap()
   } catch (error) { if (version === versions.maps && !disposed) errors.maps = error.message || '无法加载发货量接口配置和客户关联，请重试。' }
@@ -234,7 +268,7 @@ async function sync() {
   try {
     const result = await mktYunshanApi.sync(target, { startDate: params.startDate, endDate: params.endDate })
     if (disposed || props.warehouseId !== warehouse || target !== mapId.value || dateRange.value.join('/') !== range) return
-    syncResult.value = result; reconciliation.value = null; await Promise.all([loadVolume(), loadLogs()])
+    syncResult.value = result; reconciliation.value = null; await Promise.all([loadVolume(), loadLogs()]); loadMonthly()
     const rows = await mktYunshanApi.maps(String(warehouse)); if (!disposed && props.warehouseId === warehouse) maps.value = rows
   } catch (error) { if (!disposed && props.warehouseId === warehouse && target === mapId.value && dateRange.value.join('/') === range) { errors.sync = error.message || '补拉失败，请查看拉取日志。'; await loadLogs() } }
   finally { loading.sync = false }
