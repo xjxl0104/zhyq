@@ -77,7 +77,7 @@ class MktCommissionServiceTest {
     @Test void customOrderUsesExactAmountsAndNeverPaysCompanyRemainderToP4() {
         var seller = promoter(1L, "P1");
         when(promoterMapper.selectForUpdate(1L)).thenReturn(seller);
-        when(pricingService.forAccrual(5L)).thenReturn(new MktCustomerPricingService.PricingSnapshot(20L,4L,"P4",
+        when(pricingService.forAccrual(any(), any())).thenReturn(new MktCustomerPricingService.PricingSnapshot(20L,4L,"P4",
                 new BigDecimal("0.300"),new BigDecimal("0.023"),new BigDecimal("0.199"), List.of(
                 new MktCustomerPricingService.Beneficiary(1L,"A","P1",new BigDecimal("0.077")),
                 new MktCustomerPricingService.Beneficiary(2L,"B","P2",new BigDecimal("0.001")))));
@@ -98,7 +98,7 @@ class MktCommissionServiceTest {
 
     @Test void missingCustomPricingLeavesOrderUnwrittenForRetry() {
         when(promoterMapper.selectForUpdate(1L)).thenReturn(promoter(1L,"P1"));
-        when(pricingService.forAccrual(5L)).thenThrow(new BizException("客户尚未配置，请重试"));
+        when(pricingService.forAccrual(any(), any())).thenThrow(new BizException("客户尚未配置，请重试"));
         var ev = new CommissionEvent(2,"WAIT",10L,5L,1L,"A",BigDecimal.ZERO,BigDecimal.TEN,
                 BigDecimal.ZERO,LocalDateTime.now(),null,1L,7L);
         assertThatThrownBy(() -> service.createAndSplit(ev)).hasMessageContaining("尚未配置");
