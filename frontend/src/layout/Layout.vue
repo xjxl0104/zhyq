@@ -77,6 +77,7 @@
             </template>
           </el-dropdown>
         </div>
+        <IcpFooter compact :stacked="collapsed" class="side-icp" />
       </el-aside>
       <el-main ref="mainRef" id="main-content" tabindex="-1">
         <span class="sr-only" aria-live="polite">{{ currentTitle }}</span>
@@ -90,6 +91,7 @@
         <FeedbackFab />
       </el-main>
     </el-container>
+    <IcpFooter v-if="isMobile" compact class="mobile-icp" />
   </div>
 </template>
 
@@ -106,6 +108,7 @@ import StrokeBrand from './StrokeBrand.vue'
 import MenuItem from './MenuItem.vue'
 import ProjectSwitcher from './ProjectSwitcher.vue'
 import FeedbackFab from '@/views/suggestion/FeedbackFab.vue'
+import IcpFooter from '@/components/IcpFooter.vue'
 import { useResponsive } from '@/composables/useResponsive'
 import { Menu } from '@element-plus/icons-vue'
 
@@ -333,6 +336,9 @@ function onClick(c) {
   white-space: nowrap;
 }
 .menu-scroll { flex: 1; position: relative; z-index: 1; }
+/* ICP 备案号:侧栏最底部,不占内容纸的高度(首页驾驶舱等按视口高度排版,不能动纸的几何) */
+.side-icp { --icp-pad: 2px 10px 12px; flex-shrink: 0; position: relative; z-index: 1; }
+.sidebar.collapsed .side-icp { --icp-pad: 2px 2px 10px; }
 .menu-scroll :deep(.el-scrollbar__view) { min-height: 100%; }
 .menu-scroll :deep(.el-scrollbar__thumb) { background: rgba(255, 255, 255, .22); }
 
@@ -539,7 +545,12 @@ function onClick(c) {
 .mobile-project :deep(.el-select__wrapper) { min-height: 44px; background: #fff; }
 .is-mobile .body-row { flex: 1; min-height: 0; height: auto; --paper-gap: 0px; --paper-radius: 0px; background: var(--bg-body); }
 .is-mobile .body-row::after { display: none; }
-.is-mobile .el-main { height: 100%; margin: 0; min-width: 0; padding-bottom: env(safe-area-inset-bottom); border-radius: 0; clip-path: none; isolation: auto; scrollbar-gutter: auto; overflow-x: auto; }
+.is-mobile .el-main { height: 100%; margin: 0; min-width: 0; padding-bottom: 0; border-radius: 0; clip-path: none; isolation: auto; scrollbar-gutter: auto; overflow-x: auto; }
+.mobile-icp {
+  --icp-text: var(--el-text-color-secondary); --icp-link: var(--el-text-color-secondary); --icp-link-hover: var(--el-color-primary);
+  --icp-pad: 6px max(12px, env(safe-area-inset-right)) calc(6px + env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+  flex: 0 0 auto; background: var(--bg-body); border-top: 1px solid var(--el-border-color-lighter);
+}
 .mobile-account { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .mobile-account__identity { min-width: 0; display: flex; align-items: center; gap: 8px; text-align: left; }
 .mobile-account__identity > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

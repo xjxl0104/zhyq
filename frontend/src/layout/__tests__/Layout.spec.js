@@ -112,6 +112,18 @@ describe('Layout navigation chrome', () => {
     wrapper.unmount()
   })
 
+  it('keeps the ICP filing link at the very bottom of the sidebar', () => {
+    const wrapper = mountLayout()
+
+    const zones = wrapper.get('.sidebar').element.children
+    expect(zones[zones.length - 1].className).toContain('side-icp')
+    const link = wrapper.get('.sidebar .side-icp a')
+    expect(link.text()).toBe('粤ICP备2026136948号-1')
+    expect(link.attributes('href')).toBe('https://beian.miit.gov.cn/')
+    expect(wrapper.find('.mobile-icp').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
   it('announces the current page title to assistive tech', () => {
     const wrapper = mountLayout()
 
