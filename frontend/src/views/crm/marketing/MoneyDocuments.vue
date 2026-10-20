@@ -108,7 +108,7 @@ async function allChoices(fetchPage){
   }
   return [...new Map(records.map(row=>[row.id,row])).values()]
 }
-async function loadChoices(){choicesLoading.value=true;try{const [w,c]=await Promise.all([allChoices(mktWarehouseApi.page),allChoices(mktContractApi.page)]);warehouses.value=w;contracts.value=c}finally{choicesLoading=false}}
+async function loadChoices(){choicesLoading.value=true;try{const [w,c]=await Promise.all([allChoices(mktWarehouseApi.page),allChoices(mktContractApi.page)]);warehouses.value=w;contracts.value=c}finally{choicesLoading.value=false}}
 async function openGenerate(){if(choicesLoading.value)return;await loadChoices();Object.assign(generation,{visible:true,targetId:null,period:[]})}
 async function generate(){if(!generation.targetId||generation.period?.length!==2)return ElMessage.warning('请选择合同/云仓与完整账期');saving.value=true;try{await api.value.generate({[isBill.value?'contractId':'warehouseId']:generation.targetId,periodStart:generation.period[0],periodEnd:generation.period[1]});generation.visible=false;ElMessage.success('已生成');await load()}finally{saving.value=false}}
 async function generateFixed(){
