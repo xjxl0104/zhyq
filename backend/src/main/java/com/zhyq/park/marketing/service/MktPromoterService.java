@@ -94,7 +94,8 @@ public class MktPromoterService {
         }
         p.setParentId(parent == null ? null : parent.getId());
         p.setBindTime(parent == null ? null : LocalDateTime.now());
-        if (!StringUtils.hasText(p.getPositionCode())) {
+        // 小程序注册不允许自带岗位(防自选 P4):一律按邀请定级;后台录入可显式指定,缺省也按邀请定级。
+        if ("mp".equals(source) || !StringUtils.hasText(p.getPositionCode())) {
             p.setPositionCode(positionUnder(parent));
         }
         p.setPositionSince(LocalDateTime.now());

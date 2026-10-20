@@ -74,7 +74,7 @@ class MktReferralOrderImportServiceTest {
         service = new MktReferralOrderImportService(customerMapper, contractMapper, gradeMapper, pricingService, orderMapper,
                 commissionService, bizSettings, new ObjectMapper(), warehouseMapper, new MktContractTermsService(org.mockito.Mockito.mock(com.zhyq.park.marketing.mapper.MktServiceContractVersionMapper.class)), orderStateService, transactions);
         lenient().when(transactions.getTransaction(any())).thenReturn(new org.springframework.transaction.support.SimpleTransactionStatus());
-        lenient().when(pricingService.forAccrual(any())).thenReturn(pricing("0.753", "0.003"));
+        lenient().when(pricingService.forAccrual(any(), any())).thenReturn(pricing("0.753", "0.003"));
         var warehouse = new com.zhyq.park.marketing.entity.MktWarehouse(); warehouse.setId(7L); warehouse.setJoinStatus(5); warehouse.setFeeModel("{\"perOrder\":1,\"perItem\":0}");
         lenient().when(warehouseMapper.selectById(7L)).thenReturn(warehouse);
         lenient().when(warehouseMapper.selectForUpdate(7L)).thenReturn(warehouse);
@@ -85,9 +85,9 @@ class MktReferralOrderImportServiceTest {
         when(customerMapper.selectOne(any(Wrapper.class))).thenReturn(customer(5L,99L,"A"));
         var contract=new MktServiceContract();contract.setId(20L);contract.setSignMode(1);contract.setWarehouseId(7L);contract.setGrade("A");contract.setPriceTable("{\"perOrder\":1}");
         when(contractMapper.selectOne(any(Wrapper.class))).thenReturn(contract);
-        when(pricingService.forAccrual(5L)).thenThrow(new BizException("客户尚未配置每单佣金"));
+        when(pricingService.forAccrual(any(), any())).thenThrow(new BizException("客户尚未配置每单佣金"));
         assertThatThrownBy(()->service.toEvent(row("RATE"),null,7)).isInstanceOf(BizException.class).hasMessageContaining("尚未配置");
-        org.mockito.Mockito.doReturn(pricing("0.753", "0.003")).when(pricingService).forAccrual(5L);
+        org.mockito.Mockito.doReturn(pricing("0.753", "0.003")).when(pricingService).forAccrual(any(), any());
         assertThatThrownBy(()->service.toEvent(row("LOSS"),null,7)).isInstanceOf(BizException.class).hasMessageContaining("毛利为负");
         verify(commissionService,never()).createAndSplit(any());
     }
@@ -109,7 +109,7 @@ class MktReferralOrderImportServiceTest {
         k.setId(20L); k.setSignMode(1); k.setGrade("B"); k.setWarehouseId(7L); k.setPriceTable("{\"perOrder\":10,\"perItem\":0.5}");
         when(contractMapper.selectOne(any(Wrapper.class))).thenReturn(k);
         MktCustomerGrade g = new MktCustomerGrade(); g.setCode("B"); g.setErpTotalRate(new BigDecimal("6"));
-        when(pricingService.forAccrual(5L)).thenReturn(pricing("0.753", "0.003"));
+        when(pricingService.forAccrual(any(), any())).thenReturn(pricing("0.753", "0.003"));
         LocalDateTime shipped = LocalDateTime.of(2026, 9, 18, 10, 20);
 
         CommissionEvent ev = service.toEvent(new OutboundRow("OUT001", "13800000001", 5, 1, shipped, "SF1", null, null), 1L, 7);
@@ -277,7 +277,7 @@ class MktReferralOrderImportServiceTest {
         MktServiceContract park = directContract(); park.setId(21L); park.setSignMode(1); park.setPriceTable("{\"perOrder\":10}");
         when(contractMapper.selectOne(any())).thenReturn(direct,park);
         MktCustomerGrade grade = new MktCustomerGrade(); grade.setCode("A"); grade.setErpTotalRate(new BigDecimal("5"));
-        when(pricingService.forAccrual(5L)).thenReturn(pricing("0.503", "0.003"));
+        when(pricingService.forAccrual(any(), any())).thenReturn(pricing("0.503", "0.003"));
         ImportResult result = service.importRows(List.of(row("DIRECT-MIX"),row("PARK-MIX")),null);
         assertThat(result.imported()).isEqualTo(2); assertThat(result.errors()).isEmpty();
         verify(orderMapper,times(1)).insert(any(MktReferralOrder.class));
