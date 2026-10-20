@@ -9,7 +9,7 @@
       </el-form>
     </div>
     <div class="table-card">
-      <div class="toolbar"><el-button v-if="canEdit" type="primary" :loading="choicesLoading" @click="openGenerate">{{ isBill ? '生成 / 补充服务费账单' : '生成 / 补充云仓结算' }}</el-button><el-button v-if="isBill && canGenerate" :loading="generatingFixed" @click="generateFixed">补齐到期固定月费</el-button><el-button v-if="isBill && canPay" :disabled="choicesLoading" @click="openDirect">登记直签平台费到账</el-button><el-button v-if="isBill" @click="showDirectRecords">平台费到账记录</el-button></div>
+      <div class="toolbar"><el-button v-if="canEdit" type="primary" :loading="choicesLoading" @click="openGenerate">{{ isBill ? '生成 / 补充服务费账单' : '生成 / 补充云仓结算' }}</el-button><el-button v-if="isBill && canGenerate" :loading="generatingFixed" @click="generateFixed">补齐到期固定月费</el-button><el-button v-if="isBill && canPay" :disabled="choicesLoading" @click="openDirect">登记直签平台费到账</el-button><el-button v-if="isBill" @click="showDirectRecords">平台费到账记录</el-button><el-button v-if="!isBill" @click="openReconcile">票数对账</el-button></div>
       <el-alert v-if="error" :title="error" type="error" :closable="false" class="notice"><el-button link @click="load">重新加载</el-button></el-alert>
       <el-table :data="rows" v-loading="loading" border stripe empty-text="暂无单据。先完成有效合同、订单导入和费用配置，再生成本期账单。">
         <el-table-column prop="id" label="单据ID" width="85" />
@@ -21,7 +21,7 @@
         <el-table-column label="状态" width="120"><template #default="{row}"><el-tag :type="tagType(row.status)">{{ statuses[row.status] || '未知状态' }}</el-tag></template></el-table-column>
         <el-table-column :prop="isBill ? 'disputeReason' : 'frozenReason'" label="争议 / 处理说明" min-width="180" show-overflow-tooltip />
         <el-table-column label="操作" width="240" fixed="right"><template #default="{row}">
-          <el-button link type="primary" @click="showLines(row)">明细</el-button>
+          <el-button v-if="isBill" link type="primary" @click="showLines(row)">明细</el-button>
           <el-button v-if="row.status === 3 && canPay" link type="success" @click="openPayment(row)">{{ isBill ? '登记到账' : '登记付款' }}</el-button>
           <el-button v-if="canEdit && (row.status === 5 || (!isBill && (row.status === 6 || (requiresReconciliation(row) && [2, 3].includes(row.status)))))" link type="warning" @click="resolve(row)">{{ !isBill && requiresReconciliation(row) ? '重新核对结算' : '处理后重发' }}</el-button>
           <el-button v-if="isBill ? row.receiptProof : row.payProof" link @click="downloadProof(isBill ? row.receiptProof : row.payProof)">凭证</el-button>
@@ -36,6 +36,19 @@
         <p class="hint">{{ isBill ? '仅汇总本合同已确认且未入账的出库单；同一账期再次生成会补充新订单，没有新增则返回原单。' : '只使用已实际收款且未结算的账单；同一账期可补充后续收款，金额按云仓应付费率计算并固定保存。' }}</p>
       </el-form>
       <template #footer><el-button @click="generation.visible=false">取消</el-button><el-button type="primary" :loading="saving" :disabled="saving" @click="generate">确认生成</el-button></template>
+    </el-dialog>
+    <el-dialog v-model="reconcile.visible" title="票数对账（ERP 发货票数 vs 系统计佣订单数）" width="min(600px, 94vw)">
+      <el-form label-position="top">
+        <el-form-item label="云仓" required><el-select v-model="reconcile.warehouseId" filterable class="full"><el-option v-for="w in warehouses" :key="w.id" :label="w.name" :value="w.id" /></el-select></el-form-item>
+        <el-form-item label="统计月份" required><el-date-picker v-model="reconcile.month" type="month" value-format="YYYY-MM" class="full" /></el-form-item>
+        <el-button type="primary" :loading="reconcile.loading" @click="runReconcile">查询对比</el-button>
+      </el-form>
+      <el-descriptions v-if="reconcile.result" :column="1" border class="rt">
+        <el-descriptions-item label="ERP（云山）发货票数">{{ reconcile.result.erpTickets == null ? '无云山统计（未同步或该云仓未对接）' : `${reconcile.result.erpTickets} 票 / ${reconcile.result.erpDays} 个统计日` }}</el-descriptions-item>
+        <el-descriptions-item label="系统计佣订单数">{{ reconcile.result.systemOrders }} 单（已确认 {{ reconcile.result.confirmed }} · 待确认 {{ reconcile.result.pending }} · 已退款/作废 {{ reconcile.result.cancelled }} · 直签运营零金额 {{ reconcile.result.directSignOperating }}）</el-descriptions-item>
+        <el-descriptions-item label="差异（ERP − 系统）">{{ reconcile.result.diff == null ? '—' : reconcile.result.diff }}</el-descriptions-item>
+      </el-descriptions>
+      <p class="hint">差异的常见原因：客户无生效合同或发货时间不在合同期内被拒收；重复出库单号跳过；直签客户只记运营数量不计佣；云山按发货票统计而系统按计佣订单统计。差异偏大时请先核对合同有效期与出库单导入的失败记录。</p>
     </el-dialog>
     <el-dialog v-model="payment.visible" :title="isBill ? '登记真实到账' : '登记线下付款'" width="min(580px, 94vw)">
       <el-form label-position="top">
@@ -95,7 +108,7 @@ async function allChoices(fetchPage){
   }
   return [...new Map(records.map(row=>[row.id,row])).values()]
 }
-async function loadChoices(){choicesLoading.value=true;try{const [w,c]=await Promise.all([allChoices(mktWarehouseApi.page),allChoices(mktContractApi.page)]);warehouses.value=w;contracts.value=c}finally{choicesLoading.value=false}}
+async function loadChoices(){choicesLoading.value=true;try{const [w,c]=await Promise.all([allChoices(mktWarehouseApi.page),allChoices(mktContractApi.page)]);warehouses.value=w;contracts.value=c}finally{choicesLoading=false}}
 async function openGenerate(){if(choicesLoading.value)return;await loadChoices();Object.assign(generation,{visible:true,targetId:null,period:[]})}
 async function generate(){if(!generation.targetId||generation.period?.length!==2)return ElMessage.warning('请选择合同/云仓与完整账期');saving.value=true;try{await api.value.generate({[isBill.value?'contractId':'warehouseId']:generation.targetId,periodStart:generation.period[0],periodEnd:generation.period[1]});generation.visible=false;ElMessage.success('已生成');await load()}finally{saving.value=false}}
 async function generateFixed(){
@@ -119,6 +132,26 @@ async function recordDirect(){
   saving.value=true
   try{await mktSettlementApi.directPayment({contractId:c.id,warehouseId:c.warehouseId,paymentNo:direct.paymentNo.trim(),amount:direct.amount,payProof:`file:${direct.files[0].id}`,periodStart:direct.period[0],periodEnd:direct.period[1]});direct.visible=false;ElMessage.success('平台费已登记，佣金已生成')}finally{saving.value=false}
 }
+// 票数对账:ERP(云山)发货票数 vs 系统计佣订单数,按状态分解,差异数可见可解释
+const reconcile=reactive({visible:false,warehouseId:null,month:'',loading:false,result:null})
+function openReconcile(){
+  if(!warehouses.value.length) allChoices(mktWarehouseApi.page).then(r=>warehouses.value=r).catch(()=>{})
+  if(!reconcile.month){
+    const d=new Date()
+    const m=d.getMonth()===0?12:d.getMonth()+1-1||12
+    const prev=d.getMonth()===0?12:d.getMonth()
+    const y=d.getMonth()===0?d.getFullYear()-1:d.getFullYear()
+    reconcile.month=y+'-'+String(prev).padStart(2,'0')
+  }
+  reconcile.result=null
+  reconcile.visible=true
+}
+async function runReconcile(){
+  if(!reconcile.warehouseId||!reconcile.month)return ElMessage.warning('请选择云仓和统计月份')
+  reconcile.loading=true
+  try{ reconcile.result=await mktSettlementApi.ticketReconcile({warehouseId:reconcile.warehouseId,month:reconcile.month}) }
+  finally{ reconcile.loading=false }
+}
 const details=reactive({visible:false,title:'明细',rows:[],columns:[],loading:false,direct:false})
 async function showLines(row){Object.assign(details,{visible:true,loading:true,direct:false,title:`单据 #${row.id} 明细`,columns:isBill.value?[{prop:'sourceNo',label:'出库单号'}]:[{prop:'billId',label:'来源账单ID'}],rows:[]});try{details.rows=await api.value.lines(row.id)}finally{details.loading=false}}
 async function showDirectRecords(){Object.assign(details,{visible:true,loading:true,direct:true,title:'平台费到账记录（最近100条）',columns:[{prop:'paymentNo',label:'到账流水号'},{prop:'contractId',label:'合同ID'},{prop:'paidAt',label:'到账登记时间'}],rows:[]});try{details.rows=(await mktSettlementApi.directPayments({pageNo:1,pageSize:100})).records||[]}finally{details.loading=false}}
@@ -127,5 +160,5 @@ async function downloadProof(proof){const id=String(proof).match(/^file:(\d+)$/)
 onMounted(()=>{load();allChoices(mktWarehouseApi.page).then(records=>warehouses.value=records).catch(()=>{})})
 </script>
 <style scoped>
-.notice{margin-bottom:16px}.toolbar{display:flex;flex-wrap:wrap;gap:12px;margin-bottom:16px}.selector{width:220px}.full{width:100%}.hint{color:var(--el-text-color-secondary);line-height:1.7}.pager{margin-top:16px;justify-content:flex-end}.el-table{font-variant-numeric:tabular-nums}@media(max-width:640px){.selector{width:100%}.search-bar :deep(.el-form-item){display:flex}.pager{justify-content:flex-start;overflow:auto}}
+.notice{margin-bottom:16px}.toolbar{display:flex;flex-wrap:wrap;gap:12px;margin-bottom:16px}.selector{width:220px}.full{width:100%}.hint{color:var(--el-text-color-secondary);line-height:1.7}.pager{margin-top:16px;justify-content:flex-end}.rt{margin-top:16px}.el-table{font-variant-numeric:tabular-nums}@media(max-width:640px){.selector{width:100%}.search-bar :deep(.el-form-item){display:flex}.pager{justify-content:flex-start;overflow:auto}}
 </style>
