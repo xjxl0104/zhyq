@@ -243,6 +243,35 @@ public class MktYunshanController {
                 rows.isEmpty() ? "NO_STAT_DATA" : "HAS_STAT_DATA"));
     }
 
+    public record MonthRow(String month, long tickets, int daysWithData) {}
+    public record MonthlyResult(int year, List<MonthRow> months, long yearTotal, int daysWithData) {}
+
+    @Operation(summary = "按月汇总发货票数（可按客户筛选，不传客户则汇总该云仓全部客户）")
+    @GetMapping("/monthly") @PreAuthorize("hasAuthority('crm:marketing:erp:query')")
+    public Result<MonthlyResult> monthly(@RequestParam Long warehouseId, @RequestParam(required = false) Long customerId,
+            @RequestParam int year) {
+        if (year < 2000 || year > 2100) throw new BizException("年份不正确");
+        List<MktYunshanDailyVolume> rows = volumes.selectList(new LambdaQueryWrapper<MktYunshanDailyVolume>()
+                .eq(MktYunshanDailyVolume::getWarehouseId, warehouseId)
+                .eq(customerId != null, MktYunshanDailyVolume::getCustomerId, customerId)
+                .between(MktYunshanDailyVolume::getStatDate, LocalDate.of(year, 1, 1), LocalDate.of(year, 12, 31)));
+        long[] tickets = new long[12];
+        List<Set<LocalDate>> days = new ArrayList<>();
+        for (int i = 0; i < 12; i++) days.add(new HashSet<>());
+        for (MktYunshanDailyVolume row : rows) {
+            int index = row.getStatDate().getMonthValue() - 1;
+            tickets[index] += row.getConsignNum() == null ? 0 : row.getConsignNum();
+            days.get(index).add(row.getStatDate());
+        }
+        List<MonthRow> months = new ArrayList<>();
+        long total = 0; int totalDays = 0;
+        for (int i = 0; i < 12; i++) {
+            months.add(new MonthRow(String.format("%d-%02d", year, i + 1), tickets[i], days.get(i).size()));
+            total += tickets[i]; totalDays += days.get(i).size();
+        }
+        return Result.ok(new MonthlyResult(year, months, total, totalDays));
+    }
+
     @Operation(summary = "只读对账：本地、云山合计及每日差异")
     @GetMapping("/reconcile") @PreAuthorize("hasAuthority('crm:marketing:erp:query')")
     public Result<YunshanVolumeSyncService.ReconcileResult> reconcile(@RequestParam Long mapId,
