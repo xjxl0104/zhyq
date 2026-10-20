@@ -137,6 +137,11 @@ export const mktOrderApi = {
   page: (params) => request.get(`${BASE}/order/page`, { params }),
   // 按服务合同汇总(合同号/伙伴/客户/云仓筛选,聚合订单数/服务费/佣金池)
   contractSummary: (params) => request.get(`${BASE}/order/contract-summary`, { params }),
+  // 合同佣金分配:链路成员+当前每单金额配置(仅P4可改)
+  contractPricing: (params) => request.get(`${BASE}/order/contract-pricing`, { params }),
+  saveContractPricing: (data) => request.post(`${BASE}/order/contract-pricing`, data),
+  // 合同链路已产生佣金(按成员汇总)
+  contractCommissions: (params) => request.get(`${BASE}/order/contract-commissions`, { params }),
   get: (id) => request.get(`${BASE}/order/${id}`),
   importExcel: (formData) => upload(`${BASE}/order/import`, formData),
   // 接口有鉴权，裸 <a href> 不带 token；通过 axios 获取 blob。

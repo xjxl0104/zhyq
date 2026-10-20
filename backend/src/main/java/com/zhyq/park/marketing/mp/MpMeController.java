@@ -30,9 +30,11 @@ import org.springframework.web.bind.annotation.*;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /** 伙伴小程序:资料 / 首页 / 岗位 / 团队 / 团队分配 / 海报。所有数据只回本人的(§5.2 安全)。 */
@@ -54,6 +56,8 @@ public class MpMeController {
     private final MktPositionOverrideMapper overrideMapper;
     private final MktPromoterCommissionMapper commissionMapper;
     private final MktReferralOrderMapper orderMapper;
+    private final com.zhyq.park.marketing.mapper.MktServiceContractMapper contractMapper;
+    private final com.zhyq.park.crm.mapper.CustomerMapper customerMapper;
     private final MpAuthService authService;
     private final FieldEncryptionService encryption;
     private final MktAuditService auditService;
@@ -173,6 +177,62 @@ public class MpMeController {
         m.put("inviteCode", p.getInviteCode()); m.put("name", p.getName());
         m.put("path", "pages/login/index?invite=" + p.getInviteCode());
         return Result.ok(m);
+    }
+
+    /** 我的合同佣金:本人佣金流水 → 出库单 → 服务合同,按合同分组(只回本人的数据)。 */
+    @Operation(summary = "我的合同佣金(按合同分组)") @GetMapping("/me/contract-commissions")
+    public Result<List<Map<String, Object>>> myContractCommissions() {
+        Long pid = MpAuthService.currentPromoterId();
+        List<MktPromoterCommission> rows = commissionMapper.selectList(new LambdaQueryWrapper<MktPromoterCommission>()
+                .eq(MktPromoterCommission::getPromoterId, pid).isNotNull(MktPromoterCommission::getReferralOrderId)
+                .ne(MktPromoterCommission::getStatus, MktCommissionService.C_VOID));
+        if (rows.isEmpty()) return Result.ok(List.of());
+        List<Long> orderIds = rows.stream().map(MktPromoterCommission::getReferralOrderId).distinct().collect(Collectors.toList());
+        // 只统计出库单类(其 sourceId 指向服务合同)
+        Map<Long, MktReferralOrder> orders = orderMapper.selectBatchIds(orderIds).stream()
+                .filter(o -> Integer.valueOf(MktCommissionService.SOURCE_OUTBOUND).equals(o.getSourceType())
+                        && o.getSourceId() != null)
+                .collect(Collectors.toMap(MktReferralOrder::getId, o -> o));
+        if (orders.isEmpty()) return Result.ok(List.of());
+        List<Long> contractIds = orders.values().stream().map(MktReferralOrder::getSourceId).distinct().collect(Collectors.toList());
+        Map<Long, com.zhyq.park.marketing.entity.MktServiceContract> contracts = contractMapper.selectBatchIds(contractIds)
+                .stream().collect(Collectors.toMap(c -> c.getId(), c -> c));
+        Set<Long> customerIds = contracts.values().stream().map(c -> c.getCustomerId())
+                .filter(cid -> cid != null).collect(Collectors.toSet());
+        Map<Long, String> customerNames = customerIds.isEmpty() ? Map.of()
+                : customerMapper.selectBatchIds(customerIds).stream().collect(Collectors.toMap(c -> c.getId(), c -> c.getName()));
+        Map<Long, List<MktPromoterCommission>> byContract = new HashMap<>();
+        for (MktPromoterCommission c : rows) {
+            MktReferralOrder o = orders.get(c.getReferralOrderId());
+            if (o == null) continue;
+            byContract.computeIfAbsent(o.getSourceId(), k -> new java.util.ArrayList<>()).add(c);
+        }
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (Map.Entry<Long, List<MktPromoterCommission>> e : byContract.entrySet()) {
+            com.zhyq.park.marketing.entity.MktServiceContract c = contracts.get(e.getKey());
+            if (c == null) continue;
+            BigDecimal total = BigDecimal.ZERO, frozen = BigDecimal.ZERO, settleable = BigDecimal.ZERO, settled = BigDecimal.ZERO;
+            int orderCount = (int) e.getValue().stream().map(MktPromoterCommission::getReferralOrderId).distinct().count();
+            for (MktPromoterCommission r : e.getValue()) {
+                BigDecimal amt = r.getAmount() == null ? BigDecimal.ZERO : r.getAmount();
+                total = total.add(amt);
+                if (r.getStatus() == MktCommissionService.C_FROZEN) frozen = frozen.add(amt);
+                else if (r.getStatus() == MktCommissionService.C_SETTLEABLE) settleable = settleable.add(amt);
+                else if (r.getStatus() == MktCommissionService.C_SETTLED || r.getStatus() == MktCommissionService.C_WITHDRAWN)
+                    settled = settled.add(amt);
+            }
+            Map<String, Object> m = new HashMap<>();
+            m.put("contractId", c.getId());
+            m.put("contractNo", c.getContractNo());
+            m.put("customerName", customerNames.get(c.getCustomerId()));
+            m.put("orderCount", orderCount);
+            m.put("total", total); m.put("frozen", frozen); m.put("settleable", settleable); m.put("settled", settled);
+            m.put("lastTime", e.getValue().stream().map(MktPromoterCommission::getCreateTime)
+                    .filter(t -> t != null).max(LocalDateTime::compareTo).map(String::valueOf).orElse(null));
+            result.add(m);
+        }
+        result.sort((a, b) -> String.valueOf(b.get("lastTime")).compareTo(String.valueOf(a.get("lastTime"))));
+        return Result.ok(result);
     }
 
     // ---------------- 内部 ----------------

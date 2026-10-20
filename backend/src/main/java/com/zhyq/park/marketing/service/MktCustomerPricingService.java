@@ -8,8 +8,10 @@ import com.zhyq.park.crm.entity.Customer;
 import com.zhyq.park.crm.mapper.CustomerMapper;
 import com.zhyq.park.marketing.entity.MktCustomerPricing;
 import com.zhyq.park.marketing.entity.MktPromoter;
+import com.zhyq.park.marketing.entity.MktServiceContract;
 import com.zhyq.park.marketing.mapper.MktCustomerPricingMapper;
 import com.zhyq.park.marketing.mapper.MktPromoterMapper;
+import com.zhyq.park.marketing.mapper.MktServiceContractMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -26,6 +28,7 @@ public class MktCustomerPricingService {
     private final MktCustomerPricingMapper pricingMapper;
     private final CustomerMapper customerMapper;
     private final MktPromoterMapper promoterMapper;
+    private final MktServiceContractMapper contractMapper;
     private final MktAuditService auditService;
     private final ObjectMapper objectMapper;
     private final MktPositionReviewService positionService;
@@ -33,6 +36,15 @@ public class MktCustomerPricingService {
     public record BeneficiaryInput(Long promoterId, BigDecimal amountPerOrder) {}
     public record PricingInput(BigDecimal totalPerOrder, BigDecimal ownerPerOrder, List<BeneficiaryInput> beneficiaries) {}
     public record Beneficiary(Long promoterId, String promoterName, String positionCode, BigDecimal amountPerOrder) {}
+    /** 合同链路成员:从成交伙伴沿 parentId 向上(含成交伙伴),供佣金分配界面展示与选择。 */
+    public record ContractChainMember(Long promoterId, String name, String positionCode, Integer status,
+                                      boolean isOwner, BigDecimal amountPerOrder) {}
+    public record ContractPricingView(Long contractId, String contractNo, Long customerId, String customerName,
+                                      Long partnerId, String partnerName, boolean configured, boolean canEdit,
+                                      Long ownerPromoterId, String ownerName, BigDecimal totalPerOrder,
+                                      BigDecimal ownerPerOrder, BigDecimal allocatedPerOrder, BigDecimal companyPerOrder,
+                                      List<ContractChainMember> chain, List<Beneficiary> beneficiaries,
+                                      LocalDateTime updatedAt) {}
     public record PricingView(Long customerId, String customerName, boolean configured, boolean canEdit,
                               Long ownerPromoterId, String ownerName, BigDecimal totalPerOrder,
                               BigDecimal ownerPerOrder, BigDecimal allocatedPerOrder, BigDecimal remainingPerOrder,
@@ -148,14 +160,27 @@ public class MktCustomerPricingService {
         if (pricing == null) throw new BizException("客户尚未设置 P4 每单佣金，请配置后重试该出库单");
         MktPromoter owner = requireP4(pricing.getOwnerPromoterId());
         requireOwnership(customer, owner.getId());
+        return snapshotOf(pricing, owner);
+    }
+
+    /** 计佣入口:合同分配版本(contract_id = contractId)优先,未配置则回退客户定价。 */
+    public PricingSnapshot forAccrual(Long customerId, Long contractId) {
+        if (contractId == null) return forAccrual(customerId);
+        MktCustomerPricing pricing = latestByContract(contractId);
+        if (pricing == null) return forAccrual(customerId);
+        requireCustomer(customerId);
+        MktPromoter owner = requireP4(pricing.getOwnerPromoterId());
+        return snapshotOf(pricing, owner);
+    }
+
+    /** 校验定价版本当前仍可执行(受益人有效、金额自洽),返回计佣快照;客户定价与合同分配共用。 */
+    private PricingSnapshot snapshotOf(MktCustomerPricing pricing, MktPromoter owner) {
         List<Beneficiary> items = readBeneficiaries(pricing);
-        validateAmounts(new PricingInput(pricing.getTotalPerOrder(), pricing.getOwnerPerOrder(), items.stream()
-                .map(b -> new BeneficiaryInput(b.promoterId(), b.amountPerOrder())).toList()));
         Set<Long> ids = new HashSet<>();
         List<Beneficiary> current = new ArrayList<>();
         for (Beneficiary item : items) {
             if (item.promoterId() == null || owner.getId().equals(item.promoterId()) || !ids.add(item.promoterId())) {
-                throw new BizException("客户定价受益人已失效，请 P4 重新配置");
+                throw new BizException("分配配置受益人已失效，请 P4 重新配置");
             }
             MktPromoter recipient = promoterMapper.selectById(item.promoterId());
             requireRecipient(recipient, owner.getId());
@@ -167,6 +192,117 @@ public class MktCustomerPricingService {
         BigDecimal allocated = current.stream().map(Beneficiary::amountPerOrder).reduce(BigDecimal.ZERO, BigDecimal::add);
         return new PricingSnapshot(pricing.getId(), owner.getId(), owner.getPositionCode(), pricing.getTotalPerOrder(),
                 pricing.getOwnerPerOrder(), pricing.getTotalPerOrder().subtract(pricing.getOwnerPerOrder()).subtract(allocated), current);
+    }
+
+    // ---------------- 按合同佣金分配(P4 在后台为每份合同配置链路成员每单金额) ----------------
+
+    /** 合同分配视图:链路成员(成交伙伴向上)+当前配置;actor 为后台操作员关联的伙伴,可空。 */
+    public ContractPricingView contractView(Long contractId, MktPromoter actor) {
+        MktServiceContract contract = requireContract(contractId);
+        MktPromoter partner = contract.getPartnerId() == null ? null : promoterMapper.selectById(contract.getPartnerId());
+        boolean canEdit = actor != null && "P4".equals(actor.getPositionCode())
+                && Integer.valueOf(1).equals(actor.getStatus())
+                && partner != null && inTeam(partner, actor.getId());
+        MktCustomerPricing pricing = latestByContract(contractId);
+        boolean configured = pricing != null;
+        Map<Long, BigDecimal> amounts = new HashMap<>();
+        if (configured) {
+            for (Beneficiary b : readBeneficiaries(pricing)) amounts.put(b.promoterId(), b.amountPerOrder());
+        }
+        List<ContractChainMember> chain = new ArrayList<>();
+        MktPromoter cur = partner;
+        Set<Long> seen = new HashSet<>();
+        while (cur != null && seen.add(cur.getId()) && seen.size() <= 64) {
+            boolean isOwner = configured && cur.getId().equals(pricing.getOwnerPromoterId());
+            chain.add(new ContractChainMember(cur.getId(), cur.getName(), cur.getPositionCode(), cur.getStatus(),
+                    isOwner, isOwner ? pricing.getOwnerPerOrder() : amounts.get(cur.getId())));
+            cur = cur.getParentId() == null ? null : promoterMapper.selectById(cur.getParentId());
+        }
+        Customer customer = contract.getCustomerId() == null ? null : customerMapper.selectById(contract.getCustomerId());
+        BigDecimal allocated = BigDecimal.ZERO;
+        if (configured) {
+            allocated = pricing.getOwnerPerOrder().add(readBeneficiaries(pricing).stream()
+                    .map(Beneficiary::amountPerOrder).reduce(BigDecimal.ZERO, BigDecimal::add));
+        }
+        return new ContractPricingView(contractId, contract.getContractNo(), contract.getCustomerId(),
+                customer == null ? null : customer.getName(), contract.getPartnerId(),
+                partner == null ? null : partner.getName(), configured, canEdit,
+                configured ? pricing.getOwnerPromoterId() : null, null,
+                configured ? pricing.getTotalPerOrder() : null,
+                configured ? pricing.getOwnerPerOrder() : null,
+                configured ? allocated : null,
+                configured ? pricing.getTotalPerOrder().subtract(allocated) : null,
+                chain, configured ? readBeneficiaries(pricing) : List.of(),
+                configured ? pricing.getCreateTime() : null);
+    }
+
+    /** 保存合同分配(仅 P4):生成不可变新版本,只影响之后产生的出库单,历史订单不重算。 */
+    @Transactional
+    public ContractPricingView saveContract(Long actorId, Long contractId, PricingInput input) {
+        MktPromoter actor = requireP4(actorId);
+        MktServiceContract contract = requireContract(contractId);
+        MktPromoter partner = contract.getPartnerId() == null ? null : promoterMapper.selectById(contract.getPartnerId());
+        if (partner == null || !inTeam(partner, actor.getId())) {
+            throw new BizException(403, "该合同的成交伙伴不在本人邀请体系内");
+        }
+        validateContractAmounts(input);
+        Set<Long> chainIds = new HashSet<>();
+        MktPromoter cur = partner;
+        Set<Long> seen = new HashSet<>();
+        while (cur != null && seen.add(cur.getId()) && seen.size() <= 64) {
+            chainIds.add(cur.getId());
+            cur = cur.getParentId() == null ? null : promoterMapper.selectById(cur.getParentId());
+        }
+        List<Beneficiary> beneficiaries = new ArrayList<>();
+        Set<Long> ids = new HashSet<>();
+        for (BeneficiaryInput item : input.beneficiaries()) {
+            if (item.promoterId() == null || actorId.equals(item.promoterId()) || !ids.add(item.promoterId())) {
+                throw new BizException("受益人不能重复或选择 P4 本人，请在本人金额中填写");
+            }
+            if (!chainIds.contains(item.promoterId())) {
+                throw new BizException("受益人必须是该合同邀请链路上的成员");
+            }
+            MktPromoter recipient = promoterMapper.selectById(item.promoterId());
+            requireRecipient(recipient, actorId);
+            beneficiaries.add(new Beneficiary(recipient.getId(), recipient.getName(), recipient.getPositionCode(), item.amountPerOrder()));
+        }
+        if (input.ownerPerOrder().signum() > 0 && Integer.valueOf(1).equals(actor.getIsInternal())) {
+            throw new BizException("内部人员不计个人佣金，请将本人金额设为 0");
+        }
+        MktCustomerPricing pricing = new MktCustomerPricing();
+        pricing.setContractId(contractId);
+        pricing.setCustomerId(contract.getCustomerId());
+        pricing.setOwnerPromoterId(actorId);
+        pricing.setTotalPerOrder(input.totalPerOrder());
+        pricing.setOwnerPerOrder(input.ownerPerOrder());
+        pricing.setProjectId(contract.getProjectId());
+        try { pricing.setBeneficiariesJson(objectMapper.writeValueAsString(beneficiaries)); }
+        catch (Exception e) { throw new BizException("合同分配配置保存失败"); }
+        pricingMapper.insert(pricing);
+        auditService.log("pricing.contract.configure", "service_contract", contractId, "P4 按合同每单金额", null, pricing);
+        return contractView(contractId, actor);
+    }
+
+    /** 合同分配的链路成员可达 4 人(P1-P4),沿用金额规则但放宽 2 名受益人上限。 */
+    static void validateContractAmounts(PricingInput input) {
+        if (input == null) throw new BizException("请填写每单佣金配置");
+        validateAmount(input.totalPerOrder(), "总佣金");
+        validateAmount(input.ownerPerOrder(), "P4 本人金额");
+        if (input.beneficiaries() == null) throw new BizException("请选择受益人；不分配时请提交空列表");
+        if (input.beneficiaries().size() > 8) throw new BizException("受益人数量超出链路上限");
+        BigDecimal allocated = input.ownerPerOrder();
+        for (BeneficiaryInput item : input.beneficiaries()) {
+            if (item == null) throw new BizException("受益人配置不能为空");
+            validateAmount(item.amountPerOrder(), "受益人金额");
+            allocated = allocated.add(item.amountPerOrder());
+        }
+        if (allocated.compareTo(input.totalPerOrder()) > 0) throw new BizException("本人金额与受益人金额合计不能超过总佣金");
+    }
+
+    private MktServiceContract requireContract(Long id) {
+        MktServiceContract c = id == null ? null : contractMapper.selectById(id);
+        if (c == null) throw new BizException("服务合同不存在");
+        return c;
     }
 
     static void validateAmounts(PricingInput input) {
@@ -250,7 +386,16 @@ public class MktCustomerPricingService {
 
     private MktCustomerPricing latest(Long customerId) {
         return pricingMapper.selectOne(new LambdaQueryWrapper<MktCustomerPricing>()
-                .eq(MktCustomerPricing::getCustomerId, customerId).orderByDesc(MktCustomerPricing::getId).last("limit 1"));
+                .eq(MktCustomerPricing::getCustomerId, customerId)
+                .isNull(MktCustomerPricing::getContractId)
+                .orderByDesc(MktCustomerPricing::getId).last("limit 1"));
+    }
+
+    /** 合同分配版本:同一合同取最新一条不可变版本。 */
+    private MktCustomerPricing latestByContract(Long contractId) {
+        return pricingMapper.selectOne(new LambdaQueryWrapper<MktCustomerPricing>()
+                .eq(MktCustomerPricing::getContractId, contractId)
+                .orderByDesc(MktCustomerPricing::getId).last("limit 1"));
     }
 
     private List<Beneficiary> readBeneficiaries(MktCustomerPricing p) {

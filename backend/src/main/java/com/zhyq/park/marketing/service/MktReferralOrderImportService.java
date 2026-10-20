@@ -276,7 +276,8 @@ public class MktReferralOrderImportService {
         BigDecimal serviceFee = serviceFee(contract.getPriceTable(), row.qty(), row.packages());
         String gradeCode = StringUtils.hasText(contract.getGrade()) ? contract.getGrade()
                 : StringUtils.hasText(customer.getGrade()) ? customer.getGrade() : "D";
-        MktCustomerPricingService.PricingSnapshot pricing = pricingService.forAccrual(customer.getId());
+        // 合同分配版本优先于客户定价(按合同佣金分配)
+        MktCustomerPricingService.PricingSnapshot pricing = pricingService.forAccrual(customer.getId(), contract.getId());
         BigDecimal rate = BigDecimal.ZERO;
         if (serviceFee.signum() <= 0) throw new BizException("合同缺少有效的单票/按件服务单价");
         // 一条唯一出库单号计一单；包裹数、件数只用于服务费和仓库成本。

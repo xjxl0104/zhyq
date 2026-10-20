@@ -66,6 +66,8 @@ public class MktReferralOrderController {
     private final MktCommissionService commissionService;
     private final MktAuditService auditService;
     private final com.zhyq.park.marketing.mapper.MktServiceFeeBillLineMapper billLines;
+    private final com.zhyq.park.marketing.service.MktCustomerPricingService pricingService;
+    private final com.zhyq.park.marketing.service.MktAdminActorService adminActorService;
 
     /** sourceId 指向 crm_service_contract.id 的来源:出库单/平台费收款/签约奖;租赁签约的 sourceId 指向 biz_contract。 */
     private static final List<Integer> SERVICE_CONTRACT_SOURCES = List.of(MktCommissionService.SOURCE_OUTBOUND,
@@ -208,6 +210,68 @@ public class MktReferralOrderController {
         MktReferralOrder o = orderMapper.selectById(id);
         if (o == null) throw new BizException("订单不存在");
         return Result.ok(enrich(o));
+    }
+
+    @Operation(summary = "合同佣金分配视图:邀请链路成员+当前每单金额配置(仅P4可改)")
+    @PreAuthorize("hasAuthority('crm:marketing:order:query')")
+    @GetMapping("/contract-pricing")
+    public Result<com.zhyq.park.marketing.service.MktCustomerPricingService.ContractPricingView> contractPricing(@RequestParam Long contractId) {
+        return Result.ok(pricingService.contractView(contractId, adminActorService.currentPromoter()));
+    }
+
+    public record ContractPricingSave(Long contractId, BigDecimal totalPerOrder, BigDecimal ownerPerOrder,
+                                      List<com.zhyq.park.marketing.service.MktCustomerPricingService.BeneficiaryInput> beneficiaries) {}
+
+    @Operation(summary = "保存合同佣金分配(仅P4;生成不可变新版本,只影响之后产生的出库单)")
+    @PreAuthorize("hasAuthority('crm:marketing:order:edit')")
+    @PostMapping("/contract-pricing")
+    public Result<com.zhyq.park.marketing.service.MktCustomerPricingService.ContractPricingView> saveContractPricing(
+            @RequestBody ContractPricingSave body) {
+        if (body == null || body.contractId() == null) throw new BizException("请选择服务合同");
+        MktPromoter actor = adminActorService.currentPromoter();
+        if (actor == null) throw new BizException("当前后台账号未关联伙伴档案，无法设置佣金分配；请先用相同手机号注册伙伴");
+        return Result.ok(pricingService.saveContract(actor.getId(), body.contractId(),
+                new com.zhyq.park.marketing.service.MktCustomerPricingService.PricingInput(
+                        body.totalPerOrder(), body.ownerPerOrder(), body.beneficiaries())));
+    }
+
+    @Operation(summary = "合同链路已产生佣金(按成员汇总,含各状态金额)")
+    @PreAuthorize("hasAuthority('crm:marketing:order:query')")
+    @GetMapping("/contract-commissions")
+    public Result<List<Map<String, Object>>> contractCommissions(@RequestParam Long contractId) {
+        List<MktPromoterCommission> rows = commissionMapper.selectList(new LambdaQueryWrapper<MktPromoterCommission>()
+                .inSql(MktPromoterCommission::getReferralOrderId,
+                        "SELECT id FROM crm_referral_order WHERE deleted = 0 AND source_type = "
+                                + MktCommissionService.SOURCE_OUTBOUND + " AND source_id = " + contractId));
+        Map<Long, Map<String, Object>> byPromoter = new HashMap<>();
+        for (MktPromoterCommission c : rows) {
+            if (c.getPromoterId() == null) continue;
+            Map<String, Object> m = byPromoter.computeIfAbsent(c.getPromoterId(), k -> {
+                Map<String, Object> n = new HashMap<>();
+                n.put("promoterId", k);
+                n.put("total", BigDecimal.ZERO);
+                n.put("frozen", BigDecimal.ZERO);
+                n.put("settleable", BigDecimal.ZERO);
+                n.put("settled", BigDecimal.ZERO);
+                n.put("count", 0);
+                return n;
+            });
+            m.put("total", ((BigDecimal) m.get("total")).add(c.getAmount() == null ? BigDecimal.ZERO : c.getAmount()));
+            m.put("count", (Integer) m.get("count") + 1);
+            if (Integer.valueOf(MktCommissionService.C_FROZEN).equals(c.getStatus()))
+                m.put("frozen", ((BigDecimal) m.get("frozen")).add(c.getAmount()));
+            else if (Integer.valueOf(MktCommissionService.C_SETTLEABLE).equals(c.getStatus()))
+                m.put("settleable", ((BigDecimal) m.get("settleable")).add(c.getAmount()));
+            else if (Integer.valueOf(MktCommissionService.C_SETTLED).equals(c.getStatus())
+                    || Integer.valueOf(MktCommissionService.C_WITHDRAWN).equals(c.getStatus()))
+                m.put("settled", ((BigDecimal) m.get("settled")).add(c.getAmount()));
+        }
+        if (byPromoter.isEmpty()) return Result.ok(List.of());
+        for (MktPromoter p : promoterMapper.selectBatchIds(byPromoter.keySet())) {
+            byPromoter.get(p.getId()).put("promoterName", p.getName());
+            byPromoter.get(p.getId()).put("positionCode", p.getPositionCode());
+        }
+        return Result.ok(new ArrayList<>(byPromoter.values()));
     }
 
     @Operation(summary = "该订单拆出的佣金行") @PreAuthorize("hasAuthority('crm:marketing:order:query')") @GetMapping("/{id}/splits")

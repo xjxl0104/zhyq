@@ -71,7 +71,6 @@ public class MktPromoterService {
         if (!StringUtils.hasText(p.getPhone()))
             p.setPhone("p:" + UUID.randomUUID().toString().replace("-", "").substring(0, 18));
         else if (!p.getPhone().matches("^1\\d{10}$")) throw new BizException(400, "手机号格式不正确");
-        p.setPositionCode("P1");
         p.setStatus(ST_NORMAL);
         return createProfile(p, parentInviteCode, "admin");
     }
@@ -80,7 +79,6 @@ public class MktPromoterService {
         // Both phone and profile-later registration require attribution; manual root creation remains available.
         if ("mp".equals(source)) {
             parentInviteCode = requireRegistrationInvite(parentInviteCode);
-            p.setPositionCode("P1");
             p.setInviteDeadline(null);
         }
         MktPromoter parent = null;
@@ -97,7 +95,7 @@ public class MktPromoterService {
         p.setParentId(parent == null ? null : parent.getId());
         p.setBindTime(parent == null ? null : LocalDateTime.now());
         if (!StringUtils.hasText(p.getPositionCode())) {
-            p.setPositionCode("P1");
+            p.setPositionCode(positionUnder(parent));
         }
         p.setPositionSince(LocalDateTime.now());
         p.setStatus(p.getStatus() == null ? ST_NORMAL : p.getStatus());
@@ -131,6 +129,16 @@ public class MktPromoterService {
         String normalized = inviteCode.trim().toUpperCase(Locale.ROOT);
         if (!normalized.matches("^[A-Z2-9]{8}$")) throw new BizException(400, "请输入有效的 8 位上级邀请码");
         return normalized;
+    }
+
+    /** 邀请定级:上级 P4 → P3、P3 → P2、P2 → P1;P1 或无岗位邀请的仍是 P1(最底层,不再下降)。 */
+    static String positionUnder(MktPromoter parent) {
+        if (parent == null) return "P1";
+        return switch (parent.getPositionCode() == null ? "" : parent.getPositionCode()) {
+            case "P4" -> "P3";
+            case "P3" -> "P2";
+            default -> "P1";
+        };
     }
 
     /** 改上级:不能是自己、新上级不能在自己子树里(成环);整棵子树 path 前缀替换,一个事务。 */
