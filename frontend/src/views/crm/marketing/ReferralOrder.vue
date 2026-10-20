@@ -148,6 +148,11 @@
           <el-table-column label="已确认佣金池(元)" width="130" align="right"><template #default="{ row }">{{ money(row.poolSum) }}</template></el-table-column>
           <el-table-column prop="lastEventTime" label="最近出库时间" width="160"><template #default="{ row }">{{ row.lastEventTime || '—' }}</template></el-table-column>
           <el-table-column label="合同有效期" width="210"><template #default="{ row }">{{ (row.startDate || '—') + ' ~ ' + (row.endDate || '—') }}</template></el-table-column>
+          <el-table-column label="操作" width="110" fixed="right">
+            <template #default="{ row }">
+              <el-button link type="primary" @click.stop="openAlloc(row)">佣金分配</el-button>
+            </template>
+          </el-table-column>
         </el-table>
         <el-pagination class="pager" background layout="total, prev, pager, next, sizes"
                        :total="summaryTotal" v-model:current-page="squery.pageNo"
@@ -168,6 +173,63 @@
       <p v-if="splits.row?.pricingId != null" class="hint split-summary">总佣金 {{ snapshotAmount(splits.row.commissionUnitPrice, splits.row.commissionOrderCount) }} 元；伙伴佣金池 {{ Number(splits.row.poolAmount || 0).toFixed(3) }} 元；公司剩余额 {{ snapshotAmount(splits.row.companyPerOrder, splits.row.commissionOrderCount) }} 元。按订单生成时的 P4 配置计算，当前流水合计 {{ sum }} 元。</p>
       <p v-else class="hint">合计 {{ sum }} / 池 {{ splits.row?.poolAmount }};差额为园区留存(链未到顶格、退出或内部人员)。</p>
     </el-drawer>
+
+    <!-- 合同佣金分配:链路成员每单金额(仅 P4 可改) + 该合同已产生佣金 -->
+    <el-dialog v-model="alloc.visible" :title="`佣金分配 · ${alloc.view?.contractNo || ''}`" width="min(760px, 96vw)">
+      <template v-if="alloc.view">
+        <el-alert v-if="!alloc.view.canEdit" type="info" :closable="false" class="mb"
+                  title="只读模式:仅 P4(且该合同在其邀请体系内)可以设置分配,其他账号仅可查看。" show-icon />
+        <el-descriptions :column="3" border size="small" class="mb">
+          <el-descriptions-item label="客户">{{ alloc.view.customerName || '—' }}</el-descriptions-item>
+          <el-descriptions-item label="成交伙伴">{{ alloc.view.partnerName || '—' }}</el-descriptions-item>
+          <el-descriptions-item label="每单总佣金(元)">
+            <el-input-number v-if="alloc.view.canEdit" v-model="alloc.form.totalPerOrder" :min="0" :step="0.001" :precision="3" :controls="false" size="small" style="width: 110px" />
+            <span v-else>{{ alloc.view.totalPerOrder != null ? Number(alloc.view.totalPerOrder).toFixed(3) : '未配置' }}</span>
+          </el-descriptions-item>
+        </el-descriptions>
+
+        <el-table :data="alloc.form.members" size="small" border>
+          <el-table-column prop="positionCode" label="岗位" width="70" align="center" />
+          <el-table-column prop="name" label="成员" min-width="120">
+            <template #default="{ row }">{{ row.name }}<el-tag v-if="row.isOwner" size="small" class="ml4" type="success">P4 本人</el-tag></template>
+          </el-table-column>
+          <el-table-column label="关系" width="90" align="center">
+            <template #default="{ row }">{{ row.promoterId === alloc.view.partnerId ? '成交' : '上级' }}</template>
+          </el-table-column>
+          <el-table-column label="每单金额(元)" width="150" align="right">
+            <template #default="{ row }">
+              <el-input-number v-if="alloc.view.canEdit" v-model="row.amount" :min="0" :step="0.001" :precision="3" :controls="false" size="small" style="width: 110px" />
+              <span v-else>{{ row.amount != null ? Number(row.amount).toFixed(3) : '—' }}</span>
+            </template>
+          </el-table-column>
+        </el-table>
+        <p class="hint alloc-sum">
+          成员合计 {{ allocSum }} 元 / 每单总佣金 {{ allocTotal }} 元,
+          公司保留 <span :class="{ neg: allocCompany < 0 }">{{ allocCompany }}</span> 元
+          <template v-if="allocCompany < 0">(超出总佣金,无法保存)</template>。
+          配置保存后只对之后产生的出库单生效,历史订单不重算。
+        </p>
+
+        <el-divider content-position="left">该合同已产生佣金(按成员)</el-divider>
+        <el-table :data="alloc.commissions" size="small" border v-loading="alloc.commissionLoading">
+          <el-table-column prop="promoterName" label="成员" min-width="110"><template #default="{ row }">{{ row.promoterName || '#' + row.promoterId }}</template></el-table-column>
+          <el-table-column prop="positionCode" label="岗位" width="70" align="center" />
+          <el-table-column prop="count" label="流水数" width="80" align="right" />
+          <el-table-column label="合计(元)" width="110" align="right"><template #default="{ row }">{{ money(row.total) }}</template></el-table-column>
+          <el-table-column label="冻结(元)" width="110" align="right"><template #default="{ row }">{{ money(row.frozen) }}</template></el-table-column>
+          <el-table-column label="可结算(元)" width="110" align="right"><template #default="{ row }">{{ money(row.settleable) }}</template></el-table-column>
+          <el-table-column label="已结算/已提现(元)" width="140" align="right"><template #default="{ row }">{{ money(row.settled) }}</template></el-table-column>
+        </el-table>
+        <p v-if="!alloc.commissionLoading && !alloc.commissions.length" class="hint">该合同还没有产生佣金流水。</p>
+      </template>
+      <template #footer>
+        <template v-if="alloc.view?.canEdit">
+          <el-button @click="alloc.visible = false">取消</el-button>
+          <el-button type="primary" :loading="alloc.saving" :disabled="allocCompany < 0" @click="saveAlloc">保存分配</el-button>
+        </template>
+        <el-button v-else @click="alloc.visible = false">关闭</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -276,6 +338,59 @@ async function openSplits(row) { splits.row = row; splits.list = await mktOrderA
 const snapshotAmount = (unitPrice, count) => unitPrice == null || count == null ? '—' : (Number(unitPrice) * Number(count)).toFixed(3)
 const sum = computed(() => splits.list.reduce((a, s) => a + Number(s.amount || 0), 0).toFixed(splits.row?.pricingId != null ? 3 : 2))
 
+// ==================== 合同佣金分配 ====================
+const alloc = reactive({ visible: false, view: null, saving: false, commissions: [], commissionLoading: false,
+  form: { totalPerOrder: 0, members: [] } })
+const fixed3 = (v) => Number(v || 0).toFixed(3)
+const allocSum = computed(() => fixed3(alloc.form.members.reduce((a, m) => a + Number(m.amount || 0), 0)))
+const allocTotal = computed(() => fixed3(alloc.form.totalPerOrder))
+const allocCompany = computed(() => fixed3(Number(alloc.form.totalPerOrder || 0) - alloc.form.members.reduce((a, m) => a + Number(m.amount || 0), 0)))
+
+async function openAlloc(row) {
+  Object.assign(alloc, { visible: true, view: null, saving: false, commissions: [], commissionLoading: false, form: { totalPerOrder: 0, members: [] } })
+  try {
+    const view = await mktOrderApi.contractPricing({ contractId: row.contractId })
+    alloc.view = view
+    alloc.form.totalPerOrder = Number(view.totalPerOrder || 0)
+    alloc.form.members = (view.chain || []).map(m => ({
+      promoterId: m.promoterId, name: m.name, positionCode: m.positionCode,
+      status: m.status, isOwner: m.isOwner, amount: Number(m.amountPerOrder || 0)
+    }))
+    if (view.canEdit && !view.configured) {
+      // 未配置过:默认把总佣金全给 P4 本人,其他成员 0,由 P4 自行调整
+      const owner = alloc.form.members.find(m => m.isOwner)
+      if (owner) owner.amount = alloc.form.totalPerOrder
+    }
+  } catch (e) {
+    ElMessage.error(e?.message || '加载佣金分配失败')
+    alloc.visible = false
+    return
+  }
+  alloc.commissionLoading = true
+  try { alloc.commissions = await mktOrderApi.contractCommissions({ contractId: row.contractId }) }
+  finally { alloc.commissionLoading = false }
+}
+
+async function saveAlloc() {
+  if (!alloc.view?.canEdit || alloc.saving) return
+  if (Number(allocCompany.value) < 0) return ElMessage.warning('成员合计超出每单总佣金')
+  const owner = alloc.form.members.find(m => m.isOwner)
+  const beneficiaries = alloc.form.members
+    .filter(m => !m.isOwner && Number(m.amount || 0) > 0)
+    .map(m => ({ promoterId: m.promoterId, amountPerOrder: Number(m.amount) }))
+  alloc.saving = true
+  try {
+    const view = await mktOrderApi.saveContractPricing({
+      contractId: alloc.view.contractId,
+      totalPerOrder: Number(alloc.form.totalPerOrder || 0),
+      ownerPerOrder: Number(owner?.amount || 0),
+      beneficiaries
+    })
+    alloc.view = view
+    ElMessage.success('佣金分配已保存,之后的出库单按新分配计佣')
+  } finally { alloc.saving = false }
+}
+
 watch(tab, (t) => { if (t === 'summary' && !summaryList.value.length) loadSummary() })
 onMounted(() => { load(); loadOptions() })
 </script>
@@ -291,4 +406,6 @@ onMounted(() => { load(); loadOptions() })
 .pager-hint { margin-top: 8px; }
 .dim { color: var(--el-text-color-placeholder); }
 .ml4 { margin-left: 4px; }
+.alloc-sum { margin-top: 8px; }
+.neg { color: var(--el-color-danger); }
 </style>

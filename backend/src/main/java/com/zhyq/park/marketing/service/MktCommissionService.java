@@ -115,7 +115,7 @@ public class MktCommissionService {
             throw new BizException("成交伙伴不存在: " + ev.sellerPromoterId());
         }
         MktCustomerPricingService.PricingSnapshot pricing = ev.sourceType() == SOURCE_OUTBOUND
-                ? pricingService.forAccrual(ev.customerId()) : null;
+                ? pricingService.forAccrual(ev.customerId(), ev.sourceId()) : null;
         if (pricing != null && ev.poolAmount().compareTo(pricing.totalPerOrder().subtract(pricing.companyPerOrder())) != 0) {
             throw new BizException("客户定价已变化，请按最新定价重试该出库单");
         }

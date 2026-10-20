@@ -47,12 +47,15 @@ class MktReferralOrderControllerTest {
         assertThat(sql.getValue().getSqlSelect()).contains("SUM(CASE WHEN status = 2 THEN service_fee ELSE 0 END)").contains("SUM(CASE WHEN status = 2 THEN pool_amount ELSE 0 END)");
     }
     private static MktReferralOrderController controller(MktReferralOrderMapper orders,MktServiceContractMapper contracts){
-        return new MktReferralOrderController(orders,mock(MktPromoterCommissionMapper.class),mock(MktPromoterMapper.class),mock(CustomerMapper.class),contracts,mock(MktWarehouseMapper.class),mock(MktReferralOrderImportService.class),mock(MktCommissionService.class),mock(MktAuditService.class),mock(MktServiceFeeBillLineMapper.class));
+        return controller(orders,contracts,mock(MktServiceFeeBillLineMapper.class));
+    }
+    private static MktReferralOrderController controller(MktReferralOrderMapper orders,MktServiceContractMapper contracts,MktServiceFeeBillLineMapper lines){
+        return new MktReferralOrderController(orders,mock(MktPromoterCommissionMapper.class),mock(MktPromoterMapper.class),mock(CustomerMapper.class),contracts,mock(MktWarehouseMapper.class),mock(MktReferralOrderImportService.class),mock(MktCommissionService.class),mock(MktAuditService.class),lines,mock(MktCustomerPricingService.class),mock(MktAdminActorService.class));
     }
     @Test void billedOrderMustUseFinancialCorrectionInsteadOfDirectVoid(){
         var orders=mock(MktReferralOrderMapper.class);var lines=mock(MktServiceFeeBillLineMapper.class);var commissions=mock(MktCommissionService.class);
         when(orders.update(isNull(),any())).thenReturn(1);when(lines.selectCount(any())).thenReturn(1L);
-        var controller=new MktReferralOrderController(orders,mock(MktPromoterCommissionMapper.class),mock(MktPromoterMapper.class),mock(CustomerMapper.class),mock(MktServiceContractMapper.class),mock(MktWarehouseMapper.class),mock(MktReferralOrderImportService.class),commissions,mock(MktAuditService.class),lines);
+        var controller=new MktReferralOrderController(orders,mock(MktPromoterCommissionMapper.class),mock(MktPromoterMapper.class),mock(CustomerMapper.class),mock(MktServiceContractMapper.class),mock(MktWarehouseMapper.class),mock(MktReferralOrderImportService.class),commissions,mock(MktAuditService.class),lines,mock(MktCustomerPricingService.class),mock(MktAdminActorService.class));
         assertThatThrownBy(()->controller.voidOrder(7L,Map.of("reason","退款"))).isInstanceOf(BizException.class).hasMessageContaining("联系财务");
         verifyNoInteractions(commissions);
         var inOrder=inOrder(orders,lines);inOrder.verify(orders).update(isNull(),any());inOrder.verify(lines).selectCount(any());

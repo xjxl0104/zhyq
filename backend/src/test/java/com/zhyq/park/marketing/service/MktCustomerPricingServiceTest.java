@@ -27,6 +27,7 @@ class MktCustomerPricingServiceTest {
     @Mock MktCustomerPricingMapper pricingMapper;
     @Mock CustomerMapper customerMapper;
     @Mock MktPromoterMapper promoterMapper;
+    @Mock com.zhyq.park.marketing.mapper.MktServiceContractMapper contractMapper;
     @Mock MktAuditService audit;
     @Mock MktPositionReviewService positionService;
     MktCustomerPricingService service;
@@ -37,7 +38,7 @@ class MktCustomerPricingServiceTest {
         for (Class<?> c : List.of(MktCustomerPricing.class, MktPromoter.class, Customer.class)) TableInfoHelper.initTableInfo(a,c);
     }
     @BeforeEach void setup() {
-        service = new MktCustomerPricingService(pricingMapper, customerMapper, promoterMapper, audit, new ObjectMapper(), positionService);
+        service = new MktCustomerPricingService(pricingMapper, customerMapper, promoterMapper, contractMapper, audit, new ObjectMapper(), positionService);
         team = new HashMap<>();
         team.put(4L, promoter(4L, "P4", null)); team.put(3L, promoter(3L, "P3", 4L));
         team.put(2L, promoter(2L, "P2", 3L)); team.put(1L, promoter(1L, "P1", 2L));
