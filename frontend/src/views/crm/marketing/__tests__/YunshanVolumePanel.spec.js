@@ -4,7 +4,7 @@ import YunshanVolumePanel from '../YunshanVolumePanel.vue'
 import { mktYunshanApi } from '@/api/marketing'
 const { permissions } = vi.hoisted(() => ({ permissions: new Set() }))
 vi.mock('@/utils/permission', () => ({ hasPermission: permission => permissions.has(permission) }))
-vi.mock('@/api/marketing', () => ({ mktYunshanApi: Object.fromEntries(['directory', 'customerSites', 'config', 'maps', 'customers', 'owners', 'warehouses', 'createMap', 'setStatus', 'volume', 'logs', 'sync', 'reconcile'].map(key => [key, vi.fn()])) }))
+vi.mock('@/api/marketing', () => ({ mktYunshanApi: Object.fromEntries(['directory', 'customerSites', 'config', 'maps', 'customers', 'owners', 'warehouses', 'createMap', 'setStatus', 'volume', 'logs', 'sync', 'reconcile', 'monthly'].map(key => [key, vi.fn()])) }))
 vi.mock('element-plus', async original => ({ ...await original(), ElMessage: { success: vi.fn(), warning: vi.fn() } }))
 const map = { id: '9007199254740993', customerId: '9007199254740995', customerName: '棒棒猪', parentOwnerNo: '0009007199254740993', parentOwnerName: '棒棒猪', parentWarehouseNo: '000123', parentWarehouseName: '授权仓库', status: 1, identityMismatch: false }
 const wrappers = []
@@ -26,6 +26,7 @@ beforeEach(() => {
   mktYunshanApi.maps.mockResolvedValue([{ ...map }])
   mktYunshanApi.volume.mockResolvedValue({ records: [], total: 0, totalConsignNum: '0', daysWithData: 0, daysMissing: 7, dataState: 'NO_STAT_DATA' })
   mktYunshanApi.logs.mockResolvedValue({ records: [], total: 0 })
+  mktYunshanApi.monthly.mockResolvedValue({ year: 2026, months: [], yearTotal: 0, daysWithData: 0 })
   mktYunshanApi.customers.mockResolvedValue({ records: [{ id: map.customerId, name: '棒棒猪' }], total: 21 })
   mktYunshanApi.owners.mockResolvedValue({ records: [{ no: map.parentOwnerNo, name: map.customerName }], pages: 1, total: 1 })
   mktYunshanApi.warehouses.mockResolvedValue({ records: [{ no: map.parentWarehouseNo, name: '授权仓库' }], pages: 1, total: 1 })
