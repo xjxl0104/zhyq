@@ -219,6 +219,7 @@ export const mktYunshanApi = {
   sync: (id, data) => request.post(`${YUNSHAN}/maps/${id}/sync`, data, { timeout: 180000 }),
   volume: (params) => request.get(`${YUNSHAN}/volume`, { params }),
   monthly: (params) => request.get(`${YUNSHAN}/monthly`, { params }),
+  generateOrders: (data) => request.post(`${YUNSHAN}/orders/generate`, data, { timeout: 180000 }),
   syncStatus: (warehouseIds) => request.get(`${YUNSHAN}/sync-status`, { params: { warehouseIds: warehouseIds.join(',') } }),
   reconcile: (params) => request.get(`${YUNSHAN}/reconcile`, { params, timeout: 180000 }),
   logs: (params) => request.get(`${YUNSHAN}/logs`, { params })
