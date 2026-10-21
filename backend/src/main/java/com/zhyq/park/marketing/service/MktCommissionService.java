@@ -99,7 +99,17 @@ public class MktCommissionService {
     @Transactional
     public MktReferralOrder createAndSplitInTransaction(CommissionEvent ev) { return createInternal(ev); }
 
-    private MktReferralOrder createInternal(CommissionEvent ev) {
+    /** 云山发货量汇总订单：一条订单代表 orderCount 票，个人佣金 = 每单金额 × 票数；与调用方同一事务。 */
+    @Transactional
+    public MktReferralOrder createAggregatedOutboundInTransaction(CommissionEvent ev, int orderCount) {
+        if (orderCount < 1) throw new BizException("汇总票数必须为正整数");
+        if (ev == null || ev.sourceType() != SOURCE_OUTBOUND) throw new BizException("汇总订单只能是出库类计佣事件");
+        return createInternal(ev, orderCount);
+    }
+
+    private MktReferralOrder createInternal(CommissionEvent ev) { return createInternal(ev, 1); }
+
+    private MktReferralOrder createInternal(CommissionEvent ev, int orderCount) {
         if (ev == null || ev.sourceNo() == null || ev.sourceNo().isBlank() || ev.sourceNo().length() > 64
                 || ev.baseAmount() == null || ev.baseAmount().signum() < 0 || ev.poolAmount() == null
                 || ev.poolAmount().signum() < 0 || ev.poolFactor() == null || ev.poolFactor().signum() < 0)
@@ -116,7 +126,7 @@ public class MktCommissionService {
         }
         MktCustomerPricingService.PricingSnapshot pricing = ev.sourceType() == SOURCE_OUTBOUND
                 ? pricingService.forAccrual(ev.customerId(), ev.sourceId()) : null;
-        if (pricing != null && ev.poolAmount().compareTo(pricing.totalPerOrder().subtract(pricing.companyPerOrder())) != 0) {
+        if (pricing != null && ev.poolAmount().compareTo(pricing.totalPerOrder().subtract(pricing.companyPerOrder()).multiply(BigDecimal.valueOf(orderCount))) != 0) {
             throw new BizException("客户定价已变化，请按最新定价重试该出库单");
         }
         MktReferralOrder order = newOrder(ev);
@@ -125,7 +135,7 @@ public class MktCommissionService {
             order.setPoolFactor(BigDecimal.ZERO);
             order.setPricingId(pricing.pricingId());
             order.setCommissionUnitPrice(pricing.totalPerOrder());
-            order.setCommissionOrderCount(1);
+            order.setCommissionOrderCount(orderCount);
             order.setCompanyPerOrder(pricing.companyPerOrder());
         }
         try {
@@ -140,13 +150,13 @@ public class MktCommissionService {
         if (pricing != null) {
             if (pricing.ownerPerOrder().signum() > 0) {
                 commissionMapper.insert(newPerOrderCommission(order, ev, pricing.ownerPromoterId(),
-                        pricing.ownerPositionCode(), pricing.ownerPerOrder()));
+                        pricing.ownerPositionCode(), pricing.ownerPerOrder(), orderCount));
                 count++;
             }
             for (MktCustomerPricingService.Beneficiary beneficiary : pricing.beneficiaries()) {
                 if (beneficiary.amountPerOrder().signum() <= 0) continue;
                 commissionMapper.insert(newPerOrderCommission(order, ev, beneficiary.promoterId(),
-                        beneficiary.positionCode(), beneficiary.amountPerOrder()));
+                        beneficiary.positionCode(), beneficiary.amountPerOrder(), orderCount));
                 count++;
             }
         } else {
@@ -416,13 +426,13 @@ public class MktCommissionService {
     }
 
     private static MktPromoterCommission newPerOrderCommission(MktReferralOrder order, CommissionEvent ev,
-            Long promoterId, String positionCode, BigDecimal perOrder) {
+            Long promoterId, String positionCode, BigDecimal perOrder, int orderCount) {
         MktPromoterCommission c = new MktPromoterCommission();
         c.setReferralOrderId(order.getId()); c.setPromoterId(promoterId); c.setPositionCode(positionCode);
         // 兼容非空的历史字段；新模式只解释 amountPerOrder / orderCount，不伪造百分比。
         c.setSharePct(0); c.setDiffPct(0); c.setRate(BigDecimal.ZERO); c.setBaseAmount(ev.baseAmount());
-        c.setPricingId(order.getPricingId()); c.setAmountPerOrder(perOrder); c.setOrderCount(1);
-        c.setAmount(perOrder); c.setSign(SIGN_POSITIVE); c.setStatus(C_FROZEN);
+        c.setPricingId(order.getPricingId()); c.setAmountPerOrder(perOrder); c.setOrderCount(orderCount);
+        c.setAmount(perOrder.multiply(BigDecimal.valueOf(orderCount))); c.setSign(SIGN_POSITIVE); c.setStatus(C_FROZEN);
         c.setUnfreezeAt(ev.unfreezeAt()); c.setProjectId(ev.projectId());
         return c;
     }
