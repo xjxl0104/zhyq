@@ -33,7 +33,7 @@ const route = useRoute()
 const warehouses = ref([])
 const warehouseId = ref(route.query.warehouseId ? String(route.query.warehouseId) : null)
 const warehouse = ref(null)
-const sourcePanels = ref([])
+const sourcePanels = ref(route.query.source === 'yunshan' ? ['yunshan'] : [])
 const error = ref('')
 const warehouseName = computed(() => warehouse.value?.name || warehouses.value.find(w => String(w.id) === warehouseId.value)?.name || '')
 let requestNo = 0
