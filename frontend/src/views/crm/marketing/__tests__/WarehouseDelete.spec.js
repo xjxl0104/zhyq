@@ -7,7 +7,7 @@ import { mktWarehouseApi } from '@/api/marketing'
 const { permissions } = vi.hoisted(() => ({ permissions: new Set() }))
 vi.mock('@/utils/permission', () => ({ hasPermission: p => permissions.has(p) }))
 vi.mock('@/stores/project', () => ({ useProjectStore: () => ({ projects: [] }) }))
-vi.mock('@/api/marketing', () => ({ mktWarehouseApi: { page: vi.fn(), remove: vi.fn(), maintenance: vi.fn() } }))
+vi.mock('@/api/marketing', () => ({ mktWarehouseApi: { page: vi.fn(), remove: vi.fn(), maintenance: vi.fn() }, mktYunshanApi: { syncStatus: vi.fn() } }))
 vi.mock('element-plus', async original => ({ ...await original(), ElMessage: { success: vi.fn() } }))
 const row = { id: 7, code: 'WH-7', name: '测试云仓', joinStatus: 2 }
 const wrappers = []
