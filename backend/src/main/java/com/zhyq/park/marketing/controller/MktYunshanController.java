@@ -243,6 +243,26 @@ public class MktYunshanController {
                 rows.isEmpty() ? "NO_STAT_DATA" : "HAS_STAT_DATA"));
     }
 
+    public record SyncStatus(@JsonSerialize(using = ToStringSerializer.class) Long warehouseId, int mappings, int activeMappings,
+                             LocalDateTime lastSyncAt, Integer lastSyncOk) {}
+
+    @Operation(summary = "云仓发货量同步状态（供云仓列表展示）")
+    @GetMapping("/sync-status") @PreAuthorize("hasAuthority('crm:marketing:erp:query')")
+    public Result<List<SyncStatus>> syncStatus(@RequestParam List<Long> warehouseIds) {
+        if (warehouseIds.isEmpty() || warehouseIds.size() > 100) throw new BizException("云仓数量必须为1至100");
+        List<MktYunshanVolumeMap> rows = maps.selectList(new LambdaQueryWrapper<MktYunshanVolumeMap>()
+                .in(MktYunshanVolumeMap::getWarehouseId, warehouseIds));
+        List<SyncStatus> out = new ArrayList<>();
+        for (Long id : new LinkedHashSet<>(warehouseIds)) {
+            List<MktYunshanVolumeMap> mine = rows.stream().filter(m -> id.equals(m.getWarehouseId())).toList();
+            MktYunshanVolumeMap latest = mine.stream().filter(m -> m.getLastSyncAt() != null)
+                    .max(Comparator.comparing(MktYunshanVolumeMap::getLastSyncAt)).orElse(null);
+            out.add(new SyncStatus(id, mine.size(), (int) mine.stream().filter(m -> Integer.valueOf(1).equals(m.getStatus())).count(),
+                    latest == null ? null : latest.getLastSyncAt(), latest == null ? null : latest.getLastSyncOk()));
+        }
+        return Result.ok(out);
+    }
+
     public record MonthRow(String month, long tickets, int daysWithData) {}
     public record MonthlyResult(int year, List<MonthRow> months, long yearTotal, int daysWithData) {}
 
