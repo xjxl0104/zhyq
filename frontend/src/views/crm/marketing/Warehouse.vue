@@ -35,10 +35,19 @@
             <el-option label="外部 ERP" value="erp" />
           </el-select>
         </template></el-table-column>
-        <el-table-column label="ERP" width="125">
+        <el-table-column label="对接状态" width="270">
           <template #default="{ row }">
-            <el-tag :type="erpType(row.erpStatus)" size="small">{{ ERP[row.erpStatus] || '未知' }}</el-tag>
-            <el-button :disabled="acting || [7,8].includes(row.joinStatus)" link type="primary" size="small" class="erp-link" @click="openErp(row)">{{ row.erpStatus === 2 ? '管理连接' : '去连接' }}</el-button>
+            <div class="erp-line">
+              <span class="erp-label">订单推送</span>
+              <el-tag :type="erpType(row.erpStatus)" size="small">{{ ERP[row.erpStatus] || '未知' }}</el-tag>
+              <el-button :disabled="acting || [7,8].includes(row.joinStatus)" link type="primary" size="small" class="erp-link" @click="openErp(row)">{{ row.erpStatus === 2 ? '管理连接' : '去连接' }}</el-button>
+            </div>
+            <div v-if="canQueryYunshan" class="erp-line">
+              <span class="erp-label">发货量同步</span>
+              <el-tag :type="syncView(row).type" size="small">{{ syncView(row).text }}</el-tag>
+              <el-button :disabled="acting || [7,8].includes(row.joinStatus)" link type="primary" size="small" class="erp-link" @click="openYunshan(row)">{{ syncView(row).configured ? '管理同步' : '去配置' }}</el-button>
+            </div>
+            <div v-if="canQueryYunshan && syncView(row).detail" class="erp-sub">{{ syncView(row).detail }}</div>
           </template>
         </el-table-column>
         <el-table-column label="结算周期" width="90"><template #default="{ row }">{{ CYCLE[row.settleCycle] }}</template></el-table-column>
@@ -136,7 +145,7 @@
 import { reactive, ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { mktWarehouseApi } from '@/api/marketing'
+import { mktWarehouseApi, mktYunshanApi } from '@/api/marketing'
 import WarehouseAgreementUpload from '@/components/WarehouseAgreementUpload.vue'
 import WarehouseAttachments from '@/components/WarehouseAttachments.vue'
 import WarehouseMaintenance from './WarehouseMaintenance.vue'
@@ -153,6 +162,27 @@ const CYCLE = { 1: '周', 2: '半月', 3: '月' }
 const STEP = { 1: '提交申请', 2: '资质审核', 3: '确认订单接入方式', 4: '签加盟协议', 5: '上线' }
 const joinType = (v) => ({ 1: 'warning', 2: 'warning', 3: 'primary', 4: 'warning', 5: 'success', 6: 'warning', 7: 'danger' }[v] || 'info')
 const erpType = (v) => ({ 1: 'success', 2: 'success', 3: 'danger' }[v] || 'info')
+
+// 云仓发货量同步状态(云山主动拉取，与订单推送型 ERP 对接是两套状态)
+const canQueryYunshan = computed(() => hasPermission('crm:marketing:erp:query'))
+const syncMap = ref({})
+function syncView(row) {
+  const s = syncMap.value[String(row.id)]
+  if (!s) return { type: 'info', text: '读取中…', configured: false, detail: '' }
+  if (!s.mappings) return { type: 'info', text: '未配置', configured: false, detail: '' }
+  if (!s.activeMappings) return { type: 'warning', text: '已停用', configured: true, detail: '客户关联均已停用，历史快照仍可查询' }
+  const when = s.lastSyncAt ? String(s.lastSyncAt).slice(0, 16) : ''
+  const detail = when ? `最近拉取 ${when} ${s.lastSyncOk === 1 ? '成功' : '失败'}` : '尚未拉取'
+  return { type: s.lastSyncOk === 0 ? 'danger' : 'success', text: s.lastSyncOk === 0 ? '已配置 · 拉取失败' : '已配置', configured: true, detail }
+}
+async function loadSyncStatus() {
+  const ids = (list.value || []).map(r => r.id)
+  if (!canQueryYunshan.value || !ids.length) { syncMap.value = {}; return }
+  try {
+    const rows = await mktYunshanApi.syncStatus(ids)
+    syncMap.value = Object.fromEntries((rows || []).map(s => [String(s.warehouseId), s]))
+  } catch { syncMap.value = Object.fromEntries(ids.map(id => [String(id), { mappings: 0, activeMappings: 0 }])) }
+}
 
 const loading = ref(false), saving = ref(false), acting = ref(false), error = ref('')
 const list = ref([])
@@ -183,6 +213,7 @@ async function load() {
   try {
     const res = await mktWarehouseApi.page(query)
     list.value = res.records; total.value = res.total
+    loadSyncStatus()
   } catch(e){error.value=e.message||'云仓读取失败，请重试'} finally { loading.value = false }
 }
 function search() { query.pageNo = 1; load() }
@@ -221,6 +252,10 @@ async function openErp(row) {
   const query = { warehouseId: row.id }
   if (row.joinStatus === 3) query.onboarding = 1
   await router.push({ path: '/crm/marketing/erp', query })
+}
+async function openYunshan(row) {
+  if (acting.value || [7, 8].includes(row.joinStatus)) return
+  await router.push({ path: '/crm/marketing/erp', query: { warehouseId: row.id, source: 'yunshan' } })
 }
 async function changeOrderMode(row, mode) {
   if (acting.value || mode === row.orderMode) return
@@ -289,4 +324,7 @@ onMounted(load)
 .progress-content { min-height: 120px; }
 .progress-summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 24px; }
 .onboarding-history :deep(.el-step) { flex-basis: auto !important; min-height: 108px; }
+.erp-line { display: flex; align-items: center; gap: 6px; line-height: 26px; }
+.erp-label { color: var(--el-text-color-secondary); font-size: 12px; width: 62px; flex: none; }
+.erp-sub { color: var(--el-text-color-secondary); font-size: 12px; margin: 0 0 2px 68px; }
 </style>
