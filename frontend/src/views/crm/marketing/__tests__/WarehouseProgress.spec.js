@@ -6,7 +6,7 @@ import { mktWarehouseApi } from '@/api/marketing'
 vi.mock('vue-router', () => ({ useRouter: () => ({ push: vi.fn() }) }))
 vi.mock('@/utils/permission', () => ({ hasPermission: () => true }))
 vi.mock('@/stores/project', () => ({ useProjectStore: () => ({ projects: [] }) }))
-vi.mock('@/api/marketing', () => ({ mktWarehouseApi: { page: vi.fn(), get: vi.fn(), steps: vi.fn() } }))
+vi.mock('@/api/marketing', () => ({ mktWarehouseApi: { page: vi.fn(), get: vi.fn(), steps: vi.fn() }, mktYunshanApi: { syncStatus: vi.fn() } }))
 const row = { id: 7, name: '数智-云仓', joinStatus: 5 }
 const history = [1, 2, 3, 4, 5].map(step => ({ step, status: 2, doneTime: '2026-10-12 14:39:07' }))
 const wrappers = []
