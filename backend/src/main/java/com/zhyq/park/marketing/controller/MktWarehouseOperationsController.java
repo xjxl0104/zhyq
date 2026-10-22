@@ -45,6 +45,9 @@ public class MktWarehouseOperationsController {
     private final CustomerMapper customers;
     private final SysAuditMapper audits;
     private final ObjectMapper json;
+    /** 非构造注入：仅用于删除前检查是否已配置发货量同步。 */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private MktYunshanVolumeMapMapper yunshanMaps;
 
     public record SiteInput(@NotBlank @Size(max = 128) String name, @Size(max = 300) String address) {}
     public record LinkInput(@NotNull @Positive Long customerId, @NotNull @Positive Long operationWarehouseId) {}
@@ -161,6 +164,25 @@ public class MktWarehouseOperationsController {
         Map<String, Object> before = snapshot(link); link.setStatus(input.status());
         audit("operation_warehouse.link.status", "customer_operation_warehouse", id, link.getProjectId(),
                 input.status() == 1 ? "启用客户作业仓库关系" : "停用客户作业仓库关系", before, snapshot(link));
+        return Result.ok();
+    }
+
+    @Operation(summary = "删除客户作业仓库关系（已配置发货量同步的关系不能删除）")
+    @DeleteMapping("/{warehouseId}/links/{id}") @PreAuthorize("hasAuthority('crm:marketing:erp:config')")
+    @Transactional
+    public Result<Void> deleteLink(@PathVariable Long warehouseId, @PathVariable Long id) {
+        positive(warehouseId, "加盟云仓"); positive(id, "客户作业仓库关系");
+        MktCustomerOperationWarehouse link = links.selectForUpdate(id, warehouseId, TENANT);
+        if (link == null) throw new BizException(404, "客户作业仓库关系不存在或已删除");
+        if (yunshanMaps != null && yunshanMaps.selectCount(new LambdaQueryWrapper<MktYunshanVolumeMap>()
+                .eq(MktYunshanVolumeMap::getWarehouseId, warehouseId)
+                .eq(MktYunshanVolumeMap::getCustomerId, link.getCustomerId())
+                .eq(MktYunshanVolumeMap::getOperationWarehouseId, link.getOperationWarehouseId())) > 0)
+            throw new BizException(409, "该客户在此作业仓库已配置发货量同步，需保留历史快照，不能删除；不再使用请先停用");
+        Map<String, Object> before = snapshot(link);
+        changed(links.hardDelete(id, warehouseId, TENANT));
+        audit("operation_warehouse.link.delete", "customer_operation_warehouse", id, link.getProjectId(),
+                "删除客户作业仓库关系", before, Map.of("deleted", true));
         return Result.ok();
     }
 

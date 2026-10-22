@@ -20,7 +20,7 @@
         <el-button type="primary" :disabled="!settleable.length || settling" :loading="settling" @click="settle">批量结算(已选 {{ settleable.length }} 条,合计 {{ settleSum }})</el-button>
         <el-button @click="batches.visible = true; loadBatches()">结算批次</el-button>
         <el-button type="primary" plain @click="openMonthly">按合同月结</el-button>
-        <span class="hint">只有「可结算」状态的行能结算;冻结行等到账/解冻期满后自动转可结算。按合同月结:每月 3-10 号结算该合同上个月的出库单佣金。</span>
+        <span class="hint">只有「可结算」状态的行能结算;冻结行等到账/解冻期满后自动转可结算。按合同月结:可选择合同开始月到上个月之间的任意月份(上个月仅限每月 3-10 号,更早月份可随时补结)。</span>
       </div>
       <el-table :data="list" v-loading="loading" border stripe @selection-change="onSelect">
         <el-table-column type="selection" width="45" :selectable="isSettleable" />
@@ -59,12 +59,16 @@
                      v-model:current-page="batches.pageNo" :page-size="batches.pageSize" @current-change="loadBatches" />
     </el-drawer>
 
-    <el-dialog v-model="monthly.visible" title="按合同月结（结算上月出库佣金）" width="min(560px, 94vw)">
+    <el-dialog v-model="monthly.visible" title="按合同月结（选择月份结算出库佣金）" width="min(560px, 94vw)">
       <el-form label-position="top">
         <el-form-item label="服务合同" required>
-          <el-select v-model="monthly.contractId" filterable class="full" :loading="monthly.loadingContracts">
+          <el-select v-model="monthly.contractId" filterable class="full" :loading="monthly.loadingContracts" @change="onContractChange">
             <el-option v-for="c in monthly.contracts" :key="c.id" :label="`${c.contractNo} · ${SIGN[c.signMode] || ''} · #${c.id}`" :value="c.id" />
           </el-select>
+        </el-form-item>
+        <el-form-item label="结算月份" required>
+          <el-date-picker v-model="monthly.month" type="month" value-format="YYYY-MM" format="YYYY 年 MM 月" :clearable="false"
+                          :disabled="!monthly.contractId" :disabled-date="monthDisabled" placeholder="选择已结束的月份" class="full" />
         </el-form-item>
       </el-form>
       <el-descriptions v-if="monthly.result" :column="1" border class="mt">
@@ -73,10 +77,11 @@
         <el-descriptions-item label="仍在冻结期">{{ monthly.result.frozenCount }} 条,本次不结算</el-descriptions-item>
         <el-descriptions-item label="此前已结算/已提现">{{ monthly.result.alreadySettledCount }} 条</el-descriptions-item>
       </el-descriptions>
-      <p class="hint">结算日为每月 3-10 号,自动结算所选合同上个月全部出库单中「可结算」状态的佣金;冻结期未满的行留待解冻后结算。已结算/已提现的行不会重复结算。</p>
+      <p class="hint">可选择合同开始月份到上个月之间的任意月份,结算该月全部出库单中「可结算」状态的佣金;结算上个月仅限每月 3-10 号,更早月份可随时补结。冻结期未满的行留待解冻后结算,已结算/已提现的行不会重复结算。</p>
       <template #footer>
         <el-button @click="monthly.visible = false">关闭</el-button>
-        <el-button type="primary" :loading="monthly.settling" :disabled="!monthly.contractId || !!monthly.result" @click="runMonthly">结算上月佣金</el-button>
+        <el-button v-if="monthly.result" @click="monthly.result = null">继续结算其他月份</el-button>
+        <el-button type="primary" :loading="monthly.settling" :disabled="!monthly.contractId || !monthly.month || !!monthly.result" @click="runMonthly">结算所选月份佣金</el-button>
       </template>
     </el-dialog>
   </div>
@@ -128,8 +133,20 @@ async function voidOne(row) {
   await mktCommissionApi.void(row.id, { reason: value }); ElMessage.success('已作废'); load()
 }
 
-// 按合同月结:每月 3-10 号结算该合同上个月的出库单佣金
-const monthly = reactive({ visible: false, contracts: [], loadingContracts: false, contractId: null, settling: false, result: null })
+// 按合同月结:可选合同开始月到上个月之间的任意月份;上个月仅限每月 3-10 号,更早月份可随时补结
+const monthly = reactive({ visible: false, contracts: [], loadingContracts: false, contractId: null, month: null, settling: false, result: null })
+const ym = (y, m) => `${y}-${String(m).padStart(2, '0')}`
+const lastMonth = () => { const d = new Date(); return d.getMonth() === 0 ? ym(d.getFullYear() - 1, 12) : ym(d.getFullYear(), d.getMonth()) }
+const contractStartMonth = () => (monthly.contracts.find(c => c.id === monthly.contractId)?.startDate || '').slice(0, 7)
+function monthDisabled(date) {
+  const value = ym(date.getFullYear(), date.getMonth() + 1), start = contractStartMonth()
+  return value > lastMonth() || (!!start && value < start)
+}
+function onContractChange() {
+  monthly.result = null
+  const start = contractStartMonth(), last = lastMonth()
+  monthly.month = start && start > last ? null : last
+}
 async function openMonthly() {
   monthly.result = null
   monthly.visible = true
@@ -147,15 +164,15 @@ async function openMonthly() {
   } finally { monthly.loadingContracts = false }
 }
 async function runMonthly() {
-  if (!monthly.contractId) return
+  if (!monthly.contractId || !monthly.month) return
   try {
-    await ElMessageBox.confirm('将结算所选合同上个月的出库单佣金(仅「可结算」状态),确认执行?', '按合同月结', { type: 'warning' })
+    await ElMessageBox.confirm(`将结算所选合同 ${monthly.month} 月的出库单佣金(仅「可结算」状态),确认执行?`, '按合同月结', { type: 'warning' })
   } catch { return }
   monthly.settling = true
   try {
-    monthly.result = await mktCommissionApi.settleContract({ contractId: monthly.contractId })
+    monthly.result = await mktCommissionApi.settleContract({ contractId: monthly.contractId, month: monthly.month })
     if (monthly.result.settleCount > 0) ElMessage.success(`已结算 ${monthly.result.settleCount} 条,批次 ${monthly.result.batchNo}`)
-    else ElMessage.info('该合同上月没有可结算的佣金')
+    else ElMessage.info(`该合同 ${monthly.month} 月没有可结算的佣金`)
     await load()
   } finally { monthly.settling = false }
 }

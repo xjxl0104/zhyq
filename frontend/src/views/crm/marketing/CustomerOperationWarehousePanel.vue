@@ -8,12 +8,21 @@
     </div>
     <p class="hint">为{{ warehouseName || '当前加盟云仓' }}登记客户（货主）实际使用的作业仓库。每个客户独立建档，建档后可另行配置发货数据来源。</p>
     <el-alert v-if="errors.links" :title="errors.links" type="error" :closable="false" />
-    <el-table v-loading="loading.links" :data="links" border size="small" empty-text="暂无客户关联，可选择已录入的客户并手动新增作业仓库。">
+    <p class="hint">点击某一行，下方“云仓发货量同步”只显示该客户的配置、快照和月度汇总；再次点击取消筛选。</p>
+    <el-table v-loading="loading.links" :data="links" border size="small" :row-class-name="rowClass" empty-text="暂无客户关联，可选择已录入的客户并手动新增作业仓库。" @row-click="pickLink">
       <el-table-column prop="customerName" label="客户（货主）" min-width="160"><template #default="{ row }">{{ row.customerName || row.customerId }}</template></el-table-column>
       <el-table-column prop="operationWarehouseName" label="作业仓库" min-width="160" />
       <el-table-column label="仓库地址" min-width="200"><template #default="{ row }">{{ row.address || '未填写' }}</template></el-table-column>
       <el-table-column label="关联状态" width="100"><template #default="{ row }"><el-tag :type="Number(row.status) === 1 ? 'success' : 'info'">{{ Number(row.status) === 1 ? '启用' : '停用' }}</el-tag></template></el-table-column>
-      <el-table-column v-if="canConfig" label="操作" width="90" fixed="right"><template #default="{ row }"><el-button link :type="Number(row.status) === 1 ? 'warning' : 'success'" :loading="statusBusy === String(row.id)" :disabled="!!statusBusy && statusBusy !== String(row.id)" @click="toggleStatus(row)">{{ Number(row.status) === 1 ? '停用' : '启用' }}</el-button></template></el-table-column>
+      <el-table-column label="发货量同步" min-width="250"><template #default="{ row }">
+        <el-tag :type="syncOf(row).type" size="small">{{ syncOf(row).text }}</el-tag>
+        <span v-if="syncOf(row).detail" class="sync-detail">{{ syncOf(row).detail }}</span>
+        <el-button v-if="canConfig && !syncOf(row).configured && Number(row.status) === 1" link type="primary" size="small" @click.stop="emit('configure', linkFocus(row))">配置同步</el-button>
+      </template></el-table-column>
+      <el-table-column v-if="canConfig" label="操作" width="130" fixed="right"><template #default="{ row }">
+        <el-button link :type="Number(row.status) === 1 ? 'warning' : 'success'" :loading="statusBusy === String(row.id)" :disabled="!!statusBusy && statusBusy !== String(row.id)" @click.stop="toggleStatus(row)">{{ Number(row.status) === 1 ? '停用' : '启用' }}</el-button>
+        <el-button link type="danger" :loading="deleteBusy === String(row.id)" :disabled="!!statusBusy || (!!deleteBusy && deleteBusy !== String(row.id))" @click.stop="removeLink(row)">删除</el-button>
+      </template></el-table-column>
     </el-table>
     <el-pagination class="pager" background layout="total, prev, pager, next" :total="linkTotal" :page-size="20" v-model:current-page="linkPage" @current-change="loadLinks" />
 
@@ -56,17 +65,62 @@
 
 <script setup>
 import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { mktWarehouseOperationsApi, mktYunshanApi } from '@/api/marketing'
 import { hasPermission } from '@/utils/permission'
 
 const props = defineProps({ warehouseId: { type: [String, Number], required: true }, warehouseName: { type: String, default: '' } })
+// select: 选中/取消选中某一行(null 表示取消)，用于联动下方发货量同步；configure: 为该客户配置发货量同步
+const emit = defineEmits(['select', 'configure'])
 const canQuery = computed(() => hasPermission('crm:marketing:erp:query'))
 const canConfig = computed(() => hasPermission('crm:marketing:erp:config'))
 // IDs are strings throughout: server-generated warehouse and customer IDs can exceed Number.MAX_SAFE_INTEGER.
 const idOf = value => value == null || (typeof value === 'number' && !Number.isSafeInteger(value)) ? '' : String(value)
 const warehouseKey = computed(() => idOf(props.warehouseId))
 const links = ref([]), linkTotal = ref(0), linkPage = ref(1), statusBusy = ref('')
+const deleteBusy = ref(''), selectedLinkId = ref(''), syncMaps = ref([])
+const linkFocus = row => ({ customerId: idOf(row.customerId), operationWarehouseId: idOf(row.operationWarehouseId), customerName: row.customerName || '' })
+const rowClass = ({ row }) => idOf(row.id) && idOf(row.id) === selectedLinkId.value ? 'link-selected' : ''
+function pickLink(row) {
+  const id = idOf(row.id)
+  if (!id) return
+  if (selectedLinkId.value === id) { selectedLinkId.value = ''; emit('select', null); return }
+  selectedLinkId.value = id; emit('select', linkFocus(row))
+}
+// 每一行对应的发货量同步配置：按客户 + 作业仓库匹配（与上方“发货量接口”独立配置）
+function syncOf(row) {
+  const customerId = idOf(row.customerId), siteId = idOf(row.operationWarehouseId)
+  const map = syncMaps.value.find(item => String(item.customerId) === customerId && String(item.operationWarehouseId ?? '') === siteId)
+  if (!map) return { type: 'info', text: '未配置', detail: '', configured: false }
+  if (Number(map.status) !== 1) return { type: 'warning', text: '已停用', detail: '保留历史快照', configured: true }
+  const when = map.lastSyncAt ? String(map.lastSyncAt).slice(0, 16) : ''
+  const detail = when ? `最近拉取 ${when} ${Number(map.lastSyncOk) === 1 ? '成功' : '失败'}` : '尚未拉取'
+  return { type: Number(map.lastSyncOk) === 0 ? 'danger' : 'success', text: Number(map.lastSyncOk) === 0 ? '已配置 · 拉取失败' : '已配置', detail, configured: true }
+}
+async function loadSyncMaps() {
+  const warehouse = warehouseKey.value
+  if (!canQuery.value || !warehouse) return
+  try {
+    const rows = await mktYunshanApi.maps(warehouse)
+    if (!disposed && warehouse === warehouseKey.value) syncMaps.value = Array.isArray(rows) ? rows : []
+  } catch { if (!disposed && warehouse === warehouseKey.value) syncMaps.value = [] }
+}
+async function removeLink(row) {
+  if (!canConfig.value || deleteBusy.value || statusBusy.value || !warehouseKey.value || !idOf(row.id)) return
+  try {
+    await ElMessageBox.confirm(`确认删除「${row.customerName || row.customerId} · ${row.operationWarehouseName || ''}」这条关联？删除后可重新添加；已配置发货量同步的关联不能删除。`, '删除客户关联', { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' })
+  } catch { return }
+  const context = epoch, warehouse = warehouseKey.value, id = idOf(row.id)
+  deleteBusy.value = id; errors.links = ''
+  try {
+    await mktWarehouseOperationsApi.deleteLink(warehouse, id)
+    if (!current(context, warehouse)) return
+    ElMessage.success('客户关联已删除')
+    if (selectedLinkId.value === id) { selectedLinkId.value = ''; emit('select', null) }
+    await loadLinks()
+  } catch (error) { if (current(context, warehouse)) errors.links = error.message || '删除失败，请重试。' }
+  finally { if (current(context, warehouse)) deleteBusy.value = '' }
+}
 const customers = ref([]), customerTotal = ref(0), customerPage = ref(1), customerKeyword = ref(''), selectedCustomer = ref(null)
 const sites = ref([]), siteTotal = ref(0), sitePage = ref(1), siteKeyword = ref(''), selectedSite = ref(null)
 const linkDialog = reactive({ visible: false, customerId: '', operationWarehouseId: '' })
@@ -92,6 +146,7 @@ async function loadLinks() {
     const result = await mktWarehouseOperationsApi.links(warehouse, { pageNo: linkPage.value, pageSize: 20 })
     if (!current(context, warehouse) || version !== versions.links) return
     links.value = result.records || []; linkTotal.value = Number(result.total || 0)
+    loadSyncMaps()
   } catch (error) { if (current(context, warehouse) && version === versions.links) errors.links = error.message || '客户关联加载失败，请重试。' }
   finally { if (current(context, warehouse) && version === versions.links) loading.links = false }
 }
@@ -188,10 +243,13 @@ async function toggleStatus(row) {
 watch(warehouseKey, () => {
   epoch++; versions.links++; linkDialog.visible = false; siteDialog.visible = false; closeLink(); closeSite()
   links.value = []; linkTotal.value = 0; linkPage.value = 1; statusBusy.value = ''
+  deleteBusy.value = ''; selectedLinkId.value = ''; syncMaps.value = []
   Object.keys(loading).forEach(key => { loading[key] = false }); Object.keys(errors).forEach(key => { errors[key] = '' })
   loadLinks()
 }, { immediate: true, flush: 'sync' })
 onBeforeUnmount(() => { disposed = true; epoch++ })
+// 发货量同步区增删配置后，由父页面刷新本列表的“发货量同步”列
+defineExpose({ reload: loadLinks })
 </script>
 
 <style scoped>
@@ -202,6 +260,9 @@ onBeforeUnmount(() => { disposed = true; epoch++ })
 .full-width { width: 100%; }
 .operation-panel :deep(.el-alert) { margin: 12px 0; }
 .selected-address { margin-top: -8px; }
+.sync-detail { margin: 0 8px 0 6px; color: var(--el-text-color-secondary); font-size: 12px; }
+.operation-panel :deep(.el-table__row) { cursor: pointer; }
+.operation-panel :deep(.link-selected > td) { background: var(--el-color-primary-light-9) !important; }
 .pager { margin-top: 12px; justify-content: flex-end; overflow-x: auto; }
 @media (max-width: 640px) {
   .toolbar .title { flex-basis: 100%; }

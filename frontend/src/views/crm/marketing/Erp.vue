@@ -12,18 +12,16 @@
 
     <el-alert v-if="error" type="error" :closable="false" :title="error" class="mb" />
     <template v-if="warehouseId">
-      <CustomerOperationWarehousePanel :key="warehouseId" :warehouse-id="warehouseId" :warehouse-name="warehouseName" />
-      <el-collapse v-model="sourcePanels" class="mb">
-        <el-collapse-item title="云仓发货量同步（单独配置数据来源）" name="yunshan">
-          <YunshanVolumePanel v-if="sourcePanels.includes('yunshan')" :key="warehouseId" :warehouse-id="warehouseId" :warehouse-name="warehouseName" />
-        </el-collapse-item>
-      </el-collapse>
+      <CustomerOperationWarehousePanel ref="opsPanel" :key="warehouseId" :warehouse-id="warehouseId" :warehouse-name="warehouseName"
+                                       @select="focus = $event" @configure="configureFor" />
+      <YunshanVolumePanel ref="yunshanPanel" class="mb" :key="warehouseId" :warehouse-id="warehouseId" :warehouse-name="warehouseName"
+                          :focus="focus" @changed="opsPanel?.reload()" />
     </template>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute } from 'vue-router'
 import { mktYunshanApi } from '@/api/marketing'
 import CustomerOperationWarehousePanel from './CustomerOperationWarehousePanel.vue'
@@ -33,14 +31,24 @@ const route = useRoute()
 const warehouses = ref([])
 const warehouseId = ref(route.query.warehouseId ? String(route.query.warehouseId) : null)
 const warehouse = ref(null)
-const sourcePanels = ref(route.query.source === 'yunshan' ? ['yunshan'] : [])
 const error = ref('')
+// 上方“客户与作业仓库”列表选中的行；下方“云仓发货量同步”只显示该客户，为空显示全部
+const focus = ref(null)
+const opsPanel = ref(null)
+const yunshanPanel = ref(null)
 const warehouseName = computed(() => warehouse.value?.name || warehouses.value.find(w => String(w.id) === warehouseId.value)?.name || '')
 let requestNo = 0
+
+async function configureFor(link) {
+  focus.value = link
+  await nextTick()
+  await yunshanPanel.value?.openMap()
+}
 
 async function loadWarehouse() {
   const target = warehouseId.value, request = ++requestNo
   warehouse.value = null
+  focus.value = null
   error.value = ''
   if (!target) return
   try {

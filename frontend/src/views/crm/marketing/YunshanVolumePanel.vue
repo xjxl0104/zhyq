@@ -11,7 +11,8 @@
     <el-alert v-if="config && !config.configured" type="info" :closable="false" title="尚无共享接口，可点击“配置接口同步”为客户填写专用接口。历史快照仍可查询。" />
     <p v-if="config?.configured" class="config-note">共享接口：{{ config.baseUrl }}<span v-if="config.appId"> · 应用：{{ config.appId }}</span></p>
     <el-alert v-if="errors.maps" type="error" :closable="false" :title="errors.maps" />
-    <el-table v-loading="loading.maps" :data="maps" size="small" border empty-text="暂无云仓发货量同步配置，不影响客户与作业仓库建档。">
+    <el-alert v-if="focus && maps.length && !visibleMaps.length" type="info" :closable="false" title="所选客户在该作业仓库尚未配置发货量同步，可点击上方客户列表中的“配置同步”或本区的“配置接口同步”为其配置。" />
+    <el-table v-loading="loading.maps" :data="visibleMaps" size="small" border empty-text="暂无云仓发货量同步配置，不影响客户与作业仓库建档。">
       <el-table-column prop="customerName" label="客户（货主）" min-width="130"><template #default="{ row }">{{ row.customerName || row.customerId }}</template></el-table-column>
       <el-table-column label="接口返回的货主" min-width="170"><template #default="{ row }"><div>{{ row.parentOwnerName || '未命名客户' }}</div><div class="entity-no">{{ row.parentOwnerNo }}</div><el-tag v-if="row.identityMismatch" type="danger">客户身份不一致，已阻止同步</el-tag></template></el-table-column>
       <el-table-column label="作业仓库" min-width="170"><template #default="{ row }"><div>{{ row.operationWarehouseName || '历史配置（未关联本地仓库）' }}</div><div class="entity-no">接口仓库：{{ row.parentWarehouseName }} · {{ row.parentWarehouseNo }}</div></template></el-table-column>
@@ -24,11 +25,11 @@
       </template></el-table-column>
     </el-table>
 
-    <template v-if="maps.length">
+    <template v-if="visibleMaps.length">
       <el-divider />
       <el-form class="query-form" :inline="true" @submit.prevent>
         <el-form-item label="客户关联"><el-select v-model="mapId" aria-label="选择发货量客户关联" class="map-select" @change="changeMap">
-          <el-option v-for="item in maps" :key="item.id" :value="String(item.id)" :label="mapLabel(item)" />
+          <el-option v-for="item in visibleMaps" :key="item.id" :value="String(item.id)" :label="mapLabel(item)" />
         </el-select></el-form-item>
         <el-form-item label="发货日期"><el-date-picker v-model="dateRange" class="date-range" type="daterange" value-format="YYYY-MM-DD" range-separator="至" start-placeholder="开始日期" end-placeholder="结束日期" :clearable="false" :disabled-date="disabledDate" @change="changeRange" /></el-form-item>
         <el-form-item><el-button :loading="loading.volume" @click="queryVolume">查询快照</el-button><el-button v-if="canConfig" type="primary" :disabled="!sourceReady || selectedMap?.status !== 1 || selectedMap?.identityMismatch" :loading="loading.sync" @click="sync">补拉此区间</el-button><el-button :disabled="!sourceReady || loading.sync || selectedMap?.identityMismatch" :loading="loading.reconcile" @click="reconcile">只读对账</el-button><el-button v-if="canGenerateOrders" :disabled="selectedMap?.status !== 1 || selectedMap?.identityMismatch" :loading="ordersBusy" @click="generateOrders">生成计佣订单</el-button></el-form-item>
@@ -163,7 +164,9 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { mktYunshanApi } from '@/api/marketing'
 import { hasPermission } from '@/utils/permission'
 
-const props = defineProps({ warehouseId: { type: [String, Number], required: true }, warehouseName: { type: String, default: '' } })
+// focus: 上方客户列表选中的行 { customerId, operationWarehouseId, customerName }；为空显示全部客户
+const props = defineProps({ warehouseId: { type: [String, Number], required: true }, warehouseName: { type: String, default: '' }, focus: { type: Object, default: null } })
+const emit = defineEmits(['changed'])
 const canQuery = computed(() => hasPermission('crm:marketing:erp:query'))
 const canConfig = computed(() => hasPermission('crm:marketing:erp:config'))
 const config = ref(null), maps = ref([]), mapId = ref(''), volume = ref(null), reconciliation = ref(null), syncResult = ref(null)
@@ -197,6 +200,12 @@ let disposed = false
 const today = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date())
 const shiftDate = (date, days) => new Date(Date.parse(`${date}T00:00:00Z`) + days * 86400000).toISOString().slice(0, 10)
 const dateRange = ref([shiftDate(today(), -7), shiftDate(today(), -1)])
+const visibleMaps = computed(() => {
+  const focus = props.focus
+  if (!focus?.customerId) return maps.value
+  return maps.value.filter(item => String(item.customerId) === String(focus.customerId)
+    && (!focus.operationWarehouseId || String(item.operationWarehouseId ?? '') === String(focus.operationWarehouseId)))
+})
 const selectedMap = computed(() => maps.value.find(item => String(item.id) === mapId.value))
 const canSaveMap = computed(() => canConfig.value && connectionReady.value && !loading.sites && localSites.value.some(item => String(item.id) === mapDialog.operationWarehouseId) && mapDialog.customerId && selectedOwner.value && mapDialog.identityConfirmed && entityWarehouses.value.some(item => String(item.no) === mapDialog.parentWarehouseNo) && !loading.warehouses && !loading.owners)
 const syncMessage = computed(() => !syncResult.value ? '' : `补拉完成：${syncResult.value.daysFetched} 天，修正 ${syncResult.value.daysChanged} 天，缺失 ${syncResult.value.daysMissing} 天（保留原快照）。`)
@@ -252,7 +261,7 @@ async function refresh() {
     const [settings, rows] = await Promise.all([mktYunshanApi.config(), mktYunshanApi.maps(String(props.warehouseId))])
     if (disposed || version !== versions.maps) return
     config.value = settings; maps.value = rows; loadMonthly()
-    if (!rows.some(item => String(item.id) === mapId.value)) mapId.value = rows.length ? String(rows[0].id) : ''
+    if (!visibleMaps.value.some(item => String(item.id) === mapId.value)) mapId.value = visibleMaps.value.length ? String(visibleMaps.value[0].id) : ''
     if (mapId.value) await changeMap()
   } catch (error) { if (version === versions.maps && !disposed) errors.maps = error.message || '无法加载发货量接口配置和客户关联，请重试。' }
   finally { if (version === versions.maps) loading.maps = false }
@@ -284,7 +293,7 @@ async function sync() {
     const result = await mktYunshanApi.sync(target, { startDate: params.startDate, endDate: params.endDate })
     if (disposed || props.warehouseId !== warehouse || target !== mapId.value || dateRange.value.join('/') !== range) return
     syncResult.value = result; reconciliation.value = null; await Promise.all([loadVolume(), loadLogs()]); loadMonthly()
-    const rows = await mktYunshanApi.maps(String(warehouse)); if (!disposed && props.warehouseId === warehouse) maps.value = rows
+    const rows = await mktYunshanApi.maps(String(warehouse)); if (!disposed && props.warehouseId === warehouse) { maps.value = rows; emit('changed') }
   } catch (error) { if (!disposed && props.warehouseId === warehouse && target === mapId.value && dateRange.value.join('/') === range) { errors.sync = error.message || '补拉失败，请查看拉取日志。'; await loadLogs() } }
   finally { loading.sync = false }
 }
@@ -299,7 +308,7 @@ async function reconcile() {
 async function toggleStatus(row) {
   if (!canConfig.value || statusBusy.value || (row.status !== 1 && row.identityMismatch)) return
   statusBusy.value = String(row.id); const warehouse = props.warehouseId
-  try { await mktYunshanApi.setStatus(String(row.id), row.status === 1 ? 0 : 1); if (warehouse === props.warehouseId && !disposed) row.status = row.status === 1 ? 0 : 1 }
+  try { await mktYunshanApi.setStatus(String(row.id), row.status === 1 ? 0 : 1); if (warehouse === props.warehouseId && !disposed) { row.status = row.status === 1 ? 0 : 1; emit('changed') } }
   catch (error) { if (!disposed) errors.maps = error.message || '状态更新失败，请重试。' }
   finally { statusBusy.value = '' }
 }
@@ -321,6 +330,15 @@ async function openMap() {
   selectedCustomer.value = null; ownerMatchKind.value = ''; localSites.value = []
   Object.assign(connection, { mode: config.value?.configured ? 'SHARED' : 'CUSTOM', baseUrl: config.value?.baseUrl || '', appId: '', publicKey: '' })
   customerPage.value = 1; customerKeyword.value = ''; customers.value = []; customerTotal.value = 0; await loadCustomers()
+  if (props.focus?.customerId) await presetCustomer(props.focus)
+}
+// 从客户列表带入客户：按客户名搜索后选中，并自动带出作业仓库
+async function presetCustomer(focus) {
+  if (focus.customerName) { customerKeyword.value = focus.customerName; customerPage.value = 1; await loadCustomers() }
+  if (!mapDialog.visible || !customers.value.some(item => String(item.id) === String(focus.customerId))) return
+  mapDialog.customerId = String(focus.customerId)
+  await matchCustomer()
+  if (focus.operationWarehouseId && localSites.value.some(item => String(item.id) === String(focus.operationWarehouseId))) mapDialog.operationWarehouseId = String(focus.operationWarehouseId)
 }
 async function reloadDirectory() {
   if (!canConfig.value || !connectionReady.value || !mapDialog.customerId || !mapDialog.visible || loading.save) return
@@ -403,7 +421,7 @@ async function saveMap() {
     const createdId = await mktYunshanApi.createMap(String(warehouse), { operationWarehouseId: mapDialog.operationWarehouseId, connection: { ...connection }, customerId: mapDialog.customerId, parentOwnerNo: mapDialog.parentOwnerNo, parentWarehouseNo: mapDialog.parentWarehouseNo, identityConfirmed: true })
     if (!disposed && warehouse === props.warehouseId) {
       const syncNow = mapDialog.syncAfterSave
-      ElMessage.success('发货量接口配置已保存'); mapDialog.visible = false; closeMap(); await refresh()
+      ElMessage.success('发货量接口配置已保存'); mapDialog.visible = false; closeMap(); await refresh(); emit('changed')
       if (syncNow && createdId && !disposed && warehouse === props.warehouseId) {
         mapId.value = String(createdId); dateRange.value = [shiftDate(today(), -7), shiftDate(today(), -1)]
         await changeMap(); await sync()
@@ -413,7 +431,16 @@ async function saveMap() {
   finally { loading.save = false }
 }
 watch(() => props.warehouseId, () => { mapId.value = ''; maps.value = []; config.value = null; mapDialog.visible = false; closeMap(); resetDetails(); refresh() }, { immediate: true })
+// 上方客户列表选中/取消选中某客户时，本区跟随：只显示该客户的配置、快照与月度汇总
+watch(() => props.focus, () => {
+  const first = visibleMaps.value[0]
+  monthly.customerId = props.focus?.customerId ? (first ? first.customerId : props.focus.customerId) : null
+  if (first) selectMap(first.id)
+  else { mapId.value = ''; resetDetails() }
+  loadMonthly()
+})
 onBeforeUnmount(() => { disposed = true; Object.keys(versions).forEach(key => versions[key]++) })
+defineExpose({ openMap })
 </script>
 
 <style scoped>
