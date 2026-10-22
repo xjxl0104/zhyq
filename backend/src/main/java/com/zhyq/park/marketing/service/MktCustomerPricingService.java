@@ -32,13 +32,16 @@ public class MktCustomerPricingService {
     private final MktAuditService auditService;
     private final ObjectMapper objectMapper;
     private final MktPositionReviewService positionService;
+    /** 非构造注入：晋升后调整上级时使用。 */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private MktPromoterService promoterService;
 
     public record BeneficiaryInput(Long promoterId, BigDecimal amountPerOrder) {}
     public record PricingInput(BigDecimal totalPerOrder, BigDecimal ownerPerOrder, List<BeneficiaryInput> beneficiaries) {}
     public record Beneficiary(Long promoterId, String promoterName, String positionCode, BigDecimal amountPerOrder) {}
     /** 合同链路成员:从成交伙伴沿 parentId 向上(含成交伙伴),供佣金分配界面展示与选择。 */
     public record ContractChainMember(Long promoterId, String name, String positionCode, Integer status,
-                                      boolean isOwner, BigDecimal amountPerOrder) {}
+                                      boolean isOwner, BigDecimal amountPerOrder, boolean former) {}
     public record ContractPricingView(Long contractId, String contractNo, Long customerId, String customerName,
                                       Long partnerId, String partnerName, boolean configured, boolean canEdit,
                                       Long ownerPromoterId, String ownerName, BigDecimal totalPerOrder,
@@ -106,6 +109,31 @@ public class MktCustomerPricingService {
         }
         if (code == null || !Set.of("P1", "P2", "P3", "P4").contains(code)) throw new BizException("角色须为 P1、P2、P3 或 P4");
         positionService.changeManually(promoterId, code, "P4 " + actorId + " 设置邀请体系成员角色");
+        reparentAfterPromotion(member, code, actorId);
+    }
+
+    /**
+     * 晋升后上级调整：成员晋升到某层级后，不再挂在同级或更低的原上级下，改为挂在其上级链里第一个岗位更高的上级
+     * （找不到则挂到操作的 P4 下）。调整前客户的已保存分配仍保留原上级分成；调整后的新客户不再与原上级分成。
+     */
+    private void reparentAfterPromotion(MktPromoter member, String newCode, Long actorId) {
+        int newRank = rankOf(newCode), oldRank = rankOf(member.getPositionCode());
+        if (promoterService == null || newRank <= oldRank || newRank >= 4) return;
+        Long target = actorId;
+        MktPromoter cur = member.getParentId() == null ? null : promoterMapper.selectById(member.getParentId());
+        Set<Long> seen = new HashSet<>();
+        while (cur != null && seen.add(cur.getId()) && seen.size() <= 64) {
+            if (rankOf(cur.getPositionCode()) > newRank) { target = cur.getId(); break; }
+            cur = cur.getParentId() == null ? null : promoterMapper.selectById(cur.getParentId());
+        }
+        if (!target.equals(member.getParentId())) {
+            promoterService.changeParent(member.getId(), target, "晋升为 " + newCode + "，上级调整为岗位更高的最近上级");
+        }
+    }
+
+    private static int rankOf(String positionCode) {
+        try { return positionCode == null ? 0 : Integer.parseInt(positionCode.substring(1)); }
+        catch (RuntimeException e) { return 0; }
     }
 
     public PricingView getForP4(Long actorId, Long customerId) {
@@ -215,8 +243,19 @@ public class MktCustomerPricingService {
         while (cur != null && seen.add(cur.getId()) && seen.size() <= 64) {
             boolean isOwner = configured && cur.getId().equals(pricing.getOwnerPromoterId());
             chain.add(new ContractChainMember(cur.getId(), cur.getName(), cur.getPositionCode(), cur.getStatus(),
-                    isOwner, isOwner ? pricing.getOwnerPerOrder() : amounts.get(cur.getId())));
+                    isOwner, isOwner ? pricing.getOwnerPerOrder() : amounts.get(cur.getId()), false));
             cur = cur.getParentId() == null ? null : promoterMapper.selectById(cur.getParentId());
+        }
+        // 成员被调整层级后不再在当前链路上，但已保存的分配里仍有他：保留为“原链路成员”，调整前的客户继续按原分成。
+        if (configured) {
+            Set<Long> inChain = new HashSet<>();
+            chain.forEach(member -> inChain.add(member.promoterId()));
+            for (Beneficiary b : readBeneficiaries(pricing)) {
+                if (b.promoterId() == null || inChain.contains(b.promoterId())) continue;
+                MktPromoter former = promoterMapper.selectById(b.promoterId());
+                if (former != null) chain.add(new ContractChainMember(former.getId(), former.getName(), former.getPositionCode(),
+                        former.getStatus(), false, b.amountPerOrder(), true));
+            }
         }
         Customer customer = contract.getCustomerId() == null ? null : customerMapper.selectById(contract.getCustomerId());
         BigDecimal allocated = BigDecimal.ZERO;
@@ -227,7 +266,7 @@ public class MktCustomerPricingService {
         return new ContractPricingView(contractId, contract.getContractNo(), contract.getCustomerId(),
                 customer == null ? null : customer.getName(), contract.getPartnerId(),
                 partner == null ? null : partner.getName(), configured, canEdit,
-                configured ? pricing.getOwnerPromoterId() : null, null,
+                configured ? pricing.getOwnerPromoterId() : (canEdit ? actor.getId() : null), null,
                 configured ? pricing.getTotalPerOrder() : null,
                 configured ? pricing.getOwnerPerOrder() : null,
                 configured ? allocated : null,
@@ -265,6 +304,9 @@ public class MktCustomerPricingService {
             chainIds.add(cur.getId());
             cur = cur.getParentId() == null ? null : promoterMapper.selectById(cur.getParentId());
         }
+        // 已保存分配里的成员（含被调整层级前的原上级）仍可保留，不会因再次保存而丢失分成。
+        MktCustomerPricing previous = latestByContract(contractId);
+        if (previous != null) readBeneficiaries(previous).forEach(b -> { if (b.promoterId() != null) chainIds.add(b.promoterId()); });
         List<Beneficiary> beneficiaries = new ArrayList<>();
         Set<Long> ids = new HashSet<>();
         for (BeneficiaryInput item : input.beneficiaries()) {
@@ -309,6 +351,7 @@ public class MktCustomerPricingService {
             allocated = allocated.add(item.amountPerOrder());
         }
         if (allocated.compareTo(input.totalPerOrder()) > 0) throw new BizException("本人金额与受益人金额合计不能超过总佣金");
+        requirePlatformShare(input.totalPerOrder(), allocated);
     }
 
     private MktServiceContract requireContract(Long id) {
@@ -330,6 +373,18 @@ public class MktCustomerPricingService {
             allocated = allocated.add(item.amountPerOrder());
         }
         if (allocated.compareTo(input.totalPerOrder()) > 0) throw new BizException("本人金额与受益人金额合计不能超过总佣金");
+        requirePlatformShare(input.totalPerOrder(), allocated);
+    }
+
+    /** 平台固定留存每单总佣金的 5%：个人分配合计不能超过总佣金的 95%。 */
+    static final BigDecimal PLATFORM_RATE = new BigDecimal("0.05");
+
+    static void requirePlatformShare(BigDecimal total, BigDecimal allocated) {
+        BigDecimal maxAllocatable = total.subtract(total.multiply(PLATFORM_RATE));
+        if (allocated.compareTo(maxAllocatable) > 0) {
+            throw new BizException("平台固定留存总佣金的 5%，个人分配合计不能超过 "
+                    + maxAllocatable.setScale(3, java.math.RoundingMode.DOWN).toPlainString() + " 元/单（总佣金的 95%）");
+        }
     }
 
     private static void validateAmount(BigDecimal amount, String label) {
