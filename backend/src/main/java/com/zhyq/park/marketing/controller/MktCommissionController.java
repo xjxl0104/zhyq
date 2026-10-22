@@ -24,6 +24,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.YearMonth;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -79,17 +80,23 @@ public class MktCommissionController {
         return Result.ok(commissionService.settle(body.get("ids"), MktAuditService.currentOperator()));
     }
 
-    @Operation(summary = "按合同月结:每月3-10号结算该合同上个月的出库单佣金") @PreAuthorize("hasAuthority('crm:marketing:commission:pay')") @PostMapping("/settle-contract")
-    public Result<Map<String, Object>> settleContract(@RequestBody Map<String, Long> body) {
-        Long contractId = body == null ? null : body.get("contractId");
+    @Operation(summary = "按合同月结:结算该合同指定月份(默认上个月)的出库单佣金;上个月仅限每月3-10号,更早月份可随时补结,不能早于合同开始月")
+    @PreAuthorize("hasAuthority('crm:marketing:commission:pay')") @PostMapping("/settle-contract")
+    public Result<Map<String, Object>> settleContract(@RequestBody Map<String, Object> body) {
+        Long contractId = longOf(body == null ? null : body.get("contractId"));
         if (contractId == null) throw new BizException("请选择服务合同");
         MktServiceContract contract = contractMapper.selectById(contractId);
         if (contract == null) throw new BizException("服务合同不存在");
         LocalDate today = LocalDate.now();
-        if (today.getDayOfMonth() < 3 || today.getDayOfMonth() > 10)
-            throw new BizException("按合同月结仅限每月 3-10 号操作");
-        LocalDate periodStart = today.minusMonths(1).withDayOfMonth(1);
-        LocalDate nextStart = periodStart.plusMonths(1);
+        YearMonth lastMonth = YearMonth.from(today).minusMonths(1);
+        YearMonth target = monthOf(body == null ? null : body.get("month"), lastMonth);
+        if (target.isAfter(lastMonth)) throw new BizException("只能结算当月之前已结束的月份");
+        if (contract.getStartDate() != null && target.isBefore(YearMonth.from(contract.getStartDate())))
+            throw new BizException("结算月份不能早于合同开始月份 " + YearMonth.from(contract.getStartDate()));
+        if (target.equals(lastMonth) && (today.getDayOfMonth() < 3 || today.getDayOfMonth() > 10))
+            throw new BizException("结算上个月佣金仅限每月 3-10 号操作；更早月份可随时补结");
+        LocalDate periodStart = target.atDay(1);
+        LocalDate nextStart = target.plusMonths(1).atDay(1);
         // 该合同上月出库单(含拆单后的全部佣金行),冻结期未到/已结算的行分开统计
         String inSql = "SELECT id FROM crm_referral_order WHERE deleted = 0 AND source_type = "
                 + MktCommissionService.SOURCE_OUTBOUND + " AND source_id = " + contractId
@@ -116,6 +123,7 @@ public class MktCommissionController {
         result.put("contractNo", contract.getContractNo());
         result.put("periodStart", periodStart.toString());
         result.put("periodEnd", nextStart.minusDays(1).toString());
+        result.put("month", target.toString());
         result.put("settleCount", ids.size());
         result.put("settleAmount", amount);
         result.put("frozenCount", frozen);
@@ -123,6 +131,20 @@ public class MktCommissionController {
         result.put("batchNo", ids.isEmpty() ? null
                 : commissionService.settle(ids, MktAuditService.currentOperator()));
         return Result.ok(result);
+    }
+
+    private static Long longOf(Object value) {
+        if (value == null) return null;
+        if (value instanceof Number n) return n.longValue();
+        try { return Long.valueOf(value.toString().trim()); }
+        catch (NumberFormatException e) { throw new BizException("服务合同编号不正确"); }
+    }
+
+    /** month 形如 2026-06；缺省为 fallback(上个月)。 */
+    private static YearMonth monthOf(Object value, YearMonth fallback) {
+        if (value == null || value.toString().isBlank()) return fallback;
+        try { return YearMonth.parse(value.toString().trim()); }
+        catch (java.time.format.DateTimeParseException e) { throw new BizException("结算月份格式应为 yyyy-MM"); }
     }
 
     @Operation(summary = "作废单条") @PreAuthorize("hasAuthority('crm:marketing:commission:edit')") @PostMapping("/{id}/void")

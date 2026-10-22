@@ -156,7 +156,7 @@ export const mktCommissionApi = {
   settle: (ids) => postRaw(`${BASE}/commission/settle`, { ids }),
   void: (id, data) => request.post(`${BASE}/commission/${id}/void`, data),
   batches: (params) => request.get(`${BASE}/commission/batches`, { params }),
-  // 按合同月结:每月 3-10 号结算该合同上个月的出库单佣金
+  // 按合同月结:data = { contractId, month: 'YYYY-MM' };上个月仅限每月 3-10 号,更早月份可随时补结
   settleContract: (data) => postRaw(`${BASE}/commission/settle-contract`, data)
 }
 
@@ -201,7 +201,8 @@ export const mktWarehouseOperationsApi = {
   createSite: (warehouseId, data) => request.post(`${BASE}/warehouse-operations/${warehouseId}/sites`, data),
   links: (warehouseId, params) => request.get(`${BASE}/warehouse-operations/${warehouseId}/links`, { params }),
   createLink: (warehouseId, data) => request.post(`${BASE}/warehouse-operations/${warehouseId}/links`, data),
-  setLinkStatus: (warehouseId, id, data) => request.put(`${BASE}/warehouse-operations/${warehouseId}/links/${id}/status`, data)
+  setLinkStatus: (warehouseId, id, data) => request.put(`${BASE}/warehouse-operations/${warehouseId}/links/${id}/status`, data),
+  deleteLink: (warehouseId, id) => request.delete(`${BASE}/warehouse-operations/${warehouseId}/links/${id}`)
 }
 
 export const mktYunshanApi = {
