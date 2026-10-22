@@ -6,8 +6,8 @@ import { mktWarehouseOperationsApi, mktYunshanApi } from '@/api/marketing'
 const { permissions } = vi.hoisted(() => ({ permissions: new Set() }))
 vi.mock('@/utils/permission', () => ({ hasPermission: permission => permissions.has(permission) }))
 vi.mock('@/api/marketing', () => ({
-  mktWarehouseOperationsApi: Object.fromEntries(['sites', 'createSite', 'links', 'createLink', 'setLinkStatus'].map(key => [key, vi.fn()])),
-  mktYunshanApi: Object.fromEntries(['customers', 'config', 'owners', 'warehouses', 'createMap'].map(key => [key, vi.fn()]))
+  mktWarehouseOperationsApi: Object.fromEntries(['sites', 'createSite', 'links', 'createLink', 'setLinkStatus', 'deleteLink'].map(key => [key, vi.fn()])),
+  mktYunshanApi: Object.fromEntries(['customers', 'config', 'owners', 'warehouses', 'createMap', 'maps'].map(key => [key, vi.fn()]))
 }))
 vi.mock('element-plus', async original => ({ ...await original(), ElMessage: { success: vi.fn() } }))
 const warehouseId = '9007199254740997'
@@ -169,5 +169,67 @@ describe('客户与手动作业仓库建档', () => {
     await wrapper.vm.saveSite(); await flushPromises()
     expect(wrapper.text()).toContain('未获得有效编号')
     expect(wrapper.vm.linkDialog.operationWarehouseId).toBe('')
+  })
+})
+
+describe('发货量同步状态列与行选择', () => {
+  const link = { id: '1', customerId: existingCustomer.id, customerName: existingCustomer.name, operationWarehouseId: site.id, operationWarehouseName: '新华仓库', status: 1 }
+  const map = { id: '11', customerId: existingCustomer.id, operationWarehouseId: site.id, status: 1, lastSyncAt: '2026-10-22 09:30:01', lastSyncOk: 1 }
+  async function mountWith(links, maps) {
+    mktWarehouseOperationsApi.links.mockResolvedValue({ records: links, total: links.length })
+    if (maps instanceof Error) mktYunshanApi.maps.mockRejectedValue(maps)
+    else mktYunshanApi.maps.mockResolvedValue(maps)
+    const wrapper = mount(); await flushPromises(); return wrapper
+  }
+
+  it('客户和作业仓库都匹配时显示已配置及最近拉取结果', async () => {
+    const wrapper = await mountWith([link], [map])
+    expect(wrapper.vm.syncOf(link)).toMatchObject({ text: '已配置', configured: true })
+    expect(wrapper.vm.syncOf(link).detail).toBe('最近拉取 2026-10-22 09:30 成功')
+  })
+
+  it('作业仓库上线前的历史配置没有作业仓库，客户只有一条关联时按客户对应', async () => {
+    const wrapper = await mountWith([link], [{ ...map, operationWarehouseId: null }])
+    expect(wrapper.vm.syncOf(link)).toMatchObject({ text: '已配置', configured: true })
+    expect(wrapper.vm.syncOf(link).detail).toContain('历史配置')
+  })
+
+  it('同一客户有多条关联时，历史配置不能随意算到某一条上', async () => {
+    const other = { ...link, id: '2', operationWarehouseId: '9007199254741001', operationWarehouseName: '另一仓库' }
+    const wrapper = await mountWith([link, other], [{ ...map, operationWarehouseId: null }])
+    expect(wrapper.vm.syncOf(link).configured).toBe(false)
+    expect(wrapper.vm.syncOf(other).configured).toBe(false)
+  })
+
+  it('没有配置、已停用、拉取失败以及读取失败分别展示', async () => {
+    expect((await mountWith([link], [])).vm.syncOf(link)).toMatchObject({ text: '未配置', configured: false })
+    expect((await mountWith([link], [{ ...map, status: 0 }])).vm.syncOf(link)).toMatchObject({ text: '已停用', configured: true })
+    expect((await mountWith([link], [{ ...map, lastSyncOk: 0 }])).vm.syncOf(link)).toMatchObject({ text: '已配置 · 拉取失败' })
+    expect((await mountWith([link], new Error('network'))).vm.syncOf(link)).toMatchObject({ text: '未配置' })
+  })
+
+  it('点击某一行选中并通知上层，再次点击取消筛选', async () => {
+    const wrapper = await mountWith([link], [map])
+    wrapper.vm.pickLink(link)
+    expect(wrapper.emitted('select')[0][0]).toEqual({ customerId: existingCustomer.id, operationWarehouseId: site.id, customerName: existingCustomer.name })
+    wrapper.vm.pickLink(link)
+    expect(wrapper.emitted('select')[1][0]).toBeNull()
+  })
+
+  it('没有配置的行可以带着客户信息请求配置同步', async () => {
+    mktWarehouseOperationsApi.links.mockResolvedValue({ records: [link], total: 1 })
+    mktYunshanApi.maps.mockResolvedValue([])
+    const wrapper = shallowMount(CustomerOperationWarehousePanel, { props: { warehouseId, warehouseName: '微新云仓' }, global: {
+      directives: { loading: {} }, stubs: {
+        ElTable: { template: '<div><slot /></div>' },
+        ElTableColumn: { data: () => ({ row: link }), template: '<div><slot :row="row" /></div>' },
+        ElButton: { props: ['disabled', 'loading'], template: '<button :disabled="disabled || loading"><slot /></button>' }
+      }
+    } })
+    wrappers.push(wrapper); await flushPromises()
+    const configure = wrapper.findAll('button').find(button => button.text() === '配置同步')
+    expect(configure).toBeTruthy()
+    await configure.trigger('click')
+    expect(wrapper.emitted('configure')[0][0]).toMatchObject({ customerId: existingCustomer.id, operationWarehouseId: site.id })
   })
 })
