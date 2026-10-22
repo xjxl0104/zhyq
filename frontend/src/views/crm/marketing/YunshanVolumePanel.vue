@@ -204,7 +204,7 @@ const visibleMaps = computed(() => {
   const focus = props.focus
   if (!focus?.customerId) return maps.value
   return maps.value.filter(item => String(item.customerId) === String(focus.customerId)
-    && (!focus.operationWarehouseId || String(item.operationWarehouseId ?? '') === String(focus.operationWarehouseId)))
+    && (!focus.operationWarehouseId || item.operationWarehouseId == null || String(item.operationWarehouseId) === String(focus.operationWarehouseId)))
 })
 const selectedMap = computed(() => maps.value.find(item => String(item.id) === mapId.value))
 const canSaveMap = computed(() => canConfig.value && connectionReady.value && !loading.sites && localSites.value.some(item => String(item.id) === mapDialog.operationWarehouseId) && mapDialog.customerId && selectedOwner.value && mapDialog.identityConfirmed && entityWarehouses.value.some(item => String(item.no) === mapDialog.parentWarehouseNo) && !loading.warehouses && !loading.owners)

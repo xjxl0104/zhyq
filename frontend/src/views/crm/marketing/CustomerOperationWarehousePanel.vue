@@ -90,11 +90,16 @@ function pickLink(row) {
 // 每一行对应的发货量同步配置：按客户 + 作业仓库匹配（与上方“发货量接口”独立配置）
 function syncOf(row) {
   const customerId = idOf(row.customerId), siteId = idOf(row.operationWarehouseId)
-  const map = syncMaps.value.find(item => String(item.customerId) === customerId && String(item.operationWarehouseId ?? '') === siteId)
+  const sameCustomer = syncMaps.value.filter(item => String(item.customerId) === customerId)
+  let map = sameCustomer.find(item => String(item.operationWarehouseId ?? '') === siteId)
+  // 作业仓库功能上线前建立的历史配置没有记录作业仓库；该客户在本页只有一条关联时，按客户对应到这条关联
+  const legacy = !map && links.value.filter(item => idOf(item.customerId) === customerId).length === 1
+    ? sameCustomer.find(item => item.operationWarehouseId == null) : null
+  map = map || legacy
   if (!map) return { type: 'info', text: '未配置', detail: '', configured: false }
   if (Number(map.status) !== 1) return { type: 'warning', text: '已停用', detail: '保留历史快照', configured: true }
   const when = map.lastSyncAt ? String(map.lastSyncAt).slice(0, 16) : ''
-  const detail = when ? `最近拉取 ${when} ${Number(map.lastSyncOk) === 1 ? '成功' : '失败'}` : '尚未拉取'
+  const detail = (legacy ? '历史配置（未关联作业仓库）· ' : '') + (when ? `最近拉取 ${when} ${Number(map.lastSyncOk) === 1 ? '成功' : '失败'}` : '尚未拉取')
   return { type: Number(map.lastSyncOk) === 0 ? 'danger' : 'success', text: Number(map.lastSyncOk) === 0 ? '已配置 · 拉取失败' : '已配置', detail, configured: true }
 }
 async function loadSyncMaps() {
