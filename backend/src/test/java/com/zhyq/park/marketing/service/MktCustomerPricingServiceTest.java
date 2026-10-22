@@ -157,6 +157,25 @@ class MktCustomerPricingServiceTest {
         var again = service.saveContract(4L, 100L, new PricingInput(bd("0.300"), bd("0.100"), List.of(new BeneficiaryInput(3L, bd("0.050")))));
         assertThat(again.beneficiaries()).extracting(Beneficiary::promoterId).containsExactly(3L);
     }
+    @Test void positionPreviewShowsNewParentAndContractsWithoutSavedAllocation() {
+        var c1 = new MktServiceContract(); c1.setId(100L); var c2 = new MktServiceContract(); c2.setId(101L);
+        when(contractMapper.selectList(any())).thenReturn(List.of(c1, c2));
+        var preview = service.previewPosition(4L, 2L, "P3");
+        assertThat(preview.parentChanges()).isTrue();
+        assertThat(preview.currentParentName()).isEqualTo("伙伴3");
+        assertThat(preview.newParentId()).isEqualTo(4L);
+        assertThat(preview.newParentName()).isEqualTo("伙伴4");
+        assertThat(preview.fromCode()).isEqualTo("P2");
+        assertThat(preview.contractsWithoutAllocation()).isEqualTo(2);
+    }
+    @Test void positionPreviewForDemotionOrOutsiderDoesNotChangeParent() {
+        var demotion = service.previewPosition(4L, 3L, "P2");
+        assertThat(demotion.parentChanges()).isFalse();
+        assertThat(demotion.newParentId()).isEqualTo(4L);
+        assertThat(demotion.contractsWithoutAllocation()).isZero();
+        assertThatThrownBy(() -> service.previewPosition(4L, 8L, "P3")).hasMessageContaining("邀请体系");
+        assertThatThrownBy(() -> service.previewPosition(1L, 2L, "P3")).hasMessageContaining("P4");
+    }
     private static BigDecimal bd(String v) { return new BigDecimal(v); }
     private static PricingInput input(String total,String owner,Long a,String amountA,Long b,String amountB) {
         return new PricingInput(bd(total),bd(owner),List.of(new BeneficiaryInput(a,bd(amountA)),new BeneficiaryInput(b,bd(amountB))));

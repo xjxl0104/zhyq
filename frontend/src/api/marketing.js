@@ -36,6 +36,14 @@ export const mktPromoterApi = {
   resetInvite: (id) => request.post(`${BASE}/promoter/${id}/reset-invite`)
 }
 
+// 营销组织架构：P4 → P3 → P2 的邀请层级、各层级推荐的已签约客户，P4 调整成员层级
+export const mktOrgApi = {
+  tree: () => request.get(`${BASE}/org/tree`),
+  customers: (id) => request.get(`${BASE}/org/${id}/customers`),
+  positionPreview: (id, params) => request.get(`${BASE}/org/${id}/position-preview`, { params }),
+  position: (id, data) => request.post(`${BASE}/org/${id}/position`, data)
+}
+
 // 角色称号与管理参数；按单佣金由客户所属 P4 在小程序配置
 export const mktPositionApi = {
   list: () => request.get(`${BASE}/position/list`),
