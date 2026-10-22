@@ -60,8 +60,8 @@
     <!-- 合同佣金分配:链路成员每单金额(仅 P4 可改) + 该合同已产生佣金 -->
     <el-dialog v-model="alloc.visible" :title="`佣金分配 · ${alloc.view?.contractNo || ''}`" width="min(760px, 96vw)">
       <template v-if="alloc.view">
-        <el-alert v-if="!alloc.view.canEdit" type="info" :closable="false" class="mb"
-                  title="只读模式:仅 P4(且该合同在其邀请体系内)可以设置分配,其他账号仅可查看。" show-icon />
+        <el-alert v-if="!alloc.view.canEdit" type="warning" :closable="false" class="mb"
+                  :title="`只读模式：${alloc.view.readOnlyReason || '仅 P4(且该合同在其邀请体系内)可以设置分配，其他账号仅可查看。'}`" show-icon />
         <el-descriptions :column="3" border size="small" class="mb">
           <el-descriptions-item label="客户">{{ alloc.view.customerName || '—' }}</el-descriptions-item>
           <el-descriptions-item label="成交伙伴">{{ alloc.view.partnerName || '—' }}</el-descriptions-item>

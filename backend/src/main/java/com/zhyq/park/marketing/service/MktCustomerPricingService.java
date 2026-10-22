@@ -44,7 +44,7 @@ public class MktCustomerPricingService {
                                       Long ownerPromoterId, String ownerName, BigDecimal totalPerOrder,
                                       BigDecimal ownerPerOrder, BigDecimal allocatedPerOrder, BigDecimal companyPerOrder,
                                       List<ContractChainMember> chain, List<Beneficiary> beneficiaries,
-                                      LocalDateTime updatedAt) {}
+                                      LocalDateTime updatedAt, String readOnlyReason) {}
     public record PricingView(Long customerId, String customerName, boolean configured, boolean canEdit,
                               Long ownerPromoterId, String ownerName, BigDecimal totalPerOrder,
                               BigDecimal ownerPerOrder, BigDecimal allocatedPerOrder, BigDecimal remainingPerOrder,
@@ -233,7 +233,19 @@ public class MktCustomerPricingService {
                 configured ? allocated : null,
                 configured ? pricing.getTotalPerOrder().subtract(allocated) : null,
                 chain, configured ? readBeneficiaries(pricing) : List.of(),
-                configured ? pricing.getCreateTime() : null);
+                configured ? pricing.getCreateTime() : null,
+                canEdit ? null : readOnlyReason(actor, partner));
+    }
+
+    /** 说明为什么当前后台账号只能查看、不能设置合同分配，便于排查（尤其是后台账号未关联 P4 伙伴档案）。 */
+    static String readOnlyReason(MktPromoter actor, MktPromoter partner) {
+        if (actor == null) return "当前后台账号未关联伙伴档案：请在系统用户中把手机号设为与你的伙伴档案一致（或昵称与伙伴姓名一致）后重新登录";
+        if (!"P4".equals(actor.getPositionCode()))
+            return "当前账号关联的伙伴「" + actor.getName() + "」岗位是 " + actor.getPositionCode() + "，仅 P4 可设置";
+        if (!Integer.valueOf(1).equals(actor.getStatus()))
+            return "当前账号关联的伙伴「" + actor.getName() + "」不是正常状态，不能设置";
+        if (partner == null) return "该合同没有成交伙伴，无法设置分配";
+        return "该合同的成交伙伴「" + partner.getName() + "」不在伙伴「" + actor.getName() + "」的邀请体系内";
     }
 
     /** 保存合同分配(仅 P4):生成不可变新版本,只影响之后产生的出库单,历史订单不重算。 */
