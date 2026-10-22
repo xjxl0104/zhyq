@@ -8,6 +8,7 @@ import com.zhyq.park.crm.entity.Customer;
 import com.zhyq.park.crm.mapper.CustomerMapper;
 import com.zhyq.park.marketing.entity.MktCustomerPricing;
 import com.zhyq.park.marketing.entity.MktPromoter;
+import com.zhyq.park.marketing.entity.MktServiceContract;
 import com.zhyq.park.marketing.mapper.MktCustomerPricingMapper;
 import com.zhyq.park.marketing.mapper.MktPromoterMapper;
 import com.zhyq.park.marketing.service.MktCustomerPricingService.*;
@@ -16,6 +17,7 @@ import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.*;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
 import java.math.BigDecimal;
 import java.util.*;
 import static org.assertj.core.api.Assertions.*;
@@ -30,6 +32,7 @@ class MktCustomerPricingServiceTest {
     @Mock com.zhyq.park.marketing.mapper.MktServiceContractMapper contractMapper;
     @Mock MktAuditService audit;
     @Mock MktPositionReviewService positionService;
+    @Mock MktPromoterService promoterService;
     MktCustomerPricingService service;
     Map<Long, MktPromoter> team;
 
@@ -116,6 +119,43 @@ class MktCustomerPricingServiceTest {
         service.save(4L,10L,new PricingInput(bd("0.200"),bd("0.020"),List.of()));
         verify(pricingMapper,times(2)).insert(any(MktCustomerPricing.class));
         verify(pricingMapper,never()).updateById(any(MktCustomerPricing.class));
+    }
+    @Test void platformKeepsFivePercentOfEveryOrderCommission() {
+        var ok = service.save(4L,10L,new PricingInput(bd("0.300"), bd("0.285"), List.of()));
+        assertThat(ok.companyPerOrder()).isEqualByComparingTo("0.015");
+        assertThatThrownBy(() -> service.save(4L,10L,new PricingInput(bd("0.300"), bd("0.286"), List.of())))
+                .hasMessageContaining("5%").hasMessageContaining("0.285");
+        assertThatThrownBy(() -> service.save(4L,10L,new PricingInput(bd("1"), bd("0.9"), List.of(new BeneficiaryInput(1L,bd("0.051"))))))
+                .hasMessageContaining("5%");
+        verify(pricingMapper, times(1)).insert(any(MktCustomerPricing.class));
+    }
+    @Test void promotionMovesMemberUnderNearestHigherParent() {
+        ReflectionTestUtils.setField(service, "promoterService", promoterService);
+        service.setTeamPosition(4L, 2L, "P3");   // P2 -> P3：原上级 P3 不再高于他，改挂 P4
+        verify(promoterService).changeParent(eq(2L), eq(4L), anyString());
+        service.setTeamPosition(4L, 1L, "P2");   // P1 -> P2：上级 P2 不高于他，往上找到 P3
+        verify(promoterService).changeParent(eq(1L), eq(3L), anyString());
+    }
+    @Test void promotionToP4OrDemotionDoesNotChangeParent() {
+        ReflectionTestUtils.setField(service, "promoterService", promoterService);
+        service.setTeamPosition(4L, 2L, "P4");
+        service.setTeamPosition(4L, 3L, "P2");
+        verifyNoInteractions(promoterService);
+    }
+    @Test void contractAllocationKeepsFormerChainMemberAfterMemberIsReparented() throws Exception {
+        team.get(2L).setParentId(4L);   // 乙(2)被调整后直接挂在 P4(4) 下，原 P3(3) 不再在链路上
+        var contract = new MktServiceContract(); contract.setId(100L); contract.setContractNo("CS-X");
+        contract.setCustomerId(10L); contract.setPartnerId(2L);
+        when(contractMapper.selectById(100L)).thenReturn(contract);
+        MktCustomerPricing saved = new MktCustomerPricing(); saved.setId(30L); saved.setContractId(100L); saved.setOwnerPromoterId(4L);
+        saved.setTotalPerOrder(bd("0.300")); saved.setOwnerPerOrder(bd("0.100"));
+        saved.setBeneficiariesJson(new ObjectMapper().writeValueAsString(List.of(new Beneficiary(3L,"伙伴3","P3",bd("0.050")))));
+        when(pricingMapper.selectOne(any())).thenReturn(saved);
+        var view = service.contractView(100L, team.get(4L));
+        assertThat(view.chain()).extracting(ContractChainMember::promoterId).containsExactly(2L, 4L, 3L);
+        assertThat(view.chain().get(2).former()).isTrue();
+        var again = service.saveContract(4L, 100L, new PricingInput(bd("0.300"), bd("0.100"), List.of(new BeneficiaryInput(3L, bd("0.050")))));
+        assertThat(again.beneficiaries()).extracting(Beneficiary::promoterId).containsExactly(3L);
     }
     private static BigDecimal bd(String v) { return new BigDecimal(v); }
     private static PricingInput input(String total,String owner,Long a,String amountA,Long b,String amountB) {
