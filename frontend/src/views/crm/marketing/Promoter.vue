@@ -1,6 +1,13 @@
 <template>
   <div class="page-container mkt-page">
-    <div class="search-bar">
+    <div class="view-switch">
+      <el-radio-group v-model="view">
+        <el-radio-button value="list">伙伴列表</el-radio-button>
+        <el-radio-button value="org">组织架构</el-radio-button>
+      </el-radio-group>
+    </div>
+    <OrgTree v-if="view === 'org'" />
+    <div v-show="view === 'list'" class="search-bar">
       <el-form :inline="true" :model="query">
         <el-form-item label="姓名/手机">
           <el-input v-model="query.keyword" placeholder="姓名或手机号" clearable style="width: 180px" />
@@ -22,7 +29,7 @@
       </el-form>
     </div>
 
-    <div class="table-card">
+    <div v-show="view === 'list'" class="table-card">
       <div class="toolbar">
         <el-button type="primary" @click="openManual"><el-icon><Plus /></el-icon>录入伙伴</el-button>
         <span class="hint">注册时绑定上级邀请码。P4 拥有定价权，P1–P4 的按单金额由 P4 设定。</span>
@@ -206,7 +213,10 @@ import { hasPermission } from '@/utils/permission'
 import { useProjectStore } from '@/stores/project'
 import { useResponsive } from '@/composables/useResponsive'
 import CommissionBasis from './CommissionBasis.vue'
+import OrgTree from './OrgTree.vue'
 
+// list = 伙伴列表；org = 组织架构（P4 → P3 → P2 层级与各层推荐的已签约客户）
+const view = ref('list')
 const projectStore = useProjectStore()
 const { isMobile } = useResponsive()
 const projectLabel = id => id == null ? '待分配园区' : (projectStore.projects.find(p => String(p.id) === String(id))?.name || `园区 #${id}`)
@@ -351,4 +361,5 @@ onMounted(async () => {
 .toolbar { display: flex; align-items: center; gap: 12px; }
 .hint { color: var(--el-text-color-secondary); font-size: 12px; }
 .pager { margin-top: 16px; justify-content: flex-end; }
+.view-switch { margin-bottom: 12px; }
 </style>

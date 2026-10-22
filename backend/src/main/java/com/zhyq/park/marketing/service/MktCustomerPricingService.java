@@ -117,8 +117,17 @@ public class MktCustomerPricingService {
      * （找不到则挂到操作的 P4 下）。调整前客户的已保存分配仍保留原上级分成；调整后的新客户不再与原上级分成。
      */
     private void reparentAfterPromotion(MktPromoter member, String newCode, Long actorId) {
+        if (promoterService == null) return;
+        Long target = reparentTarget(member, newCode, actorId);
+        if (target != null) {
+            promoterService.changeParent(member.getId(), target, "晋升为 " + newCode + "，上级调整为岗位更高的最近上级");
+        }
+    }
+
+    /** 晋升后的新上级 id；不需要调整（降级、晋升为 P4、上级已经更高）时返回 null。 */
+    Long reparentTarget(MktPromoter member, String newCode, Long actorId) {
         int newRank = rankOf(newCode), oldRank = rankOf(member.getPositionCode());
-        if (promoterService == null || newRank <= oldRank || newRank >= 4) return;
+        if (newRank <= oldRank || newRank >= 4) return null;
         Long target = actorId;
         MktPromoter cur = member.getParentId() == null ? null : promoterMapper.selectById(member.getParentId());
         Set<Long> seen = new HashSet<>();
@@ -126,9 +135,35 @@ public class MktCustomerPricingService {
             if (rankOf(cur.getPositionCode()) > newRank) { target = cur.getId(); break; }
             cur = cur.getParentId() == null ? null : promoterMapper.selectById(cur.getParentId());
         }
-        if (!target.equals(member.getParentId())) {
-            promoterService.changeParent(member.getId(), target, "晋升为 " + newCode + "，上级调整为岗位更高的最近上级");
+        return target.equals(member.getParentId()) ? null : target;
+    }
+
+    public record PositionPreview(Long promoterId, String name, String fromCode, String toCode,
+                                  Long currentParentId, String currentParentName,
+                                  Long newParentId, String newParentName, boolean parentChanges,
+                                  int contractsWithoutAllocation) {}
+
+    /** 调整层级前的预览：新上级是谁；本人成交的合同里还有多少份没保存过分配（调整后这些合同会按新链路分成）。 */
+    public PositionPreview previewPosition(Long actorId, Long promoterId, String code) {
+        requireP4(actorId);
+        MktPromoter member = promoterId == null ? null : promoterMapper.selectById(promoterId);
+        if (member == null || actorId.equals(promoterId) || !Integer.valueOf(1).equals(member.getStatus()) || !inTeam(member, actorId)) {
+            throw new BizException(403, "只能设置本人邀请体系内其他正常伙伴的角色");
         }
+        if (code == null || !Set.of("P1", "P2", "P3", "P4").contains(code)) throw new BizException("角色须为 P1、P2、P3 或 P4");
+        Long target = reparentTarget(member, code, actorId);
+        MktPromoter current = member.getParentId() == null ? null : promoterMapper.selectById(member.getParentId());
+        MktPromoter next = target == null ? current : promoterMapper.selectById(target);
+        int missing = 0;
+        if (target != null) {
+            for (MktServiceContract contract : contractMapper.selectList(new LambdaQueryWrapper<MktServiceContract>()
+                    .eq(MktServiceContract::getPartnerId, promoterId))) {
+                if (latestByContract(contract.getId()) == null) missing++;
+            }
+        }
+        return new PositionPreview(promoterId, member.getName(), member.getPositionCode(), code,
+                current == null ? null : current.getId(), current == null ? null : current.getName(),
+                next == null ? null : next.getId(), next == null ? null : next.getName(), target != null, missing);
     }
 
     private static int rankOf(String positionCode) {
