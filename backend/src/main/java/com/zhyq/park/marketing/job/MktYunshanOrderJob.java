@@ -10,7 +10,7 @@ import org.springframework.stereotype.Component;
  * 每天上海时间 10:00（云山数据 09:30 回拉之后）把每日发货票数生成计佣汇总订单。
  * 默认开启，首次运行会把已拉取的全部历史票数一次性补成计佣汇总订单（幂等，已生成的日期不会重复计佣）。
  * 需要暂停时配置 zhyq.yunshan.order-enabled=false（环境变量 ZHYQ_YUNSHAN_ORDER_ENABLED=false）。
- * 仅园区签合同会计佣；云仓直签只记运营数据，佣金按实际收到的平台费另行登记。
+ * 园区签和云仓直签合同都按发货量计佣；其他签约方式不计佣。
  */
 @Slf4j
 @Component

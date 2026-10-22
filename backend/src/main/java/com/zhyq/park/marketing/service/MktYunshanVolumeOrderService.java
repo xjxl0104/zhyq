@@ -184,7 +184,7 @@ public class MktYunshanVolumeOrderService {
         return outcome;
     }
 
-    /** 该日期覆盖客户与云仓的园区签服务合同；云仓直签只记运营数据，不在此计佣。 */
+    /** 该日期覆盖客户与云仓的服务合同（园区签和云仓直签均按发货量计佣）。 */
     private MktServiceContract resolveContract(MktYunshanVolumeMap map, LocalDate day) {
         MktServiceContract contract = contractMapper.selectOne(new LambdaQueryWrapper<MktServiceContract>()
                 .eq(MktServiceContract::getCustomerId, map.getCustomerId())
@@ -197,6 +197,7 @@ public class MktYunshanVolumeOrderService {
                 .orderByDesc(MktServiceContract::getId).last("limit 1"));
         if (contract == null) return null;
         contract = termsService.atDate(contract, day);
-        return Integer.valueOf(1).equals(contract.getSignMode()) ? contract : null;
+        // 园区签(1)和云仓直签(2)都按发货量计佣；其他签约方式不计佣。
+        return Integer.valueOf(1).equals(contract.getSignMode()) || Integer.valueOf(2).equals(contract.getSignMode()) ? contract : null;
     }
 }
