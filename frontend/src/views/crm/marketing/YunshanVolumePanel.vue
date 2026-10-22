@@ -32,7 +32,7 @@
           <el-option v-for="item in visibleMaps" :key="item.id" :value="String(item.id)" :label="mapLabel(item)" />
         </el-select></el-form-item>
         <el-form-item label="发货日期"><el-date-picker v-model="dateRange" class="date-range" type="daterange" value-format="YYYY-MM-DD" range-separator="至" start-placeholder="开始日期" end-placeholder="结束日期" :clearable="false" :disabled-date="disabledDate" @change="changeRange" /></el-form-item>
-        <el-form-item><el-button :loading="loading.volume" @click="queryVolume">查询快照</el-button><el-button v-if="canConfig" type="primary" :disabled="!sourceReady || selectedMap?.status !== 1 || selectedMap?.identityMismatch" :loading="loading.sync" @click="sync">补拉此区间</el-button><el-button :disabled="!sourceReady || loading.sync || selectedMap?.identityMismatch" :loading="loading.reconcile" @click="reconcile">只读对账</el-button><el-button v-if="canGenerateOrders" :disabled="selectedMap?.status !== 1 || selectedMap?.identityMismatch" :loading="ordersBusy" @click="generateOrders">生成计佣订单</el-button></el-form-item>
+        <el-form-item><el-button :loading="loading.volume" @click="queryVolume">查询快照</el-button><el-button v-if="canConfig" type="primary" :disabled="!sourceReady || selectedMap?.status !== 1 || selectedMap?.identityMismatch" :loading="loading.sync" @click="sync">补拉此区间</el-button><el-button :disabled="!sourceReady || loading.sync || selectedMap?.identityMismatch" :loading="loading.reconcile" @click="reconcile">只读对账</el-button></el-form-item>
       </el-form>
       <p class="hint range-hint">北京时间，单次最多 92 天。停用关联后保留历史快照；缺少统计的日期不视作零票。</p>
       <el-alert v-if="errors.volume" type="error" :closable="false" :title="errors.volume" />
@@ -160,7 +160,7 @@
 
 <script setup>
 import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { mktYunshanApi } from '@/api/marketing'
 import { hasPermission } from '@/utils/permission'
 
@@ -226,21 +226,6 @@ function rangeParams() {
 function resetDetails() {
   for (const key of ['volume', 'logs', 'reconcile']) { versions[key]++; loading[key] = false; errors[key] = '' }
   volume.value = null; reconciliation.value = null; syncResult.value = null; errors.sync = ''; logs.value = []; logTotal.value = 0
-}
-const canGenerateOrders = computed(() => hasPermission('crm:marketing:order:edit'))
-const ordersBusy = ref(false)
-async function generateOrders() {
-  if (ordersBusy.value || !mapId.value || selectedMap.value?.status !== 1) return
-  try {
-    await ElMessageBox.confirm('将按已拉取的发货票数，为当前客户关联生成计佣汇总订单：从合同生效日起补算，只算佣金、不生成服务费；已生成的日期不会重复计佣，云山事后修正票数会自动补差额或扣回。确认生成？', '生成计佣订单', { confirmButtonText: '确认生成', cancelButtonText: '取消', type: 'warning' })
-  } catch { return }
-  ordersBusy.value = true
-  try {
-    const result = await mktYunshanApi.generateOrders({ mapId: mapId.value })
-    ElMessage.success(`新建 ${result.created} 日，重建 ${result.rebuilt} 日，无变化 ${result.unchanged} 日，跳过 ${result.skipped} 日，失败 ${result.failed} 日`)
-    if (result.failed) ElMessage.warning(result.errors?.[0] || '部分日期生成失败，请检查客户佣金配置')
-  } catch (error) { ElMessage.warning(error.message || '生成失败，请重试') }
-  finally { ordersBusy.value = false }
 }
 const monthly = reactive({ customerId: null, year: String(new Date().getFullYear()), rows: [], yearTotal: 0, days: 0, loading: false, error: '' })
 const monthlyCustomers = computed(() => [...new Map(maps.value.map(item => [item.customerId, { id: item.customerId, name: item.customerName || String(item.customerId) }])).values()])
