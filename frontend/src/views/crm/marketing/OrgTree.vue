@@ -1,13 +1,32 @@
 <template>
   <div class="org-page" v-if="canQuery">
-    <div class="org-layout">
+    <div class="org-layout" :class="{ 'is-chart': mode === 'chart' }">
       <aside class="org-side table-card">
         <div class="org-search">
-          <el-input v-model="keyword" placeholder="搜索姓名" clearable />
+          <el-radio-group v-model="mode" size="small">
+            <el-radio-button value="chart">树状图</el-radio-button>
+            <el-radio-button value="list">列表</el-radio-button>
+          </el-radio-group>
+          <el-input v-model="keyword" placeholder="搜索姓名" clearable class="org-keyword" />
           <el-button :loading="loading" @click="reload">刷新</el-button>
+          <template v-if="mode === 'chart'">
+            <el-button @click="setAll(false)">全部展开</el-button>
+            <el-button @click="setAll(true)">收起到上两层</el-button>
+            <el-button-group>
+              <el-button :disabled="zoom <= 0.6" @click="zoomBy(-0.1)">缩小</el-button>
+              <el-button :disabled="zoom >= 1.4" @click="zoomBy(0.1)">放大</el-button>
+            </el-button-group>
+          </template>
         </div>
         <el-alert v-if="error" type="error" :closable="false" :title="error" class="mb" />
-        <el-tree ref="treeRef" v-loading="loading" :data="roots" node-key="id" :props="{ label: 'name', children: 'children' }"
+        <div v-if="mode === 'chart'" v-loading="loading" class="oc-scroll">
+          <el-empty v-if="!loading && !roots.length" description="暂无伙伴" />
+          <ul v-else class="oc-root" :style="{ zoom }">
+            <OrgChartNode v-for="root in roots" :key="root.id" :node="root" :selected-id="current?.id" :collapsed="collapsed"
+                          :keyword="keyword" @select="select" @toggle="toggleCollapse" />
+          </ul>
+        </div>
+        <el-tree v-else ref="treeRef" v-loading="loading" :data="roots" node-key="id" :props="{ label: 'name', children: 'children' }"
                  default-expand-all highlight-current :expand-on-click-node="false" :filter-node-method="filterNode"
                  empty-text="暂无伙伴" @node-click="select">
           <template #default="{ data }">
@@ -19,11 +38,11 @@
             </span>
           </template>
         </el-tree>
-        <p class="hint">P4 发展的人为 P3，P3 发展的人为 P2。点击成员查看他推荐的客户和下一层级推荐的客户。</p>
+        <p class="hint">P4 发展的人为 P3，P3 发展的人为 P2。点击成员查看他推荐的客户和下一层级推荐的客户；节点下方的按钮可收起或展开下级。</p>
       </aside>
 
       <section class="org-main table-card">
-        <el-empty v-if="!current" description="点击左侧成员，查看他推荐的已签约客户，以及下一层级推荐的已签约客户" />
+        <el-empty v-if="!current" description="点击上方成员，查看他推荐的已签约客户，以及下一层级推荐的已签约客户" />
         <template v-else>
           <div class="org-head">
             <h3 class="org-title">
@@ -87,6 +106,7 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { mktOrgApi } from '@/api/marketing'
 import { hasPermission } from '@/utils/permission'
+import OrgChartNode from './OrgChartNode.vue'
 
 const SIGN = { 1: '园区签', 2: '云仓直签' }
 const canQuery = computed(() => hasPermission('crm:marketing:promoter:query'))
@@ -114,6 +134,22 @@ function buildTree(list) {
 const roots = computed(() => buildTree(nodes.value))
 const filterNode = (value, data) => !value || String(data.name || '').includes(value)
 watch(keyword, value => treeRef.value?.filter(value))
+
+// 树状图：chart = 组织架构图，list = 列表树；缩放与展开/收起
+const mode = ref('chart')
+const zoom = ref(1)
+const collapsed = ref({})
+const zoomBy = step => { zoom.value = Math.min(1.4, Math.max(0.6, Math.round((zoom.value + step) * 10) / 10)) }
+const toggleCollapse = id => { collapsed.value = { ...collapsed.value, [id]: !collapsed.value[id] } }
+// 收起：只保留根和第二层（P4、P3），P3 以下收起；展开：全部展开
+function setAll(closeBelowSecondLevel) {
+  const next = {}
+  if (closeBelowSecondLevel) {
+    const walk = (items, depth) => items.forEach(item => { if (depth >= 1 && item.children?.length) next[item.id] = true; walk(item.children || [], depth + 1) })
+    walk(roots.value, 0)
+  }
+  collapsed.value = next
+}
 
 const selfRows = computed(() => (customerData.value.self || []).filter(row => !onlySigned.value || row.signed))
 const nextRows = computed(() => (customerData.value.next || []).filter(row => !onlySigned.value || row.signed))
@@ -193,7 +229,11 @@ defineExpose({ buildTree })
 <style scoped>
 .org-layout { display: grid; grid-template-columns: minmax(300px, 380px) minmax(0, 1fr); gap: 16px; align-items: start; }
 .org-side, .org-main { min-width: 0; }
-.org-search { display: flex; gap: 8px; margin-bottom: 12px; }
+.org-layout.is-chart { grid-template-columns: minmax(0, 1fr); }
+.org-search { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+.org-keyword { width: 180px; }
+.oc-scroll { overflow: auto; max-height: 580px; padding: 8px 8px 28px; background: var(--el-fill-color-extra-light); border-radius: 8px; }
+.oc-root { display: flex; justify-content: center; width: max-content; min-width: 100%; margin: 0; padding: 0; list-style: none; }
 .org-node { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .org-name { font-weight: 500; }
 .org-count { color: var(--el-text-color-secondary); font-size: 12px; }

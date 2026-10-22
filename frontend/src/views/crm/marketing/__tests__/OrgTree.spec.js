@@ -88,3 +88,24 @@ describe('营销组织架构', () => {
     expect(mktOrgApi.position).not.toHaveBeenCalled()
   })
 })
+
+describe('营销组织架构 · 树状图', () => {
+  it('默认是树状图，可切换为列表；展开/收起与缩放有边界', async () => {
+    const wrapper = mount(); await flushPromises()
+    expect(wrapper.vm.mode).toBe('chart')
+    wrapper.vm.toggleCollapse(3)
+    expect(wrapper.vm.collapsed[3]).toBe(true)
+    wrapper.vm.toggleCollapse(3)
+    expect(wrapper.vm.collapsed[3]).toBe(false)
+    wrapper.vm.setAll(true)   // 收起到上两层：P3 有下级所以被收起，P4 不收起
+    expect(wrapper.vm.collapsed).toEqual({ 3: true })
+    wrapper.vm.setAll(false)
+    expect(wrapper.vm.collapsed).toEqual({})
+    for (let i = 0; i < 10; i++) wrapper.vm.zoomBy(0.1)
+    expect(wrapper.vm.zoom).toBe(1.4)
+    for (let i = 0; i < 20; i++) wrapper.vm.zoomBy(-0.1)
+    expect(wrapper.vm.zoom).toBe(0.6)
+    wrapper.vm.mode = 'list'
+    expect(wrapper.vm.mode).toBe('list')
+  })
+})
