@@ -7,12 +7,11 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
+import java.util.List;
 
 /** 手动触发云山发货票数 → 计佣汇总订单；幂等，已生成的日期不会重复计佣。 */
 @Tag(name = "全民营销-云山发货量汇总订单")
@@ -23,6 +22,15 @@ public class MktYunshanOrderController {
     private final MktYunshanVolumeOrderService service;
 
     public record GenerateInput(Long mapId, LocalDate startDate, LocalDate endDate) {}
+
+    @Operation(summary = "按天核对：有云山快照的每一天已生成多少票的计佣订单")
+    @GetMapping("/daily")
+    @PreAuthorize("hasAuthority('crm:marketing:erp:query')")
+    public Result<List<MktYunshanVolumeOrderService.DayStatus>> daily(@RequestParam Long mapId,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate) {
+        return Result.ok(service.dailyStatus(mapId, startDate, endDate));
+    }
 
     @Operation(summary = "按已拉取的发货票数生成计佣汇总订单（可限定客户关联和日期区间）")
     @PostMapping("/generate")

@@ -114,6 +114,40 @@ public class MktYunshanVolumeOrderService {
         }
     }
 
+    /** 某天的发货票数与已生成佣金的票数。 */
+    public record DayStatus(LocalDate statDate, long tickets, long commissionTickets, int orders) {}
+
+    /** 按天核对：有云山快照的每一天，已生成多少票的计佣订单（用于判断“没生成”是没拉到数据还是没算佣金）。 */
+    public List<DayStatus> dailyStatus(Long mapId, LocalDate start, LocalDate end) {
+        if (mapId == null || start == null || end == null || start.isAfter(end)) throw new BizException("请选择客户关联和有效的日期区间");
+        if (java.time.temporal.ChronoUnit.DAYS.between(start, end) + 1 > 92) throw new BizException("单次最多查询 92 天");
+        MktYunshanVolumeMap map = mapMapper.selectById(mapId);
+        if (map == null) throw new BizException("发货量客户关联不存在");
+        List<MktYunshanDailyVolume> rows = volumeMapper.selectList(new LambdaQueryWrapper<MktYunshanDailyVolume>()
+                .eq(MktYunshanDailyVolume::getMapId, mapId).between(MktYunshanDailyVolume::getStatDate, start, end)
+                .orderByAsc(MktYunshanDailyVolume::getStatDate));
+        String prefix = PREFIX + mapId + "-";
+        List<MktReferralOrder> orders = orderMapper.selectList(new LambdaQueryWrapper<MktReferralOrder>()
+                .eq(MktReferralOrder::getSourceType, MktCommissionService.SOURCE_OUTBOUND)
+                .eq(MktReferralOrder::getWarehouseId, map.getWarehouseId())
+                .eq(MktReferralOrder::getStatus, MktCommissionService.ORDER_CONFIRMED)
+                .likeRight(MktReferralOrder::getSourceNo, prefix));
+        java.util.Map<String, long[]> byDay = new java.util.HashMap<>();   // yyyyMMdd -> {票数, 订单数}
+        for (MktReferralOrder order : orders) {
+            String no = order.getSourceNo();
+            if (no == null || no.length() < prefix.length() + 8) continue;
+            long[] sum = byDay.computeIfAbsent(no.substring(prefix.length(), prefix.length() + 8), k -> new long[2]);
+            sum[0] += order.getCommissionOrderCount() == null ? 0 : order.getCommissionOrderCount();
+            sum[1]++;
+        }
+        List<DayStatus> out = new ArrayList<>();
+        for (MktYunshanDailyVolume row : rows) {
+            long[] sum = byDay.getOrDefault(row.getStatDate().format(DateTimeFormatter.BASIC_ISO_DATE), new long[2]);
+            out.add(new DayStatus(row.getStatDate(), row.getConsignNum() == null ? 0 : row.getConsignNum(), sum[0], (int) sum[1]));
+        }
+        return out;
+    }
+
     private Outcome reconcileDay(MktYunshanVolumeMap map, MktYunshanDailyVolume row) {
         LocalDate day = row.getStatDate();
         long tickets = row.getConsignNum() == null ? 0 : row.getConsignNum();

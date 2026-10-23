@@ -42,6 +42,9 @@ public class MktCommissionController {
     private final MktPromoterMapper promoterMapper;
     private final MktServiceContractMapper contractMapper;
     private final MktCommissionService commissionService;
+    /** 非构造注入：列表里带出订单的发货日(event_time)和订单号。 */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.zhyq.park.marketing.mapper.MktReferralOrderMapper orderMapper;
 
     @Operation(summary = "分页") @PreAuthorize("hasAuthority('crm:marketing:commission:query')") @GetMapping("/page")
     public Result<PageResult<Map<String, Object>>> page(@RequestParam(defaultValue = "1") int pageNo,
@@ -58,6 +61,13 @@ public class MktCommissionController {
                 .orderByDesc(MktPromoterCommission::getId);
         IPage<MktPromoterCommission> p = commissionMapper.selectPage(new Page<>(pageNo, pageSize), qw);
         Map<Long, String> names = new HashMap<>();
+        // 发货日 = 订单的 event_time；“解冻时间”是发货日加冻结期，两者不是一回事
+        Map<Long, com.zhyq.park.marketing.entity.MktReferralOrder> orders = new HashMap<>();
+        List<Long> orderIds = p.getRecords().stream().map(MktPromoterCommission::getReferralOrderId)
+                .filter(java.util.Objects::nonNull).distinct().toList();
+        if (orderMapper != null && !orderIds.isEmpty()) {
+            orderMapper.selectBatchIds(orderIds).forEach(o -> orders.put(o.getId(), o));
+        }
         List<Map<String, Object>> rows = p.getRecords().stream().map(c -> {
             Map<String, Object> m = new HashMap<>();
             m.put("id", c.getId()); m.put("referralOrderId", c.getReferralOrderId()); m.put("promoterId", c.getPromoterId());
@@ -67,6 +77,9 @@ public class MktCommissionController {
             m.put("baseAmount", c.getBaseAmount()); m.put("rate", c.getRate()); m.put("amount", c.getAmount()); m.put("sign", c.getSign());
             m.put("status", c.getStatus()); m.put("unfreezeAt", c.getUnfreezeAt()); m.put("settleBatchId", c.getSettleBatchId());
             m.put("withdrawalId", c.getWithdrawalId()); m.put("voidReason", c.getVoidReason()); m.put("createTime", c.getCreateTime());
+            var order = orders.get(c.getReferralOrderId());
+            m.put("orderEventTime", order == null ? null : order.getEventTime());
+            m.put("orderSourceNo", order == null ? null : order.getSourceNo());
             m.put("promoterName", names.computeIfAbsent(c.getPromoterId(), id -> {
                 MktPromoter pr = promoterMapper.selectById(id); return pr == null ? null : pr.getName();
             }));
