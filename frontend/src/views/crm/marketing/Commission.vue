@@ -2,6 +2,7 @@
   <div class="page-container mkt-page">
     <div class="search-bar">
       <el-form :inline="true" :model="query">
+        <el-form-item label="伙伴"><el-input v-model="query.promoterName" placeholder="姓名或手机号" clearable style="width: 160px" @keyup.enter="search" /></el-form-item>
         <el-form-item label="伙伴 ID"><el-input-number v-model="query.promoterId" :min="1" controls-position="right" style="width: 140px" /></el-form-item>
         <el-form-item label="状态">
           <el-select v-model="query.status" placeholder="全部" clearable style="width: 120px">
@@ -104,7 +105,7 @@ const settling = ref(false)
 const loading = ref(false)
 const list = ref([])
 const total = ref(0)
-const query = reactive({ pageNo: 1, pageSize: 20, promoterId: null, status: null })
+const query = reactive({ pageNo: 1, pageSize: 20, promoterId: null, promoterName: '', status: null })
 const selected = ref([])
 // 扣回行(sign=-1)只能在打款时抵扣,不能拿去结算,否则余额公式就不再认它
 const isSettleable = (row) => row.status === 2 && row.sign === 1 && !row.withdrawalId
@@ -119,7 +120,7 @@ async function load() {
   } finally { loading.value = false }
 }
 function search() { query.pageNo = 1; load() }
-function reset() { Object.assign(query, { pageNo: 1, promoterId: null, status: null }); load() }
+function reset() { Object.assign(query, { pageNo: 1, promoterId: null, promoterName: '', status: null }); load() }
 function onSelect(rows) { selected.value = rows }
 
 async function settle() {
