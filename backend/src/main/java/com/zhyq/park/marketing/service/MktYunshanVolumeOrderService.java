@@ -186,6 +186,11 @@ public class MktYunshanVolumeOrderService {
             if (outcome == Outcome.REBUILT) return outcome;
             return Outcome.SKIPPED;
         }
+        // 同一天这份合同已经由手工导入/ERP 推送的出库单计过佣金时，不再按发货票数重复计佣（宁可少算，不能多发）
+        if (hasOtherCommissionOrders(contract, day)) {
+            log.warn("[yunshan-order] 合同 {} {} 已有其他渠道的计佣出库单，跳过按发货量计佣，请业务确认只用一种渠道", contract.getId(), day);
+            return outcome == Outcome.REBUILT ? outcome : Outcome.SKIPPED;
+        }
         Customer customer = customerMapper.selectById(map.getCustomerId());
         if (customer == null) return outcome == Outcome.REBUILT ? outcome : Outcome.SKIPPED;
         Long seller = contract.getPartnerId() != null ? contract.getPartnerId() : customer.getReferrerId();
@@ -216,6 +221,19 @@ public class MktYunshanVolumeOrderService {
         auditService.log("yunshan.order.generate", "referral_order", order.getId(),
                 sourceNo + "：" + day + " 共 " + count + " 票，佣金池 " + pool);
         return outcome;
+    }
+
+    /** 该合同当天是否已有“非云山汇总”的已确认出库单且产生了佣金（手工导入或 ERP 推送）。 */
+    private boolean hasOtherCommissionOrders(MktServiceContract contract, LocalDate day) {
+        Long count = orderMapper.selectCount(new LambdaQueryWrapper<MktReferralOrder>()
+                .eq(MktReferralOrder::getSourceType, MktCommissionService.SOURCE_OUTBOUND)
+                .eq(MktReferralOrder::getSourceId, contract.getId())
+                .eq(MktReferralOrder::getStatus, MktCommissionService.ORDER_CONFIRMED)
+                .notLikeRight(MktReferralOrder::getSourceNo, PREFIX)
+                .gt(MktReferralOrder::getPoolAmount, BigDecimal.ZERO)
+                .ge(MktReferralOrder::getEventTime, day.atStartOfDay())
+                .lt(MktReferralOrder::getEventTime, day.plusDays(1).atStartOfDay()));
+        return count != null && count > 0;
     }
 
     /** 该日期覆盖客户与云仓的服务合同（园区签和云仓直签均按发货量计佣）。 */

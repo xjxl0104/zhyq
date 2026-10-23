@@ -52,7 +52,7 @@
         <el-table-column prop="fetchedAt" label="最近拉取" min-width="170" />
       </el-table>
       <el-pagination class="pager" background layout="total, prev, pager, next" :total="Number(volume?.total || 0)" v-model:current-page="volumePage" :page-size="20" @current-change="loadVolume" />
-      <p class="hint">“已生成佣金”对比每天的发货票数与已生成佣金订单的票数。显示“未生成”可能是：当天数据次日才拉取、该合同还没配置每单佣金、不在合同有效期内，或云山没有返回该日统计（没有快照的日期不会出现在这张表里）。佣金订单每天 10:00 自动生成。</p>
+      <p class="hint">“已生成佣金”对比每天的发货票数与已生成佣金订单的票数。显示“未生成”可能是：当天数据次日才拉取、该合同还没配置每单佣金、不在合同有效期内、该日已有手工导入或 ERP 推送的计佣订单（为避免重复计佣不再按发货量生成），或云山没有返回该日统计（没有快照的日期不会出现在这张表里）。佣金订单每天 10:00 自动生成。</p>
 
       <div class="monthly-section">
         <div class="toolbar logs-heading"><h3 class="title">月度发货量汇总</h3></div>
