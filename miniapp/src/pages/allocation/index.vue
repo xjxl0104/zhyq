@@ -109,7 +109,7 @@ const editable = computed(() => canPrice.value && detail.value?.canEdit && !savi
 const selectedIndex = computed(() => Math.max(0, customers.value.findIndex(customer => String(customer.id) === String(selectedCustomerId.value))))
 const selectedCustomer = computed(() => customers.value.find(customer => String(customer.id) === String(selectedCustomerId.value)))
 const customerLabels = computed(() => customers.value.map(customer => `${customer.name} · ${customer.configured ? '已配置' : '待定价'}（${customer.id}）`))
-const beneficiaryLabels = computed(() => ['请选择具体受益人', ...candidates.value.map(member => `${member.name || '未命名伙伴'} · ${member.positionCode}（${member.id}）`)])
+const beneficiaryLabels = computed(() => ['请选择具体受益人', ...candidates.value.map(member => `${member.name || '未命名伙伴'} · ${member.positionCode}${member.phoneTail ? ' · 尾号' + member.phoneTail : ''}（${member.id}）`)])
 const activeBeneficiaries = computed(() => distribute.value ? form.beneficiaries : [])
 const allocatedMills = computed(() => {
   let sum = 0
@@ -200,7 +200,7 @@ function toggleDistribution(event) {
 function beneficiaryIndex(id) { return candidates.value.findIndex(member => String(member.id) === String(id)) + 1 }
 function beneficiaryName(row) {
   const member = candidates.value.find(candidate => String(candidate.id) === String(row.promoterId))
-  return member ? `${member.name || '未命名伙伴'} · ${member.positionCode}` : row.promoterName ? `${row.promoterName} · 请确认成员状态` : '请选择具体受益人'
+  return member ? `${member.name || '未命名伙伴'} · ${member.positionCode}${member.phoneTail ? ' · 尾号' + member.phoneTail : ''}` : row.promoterName ? `${row.promoterName} · 请确认成员状态` : '请选择具体受益人'
 }
 function selectBeneficiary(index, event) {
   const member = candidates.value[Number(event.detail.value) - 1]
