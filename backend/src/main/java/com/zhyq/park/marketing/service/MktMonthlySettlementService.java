@@ -76,6 +76,46 @@ public class MktMonthlySettlementService {
         }
     }
 
+    /**
+     * 按（月份，合同）汇总的佣金，供结算页一个月一行展示；月份取订单发货日。
+     * promoterIds 非空时只汇总这些伙伴的佣金（票数仍是整张合同当月的发货票数）。
+     */
+    public List<Map<String, Object>> monthlySummary(List<Long> promoterIds) {
+        boolean filtered = promoterIds != null;
+        if (filtered && promoterIds.isEmpty()) return List.of();
+        String in = filtered ? " AND c.promoter_id IN (" + promoterIds.stream().map(String::valueOf)
+                .collect(java.util.stream.Collectors.joining(",")) + ")" : "";
+        List<Map<String, Object>> rows = jdbc.queryForList(
+                "SELECT DATE_FORMAT(o.event_time, '%Y-%m') AS ym, o.source_id AS contract_id, "
+                        + "MAX(sc.contract_no) AS contract_no, MAX(sc.start_date) AS start_date, MAX(cu.name) AS customer_name, "
+                        + "GROUP_CONCAT(DISTINCT p.name ORDER BY p.id SEPARATOR '、') AS promoters, "
+                        + "SUM(c.amount) AS total, "
+                        + "SUM(CASE WHEN c.status = " + MktCommissionService.C_FROZEN + " THEN c.amount ELSE 0 END) AS frozen, "
+                        + "SUM(CASE WHEN c.status = " + MktCommissionService.C_SETTLEABLE + " AND c.sign = 1 AND c.withdrawal_id IS NULL THEN c.amount ELSE 0 END) AS settleable, "
+                        + "SUM(CASE WHEN c.status IN (" + MktCommissionService.C_SETTLED + "," + MktCommissionService.C_WITHDRAWN + ") THEN c.amount ELSE 0 END) AS settled "
+                        + "FROM crm_promoter_commission c "
+                        + "JOIN crm_referral_order o ON o.id = c.referral_order_id AND o.deleted = 0 AND o.source_type = " + MktCommissionService.SOURCE_OUTBOUND + " "
+                        + "LEFT JOIN crm_service_contract sc ON sc.id = o.source_id "
+                        + "LEFT JOIN crm_customer cu ON cu.id = sc.customer_id "
+                        + "LEFT JOIN crm_promoter p ON p.id = c.promoter_id "
+                        + "WHERE c.deleted = 0 AND c.status <> " + MktCommissionService.C_VOID + in + " "
+                        + "GROUP BY ym, o.source_id ORDER BY ym DESC, o.source_id DESC");
+        Map<String, Number> tickets = new java.util.HashMap<>();
+        for (Map<String, Object> t : jdbc.queryForList(
+                "SELECT DATE_FORMAT(event_time, '%Y-%m') AS ym, source_id, SUM(COALESCE(commission_order_count, 1)) AS n "
+                        + "FROM crm_referral_order WHERE deleted = 0 AND source_type = " + MktCommissionService.SOURCE_OUTBOUND
+                        + " AND status = " + MktCommissionService.ORDER_CONFIRMED + " GROUP BY ym, source_id")) {
+            tickets.put(t.get("ym") + "|" + t.get("source_id"), (Number) t.get("n"));
+        }
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (Map<String, Object> r : rows) {
+            Map<String, Object> m = new java.util.LinkedHashMap<>(r);
+            m.put("tickets", tickets.getOrDefault(r.get("ym") + "|" + r.get("contract_id"), 0));
+            result.add(m);
+        }
+        return result;
+    }
+
     record Settled(int count, BigDecimal amount, String batchNo) {}
 
     /** 一个合同、一个月份的可结算佣金生成一个批次；没有可结算流水时不生成。 */

@@ -4,11 +4,6 @@
       <el-form :inline="true" :model="query">
         <el-form-item label="伙伴"><el-input v-model="query.promoterName" placeholder="姓名或手机号" clearable style="width: 160px" @keyup.enter="search" /></el-form-item>
         <el-form-item label="伙伴 ID"><el-input-number v-model="query.promoterId" :min="1" controls-position="right" style="width: 140px" /></el-form-item>
-        <el-form-item label="状态">
-          <el-select v-model="query.status" placeholder="全部" clearable style="width: 120px">
-            <el-option v-for="(t, v) in ST" :key="v" :label="t" :value="Number(v)" />
-          </el-select>
-        </el-form-item>
         <el-form-item>
           <el-button type="primary" @click="search"><el-icon><Search /></el-icon>查询</el-button>
           <el-button @click="reset">重置</el-button>
@@ -18,38 +13,45 @@
 
     <div class="table-card">
       <div class="toolbar">
-        <el-button type="primary" :disabled="!settleable.length || settling" :loading="settling" @click="settle">批量结算(已选 {{ settleable.length }} 条,合计 {{ settleSum }})</el-button>
+        <el-button type="primary" plain @click="openMonthly()">按合同月结</el-button>
         <el-button @click="batches.visible = true; loadBatches()">结算批次</el-button>
-        <el-button type="primary" plain @click="openMonthly">按合同月结</el-button>
-        <span class="hint">只有「可结算」状态的行能结算;冻结行等到账/解冻期满后自动转可结算。按合同月结:可选择合同开始月到上个月之间的任意月份(上个月仅限每月 3-10 号,更早月份可随时补结)。</span>
-        <p class="hint hint-block">本表是按发货日记录的佣金流水：每个发货日一条，“解冻时间”是发货日加冻结期（默认 7 天），所以会出现晚于今天的日期，不是发货日。结算单（结算批次）按月生成：每月 8 日 10:00 自动把当月之前已解冻的佣金按“合同 × 月份”各生成一个批次，也可以手动按合同月结。</p>
+        <span class="hint">一个月一个合同一行。冻结的佣金发货日加冻结期（默认 7 天）后自动转为可结算；每月 8 日 10:00 自动把上月及更早已解冻的佣金按“合同 × 月份”结算，也可以在这里手动结算。</span>
       </div>
-      <el-table :data="list" v-loading="loading" border stripe @selection-change="onSelect">
-        <el-table-column type="selection" width="45" :selectable="isSettleable" />
-        <el-table-column prop="id" label="ID" width="70" />
-        <el-table-column prop="referralOrderId" label="订单" width="80" />
-        <el-table-column label="发货日" width="110"><template #default="{ row }">{{ row.orderEventTime ? String(row.orderEventTime).slice(0, 10) : '—' }}</template></el-table-column>
-        <el-table-column prop="promoterName" label="伙伴" width="110"><template #default="{ row }">{{ row.promoterName || '#' + row.promoterId }}</template></el-table-column>
-        <el-table-column prop="positionCode" label="岗位" width="70" />
-        <el-table-column label="计佣依据" min-width="190"><template #default="{ row }"><CommissionBasis :row="row" /></template></el-table-column>
-        <el-table-column label="历史基数(元)" width="115" align="right"><template #default="{ row }">{{ row.pricingId != null ? '—' : money(row.baseAmount) }}</template></el-table-column>
-        <el-table-column label="金额(元)" width="110" align="right">
-          <template #default="{ row }"><span :class="{ neg: row.sign === -1 }">{{ row.pricingId != null ? Number(row.amount || 0).toFixed(3) : money(row.amount) }}</span></template>
-        </el-table-column>
-        <el-table-column label="状态" width="90"><template #default="{ row }"><el-tag :type="stType(row.status)">{{ ST[row.status] }}</el-tag></template></el-table-column>
-        <el-table-column prop="unfreezeAt" label="解冻时间（发货日＋冻结期）" width="190" />
-        <el-table-column prop="settleBatchId" label="批次" width="80" />
-        <el-table-column label="操作" width="90" fixed="right">
+      <el-table :data="months" v-loading="loading" border stripe>
+        <el-table-column prop="month" label="月份" width="100" />
+        <el-table-column label="合同" min-width="200"><template #default="{ row }"><div>{{ row.customerName || '—' }}</div><div class="sub">{{ row.contractNo || '#' + row.contractId }}</div></template></el-table-column>
+        <el-table-column label="伙伴" min-width="120"><template #default="{ row }">{{ row.promoters || '—' }}</template></el-table-column>
+        <el-table-column prop="tickets" label="发货票数" width="100" align="right" />
+        <el-table-column label="佣金合计(元)" width="130" align="right"><template #default="{ row }">{{ amt(row.total) }}</template></el-table-column>
+        <el-table-column label="冻结中" width="110" align="right"><template #default="{ row }">{{ amt(row.frozen) }}</template></el-table-column>
+        <el-table-column label="可结算" width="110" align="right"><template #default="{ row }"><span :class="{ ok: Number(row.settleable) > 0 }">{{ amt(row.settleable) }}</span></template></el-table-column>
+        <el-table-column label="已结算/已提现" width="130" align="right"><template #default="{ row }">{{ amt(row.settled) }}</template></el-table-column>
+        <el-table-column label="操作" width="150" fixed="right">
           <template #default="{ row }">
-            <el-button v-if="[1, 2].includes(row.status) && row.sign === 1 && !row.withdrawalId" link type="danger" @click="voidOne(row)">作废</el-button>
+            <el-button v-if="Number(row.settleable) > 0" link type="primary" :disabled="isFiltered" :title="isFiltered ? '筛选伙伴时只显示该伙伴的金额，请取消筛选后再结算整个合同月份' : ''" @click="settleRow(row)">结算</el-button>
+            <el-button link @click="openDetail(row)">明细</el-button>
           </template>
         </el-table-column>
       </el-table>
-      <el-pagination class="pager" background layout="total, prev, pager, next, sizes"
-                     :total="total" v-model:current-page="query.pageNo"
-                     v-model:page-size="query.pageSize" :page-sizes="[10,20,50]" @change="load" />
     </div>
 
+    <el-drawer v-model="detail.visible" :title="`${detail.title} 佣金明细（按发货日）`" size="920px">
+      <el-table :data="detail.list" v-loading="detail.loading" border stripe size="small">
+        <el-table-column prop="id" label="ID" width="70" />
+        <el-table-column label="发货日" width="110"><template #default="{ row }">{{ row.orderEventTime ? String(row.orderEventTime).slice(0, 10) : '—' }}</template></el-table-column>
+        <el-table-column prop="promoterName" label="伙伴" width="100"><template #default="{ row }">{{ row.promoterName || '#' + row.promoterId }}</template></el-table-column>
+        <el-table-column prop="positionCode" label="岗位" width="70" />
+        <el-table-column label="计佣依据" min-width="190"><template #default="{ row }"><CommissionBasis :row="row" /></template></el-table-column>
+        <el-table-column label="金额(元)" width="100" align="right"><template #default="{ row }"><span :class="{ neg: row.sign === -1 }">{{ row.pricingId != null ? Number(row.amount || 0).toFixed(3) : money(row.amount) }}</span></template></el-table-column>
+        <el-table-column label="状态" width="80"><template #default="{ row }"><el-tag :type="stType(row.status)">{{ ST[row.status] }}</el-tag></template></el-table-column>
+        <el-table-column prop="unfreezeAt" label="解冻时间" width="170" />
+        <el-table-column label="操作" width="70">
+          <template #default="{ row }"><el-button v-if="[1, 2].includes(row.status) && row.sign === 1 && !row.withdrawalId" link type="danger" @click="voidOne(row)">作废</el-button></template>
+        </el-table-column>
+      </el-table>
+      <el-pagination class="pager" small background layout="total, prev, pager, next" :total="detail.total"
+                     v-model:current-page="detail.pageNo" :page-size="detail.pageSize" @current-change="loadDetail" />
+    </el-drawer>
     <el-drawer v-model="batches.visible" title="结算批次" size="520px">
       <el-table :data="batches.list" size="small" border>
         <el-table-column prop="batchNo" label="批次号" width="180" />
@@ -101,41 +103,48 @@ const ST = { 1: '冻结', 2: '可结算', 3: '已结算', 4: '已提现', 5: '�
 const SIGN = { 1: '园区签', 2: '直签' }
 const stType = (s) => ({ 2: 'success', 3: '', 4: 'info', 5: 'danger' }[s] || 'warning')
 
-const settling = ref(false)
 const loading = ref(false)
-const list = ref([])
-const total = ref(0)
-const query = reactive({ pageNo: 1, pageSize: 20, promoterId: null, promoterName: '', status: null })
-const selected = ref([])
-// 扣回行(sign=-1)只能在打款时抵扣,不能拿去结算,否则余额公式就不再认它
-const isSettleable = (row) => row.status === 2 && row.sign === 1 && !row.withdrawalId
-const settleable = computed(() => selected.value.filter(isSettleable))
-const settleSum = computed(() => settleable.value.reduce((a, r) => a + Number(r.amount || 0), 0).toFixed(3))
+const months = ref([])
+const query = reactive({ promoterId: null, promoterName: '' })
+const isFiltered = computed(() => !!query.promoterId || !!String(query.promoterName || '').trim())
+const amt = (v) => Number(v || 0).toFixed(3)
 
 async function load() {
   loading.value = true
   try {
-    const res = await mktCommissionApi.page(query)
-    list.value = res.records; total.value = res.total
+    months.value = await mktCommissionApi.monthly({ promoterId: query.promoterId || undefined, promoterName: String(query.promoterName || '').trim() || undefined })
   } finally { loading.value = false }
 }
-function search() { query.pageNo = 1; load() }
-function reset() { Object.assign(query, { pageNo: 1, promoterId: null, promoterName: '', status: null }); load() }
-function onSelect(rows) { selected.value = rows }
+function search() { load() }
+function reset() { Object.assign(query, { promoterId: null, promoterName: '' }); load() }
 
-async function settle() {
-  await ElMessageBox.confirm(`将 ${settleable.value.length} 条可结算流水结算为「已结算」,合计 ${settleSum.value} 元?`, '批量结算', { type: 'warning' })
-  if(settling.value)return
-  settling.value=true
-  try { const batchNo = await mktCommissionApi.settle(settleable.value.map(r => r.id)); selected.value=[]
-    ElMessage.success(`已结算,批次 ${batchNo}`); await load()
-  } finally { settling.value=false }
+// 一行 = 一个合同的一个月份:直接按合同月结
+async function settleRow(row) {
+  try {
+    await ElMessageBox.confirm(`将结算 ${row.customerName || row.contractNo} ${row.month} 月可结算的佣金 ${amt(row.settleable)} 元(含该合同当月全部伙伴),确认?`, '按合同月结', { type: 'warning' })
+  } catch { return }
+  const result = await mktCommissionApi.settleContract({ contractId: row.contractId, month: row.month })
+  if (result.settleCount > 0) ElMessage.success(`已结算 ${result.settleCount} 条,批次 ${result.batchNo}`)
+  else ElMessage.info('该月份没有可结算的佣金')
+  await load()
+}
+
+const detail = reactive({ visible: false, loading: false, title: '', contractId: null, month: null, list: [], total: 0, pageNo: 1, pageSize: 20 })
+async function loadDetail() {
+  detail.loading = true
+  try {
+    const res = await mktCommissionApi.page({ pageNo: detail.pageNo, pageSize: detail.pageSize, contractId: detail.contractId, month: detail.month })
+    detail.list = res.records; detail.total = res.total
+  } finally { detail.loading = false }
+}
+function openDetail(row) {
+  Object.assign(detail, { visible: true, title: `${row.customerName || row.contractNo} ${row.month}`, contractId: row.contractId, month: row.month, pageNo: 1 })
+  loadDetail()
 }
 async function voidOne(row) {
   const { value } = await ElMessageBox.prompt('作废原因', '作废佣金', { inputPattern: /\S+/, inputErrorMessage: '原因必填' })
-  await mktCommissionApi.void(row.id, { reason: value }); ElMessage.success('已作废'); load()
+  await mktCommissionApi.void(row.id, { reason: value }); ElMessage.success('已作废'); await loadDetail(); await load()
 }
-
 // 按合同月结:可选合同开始月到上个月之间的任意月份;上个月仅限每月 3-10 号,更早月份可随时补结
 const monthly = reactive({ visible: false, contracts: [], loadingContracts: false, contractId: null, month: null, settling: false, result: null })
 const ym = (y, m) => `${y}-${String(m).padStart(2, '0')}`
@@ -194,6 +203,8 @@ onMounted(load)
 .hint { color: var(--el-text-color-secondary); font-size: 12px; }
 .hint-block { flex-basis: 100%; margin: 4px 0 0; line-height: 1.6; }
 .neg { color: var(--el-color-danger); }
+.ok { color: var(--el-color-success); font-weight: 600; }
+.sub { color: var(--el-text-color-secondary); font-size: 12px; }
 .pager { margin-top: 16px; justify-content: flex-end; }
 .mt { margin-top: 12px; }
 .full { width: 100%; }

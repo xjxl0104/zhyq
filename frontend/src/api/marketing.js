@@ -161,6 +161,7 @@ export const mktOrderApi = {
 // 佣金结算
 export const mktCommissionApi = {
   page: (params) => request.get(`${BASE}/commission/page`, { params }),
+  monthly: (params) => request.get(`${BASE}/commission/monthly`, { params }),
   settle: (ids) => postRaw(`${BASE}/commission/settle`, { ids }),
   void: (id, data) => request.post(`${BASE}/commission/${id}/void`, data),
   batches: (params) => request.get(`${BASE}/commission/batches`, { params }),
