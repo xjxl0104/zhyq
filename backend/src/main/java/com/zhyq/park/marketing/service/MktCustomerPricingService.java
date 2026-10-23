@@ -313,7 +313,7 @@ public class MktCustomerPricingService {
 
     /** 说明为什么当前后台账号只能查看、不能设置合同分配，便于排查（尤其是后台账号未关联 P4 伙伴档案）。 */
     static String readOnlyReason(MktPromoter actor, MktPromoter partner) {
-        if (actor == null) return "当前后台账号未关联伙伴档案：请在系统用户中把手机号设为与你的伙伴档案一致（或昵称与伙伴姓名一致）后重新登录";
+        if (actor == null) return "当前后台账号未关联伙伴档案：请在系统用户中把手机号设为与你的 P4 伙伴档案一致后重新登录（后台账号只按手机号关联伙伴）";
         if (!"P4".equals(actor.getPositionCode()))
             return "当前账号关联的伙伴「" + actor.getName() + "」岗位是 " + actor.getPositionCode() + "，仅 P4 可设置";
         if (!Integer.valueOf(1).equals(actor.getStatus()))

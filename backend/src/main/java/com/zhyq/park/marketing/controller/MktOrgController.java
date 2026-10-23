@@ -118,7 +118,7 @@ public class MktOrgController {
     private MktPromoter requireActor() {
         MktPromoter actor = adminActorService.currentPromoter();
         if (actor == null) {
-            throw new BizException(403, "当前后台账号未关联伙伴档案：请在系统用户中把手机号设为与你的 P4 伙伴档案一致（或昵称与伙伴姓名一致）后重新登录");
+            throw new BizException(403, "当前后台账号未关联伙伴档案：请在系统用户中把手机号设为与你的 P4 伙伴档案一致后重新登录（后台账号只按手机号关联伙伴）");
         }
         return actor;
     }

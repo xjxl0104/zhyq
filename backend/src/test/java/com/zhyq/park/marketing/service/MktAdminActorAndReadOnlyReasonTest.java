@@ -14,16 +14,6 @@ class MktAdminActorAndReadOnlyReasonTest {
     }
 
     @Test
-    void 后台昵称末尾的括号备注不影响与伙伴姓名匹配() {
-        assertThat(MktAdminActorService.withoutRemark("丁超(超级管理员)")).isEqualTo("丁超");
-        assertThat(MktAdminActorService.withoutRemark("丁超（超级管理员）")).isEqualTo("丁超");
-        assertThat(MktAdminActorService.withoutRemark(" 丁超 (运营) ")).isEqualTo("丁超");
-        assertThat(MktAdminActorService.withoutRemark("丁超")).isEqualTo("丁超");
-        assertThat(MktAdminActorService.withoutRemark("A(b)(c)")).isEqualTo("A(b)");
-        assertThat(MktAdminActorService.withoutRemark(null)).isNull();
-    }
-
-    @Test
     void 只读原因逐项说明() {
         MktPromoter ding = promoter("丁超", "P4", 1);
         MktPromoter partner = promoter("乙", "P2", 1);
