@@ -232,9 +232,9 @@ public class MktPromoterService {
         throw new BizException("重置邀请码失败,请重试");
     }
 
+    /** 内部人员与普通伙伴一样计佣:不再按手机号命中后台用户而留存份额,恒为 false。 */
     public boolean isInternal(String phone) {
-        return phone != null && phone.matches("^1\\d{10}$")
-                && sysUserMapper.selectCount(new LambdaQueryWrapper<SysUser>().eq(SysUser::getPhone, phone)) > 0;
+        return false;
     }
 
     static String randomInvite() {
