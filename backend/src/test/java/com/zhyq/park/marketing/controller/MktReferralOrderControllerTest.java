@@ -45,6 +45,8 @@ class MktReferralOrderControllerTest {
         // 与服务费账单、营销看板同口径:作废/退款订单的金额不能计入合计
         ArgumentCaptor<QueryWrapper<MktReferralOrder>> sql=ArgumentCaptor.forClass(QueryWrapper.class);verify(orders).selectMaps(sql.capture());
         assertThat(sql.getValue().getSqlSelect()).contains("SUM(CASE WHEN status = 2 THEN service_fee ELSE 0 END)").contains("SUM(CASE WHEN status = 2 THEN pool_amount ELSE 0 END)");
+        // 已确认按票数统计：汇总订单一条代表 N 票，普通出库单按 1 票
+        assertThat(sql.getValue().getSqlSelect()).contains("SUM(CASE WHEN status = 2 THEN COALESCE(commission_order_count, 1) ELSE 0 END) AS confirmedCount");
     }
     private static MktReferralOrderController controller(MktReferralOrderMapper orders,MktServiceContractMapper contracts){
         return controller(orders,contracts,mock(MktServiceFeeBillLineMapper.class));
