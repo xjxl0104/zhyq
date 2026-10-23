@@ -27,7 +27,7 @@
           <view class="income-name">{{ c.customerName || '客户' }} · {{ SRC[c.sourceType] || '佣金' }}</view>
           <view v-if="c.pricingId || c.amountPerOrder != null" class="income-message">自定义单价 {{ formatPerOrder(c.amountPerOrder) }} 元／单 × {{ c.orderCount ?? '—' }} 单</view>
           <view v-else class="income-message">历史规则：{{ c.grade ? c.grade + ' 级' : '' }} {{ c.poolFactor ?? '—' }}{{ c.sourceType === 1 ? ' 个月' : '%' }} × 级差 {{ c.diffPct ?? '—' }}%（份额 {{ c.sharePct ?? '—' }}%）</view>
-          <view class="income-message">{{ incomeTime(c.time) }}<text v-if="c.status === 1 && c.unfreezeAt"> · 预计 {{ incomeTime(c.unfreezeAt, true) }} 解冻</text></view>
+          <view class="income-message">{{ incomeTime(c.time) }}<text v-if="c.sourceType === 2 && c.eventTime"> · 发货日 {{ incomeTime(c.eventTime, true) }}</text><text v-if="c.status === 1 && c.unfreezeAt"> · 预计 {{ incomeTime(c.unfreezeAt, true) }} 解冻</text></view>
         </view>
         <view class="income-value">
           <view class="money" :class="{ 'income-negative': c.sign === -1 }">{{ incomeAmount(c.amount) }} 元</view>
