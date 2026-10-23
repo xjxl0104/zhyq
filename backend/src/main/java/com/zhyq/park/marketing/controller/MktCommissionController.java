@@ -46,6 +46,34 @@ public class MktCommissionController {
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private com.zhyq.park.marketing.mapper.MktReferralOrderMapper orderMapper;
 
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.zhyq.park.marketing.service.MktMonthlySettlementService monthlyService;
+
+    @Operation(summary = "按月汇总：一个月×一个合同一行") @PreAuthorize("hasAuthority('crm:marketing:commission:query')") @GetMapping("/monthly")
+    public Result<List<Map<String, Object>>> monthly(@RequestParam(required = false) Long promoterId,
+                                                      @RequestParam(required = false) String promoterName) {
+        List<Long> ids = null;
+        if (promoterId != null) ids = List.of(promoterId);
+        if (promoterName != null && !promoterName.isBlank()) {
+            String kw = promoterName.trim();
+            List<Long> byName = promoterMapper.selectList(new LambdaQueryWrapper<MktPromoter>()
+                    .and(q -> q.like(MktPromoter::getName, kw).or().like(MktPromoter::getPhone, kw))
+                    .select(MktPromoter::getId)).stream().map(MktPromoter::getId).toList();
+            ids = ids == null ? byName : ids.stream().filter(byName::contains).toList();
+        }
+        List<Map<String, Object>> rows = new java.util.ArrayList<>();
+        for (Map<String, Object> r : monthlyService.monthlySummary(ids)) {
+            Map<String, Object> m = new HashMap<>();
+            m.put("month", r.get("ym")); m.put("contractId", r.get("contract_id")); m.put("contractNo", r.get("contract_no"));
+            m.put("startDate", r.get("start_date") == null ? null : String.valueOf(r.get("start_date")));
+            m.put("customerName", r.get("customer_name")); m.put("promoters", r.get("promoters"));
+            m.put("tickets", r.get("tickets")); m.put("total", r.get("total")); m.put("frozen", r.get("frozen"));
+            m.put("settleable", r.get("settleable")); m.put("settled", r.get("settled"));
+            rows.add(m);
+        }
+        return Result.ok(rows);
+    }
+
     @Operation(summary = "分页") @PreAuthorize("hasAuthority('crm:marketing:commission:query')") @GetMapping("/page")
     public Result<PageResult<Map<String, Object>>> page(@RequestParam(defaultValue = "1") int pageNo,
                                                         @RequestParam(defaultValue = "20") int pageSize,
@@ -53,7 +81,10 @@ public class MktCommissionController {
                                                         @RequestParam(required = false) Integer status,
                                                         @RequestParam(required = false) Long referralOrderId,
                                                         @RequestParam(required = false) Long projectId,
-                                                        @RequestParam(required = false) String promoterName) {
+                                                        @RequestParam(required = false) String promoterName,
+                                                        @RequestParam(required = false) Long contractId,
+                                                        @RequestParam(required = false) String month) {
+        if (month != null && !month.matches("^\\d{4}-(0[1-9]|1[0-2])$")) throw new com.zhyq.park.common.exception.BizException("月份格式应为 yyyy-MM");
         // 伙伴姓名/手机号模糊搜索:先找出匹配的伙伴 id,没有匹配就直接查不到
         List<Long> nameIds = null;
         if (promoterName != null && !promoterName.isBlank()) {
@@ -66,6 +97,9 @@ public class MktCommissionController {
                 .eq(promoterId != null, MktPromoterCommission::getPromoterId, promoterId)
                 .in(nameIds != null && !nameIds.isEmpty(), MktPromoterCommission::getPromoterId, nameIds)
                 .apply(nameIds != null && nameIds.isEmpty(), "1 = 0")
+                .inSql(contractId != null && month != null, MktPromoterCommission::getReferralOrderId,
+                        "SELECT id FROM crm_referral_order WHERE deleted = 0 AND source_type = " + MktCommissionService.SOURCE_OUTBOUND
+                                + " AND source_id = " + contractId + " AND DATE_FORMAT(event_time, '%Y-%m') = '" + month + "'")
                 .eq(status != null, MktPromoterCommission::getStatus, status)
                 .eq(referralOrderId != null, MktPromoterCommission::getReferralOrderId, referralOrderId)
                 .and(projectId != null, q -> q.eq(MktPromoterCommission::getProjectId, projectId).or().isNull(MktPromoterCommission::getProjectId))
