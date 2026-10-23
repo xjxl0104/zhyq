@@ -11,6 +11,9 @@
     <el-alert v-if="config && !config.configured" type="info" :closable="false" title="尚无共享接口，可点击“配置接口同步”为客户填写专用接口。历史快照仍可查询。" />
     <p v-if="config?.configured" class="config-note">共享接口：{{ config.baseUrl }}<span v-if="config.appId"> · 应用：{{ config.appId }}</span></p>
     <el-alert v-if="errors.maps" type="error" :closable="false" :title="errors.maps" />
+    <el-alert v-if="lastRun?.result?.failed > 0" type="error" show-icon :closable="false"
+              :title="`上次${lastRun.trigger}生成佣金订单（${lastRun.at}）有 ${lastRun.result.failed} 个发货日失败：${lastRun.result.errors?.[0] || '未知原因'}`"
+              description="常见原因：合同还没配置每单总佣金。配置后下一次每天 10:00 的自动生成会补上；失败也会推送告警。" />
     <el-alert v-if="focus && maps.length && !visibleMaps.length" type="info" :closable="false" title="所选客户在该作业仓库尚未配置发货量同步，可点击上方客户列表中的“配置同步”或本区的“配置接口同步”为其配置。" />
     <el-table v-loading="loading.maps" :data="visibleMaps" size="small" border empty-text="暂无云仓发货量同步配置，不影响客户与作业仓库建档。">
       <el-table-column prop="customerName" label="客户（货主）" min-width="130"><template #default="{ row }">{{ row.customerName || row.customerId }}</template></el-table-column>
@@ -32,7 +35,7 @@
           <el-option v-for="item in visibleMaps" :key="item.id" :value="String(item.id)" :label="mapLabel(item)" />
         </el-select></el-form-item>
         <el-form-item label="发货日期"><el-date-picker v-model="dateRange" class="date-range" type="daterange" value-format="YYYY-MM-DD" range-separator="至" start-placeholder="开始日期" end-placeholder="结束日期" :clearable="false" :disabled-date="disabledDate" @change="changeRange" /></el-form-item>
-        <el-form-item><el-button :loading="loading.volume" @click="queryVolume">查询快照</el-button><el-button v-if="canConfig" type="primary" :disabled="!sourceReady || selectedMap?.status !== 1 || selectedMap?.identityMismatch" :loading="loading.sync" @click="sync">补拉此区间</el-button><el-button :disabled="!sourceReady || loading.sync || selectedMap?.identityMismatch" :loading="loading.reconcile" @click="reconcile">只读对账</el-button></el-form-item>
+        <el-form-item><el-button :loading="loading.volume" @click="queryVolume">查询快照</el-button><el-button v-if="canConfig" type="primary" :disabled="!sourceReady || selectedMap?.status !== 1 || selectedMap?.identityMismatch" :loading="loading.sync" @click="sync">补拉此区间</el-button><el-button :disabled="!sourceReady || loading.sync || selectedMap?.identityMismatch" :loading="loading.reconcile" @click="reconcile">只读对账</el-button><el-button v-if="canBackfill" :disabled="selectedMap?.status !== 1 || selectedMap?.identityMismatch" @click="openBackfill">历史回补佣金</el-button></el-form-item>
       </el-form>
       <p class="hint range-hint">北京时间，单次最多 92 天。停用关联后保留历史快照；缺少统计的日期不视作零票。</p>
       <el-alert v-if="errors.volume" type="error" :closable="false" :title="errors.volume" />
@@ -105,6 +108,42 @@
       <p class="hint">日志的“缺失”指本地已有快照、此次接口未返回的日期，原快照会保留。</p>
       <el-pagination class="pager" background layout="total, prev, pager, next" :total="logTotal" v-model:current-page="logPage" :page-size="20" @current-change="loadLogs" />
     </template>
+
+    <el-dialog v-model="backfill.visible" title="历史回补佣金" width="min(820px, calc(100vw - 32px))" :close-on-click-modal="false">
+      <p class="dialog-hint">每天 10:00 的自动任务只处理最近 35 天。更早且还没生成佣金的日期要先在这里核对每单金额和分成，确认后再回补，避免历史账按错的价格入账。</p>
+      <el-alert v-if="backfill.error" type="error" :closable="false" :title="backfill.error" />
+      <div v-loading="backfill.loading">
+        <el-empty v-if="backfill.preview && !backfill.preview.parts.length" description="没有需要回补的历史日期" />
+        <template v-if="backfill.preview?.parts.length">
+          <p class="dialog-hint">客户：{{ backfill.preview.customerName }}。将回补 <strong>{{ backfill.preview.rangeFrom }}</strong> 至 <strong>{{ backfill.preview.rangeTo }}</strong> 之间共 {{ backfill.preview.pendingDays }} 个发货日、{{ formatCount(backfill.preview.pendingTickets) }} 票；<span v-if="backfill.preview.skippedDays">另有 {{ backfill.preview.skippedDays }} 天因没有有效合同或已有手工/ERP 计佣订单而跳过。</span></p>
+          <div v-for="part in backfill.preview.parts" :key="part.contractId" class="backfill-part">
+            <el-descriptions :column="2" border size="small">
+              <el-descriptions-item label="合同">{{ part.contractNo }}（{{ part.signMode === 2 ? '云仓直签' : '园区签' }}）</el-descriptions-item>
+              <el-descriptions-item label="成交伙伴">{{ part.sellerName || '—' }}</el-descriptions-item>
+              <el-descriptions-item label="回补范围">{{ part.firstDay }} 至 {{ part.lastDay }}，{{ part.days }} 天 / {{ formatCount(part.tickets) }} 票</el-descriptions-item>
+              <el-descriptions-item label="每单总佣金">{{ part.totalPerOrder == null ? '—' : `${part.totalPerOrder} 元` }}</el-descriptions-item>
+              <el-descriptions-item label="平台/公司留存">{{ part.platformPerOrder == null ? '—' : `${part.platformPerOrder} 元/单` }}</el-descriptions-item>
+              <el-descriptions-item label="成员合计">{{ part.memberPerOrder == null ? '—' : `${part.memberPerOrder} 元/单` }}</el-descriptions-item>
+            </el-descriptions>
+            <el-alert v-if="part.blocked" type="error" :closable="false" :title="`无法回补：${part.blocked}。请先到“结算 → 计佣订单 → 佣金分配”配置后再回来。`" />
+            <el-table v-else :data="part.members" size="small" border>
+              <el-table-column prop="name" label="成员" min-width="110" />
+              <el-table-column prop="positionCode" label="岗位" width="70" />
+              <el-table-column prop="role" label="角色" width="100" />
+              <el-table-column prop="perOrder" label="每单（元）" width="110" align="right" />
+              <el-table-column prop="estimated" label="预计回补（元）" width="130" align="right" />
+            </el-table>
+            <p v-if="!part.blocked" class="hint">预计佣金合计（总佣金）{{ part.estimatedTotal }} 元，其中成员 {{ part.estimatedMembers }} 元，平台/公司留存 {{ (Number(part.estimatedTotal) - Number(part.estimatedMembers)).toFixed(3) }} 元。</p>
+          </div>
+          <p class="hint">注意：回补使用的是现在的每单金额和分成链路，不是发货当天的；回补后已生成的佣金不会因日后改价自动重算。如需调整，请先到“佣金分配”修改，再回来重新预览。</p>
+          <el-checkbox v-model="backfill.confirmed">我已核对以上每单金额、平台留存和各成员分成，同意按此回补</el-checkbox>
+        </template>
+      </div>
+      <template #footer>
+        <el-button :disabled="backfill.busy" @click="backfill.visible = false">取消</el-button>
+        <el-button type="primary" :loading="backfill.busy" :disabled="!canConfirmBackfill" @click="confirmBackfill">确认回补</el-button>
+      </template>
+    </el-dialog>
 
     <el-dialog v-model="mapDialog.visible" title="配置云仓发货量同步" width="min(560px, calc(100vw - 32px))" :close-on-click-modal="false" @closed="closeMap">
       <p class="dialog-hint">加盟云仓：{{ warehouseName || '当前所选云仓' }}。仅为该客户本人配置数据来源，不得使用其他客户的发货数据。</p>
@@ -225,6 +264,43 @@ function rangeParams() {
   }
   return { mapId: mapId.value, startDate, endDate }
 }
+// 最近一次（定时或手动）生成佣金订单的结果；有失败时在面板顶部提示。读取失败不影响其他功能。
+const lastRun = ref(null)
+async function loadLastRun() {
+  if (!canQuery.value) return
+  try { const run = await mktYunshanApi.lastRun(); if (!disposed) lastRun.value = run || null }
+  catch { if (!disposed) lastRun.value = null }
+}
+
+// 历史回补：先预览（按当前每单金额、平台留存和成员分成估算），勾选确认后才回补
+const canBackfill = computed(() => hasPermission('crm:marketing:order:edit'))
+const backfill = reactive({ visible: false, loading: false, busy: false, preview: null, error: '', confirmed: false })
+const canConfirmBackfill = computed(() => !!backfill.preview?.parts?.length && backfill.confirmed && !backfill.loading && !backfill.busy
+  && backfill.preview.parts.every(part => !part.blocked))
+async function openBackfill() {
+  if (!canBackfill.value || !mapId.value) return
+  Object.assign(backfill, { visible: true, loading: true, busy: false, preview: null, error: '', confirmed: false })
+  const target = mapId.value
+  try {
+    const preview = await mktYunshanApi.backfillPreview({ mapId: target })
+    if (!disposed && target === mapId.value) backfill.preview = preview
+  } catch (error) { if (!disposed) backfill.error = error.message || '回补预览加载失败，请重试。' }
+  finally { if (!disposed) backfill.loading = false }
+}
+async function confirmBackfill() {
+  if (!canConfirmBackfill.value) return
+  const { rangeFrom, rangeTo } = backfill.preview
+  backfill.busy = true; backfill.error = ''
+  try {
+    const result = await mktYunshanApi.generateOrders({ mapId: mapId.value, startDate: rangeFrom, endDate: rangeTo })
+    ElMessage.success(`回补完成：新建 ${result.created} 日，重建 ${result.rebuilt} 日，无变化 ${result.unchanged} 日，跳过 ${result.skipped} 日，失败 ${result.failed} 日`)
+    if (result.failed) ElMessage.warning(result.errors?.[0] || '部分日期回补失败，请检查客户佣金配置')
+    backfill.visible = false
+    await Promise.all([loadVolume(), loadLastRun()])
+  } catch (error) { backfill.error = error.message || '回补失败，请重试。' }
+  finally { backfill.busy = false }
+}
+
 // 按天核对：每个有快照的日期已生成多少票的计佣订单；读取失败只是不显示这一列，不影响快照查询
 const dailyOrders = ref({})
 async function loadDailyOrders(params) {
@@ -265,7 +341,7 @@ async function refresh() {
   try {
     const [settings, rows] = await Promise.all([mktYunshanApi.config(), mktYunshanApi.maps(String(props.warehouseId))])
     if (disposed || version !== versions.maps) return
-    config.value = settings; maps.value = rows; loadMonthly()
+    config.value = settings; maps.value = rows; loadMonthly(); loadLastRun()
     if (!visibleMaps.value.some(item => String(item.id) === mapId.value)) mapId.value = visibleMaps.value.length ? String(visibleMaps.value[0].id) : ''
     if (mapId.value) await changeMap()
   } catch (error) { if (version === versions.maps && !disposed) errors.maps = error.message || '无法加载发货量接口配置和客户关联，请重试。' }
@@ -457,6 +533,7 @@ defineExpose({ openMap })
 .config-note { overflow-wrap: anywhere; }
 .entity-no { color: var(--el-text-color-secondary); font-size: 12px; overflow-wrap: anywhere; }
 .sync-state { margin-left: 6px; }
+.backfill-part { margin: 12px 0; display: grid; gap: 8px; }
 .commission-ok { color: var(--el-color-success); }
 .commission-none { color: var(--el-color-warning); }
 .commission-diff { color: var(--el-color-danger); }

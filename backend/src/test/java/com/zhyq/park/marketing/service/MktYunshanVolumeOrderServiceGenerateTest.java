@@ -36,6 +36,7 @@ class MktYunshanVolumeOrderServiceGenerateTest {
     private final MktServiceContractMapper contracts = mock(MktServiceContractMapper.class);
     private final CustomerMapper customers = mock(CustomerMapper.class);
     private final MktWarehouseMapper warehouses = mock(MktWarehouseMapper.class);
+    private final MktPromoterMapper promoters = mock(MktPromoterMapper.class);
     private final MktReferralOrderMapper orders = mock(MktReferralOrderMapper.class);
     private final MktCommissionService commissionService = mock(MktCommissionService.class);
     private final MktCustomerPricingService pricing = mock(MktCustomerPricingService.class);
@@ -55,7 +56,7 @@ class MktYunshanVolumeOrderServiceGenerateTest {
     @BeforeEach void setup() {
         when(transactions.getTransaction(any())).thenReturn(new SimpleTransactionStatus());
         service = new MktYunshanVolumeOrderService(maps, volumes, contracts, customers, warehouses, orders, commissionService,
-                pricing, terms, settings, mock(MktAuditService.class), transactions);
+                pricing, terms, settings, mock(MktAuditService.class), promoters, transactions);
         var map = new MktYunshanVolumeMap(); map.setId(7L); map.setCustomerId(10L); map.setWarehouseId(1L); map.setProjectId(3L); map.setStatus(1);
         when(maps.selectList(any())).thenReturn(List.of(map));
         contract = new MktServiceContract(); contract.setId(100L); contract.setWarehouseId(1L); contract.setPartnerId(2L); contract.setSignMode(2); contract.setProjectId(3L);
@@ -175,6 +176,89 @@ class MktYunshanVolumeOrderServiceGenerateTest {
         assertThat(result.failed()).isEqualTo(1);
         assertThat(result.errors()).singleElement().asString().contains("尚未设置");
         verify(commissionService, never()).createAggregatedOutboundInTransaction(any(), anyInt());
+    }
+
+    private MktYunshanDailyVolume snapshotOn(LocalDate date, long tickets) {
+        var row = new MktYunshanDailyVolume(); row.setMapId(7L); row.setStatDate(date); row.setConsignNum(tickets); return row;
+    }
+    private void promotersExist() {
+        var owner = new MktPromoter(); owner.setId(4L); owner.setName("丁超");
+        var seller = new MktPromoter(); seller.setId(2L); seller.setName("乙");
+        when(promoters.selectById(4L)).thenReturn(owner);
+        when(promoters.selectById(2L)).thenReturn(seller);
+        when(pricing.forAccrual(10L, 100L)).thenReturn(new MktCustomerPricingService.PricingSnapshot(9L, 4L, "P4", bd("0.100"), bd("0.050"), bd("0.005"),
+                List.of(new MktCustomerPricingService.Beneficiary(3L, "张三", "P3", bd("0.020")))));
+    }
+
+    @Test void 定时任务只自动处理最近35天() {
+        service.generateScheduled();
+        var wrapper = ArgumentCaptor.forClass(com.baomidou.mybatisplus.core.conditions.Wrapper.class);
+        verify(volumes).selectList(wrapper.capture());
+        var start = LocalDate.now(ZoneId.of("Asia/Shanghai")).minusDays(35);
+        var query = (com.baomidou.mybatisplus.core.conditions.AbstractWrapper<?, ?, ?>) wrapper.getValue();
+        query.getSqlSegment();   // 先生成 SQL 片段，参数才会填充
+        assertThat(query.getParamNameValuePairs().values()).contains(start);
+        assertThat(service.lastRun()).isNotNull();
+        assertThat(service.lastRun().trigger()).isEqualTo("定时");
+    }
+
+    @Test void 手动生成记录最近一次结果() {
+        service.generate(null, null, null);
+        assertThat(service.lastRun().trigger()).isEqualTo("手动");
+        assertThat(service.lastRun().result().created()).isEqualTo(1);
+    }
+
+    @Test void 回补预览按合同汇总天数票数并按当前价格和链路估算金额() {
+        promotersExist();
+        var old = LocalDate.now(ZoneId.of("Asia/Shanghai")).minusDays(60);
+        when(volumes.selectList(any())).thenReturn(List.of(snapshotOn(old, 4), snapshotOn(old.plusDays(1), 6)));
+        var map = new MktYunshanVolumeMap(); map.setId(7L); map.setCustomerId(10L); map.setWarehouseId(1L);
+        when(maps.selectById(7L)).thenReturn(map);
+        contract.setContractNo("CS-1");
+        var preview = service.backfillPreview(7L);
+        assertThat(preview.pendingDays()).isEqualTo(2);
+        assertThat(preview.pendingTickets()).isEqualTo(10);
+        assertThat(preview.rangeFrom()).isEqualTo(old);
+        assertThat(preview.rangeTo()).isEqualTo(preview.windowFrom().minusDays(1));
+        var part = preview.parts().get(0);
+        assertThat(part).extracting("contractNo", "sellerName", "days", "tickets", "blocked").containsExactly("CS-1", "乙", 2, 10L, null);
+        assertThat(part.totalPerOrder()).isEqualByComparingTo("0.100");
+        assertThat(part.platformPerOrder()).isEqualByComparingTo("0.005");
+        assertThat(part.memberPerOrder()).isEqualByComparingTo("0.095");
+        assertThat(part.estimatedTotal()).isEqualByComparingTo("1.000");
+        assertThat(part.estimatedMembers()).isEqualByComparingTo("0.950");
+        assertThat(part.members()).extracting("name", "role").containsExactly(org.assertj.core.groups.Tuple.tuple("丁超", "P4 本人"), org.assertj.core.groups.Tuple.tuple("张三", "链路成员"));
+        assertThat(part.members().get(0).estimated()).isEqualByComparingTo("0.500");
+        assertThat(part.members().get(1).estimated()).isEqualByComparingTo("0.200");
+        verify(commissionService, never()).createAggregatedOutboundInTransaction(any(), anyInt());   // 预览不生成任何订单
+    }
+
+    @Test void 回补预览不含已经生成的日期且无合同的日期单独计数() {
+        promotersExist();
+        var old = LocalDate.now(ZoneId.of("Asia/Shanghai")).minusDays(60);
+        when(volumes.selectList(any())).thenReturn(List.of(snapshotOn(old, 4), snapshotOn(old.plusDays(1), 6)));
+        var map = new MktYunshanVolumeMap(); map.setId(7L); map.setCustomerId(10L); map.setWarehouseId(1L);
+        when(maps.selectById(7L)).thenReturn(map);
+        var generated = existing(40, "V1", 4); generated.setSourceNo("YS-7-" + old.format(DateTimeFormatter.BASIC_ISO_DATE) + "-V1");
+        when(orders.selectList(any())).thenReturn(List.of(generated));
+        assertThat(service.backfillPreview(7L).pendingTickets()).isEqualTo(6);   // 第一天已有 4 票佣金，不再回补
+        when(contracts.selectOne(any())).thenReturn(null);
+        var none = service.backfillPreview(7L);
+        assertThat(none.parts()).isEmpty();
+        assertThat(none.skippedDays()).isEqualTo(1);
+    }
+
+    @Test void 回补预览遇到未配置每单佣金时标记为无法回补() {
+        promotersExist();
+        when(pricing.forAccrual(10L, 100L)).thenThrow(new BizException("客户尚未设置 P4 每单佣金"));
+        var old = LocalDate.now(ZoneId.of("Asia/Shanghai")).minusDays(60);
+        when(volumes.selectList(any())).thenReturn(List.of(snapshotOn(old, 4)));
+        var map = new MktYunshanVolumeMap(); map.setId(7L); map.setCustomerId(10L); map.setWarehouseId(1L);
+        when(maps.selectById(7L)).thenReturn(map);
+        var part = service.backfillPreview(7L).parts().get(0);
+        assertThat(part.blocked()).contains("尚未设置");
+        assertThat(part.members()).isEmpty();
+        assertThat(part.estimatedTotal()).isNull();
     }
 
     @Test void 日票数异常时拒绝生成() {

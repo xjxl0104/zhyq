@@ -4,7 +4,7 @@ import YunshanVolumePanel from '../YunshanVolumePanel.vue'
 import { mktYunshanApi } from '@/api/marketing'
 const { permissions } = vi.hoisted(() => ({ permissions: new Set() }))
 vi.mock('@/utils/permission', () => ({ hasPermission: permission => permissions.has(permission) }))
-vi.mock('@/api/marketing', () => ({ mktYunshanApi: Object.fromEntries(['directory', 'customerSites', 'config', 'maps', 'customers', 'owners', 'warehouses', 'createMap', 'setStatus', 'volume', 'logs', 'sync', 'reconcile', 'monthly', 'dailyOrders'].map(key => [key, vi.fn()])) }))
+vi.mock('@/api/marketing', () => ({ mktYunshanApi: Object.fromEntries(['directory', 'customerSites', 'config', 'maps', 'customers', 'owners', 'warehouses', 'createMap', 'setStatus', 'volume', 'logs', 'sync', 'reconcile', 'monthly', 'dailyOrders', 'generateOrders', 'backfillPreview', 'lastRun'].map(key => [key, vi.fn()])) }))
 vi.mock('element-plus', async original => ({ ...await original(), ElMessage: { success: vi.fn(), warning: vi.fn() } }))
 const map = { id: '9007199254740993', customerId: '9007199254740995', customerName: '棒棒猪', parentOwnerNo: '0009007199254740993', parentOwnerName: '棒棒猪', parentWarehouseNo: '000123', parentWarehouseName: '授权仓库', status: 1, identityMismatch: false }
 const wrappers = []
@@ -27,6 +27,8 @@ beforeEach(() => {
   mktYunshanApi.volume.mockResolvedValue({ records: [], total: 0, totalConsignNum: '0', daysWithData: 0, daysMissing: 7, dataState: 'NO_STAT_DATA' })
   mktYunshanApi.logs.mockResolvedValue({ records: [], total: 0 })
   mktYunshanApi.monthly.mockResolvedValue({ year: 2026, months: [], yearTotal: 0, daysWithData: 0 })
+  mktYunshanApi.dailyOrders.mockResolvedValue([])
+  mktYunshanApi.lastRun.mockResolvedValue(null)
   mktYunshanApi.customers.mockResolvedValue({ records: [{ id: map.customerId, name: '棒棒猪' }], total: 21 })
   mktYunshanApi.owners.mockResolvedValue({ records: [{ no: map.parentOwnerNo, name: map.customerName }], pages: 1, total: 1 })
   mktYunshanApi.warehouses.mockResolvedValue({ records: [{ no: map.parentWarehouseNo, name: '授权仓库' }], pages: 1, total: 1 })
@@ -375,5 +377,68 @@ describe('发货量快照与佣金订单逐日核对', () => {
     await wrapper.vm.queryVolume(); await flushPromises()
     expect(wrapper.vm.volume.records).toHaveLength(1)
     expect(wrapper.vm.commissionText(wrapper.vm.volume.records[0])).toBe('未生成')
+  })
+})
+
+describe('历史回补佣金：先预览价格和链路，勾选确认后才回补', () => {
+  const member = (name, perOrder, estimated, role = '链路成员') => ({ promoterId: 1, name, positionCode: 'P3', role, perOrder, estimated })
+  const part = (extra = {}) => ({ contractId: 100, contractNo: 'CS-1', signMode: 2, sellerName: '乙', days: 2, tickets: 10, firstDay: '2026-08-24', lastDay: '2026-08-25',
+    totalPerOrder: '0.100', platformPerOrder: '0.015', memberPerOrder: '0.085', estimatedTotal: '1.000', estimatedMembers: '0.850', blocked: null,
+    members: [member('丁超', '0.050', '0.500', 'P4 本人'), member('张三', '0.020', '0.200')], ...extra })
+  const preview = (parts = [part()]) => ({ mapId: 9, customerName: '棒棒猪', windowFrom: '2026-09-18', rangeFrom: '2026-08-24', rangeTo: '2026-09-17', pendingDays: 2, pendingTickets: 10, skippedDays: 0, parts })
+
+  it('预览成员金额，勾选确认前不能回补，确认后按预览区间回补', async () => {
+    permissions.add('crm:marketing:order:edit')
+    mktYunshanApi.backfillPreview.mockResolvedValue(preview())
+    mktYunshanApi.generateOrders.mockResolvedValue({ created: 2, rebuilt: 0, unchanged: 0, skipped: 0, failed: 0, errors: [] })
+    const wrapper = mount(); await flushPromises()
+    await wrapper.vm.openBackfill(); await flushPromises()
+    expect(mktYunshanApi.backfillPreview).toHaveBeenCalledWith({ mapId: wrapper.vm.mapId })
+    expect(wrapper.vm.backfill.preview.parts[0].members.map(item => item.name)).toEqual(['丁超', '张三'])
+    expect(wrapper.vm.canConfirmBackfill).toBe(false)
+    await wrapper.vm.confirmBackfill()
+    expect(mktYunshanApi.generateOrders).not.toHaveBeenCalled()
+    wrapper.vm.backfill.confirmed = true
+    expect(wrapper.vm.canConfirmBackfill).toBe(true)
+    await wrapper.vm.confirmBackfill(); await flushPromises()
+    expect(mktYunshanApi.generateOrders).toHaveBeenCalledWith({ mapId: wrapper.vm.mapId, startDate: '2026-08-24', endDate: '2026-09-17' })
+    expect(wrapper.vm.backfill.visible).toBe(false)
+  })
+
+  it('合同还没配置每单佣金时不能回补，没有待回补日期时也不能确认', async () => {
+    permissions.add('crm:marketing:order:edit')
+    mktYunshanApi.backfillPreview.mockResolvedValue(preview([part({ blocked: '客户尚未设置 P4 每单佣金', members: [], totalPerOrder: null })]))
+    const wrapper = mount(); await flushPromises()
+    await wrapper.vm.openBackfill(); await flushPromises()
+    wrapper.vm.backfill.confirmed = true
+    expect(wrapper.vm.canConfirmBackfill).toBe(false)
+    mktYunshanApi.backfillPreview.mockResolvedValue({ ...preview([]), pendingDays: 0, pendingTickets: 0 })
+    await wrapper.vm.openBackfill(); await flushPromises()
+    wrapper.vm.backfill.confirmed = true
+    expect(wrapper.vm.canConfirmBackfill).toBe(false)
+  })
+
+  it('没有订单编辑权限不能回补；预览失败显示原因', async () => {
+    const readOnly = mount(); await flushPromises()
+    await readOnly.vm.openBackfill()
+    expect(mktYunshanApi.backfillPreview).not.toHaveBeenCalled()
+    permissions.add('crm:marketing:order:edit')
+    mktYunshanApi.backfillPreview.mockRejectedValue(new Error('发货量客户关联不存在'))
+    const wrapper = mount(); await flushPromises()
+    await wrapper.vm.openBackfill(); await flushPromises()
+    expect(wrapper.vm.backfill.error).toContain('关联不存在')
+    expect(wrapper.vm.canConfirmBackfill).toBe(false)
+  })
+})
+
+describe('上次生成佣金订单失败的提示', () => {
+  it('有失败时在面板顶部提示原因，没有失败不提示', async () => {
+    mktYunshanApi.lastRun.mockResolvedValue({ at: '2026-10-23T10:00:00', trigger: '定时', result: { created: 0, rebuilt: 0, unchanged: 0, skipped: 0, failed: 2, errors: ['关联 7 · 2026-10-17：客户尚未设置 P4 每单佣金'] } })
+    const failed = mount(); await flushPromises()
+    expect(failed.text()).toContain('上次定时生成佣金订单')
+    expect(failed.text()).toContain('客户尚未设置 P4 每单佣金')
+    mktYunshanApi.lastRun.mockResolvedValue({ at: '2026-10-23T10:00:00', trigger: '定时', result: { created: 3, failed: 0, errors: [] } })
+    const fine = mount(); await flushPromises()
+    expect(fine.text()).not.toContain('上次定时生成佣金订单')
   })
 })

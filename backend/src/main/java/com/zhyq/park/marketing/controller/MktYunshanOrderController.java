@@ -23,6 +23,20 @@ public class MktYunshanOrderController {
 
     public record GenerateInput(Long mapId, LocalDate startDate, LocalDate endDate) {}
 
+    @Operation(summary = "历史回补预览：最近 35 天之前还没生成佣金的日期，按当前每单金额、平台留存和成员分成估算；确认后再手动回补")
+    @GetMapping("/backfill-preview")
+    @PreAuthorize("hasAuthority('crm:marketing:order:query')")
+    public Result<MktYunshanVolumeOrderService.BackfillPreview> backfillPreview(@RequestParam Long mapId) {
+        return Result.ok(service.backfillPreview(mapId));
+    }
+
+    @Operation(summary = "最近一次生成（定时或手动）的结果，用于页面提示失败；服务重启后为空")
+    @GetMapping("/last-run")
+    @PreAuthorize("hasAuthority('crm:marketing:erp:query')")
+    public Result<MktYunshanVolumeOrderService.LastRun> lastRun() {
+        return Result.ok(service.lastRun());
+    }
+
     @Operation(summary = "按天核对：有云山快照的每一天已生成多少票的计佣订单")
     @GetMapping("/daily")
     @PreAuthorize("hasAuthority('crm:marketing:erp:query')")

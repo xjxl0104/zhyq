@@ -52,7 +52,11 @@ zhyq:
     # 云山提供的 RSA 公钥,PEM 或去掉头尾的 Base64 均可
     public-key: ${YUNSHAN_PUBLIC_KEY:}
     # 每天回拉最近 N 天(云山 T+1 出统计,可能有迟到修正)
-    sync-days: ${YUNSHAN_SYNC_DAYS:7}
+    sync-days: ${YUNSHAN_SYNC_DAYS:35}
+  alert:
+    # 运营告警(定时任务失败等)推送；都不配置时只写错误日志。Bark 形如 https://api.day.app/你的key
+    bark-url: ${ZHYQ_ALERT_BARK_URL:}
+    webhook-url: ${ZHYQ_ALERT_WEBHOOK_URL:}
   jwt:
     # 生产必须由环境变量提供,不留默认值(HS256 密钥,建议 >=32 字节随机串)
     secret: ${JWT_SECRET}
