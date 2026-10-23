@@ -35,8 +35,9 @@
         <span class="hint">注册时绑定上级邀请码。P4 拥有定价权，P1–P4 的按单金额由 P4 设定。</span>
       </div>
       <el-table :data="list" v-loading="loading" border stripe>
-        <el-table-column type="index" label="#" width="60" />
+        <el-table-column prop="id" label="ID" width="60" />
         <el-table-column prop="name" label="姓名" min-width="150"><template #default="{ row }"><div>{{ row.name }}</div><div class="project-note">{{ projectLabel(row.projectId) }}</div></template></el-table-column>
+        <el-table-column prop="parentId" label="上级 ID" width="90" align="center" />
         <el-table-column label="手机" width="130">
           <template #default="{ row }">{{ maskPhone(row.phone) }}</template>
         </el-table-column>
@@ -44,7 +45,6 @@
         <el-table-column label="角色 / 称号" width="160">
           <template #default="{ row }"><el-tag>{{ row.positionCode }} · {{ positionName(row.positionCode) }}</el-tag></template>
         </el-table-column>
-        <el-table-column prop="parentId" label="上级 ID" width="90" align="center" />
         <el-table-column label="状态" width="90">
           <template #default="{ row }"><el-tag :type="statusType(row.status)">{{ statusText(row.status) }}</el-tag></template>
         </el-table-column>

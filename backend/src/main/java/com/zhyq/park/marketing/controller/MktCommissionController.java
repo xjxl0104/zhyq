@@ -52,9 +52,20 @@ public class MktCommissionController {
                                                         @RequestParam(required = false) Long promoterId,
                                                         @RequestParam(required = false) Integer status,
                                                         @RequestParam(required = false) Long referralOrderId,
-                                                        @RequestParam(required = false) Long projectId) {
+                                                        @RequestParam(required = false) Long projectId,
+                                                        @RequestParam(required = false) String promoterName) {
+        // 伙伴姓名/手机号模糊搜索:先找出匹配的伙伴 id,没有匹配就直接查不到
+        List<Long> nameIds = null;
+        if (promoterName != null && !promoterName.isBlank()) {
+            String kw = promoterName.trim();
+            nameIds = promoterMapper.selectList(new LambdaQueryWrapper<MktPromoter>()
+                    .and(q -> q.like(MktPromoter::getName, kw).or().like(MktPromoter::getPhone, kw))
+                    .select(MktPromoter::getId)).stream().map(MktPromoter::getId).toList();
+        }
         LambdaQueryWrapper<MktPromoterCommission> qw = new LambdaQueryWrapper<MktPromoterCommission>()
                 .eq(promoterId != null, MktPromoterCommission::getPromoterId, promoterId)
+                .in(nameIds != null && !nameIds.isEmpty(), MktPromoterCommission::getPromoterId, nameIds)
+                .apply(nameIds != null && nameIds.isEmpty(), "1 = 0")
                 .eq(status != null, MktPromoterCommission::getStatus, status)
                 .eq(referralOrderId != null, MktPromoterCommission::getReferralOrderId, referralOrderId)
                 .and(projectId != null, q -> q.eq(MktPromoterCommission::getProjectId, projectId).or().isNull(MktPromoterCommission::getProjectId))
