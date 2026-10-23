@@ -218,7 +218,8 @@ public class MktReferralOrderController {
         QueryWrapper<MktReferralOrder> gw = new QueryWrapper<MktReferralOrder>()
                 .select("source_id",
                         "COUNT(*) AS orderCount",
-                        "SUM(CASE WHEN " + confirmed + " THEN 1 ELSE 0 END) AS confirmedCount",
+                        // 已确认票数：云山汇总订单一条代表 N 票(commission_order_count)，普通出库单按 1 票算
+                        "SUM(CASE WHEN " + confirmed + " THEN COALESCE(commission_order_count, 1) ELSE 0 END) AS confirmedCount",
                         "IFNULL(SUM(CASE WHEN " + confirmed + " THEN service_fee ELSE 0 END), 0) AS serviceFeeSum",
                         "IFNULL(SUM(CASE WHEN " + confirmed + " THEN pool_amount ELSE 0 END), 0) AS poolSum",
                         "MAX(event_time) AS lastEventTime")

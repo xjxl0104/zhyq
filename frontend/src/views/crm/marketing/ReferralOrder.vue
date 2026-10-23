@@ -40,7 +40,7 @@
           <el-table-column prop="partnerName" label="成交伙伴" width="110"><template #default="{ row }">{{ row.partnerName || '—' }}</template></el-table-column>
           <el-table-column prop="warehouseName" label="主仓" min-width="130"><template #default="{ row }">{{ row.warehouseName || '—' }}</template></el-table-column>
           <el-table-column label="计佣订单数" width="100" align="right"><template #default="{ row }">{{ row.orderCount ?? 0 }}</template></el-table-column>
-          <el-table-column label="已确认" width="80" align="right"><template #default="{ row }">{{ row.confirmedCount ?? 0 }}</template></el-table-column>
+          <el-table-column label="已确认票数" width="100" align="right"><template #default="{ row }">{{ row.confirmedCount ?? 0 }}</template></el-table-column>
           <el-table-column label="已确认服务费(元)" width="130" align="right"><template #default="{ row }">{{ money(row.serviceFeeSum) }}</template></el-table-column>
           <el-table-column label="已确认佣金池(元)" width="130" align="right"><template #default="{ row }">{{ money(row.poolSum) }}</template></el-table-column>
           <el-table-column prop="lastEventTime" label="最近出库时间" width="160"><template #default="{ row }">{{ row.lastEventTime || '—' }}</template></el-table-column>
@@ -54,7 +54,7 @@
         <el-pagination class="pager" background layout="total, prev, pager, next, sizes"
                        :total="summaryTotal" v-model:current-page="squery.pageNo"
                        v-model:page-size="squery.pageSize" :page-sizes="[10,20,50]" @change="loadSummary" />
-        <p class="hint pager-hint">计佣订单数 = 该合同客户在合同有效期内、主仓的云仓(ERP)发货票数，来源于「云仓发货量同步」，不同客户使用各自的 ERP 数据；金额只计已确认订单，与服务费账单口径一致。</p>
+        <p class="hint pager-hint">计佣订单数 = 该合同客户在合同有效期内、主仓的云仓(ERP)发货票数，来源于「云仓发货量同步」，不同客户使用各自的 ERP 数据；已确认票数 = 已生成佣金的票数（每个发货日生成一条汇总订单，一条代表当天的多票），与计佣订单数相差的部分是尚未生成佣金的日期（如当天数据次日才拉取、或未配置每单佣金）；金额只计已确认订单，与服务费账单口径一致。</p>
       </div>
 
     <!-- 合同佣金分配:链路成员每单金额(仅 P4 可改) + 该合同已产生佣金 -->
