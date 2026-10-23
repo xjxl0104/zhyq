@@ -45,12 +45,14 @@
       <el-table v-loading="loading.volume" :data="volume?.records || []" size="small" border empty-text="此区间暂无快照。完成补拉后再查询；无统计不代表零发货。">
         <el-table-column prop="statDate" label="发货日期" width="120" />
         <el-table-column label="发货票数" min-width="190" align="right"><template #default="{ row }">{{ formatCount(row.consignNum) }}</template></el-table-column>
+        <el-table-column label="已生成佣金（票）" min-width="160" align="right"><template #default="{ row }"><span :class="commissionClass(row)">{{ commissionText(row) }}</span></template></el-table-column>
         <el-table-column label="首次票数" min-width="190" align="right"><template #default="{ row }">{{ formatCount(row.firstConsignNum) }}</template></el-table-column>
         <el-table-column prop="revisedCount" label="修正次数" width="100" align="right" />
         <el-table-column prop="lastRevisedAt" label="最近修正" min-width="170"><template #default="{ row }">{{ row.lastRevisedAt || '—' }}</template></el-table-column>
         <el-table-column prop="fetchedAt" label="最近拉取" min-width="170" />
       </el-table>
       <el-pagination class="pager" background layout="total, prev, pager, next" :total="Number(volume?.total || 0)" v-model:current-page="volumePage" :page-size="20" @current-change="loadVolume" />
+      <p class="hint">“已生成佣金”对比每天的发货票数与已生成佣金订单的票数。显示“未生成”可能是：当天数据次日才拉取、该合同还没配置每单佣金、不在合同有效期内，或云山没有返回该日统计（没有快照的日期不会出现在这张表里）。佣金订单每天 10:00 自动生成。</p>
 
       <div class="monthly-section">
         <div class="toolbar logs-heading"><h3 class="title">月度发货量汇总</h3></div>
@@ -223,9 +225,27 @@ function rangeParams() {
   }
   return { mapId: mapId.value, startDate, endDate }
 }
+// 按天核对：每个有快照的日期已生成多少票的计佣订单；读取失败只是不显示这一列，不影响快照查询
+const dailyOrders = ref({})
+async function loadDailyOrders(params) {
+  const target = params.mapId
+  try {
+    const rows = await mktYunshanApi.dailyOrders(params)
+    if (!disposed && target === mapId.value) dailyOrders.value = Object.fromEntries((rows || []).map(row => [String(row.statDate), row]))
+  } catch { if (!disposed && target === mapId.value) dailyOrders.value = {} }
+}
+function commissionState(row) {
+  const tickets = Number(row.consignNum || 0), done = Number(dailyOrders.value[row.statDate]?.commissionTickets || 0)
+  if (tickets === 0) return { text: '—', cls: '' }
+  if (done === 0) return { text: '未生成', cls: 'commission-none' }
+  if (done === tickets) return { text: `${formatCount(done)} · 已生成`, cls: 'commission-ok' }
+  return { text: `${formatCount(done)} · 差 ${formatCount(tickets - done)}`, cls: 'commission-diff' }
+}
+const commissionText = row => commissionState(row).text
+const commissionClass = row => commissionState(row).cls
 function resetDetails() {
   for (const key of ['volume', 'logs', 'reconcile']) { versions[key]++; loading[key] = false; errors[key] = '' }
-  volume.value = null; reconciliation.value = null; syncResult.value = null; errors.sync = ''; logs.value = []; logTotal.value = 0
+  volume.value = null; reconciliation.value = null; syncResult.value = null; errors.sync = ''; logs.value = []; logTotal.value = 0; dailyOrders.value = {}
 }
 const monthly = reactive({ customerId: null, year: String(new Date().getFullYear()), rows: [], yearTotal: 0, days: 0, loading: false, error: '' })
 const monthlyCustomers = computed(() => [...new Map(maps.value.map(item => [item.customerId, { id: item.customerId, name: item.customerName || String(item.customerId) }])).values()])
@@ -258,7 +278,7 @@ function queryVolume() { volumePage.value = 1; volume.value = null; return loadV
 async function loadVolume() {
   const params = rangeParams(); if (!canQuery.value || !mapId.value || !params) return
   const version = ++versions.volume; volume.value = null; loading.volume = true; errors.volume = ''
-  try { const result = await mktYunshanApi.volume({ ...params, pageNo: volumePage.value, pageSize: 20 }); if (!disposed && version === versions.volume) volume.value = result }
+  try { const result = await mktYunshanApi.volume({ ...params, pageNo: volumePage.value, pageSize: 20 }); if (!disposed && version === versions.volume) { volume.value = result; loadDailyOrders(params) } }
   catch (error) { if (!disposed && version === versions.volume) errors.volume = error.message || '快照查询失败，请重试。' }
   finally { if (version === versions.volume) loading.volume = false }
 }
@@ -437,6 +457,9 @@ defineExpose({ openMap })
 .config-note { overflow-wrap: anywhere; }
 .entity-no { color: var(--el-text-color-secondary); font-size: 12px; overflow-wrap: anywhere; }
 .sync-state { margin-left: 6px; }
+.commission-ok { color: var(--el-color-success); }
+.commission-none { color: var(--el-color-warning); }
+.commission-diff { color: var(--el-color-danger); }
 .yunshan-panel :deep(.el-alert) { margin: 12px 0; }
 .query-form { display: flex; flex-wrap: wrap; gap: 0 12px; }
 .query-form :deep(.el-form-item) { margin-right: 0; }

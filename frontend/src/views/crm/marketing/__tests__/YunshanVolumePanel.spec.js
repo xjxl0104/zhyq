@@ -4,7 +4,7 @@ import YunshanVolumePanel from '../YunshanVolumePanel.vue'
 import { mktYunshanApi } from '@/api/marketing'
 const { permissions } = vi.hoisted(() => ({ permissions: new Set() }))
 vi.mock('@/utils/permission', () => ({ hasPermission: permission => permissions.has(permission) }))
-vi.mock('@/api/marketing', () => ({ mktYunshanApi: Object.fromEntries(['directory', 'customerSites', 'config', 'maps', 'customers', 'owners', 'warehouses', 'createMap', 'setStatus', 'volume', 'logs', 'sync', 'reconcile', 'monthly'].map(key => [key, vi.fn()])) }))
+vi.mock('@/api/marketing', () => ({ mktYunshanApi: Object.fromEntries(['directory', 'customerSites', 'config', 'maps', 'customers', 'owners', 'warehouses', 'createMap', 'setStatus', 'volume', 'logs', 'sync', 'reconcile', 'monthly', 'dailyOrders'].map(key => [key, vi.fn()])) }))
 vi.mock('element-plus', async original => ({ ...await original(), ElMessage: { success: vi.fn(), warning: vi.fn() } }))
 const map = { id: '9007199254740993', customerId: '9007199254740995', customerName: '棒棒猪', parentOwnerNo: '0009007199254740993', parentOwnerName: '棒棒猪', parentWarehouseNo: '000123', parentWarehouseName: '授权仓库', status: 1, identityMismatch: false }
 const wrappers = []
@@ -353,5 +353,27 @@ describe('发货量同步与云山云仓接口授权边界', () => {
     mktYunshanApi.reconcile.mockResolvedValue({ localTotal: '4', summaryTotal: '0', dailyTotal: '0', difference: '4', matched: false, dataState: 'NO_STAT_DATA', differences: [{ statDate: '2020-01-01', localConsignNum: '4', remoteConsignNum: null, reason: 'REMOTE_MISSING' }] })
     await wrapper.vm.reconcile(); await flushPromises()
     expect(wrapper.text()).toContain('接口暂无统计，无法确认一致'); expect(mktYunshanApi.sync).not.toHaveBeenCalled()
+  })
+})
+
+describe('发货量快照与佣金订单逐日核对', () => {
+  const snapshot = (statDate, consignNum) => ({ statDate, consignNum, firstConsignNum: consignNum, revisedCount: 0, fetchedAt: '2026-10-22 10:00:00' })
+  it('逐日显示已生成佣金的票数：已生成、未生成、有差额', async () => {
+    mktYunshanApi.volume.mockResolvedValue({ records: [snapshot('2026-10-17', '3'), snapshot('2026-10-18', '7'), snapshot('2026-10-19', '4'), snapshot('2026-10-20', '0')], total: 4, totalConsignNum: '14', daysWithData: 4, daysMissing: 0, dataState: 'HAS_STAT_DATA' })
+    mktYunshanApi.dailyOrders.mockResolvedValue([{ statDate: '2026-10-17', tickets: 3, commissionTickets: 3, orders: 1 }, { statDate: '2026-10-19', tickets: 4, commissionTickets: 1, orders: 1 }])
+    const wrapper = mount(); await flushPromises()
+    await wrapper.vm.queryVolume(); await flushPromises()
+    expect(mktYunshanApi.dailyOrders).toHaveBeenCalled()
+    const rows = wrapper.vm.volume.records
+    expect(rows.map(row => wrapper.vm.commissionText(row))).toEqual(['3 · 已生成', '未生成', '1 · 差 3', '—'])
+    expect(rows.map(row => wrapper.vm.commissionClass(row))).toEqual(['commission-ok', 'commission-none', 'commission-diff', ''])
+  })
+  it('核对读取失败不影响快照显示', async () => {
+    mktYunshanApi.volume.mockResolvedValue({ records: [snapshot('2026-10-17', '3')], total: 1, totalConsignNum: '3', daysWithData: 1, daysMissing: 0, dataState: 'HAS_STAT_DATA' })
+    mktYunshanApi.dailyOrders.mockRejectedValue(new Error('network'))
+    const wrapper = mount(); await flushPromises()
+    await wrapper.vm.queryVolume(); await flushPromises()
+    expect(wrapper.vm.volume.records).toHaveLength(1)
+    expect(wrapper.vm.commissionText(wrapper.vm.volume.records[0])).toBe('未生成')
   })
 })

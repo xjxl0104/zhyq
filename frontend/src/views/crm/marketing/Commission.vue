@@ -21,11 +21,13 @@
         <el-button @click="batches.visible = true; loadBatches()">结算批次</el-button>
         <el-button type="primary" plain @click="openMonthly">按合同月结</el-button>
         <span class="hint">只有「可结算」状态的行能结算;冻结行等到账/解冻期满后自动转可结算。按合同月结:可选择合同开始月到上个月之间的任意月份(上个月仅限每月 3-10 号,更早月份可随时补结)。</span>
+        <p class="hint hint-block">本表是按发货日记录的佣金流水：每个发货日一条，“解冻时间”是发货日加冻结期（默认 7 天），所以会出现晚于今天的日期，不是发货日。结算单（结算批次）按月生成：每月 8 日 10:00 自动把当月之前已解冻的佣金按“合同 × 月份”各生成一个批次，也可以手动按合同月结。</p>
       </div>
       <el-table :data="list" v-loading="loading" border stripe @selection-change="onSelect">
         <el-table-column type="selection" width="45" :selectable="isSettleable" />
         <el-table-column prop="id" label="ID" width="70" />
         <el-table-column prop="referralOrderId" label="订单" width="80" />
+        <el-table-column label="发货日" width="110"><template #default="{ row }">{{ row.orderEventTime ? String(row.orderEventTime).slice(0, 10) : '—' }}</template></el-table-column>
         <el-table-column prop="promoterName" label="伙伴" width="110"><template #default="{ row }">{{ row.promoterName || '#' + row.promoterId }}</template></el-table-column>
         <el-table-column prop="positionCode" label="岗位" width="70" />
         <el-table-column label="计佣依据" min-width="190"><template #default="{ row }"><CommissionBasis :row="row" /></template></el-table-column>
@@ -34,7 +36,7 @@
           <template #default="{ row }"><span :class="{ neg: row.sign === -1 }">{{ row.pricingId != null ? Number(row.amount || 0).toFixed(3) : money(row.amount) }}</span></template>
         </el-table-column>
         <el-table-column label="状态" width="90"><template #default="{ row }"><el-tag :type="stType(row.status)">{{ ST[row.status] }}</el-tag></template></el-table-column>
-        <el-table-column prop="unfreezeAt" label="解冻时间" width="160" />
+        <el-table-column prop="unfreezeAt" label="解冻时间（发货日＋冻结期）" width="190" />
         <el-table-column prop="settleBatchId" label="批次" width="80" />
         <el-table-column label="操作" width="90" fixed="right">
           <template #default="{ row }">
@@ -189,6 +191,7 @@ onMounted(load)
 <style scoped>
 .toolbar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .hint { color: var(--el-text-color-secondary); font-size: 12px; }
+.hint-block { flex-basis: 100%; margin: 4px 0 0; line-height: 1.6; }
 .neg { color: var(--el-color-danger); }
 .pager { margin-top: 16px; justify-content: flex-end; }
 .mt { margin-top: 12px; }
