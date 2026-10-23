@@ -31,7 +31,7 @@ class MktYunshanVolumeOrderServiceDailyTest {
     private final MktYunshanVolumeOrderService service = new MktYunshanVolumeOrderService(maps, volumes, mock(MktServiceContractMapper.class),
             mock(CustomerMapper.class), mock(MktWarehouseMapper.class), orders, mock(MktCommissionService.class),
             mock(MktCustomerPricingService.class), mock(MktContractTermsService.class), mock(BizSettings.class),
-            mock(MktAuditService.class), mock(PlatformTransactionManager.class));
+            mock(MktAuditService.class), mock(MktPromoterMapper.class), mock(PlatformTransactionManager.class));
 
     @BeforeAll static void metadata() {
         var assistant = new MapperBuilderAssistant(new MybatisConfiguration(), "");

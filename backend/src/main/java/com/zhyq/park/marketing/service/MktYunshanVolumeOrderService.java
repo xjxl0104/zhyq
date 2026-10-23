@@ -11,6 +11,7 @@ import com.zhyq.park.marketing.entity.MktServiceContract;
 import com.zhyq.park.marketing.entity.MktWarehouse;
 import com.zhyq.park.marketing.entity.MktYunshanDailyVolume;
 import com.zhyq.park.marketing.entity.MktYunshanVolumeMap;
+import com.zhyq.park.marketing.mapper.MktPromoterMapper;
 import com.zhyq.park.marketing.mapper.MktReferralOrderMapper;
 import com.zhyq.park.marketing.mapper.MktServiceContractMapper;
 import com.zhyq.park.marketing.mapper.MktWarehouseMapper;
@@ -60,6 +61,7 @@ public class MktYunshanVolumeOrderService {
     private final MktContractTermsService termsService;
     private final BizSettings bizSettings;
     private final MktAuditService auditService;
+    private final MktPromoterMapper promoterMapper;
     private final TransactionTemplate transaction;
     private final ReentrantLock lock = new ReentrantLock();
 
@@ -68,16 +70,37 @@ public class MktYunshanVolumeOrderService {
                                         MktWarehouseMapper warehouseMapper, MktReferralOrderMapper orderMapper,
                                         MktCommissionService commissionService, MktCustomerPricingService pricingService,
                                         MktContractTermsService termsService, BizSettings bizSettings,
-                                        MktAuditService auditService, PlatformTransactionManager transactionManager) {
+                                        MktAuditService auditService, MktPromoterMapper promoterMapper,
+                                        PlatformTransactionManager transactionManager) {
         this.mapMapper = mapMapper; this.volumeMapper = volumeMapper; this.contractMapper = contractMapper;
         this.customerMapper = customerMapper; this.warehouseMapper = warehouseMapper; this.orderMapper = orderMapper;
         this.commissionService = commissionService; this.pricingService = pricingService; this.termsService = termsService;
-        this.bizSettings = bizSettings; this.auditService = auditService;
+        this.bizSettings = bizSettings; this.auditService = auditService; this.promoterMapper = promoterMapper;
         this.transaction = new TransactionTemplate(transactionManager);
     }
 
-    /** onlyMapId / start / end 均可为空；只处理启用中的关联，且不晚于昨天（当天统计次日才生成）。 */
+    /** 最近一次运行（定时或手动）的结果，供页面提示失败；服务重启后清空，下一次运行再更新。 */
+    public record LastRun(LocalDateTime at, String trigger, Result result) {}
+    private volatile LastRun lastRun;
+    public LastRun lastRun() { return lastRun; }
+
+    /** 定时任务只自动处理最近 AUTO_WINDOW_DAYS 天；更早的历史必须先看回补预览、确认价格和链路后再手动回补。 */
+    public static final int AUTO_WINDOW_DAYS = 35;
+
+    public Result generateScheduled() {
+        Result result = run(null, LocalDate.now(SHANGHAI).minusDays(AUTO_WINDOW_DAYS), null);
+        lastRun = new LastRun(LocalDateTime.now(SHANGHAI), "定时", result);
+        return result;
+    }
+
+    /** onlyMapId / start / end 均可为空；只处理启用中的关联，且不晚于昨天（当天统计次日才生成）。手动调用，不受自动窗口限制。 */
     public Result generate(Long onlyMapId, LocalDate start, LocalDate end) {
+        Result result = run(onlyMapId, start, end);
+        lastRun = new LastRun(LocalDateTime.now(SHANGHAI), "手动", result);
+        return result;
+    }
+
+    private Result run(Long onlyMapId, LocalDate start, LocalDate end) {
         lock.lock();
         try {
             final LocalDate lastDay = LocalDate.now(SHANGHAI).minusDays(1);
@@ -126,13 +149,24 @@ public class MktYunshanVolumeOrderService {
         List<MktYunshanDailyVolume> rows = volumeMapper.selectList(new LambdaQueryWrapper<MktYunshanDailyVolume>()
                 .eq(MktYunshanDailyVolume::getMapId, mapId).between(MktYunshanDailyVolume::getStatDate, start, end)
                 .orderByAsc(MktYunshanDailyVolume::getStatDate));
-        String prefix = PREFIX + mapId + "-";
+        java.util.Map<String, long[]> byDay = confirmedByDay(map);
+        List<DayStatus> out = new ArrayList<>();
+        for (MktYunshanDailyVolume row : rows) {
+            long[] sum = byDay.getOrDefault(row.getStatDate().format(DateTimeFormatter.BASIC_ISO_DATE), new long[2]);
+            out.add(new DayStatus(row.getStatDate(), row.getConsignNum() == null ? 0 : row.getConsignNum(), sum[0], (int) sum[1]));
+        }
+        return out;
+    }
+
+    /** 该客户关联已生成的、已确认的汇总订单：yyyyMMdd → {票数, 订单数}。 */
+    private java.util.Map<String, long[]> confirmedByDay(MktYunshanVolumeMap map) {
+        String prefix = PREFIX + map.getId() + "-";
         List<MktReferralOrder> orders = orderMapper.selectList(new LambdaQueryWrapper<MktReferralOrder>()
                 .eq(MktReferralOrder::getSourceType, MktCommissionService.SOURCE_OUTBOUND)
                 .eq(MktReferralOrder::getWarehouseId, map.getWarehouseId())
                 .eq(MktReferralOrder::getStatus, MktCommissionService.ORDER_CONFIRMED)
                 .likeRight(MktReferralOrder::getSourceNo, prefix));
-        java.util.Map<String, long[]> byDay = new java.util.HashMap<>();   // yyyyMMdd -> {票数, 订单数}
+        java.util.Map<String, long[]> byDay = new java.util.HashMap<>();
         for (MktReferralOrder order : orders) {
             String no = order.getSourceNo();
             if (no == null || no.length() < prefix.length() + 8) continue;
@@ -140,12 +174,83 @@ public class MktYunshanVolumeOrderService {
             sum[0] += order.getCommissionOrderCount() == null ? 0 : order.getCommissionOrderCount();
             sum[1]++;
         }
-        List<DayStatus> out = new ArrayList<>();
+        return byDay;
+    }
+
+    public record MemberShare(Long promoterId, String name, String positionCode, String role, BigDecimal perOrder, BigDecimal estimated) {}
+
+    public record BackfillPart(Long contractId, String contractNo, Integer signMode, String sellerName, int days, long tickets,
+                               LocalDate firstDay, LocalDate lastDay, BigDecimal totalPerOrder, BigDecimal platformPerOrder,
+                               BigDecimal memberPerOrder, List<MemberShare> members, BigDecimal estimatedTotal,
+                               BigDecimal estimatedMembers, String blocked) {}
+
+    public record BackfillPreview(Long mapId, String customerName, LocalDate windowFrom, LocalDate rangeFrom, LocalDate rangeTo,
+                                  int pendingDays, long pendingTickets, int skippedDays, List<BackfillPart> parts) {}
+
+    private static final class Pending {
+        final MktServiceContract contract; int days; long tickets; LocalDate first, last;
+        Pending(MktServiceContract contract) { this.contract = contract; }
+    }
+
+    /**
+     * 历史回补预览：自动任务只处理最近 AUTO_WINDOW_DAYS 天，更早且还没生成佣金的日期要先看这里——
+     * 每个合同将回补多少天、多少票，按“当前”的每单总佣金、平台留存和各成员分成估算金额，确认无误再手动回补。
+     * 回补用的是确认当时的价格和分成链路，不是发货当天的。
+     */
+    public BackfillPreview backfillPreview(Long mapId) {
+        MktYunshanVolumeMap map = mapId == null ? null : mapMapper.selectById(mapId);
+        if (map == null) throw new BizException("发货量客户关联不存在");
+        LocalDate windowFrom = LocalDate.now(SHANGHAI).minusDays(AUTO_WINDOW_DAYS);
+        List<MktYunshanDailyVolume> rows = volumeMapper.selectList(new LambdaQueryWrapper<MktYunshanDailyVolume>()
+                .eq(MktYunshanDailyVolume::getMapId, mapId).lt(MktYunshanDailyVolume::getStatDate, windowFrom)
+                .orderByAsc(MktYunshanDailyVolume::getStatDate));
+        java.util.Map<String, long[]> done = confirmedByDay(map);
+        java.util.Map<Long, Pending> byContract = new java.util.LinkedHashMap<>();
+        int skipped = 0, pendingDays = 0; long pendingTickets = 0; LocalDate first = null;
         for (MktYunshanDailyVolume row : rows) {
-            long[] sum = byDay.getOrDefault(row.getStatDate().format(DateTimeFormatter.BASIC_ISO_DATE), new long[2]);
-            out.add(new DayStatus(row.getStatDate(), row.getConsignNum() == null ? 0 : row.getConsignNum(), sum[0], (int) sum[1]));
+            long tickets = row.getConsignNum() == null ? 0 : row.getConsignNum();
+            long pending = tickets - done.getOrDefault(row.getStatDate().format(DateTimeFormatter.BASIC_ISO_DATE), new long[2])[0];
+            if (pending <= 0) continue;
+            MktServiceContract contract = resolveContract(map, row.getStatDate());
+            if (contract == null || hasOtherCommissionOrders(contract, row.getStatDate())) { skipped++; continue; }
+            Pending part = byContract.computeIfAbsent(contract.getId(), id -> new Pending(contract));
+            part.days++; part.tickets += pending;
+            if (part.first == null) part.first = row.getStatDate();
+            part.last = row.getStatDate();
+            pendingDays++; pendingTickets += pending;
+            if (first == null) first = row.getStatDate();
         }
-        return out;
+        Customer customer = customerMapper.selectById(map.getCustomerId());
+        List<BackfillPart> parts = new ArrayList<>();
+        for (Pending part : byContract.values()) parts.add(describe(part, map, customer));
+        return new BackfillPreview(mapId, customer == null ? null : customer.getName(), windowFrom, first, windowFrom.minusDays(1),
+                pendingDays, pendingTickets, skipped, List.copyOf(parts));
+    }
+
+    private BackfillPart describe(Pending part, MktYunshanVolumeMap map, Customer customer) {
+        MktServiceContract contract = part.contract;
+        Long sellerId = contract.getPartnerId() != null ? contract.getPartnerId() : customer == null ? null : customer.getReferrerId();
+        var seller = sellerId == null ? null : promoterMapper.selectById(sellerId);
+        BigDecimal tickets = BigDecimal.valueOf(part.tickets);
+        try {
+            MktCustomerPricingService.PricingSnapshot pricing = pricingService.forAccrual(map.getCustomerId(), contract.getId());
+            List<MemberShare> members = new ArrayList<>();
+            var owner = promoterMapper.selectById(pricing.ownerPromoterId());
+            if (pricing.ownerPerOrder().signum() > 0) {
+                members.add(new MemberShare(pricing.ownerPromoterId(), owner == null ? null : owner.getName(), pricing.ownerPositionCode(),
+                        "P4 本人", pricing.ownerPerOrder(), pricing.ownerPerOrder().multiply(tickets)));
+            }
+            for (MktCustomerPricingService.Beneficiary b : pricing.beneficiaries()) {
+                members.add(new MemberShare(b.promoterId(), b.promoterName(), b.positionCode(), "链路成员", b.amountPerOrder(), b.amountPerOrder().multiply(tickets)));
+            }
+            BigDecimal memberPerOrder = pricing.totalPerOrder().subtract(pricing.companyPerOrder());
+            return new BackfillPart(contract.getId(), contract.getContractNo(), contract.getSignMode(), seller == null ? null : seller.getName(),
+                    part.days, part.tickets, part.first, part.last, pricing.totalPerOrder(), pricing.companyPerOrder(), memberPerOrder,
+                    List.copyOf(members), pricing.totalPerOrder().multiply(tickets), memberPerOrder.multiply(tickets), null);
+        } catch (BizException blocked) {
+            return new BackfillPart(contract.getId(), contract.getContractNo(), contract.getSignMode(), seller == null ? null : seller.getName(),
+                    part.days, part.tickets, part.first, part.last, null, null, null, List.of(), null, null, blocked.getMessage());
+        }
     }
 
     private Outcome reconcileDay(MktYunshanVolumeMap map, MktYunshanDailyVolume row) {
