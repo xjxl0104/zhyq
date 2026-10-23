@@ -38,7 +38,7 @@ class MktPromoterRegistrationTest {
     }
 
     @Test void selfRegistrationCannotBypassInviteRequirement() {
-        for (String invite : new String[] { null, "", " ", "invalid" }) {
+        for (String invite : new String[] { null, "", " ", "ab", "ABCDEFGHI", "ABC0123" }) {
             assertThatThrownBy(() -> service.register(profile(), invite, "mp"))
                     .isInstanceOf(BizException.class).hasMessageContaining("邀请码");
         }

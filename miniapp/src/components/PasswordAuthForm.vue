@@ -12,7 +12,7 @@
     <template v-if="registering">
       <template v-if="!warehouse">
         <view class="field-label">上级邀请码（必填）</view>
-        <input class="input" v-model="form.inviteCode" maxlength="8" placeholder="请输入邀请人提供的 8 位邀请码" :disabled="busy" aria-label="上级邀请码" aria-required="true" />
+        <input class="input" v-model="form.inviteCode" maxlength="8" placeholder="请输入邀请人提供的邀请码" :disabled="busy" aria-label="上级邀请码" aria-required="true" />
         <view class="auth-caption">注册后加入邀请人的团队。</view>
       </template>
       <checkbox-group @change="form.agreed = $event.detail.value.includes('agree')">
@@ -48,7 +48,7 @@ async function submit() {
   if (registering.value) {
     if (!form.agreed) { error.value = '请先阅读并同意协议'; return }
     if (!props.warehouse && !form.inviteCode.trim()) { error.value = '请填写上级邀请码'; return }
-    if (!props.warehouse && !/^[A-Z2-9]{8}$/.test(form.inviteCode.trim().toUpperCase())) { error.value = '请输入有效的 8 位上级邀请码'; return }
+    if (!props.warehouse && !/^[A-Z2-9]{6,8}$/.test(form.inviteCode.trim().toUpperCase())) { error.value = '请输入有效的 6–8 位上级邀请码'; return }
   }
   busy.value = true
   emit('busy', true)

@@ -38,7 +38,7 @@ const inviteCode = ref('')
 onLoad(q => {
   try {
     const invite = decodeURIComponent(q?.invite || q?.scene || '')
-    if (/^[A-Za-z0-9]{8}$/.test(invite)) inviteCode.value = invite
+    if (/^[A-Za-z0-9]{6,8}$/.test(invite)) inviteCode.value = invite
   } catch (_) { /* An invalid invitation must not prevent login. */ }
 })
 function choose(value) { if (!busy.value) method.value = value }

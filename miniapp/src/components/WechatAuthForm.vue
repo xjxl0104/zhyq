@@ -4,7 +4,7 @@
     <view class="quick-note">{{ warehouse ? '首次登录自动注册，以后可继续使用微信或手机号登录。' : '首次注册需填写上级邀请码；已有账号可直接登录。' }}</view>
     <view v-if="!warehouse" class="invite-field">
       <view class="field-label">上级邀请码（首次注册必填）</view>
-      <input class="input" v-model="invite" maxlength="8" :disabled="busy" placeholder="邀请人提供的 8 位邀请码" aria-label="上级邀请码" :aria-required="needsInvite" />
+      <input class="input" v-model="invite" maxlength="8" :disabled="busy" placeholder="邀请人提供的邀请码" aria-label="上级邀请码" :aria-required="needsInvite" />
     </view>
     <template v-if="mock">
       <view class="quick-note">开发测试模式</view>
@@ -44,7 +44,7 @@ async function login(phoneAuthorization = {}) {
   error.value = ''
   if (!agreed.value) { error.value = '请先阅读并同意协议'; return }
   if (!props.warehouse && needsInvite.value && !invite.value.trim()) { error.value = '请填写上级邀请码'; return }
-  if (!props.warehouse && invite.value.trim() && !/^[A-Z2-9]{8}$/.test(invite.value.trim().toUpperCase())) { error.value = '请输入有效的 8 位上级邀请码'; return }
+  if (!props.warehouse && invite.value.trim() && !/^[A-Z2-9]{6,8}$/.test(invite.value.trim().toUpperCase())) { error.value = '请输入有效的 6–8 位上级邀请码'; return }
   busy.value = true; usingPhone.value = !!(phoneAuthorization.phoneCode || phoneAuthorization.phone)
   emit('busy', true)
   try {
