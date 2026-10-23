@@ -186,7 +186,7 @@ public class MpBizController {
                                                                @RequestParam(defaultValue = "20") int pageSize,
                                                                @RequestParam(required = false) Integer status) {
         Long pid = MpAuthService.currentPromoterId();
-        IPage<MktPromoterCommission> p = commissionMapper.selectPage(new Page<>(pageNo, pageSize),
+        IPage<MktPromoterCommission> p = commissionMapper.selectPage(new Page<>(Math.max(pageNo, 1), Math.min(Math.max(pageSize, 1), 50)),
                 new LambdaQueryWrapper<MktPromoterCommission>().eq(MktPromoterCommission::getPromoterId, pid)
                         .eq(status != null, MktPromoterCommission::getStatus, status).orderByDesc(MktPromoterCommission::getId));
         List<Map<String, Object>> rows = p.getRecords().stream().map(c -> {
@@ -199,6 +199,7 @@ public class MpBizController {
             MktReferralOrder o = orderMapper.selectById(c.getReferralOrderId());
             if (o != null) {
                 m.put("sourceType", o.getSourceType()); m.put("grade", o.getCustomerGrade()); m.put("poolFactor", o.getPoolFactor());
+                m.put("eventTime", o.getEventTime());
                 Customer cu = o.getCustomerId() == null ? null : customerMapper.selectById(o.getCustomerId());
                 m.put("customerName", cu == null ? null : cu.getName());
             }
@@ -234,14 +235,14 @@ public class MpBizController {
 
     @Operation(summary = "提现记录") @GetMapping("/withdrawal/page")
     public Result<PageResult<MktWithdrawal>> withdrawals(@RequestParam(defaultValue = "1") int pageNo, @RequestParam(defaultValue = "20") int pageSize) {
-        IPage<MktWithdrawal> p = withdrawalMapper.selectPage(new Page<>(pageNo, pageSize),
+        IPage<MktWithdrawal> p = withdrawalMapper.selectPage(new Page<>(Math.max(pageNo, 1), Math.min(Math.max(pageSize, 1), 50)),
                 new LambdaQueryWrapper<MktWithdrawal>().eq(MktWithdrawal::getPromoterId, MpAuthService.currentPromoterId()).orderByDesc(MktWithdrawal::getId));
         return Result.ok(PageResult.of(p.getTotal(), p.getRecords()));
     }
 
     @Operation(summary = "消息(复用 tenant_message,tenant_ref_id = 伙伴 id,channel=mp)") @GetMapping("/notice/page")
     public Result<PageResult<TenantMessage>> notices(@RequestParam(defaultValue = "1") int pageNo, @RequestParam(defaultValue = "20") int pageSize) {
-        IPage<TenantMessage> p = messageMapper.selectPage(new Page<>(pageNo, pageSize),
+        IPage<TenantMessage> p = messageMapper.selectPage(new Page<>(Math.max(pageNo, 1), Math.min(Math.max(pageSize, 1), 50)),
                 new LambdaQueryWrapper<TenantMessage>().eq(TenantMessage::getTenantRefId, MpAuthService.currentPromoterId())
                         .eq(TenantMessage::getChannel, "mp").orderByDesc(TenantMessage::getId));
         return Result.ok(PageResult.of(p.getTotal(), p.getRecords()));
