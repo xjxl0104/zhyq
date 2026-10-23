@@ -115,12 +115,17 @@ public class MpMeController {
                 .eq(MktPromoterCommission::getPromoterId, pid).ne(MktPromoterCommission::getStatus, MktCommissionService.C_VOID));
         BigDecimal total = BigDecimal.ZERO, frozen = BigDecimal.ZERO, settleable = BigDecimal.ZERO, month = BigDecimal.ZERO;
         LocalDateTime monthStart = LocalDate.now().withDayOfMonth(1).atStartOfDay();
+        // 本月按订单发货日(event_time)统计,历史回补的佣金不会都算进回补当月;没有订单时间的回退到生成时间
+        List<Long> orderIds = rows.stream().map(MktPromoterCommission::getReferralOrderId).filter(java.util.Objects::nonNull).distinct().collect(Collectors.toList());
+        Map<Long, LocalDateTime> eventTimes = new HashMap<>();
+        if (!orderIds.isEmpty()) for (MktReferralOrder o : orderMapper.selectBatchIds(orderIds)) if (o.getEventTime() != null) eventTimes.put(o.getId(), o.getEventTime());
         for (MktPromoterCommission c : rows) {
+            LocalDateTime when = eventTimes.getOrDefault(c.getReferralOrderId(), c.getCreateTime());
             total = total.add(c.getAmount());
             if (c.getStatus() == MktCommissionService.C_FROZEN) frozen = frozen.add(c.getAmount());
             if ((c.getStatus() == MktCommissionService.C_SETTLED && c.getSign() == 1)
                     || (c.getStatus() == MktCommissionService.C_SETTLEABLE && c.getSign() == -1)) settleable = settleable.add(c.getAmount());
-            if (c.getCreateTime() != null && c.getCreateTime().isAfter(monthStart)) month = month.add(c.getAmount());
+            if (when != null && when.isAfter(monthStart)) month = month.add(c.getAmount());
         }
         Map<String, Object> m = new HashMap<>();
         m.put("total", total); m.put("withdrawable", withdrawalService.balance(pid)); m.put("frozen", frozen); m.put("month", month);
