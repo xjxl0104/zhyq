@@ -42,7 +42,7 @@
         <template v-else-if="mode === 'invite'">
           <view class="message">原邀请码：{{ target.inviteCode }}。修改后旧分享链接及旧小程序码失效，已绑定的上下级关系保留。</view>
           <view class="field-label">新的本人邀请码 *</view>
-          <input class="input code" v-model="form.inviteCode" maxlength="8" :disabled="busy" placeholder="8 位字母或 2–9 数字" aria-label="新的本人邀请码" />
+          <input class="input code" v-model="form.inviteCode" maxlength="8" :disabled="busy" placeholder="6–8 位字母或 2–9 数字" aria-label="新的本人邀请码" />
         </template>
         <view v-else-if="mode === 'delete'" class="message">{{ type === 'wh' ? '确认后立即删除云仓并停用关联账号和接入权限，不可撤销；历史档案及维护记录保留。请先处理未结束合同，无未结束合同的客户退回待分派。' : '删除后无法登录，账号将从列表移除。有团队、有效客户、订单或资金等业务记录时不可删除，请改用停用登录。' }}</view>
         <view v-else class="message">{{ nextDisabled ? '停用后微信和密码登录均不可用，当前登录也会失效。历史业务数据保留。' : '恢复后用户需重新登录；原有业务审核状态保留。' }}</view>
@@ -144,7 +144,7 @@ async function submit() {
   if (!form.reason.trim()) { formError.value = '请填写操作原因'; return }
   if (mode.value === 'create' && (!form.name.trim() || !form.username.trim() || !form.password)) { formError.value = '请填写名称、登录账号和初始密码'; return }
   const invite = form.inviteCode.trim().toUpperCase()
-  if (mode.value === 'invite' && !/^[A-Z2-9]{8}$/.test(invite)) { formError.value = '邀请码需为 8 位字母或 2–9 数字'; return }
+  if (mode.value === 'invite' && !/^[A-Z2-9]{6,8}$/.test(invite)) { formError.value = '邀请码需为 6–8 位字母或 2–9 数字'; return }
   if (mode.value === 'delete') {
     busy.value = true
     let confirmed = false

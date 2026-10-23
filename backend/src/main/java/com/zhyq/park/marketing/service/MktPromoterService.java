@@ -128,7 +128,7 @@ public class MktPromoterService {
     public static String requireRegistrationInvite(String inviteCode) {
         if (!StringUtils.hasText(inviteCode)) throw new BizException(400, "请填写上级邀请码");
         String normalized = inviteCode.trim().toUpperCase(Locale.ROOT);
-        if (!normalized.matches("^[A-Z2-9]{8}$")) throw new BizException(400, "请输入有效的 8 位上级邀请码");
+        if (!normalized.matches("^[A-Z2-9]{6,8}$")) throw new BizException(400, "请输入有效的 6–8 位上级邀请码");
         return normalized;
     }
 

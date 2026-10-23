@@ -73,7 +73,7 @@ public class DefaultWxSessionClient implements WxSessionClient {
 
     /** Official getUnlimitedQRCode API. Never expose the access token to the client. */
     public byte[] invitationCode(String appId, String appSecret, String inviteCode, String env) {
-        if (!inviteCode.matches("[A-Za-z0-9]{8}") || !java.util.Set.of("release", "trial", "develop").contains(env))
+        if (!inviteCode.matches("[A-Za-z0-9]{6,8}") || !java.util.Set.of("release", "trial", "develop").contains(env))
             throw new BizException("邀请码或版本无效");
         try {
             String token = accessToken(appId, appSecret);
