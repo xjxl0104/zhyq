@@ -56,11 +56,11 @@ public class MktCustomerPricingService {
     public record PricingCustomer(Long id, String name, String grade, Long referrerId, String referrerName,
                                   boolean configured, BigDecimal totalPerOrder, Long ownerPromoterId, String ownerName) {}
     /** phoneTail:手机号后 4 位,团队里有多位同名/未命名伙伴时用来区分。 */
-    public record Candidate(Long id, String name, String positionCode, String phoneTail) {
+    public record Candidate(Long id, String name, String positionCode, String phoneTail, boolean loginable) {
         static Candidate of(MktPromoter p) {
             String phone = p.getPhone();
             String tail = phone != null && phone.matches("^1\\d{10}$") ? phone.substring(7) : null;
-            return new Candidate(p.getId(), p.getName(), p.getPositionCode(), tail);
+            return new Candidate(p.getId(), p.getName(), p.getPositionCode(), tail, phone != null && !phone.startsWith("p:"));
         }
     }
     public record PricingSnapshot(Long pricingId, Long ownerPromoterId, String ownerPositionCode,

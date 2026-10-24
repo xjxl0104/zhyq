@@ -20,6 +20,7 @@ export const meApi = {
   workbench: () => get('/workbench'),
   position: () => get('/position'),
   team: () => get('/team'),
+  addTeamMember: (data) => post('/team/member', data),
   poster: () => get('/poster')
 }
 export const pricingApi = {
