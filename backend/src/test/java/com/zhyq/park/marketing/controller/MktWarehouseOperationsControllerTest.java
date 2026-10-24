@@ -211,7 +211,7 @@ class MktWarehouseOperationsControllerTest {
         assertThat(link.get("customerId").textValue()).isEqualTo("9007199254740995");
         assertThat(link.get("operationWarehouseId").textValue()).isEqualTo("9007199254740997");
         var customer = mapper.readTree(mapper.writeValueAsString(new MktYunshanController.CustomerOption(largeId, "超级棒棒猪")));
-        var warehouse = mapper.readTree(mapper.writeValueAsString(new MktYunshanController.WarehouseOption(largeId, "WH", "加盟云仓", 5, "manual", 0)));
+        var warehouse = mapper.readTree(mapper.writeValueAsString(new MktYunshanController.WarehouseOption(largeId, "WH", "加盟云仓", 5, "yunshan", 0)));
         assertThat(customer.get("id").textValue()).isEqualTo("9007199254740993");
         assertThat(warehouse.get("id").textValue()).isEqualTo("9007199254740993");
         validWarehouse(); when(audits.insert(any(SysAudit.class))).thenReturn(1);

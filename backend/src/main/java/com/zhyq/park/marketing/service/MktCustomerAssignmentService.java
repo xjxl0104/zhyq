@@ -38,7 +38,7 @@ public class MktCustomerAssignmentService {
         if (warehouse == null || !Integer.valueOf(MktWarehouseOnboardingService.JS_ONLINE).equals(warehouse.getJoinStatus())) {
             throw new BizException("云仓不存在或尚未上线，不能接收客户");
         }
-        if (!"manual".equals(warehouse.getOrderMode()) && !Integer.valueOf(MktWarehouseOnboardingService.ERP_LIVE).equals(warehouse.getErpStatus())) {
+        if (!MktWarehouseOnboardingService.isYunshanMode(warehouse.getOrderMode()) && !Integer.valueOf(MktWarehouseOnboardingService.ERP_LIVE).equals(warehouse.getErpStatus())) {
             throw new BizException("云仓尚未配置可用订单模式，请先选择人工导入或完成 ERP 接入");
         }
         if (projectId != null && warehouse.getProjectId() != null && !projectId.equals(warehouse.getProjectId())) {

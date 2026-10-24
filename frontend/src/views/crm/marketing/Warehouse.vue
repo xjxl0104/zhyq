@@ -31,7 +31,7 @@
         </el-table-column>
         <el-table-column label="订单接入" width="170"><template #default="{ row }">
           <el-select :model-value="row.orderMode" placeholder="待选择" size="small" style="width:145px" :disabled="acting || ![3,4,5,6].includes(row.joinStatus)" @change="mode => changeOrderMode(row, mode)">
-            <el-option label="手工导入出库单" value="manual" />
+            <el-option label="云山发货量同步" value="yunshan" />
             <el-option label="外部 ERP" value="erp" />
           </el-select>
         </template></el-table-column>
@@ -124,7 +124,7 @@
               </template>
             </el-step>
           </el-steps>
-          <p v-if="!inactiveProgress && steps.row?.joinStatus !== 5" class="hint">审核后可选择人工导入出库单，再提交已签署协议；外部 ERP 接入单独配置。</p>
+          <p v-if="!inactiveProgress && steps.row?.joinStatus !== 5" class="hint">审核后可选择云山发货量同步，再提交已签署协议；外部 ERP 接入单独配置。</p>
         </template>
       </div>
     </el-drawer>
@@ -264,15 +264,15 @@ async function changeOrderMode(row, mode) {
     await openErp(row)
     return
   }
-  const manual = mode === 'manual'
+  const manual = mode === 'yunshan'
   const message = manual
-    ? '切换后，新订单需要由运营人员手工导入出库单。ERP 凭证和历史日志会保留。'
+    ? '切换后，订单佣金按云山每日发货量同步计算，不再通过外部 ERP 推送订单。ERP 凭证和历史日志会保留。'
     : '切换后，新订单将通过已联通的外部 ERP 接入。请确认正式系统已准备好。'
   try {
-    await ElMessageBox.confirm(message, `切换为${manual ? '手工导入' : '外部 ERP'}`, { type: 'warning', confirmButtonText: '确认切换' })
+    await ElMessageBox.confirm(message, `切换为${manual ? '云山发货量同步' : '外部 ERP'}`, { type: 'warning', confirmButtonText: '确认切换' })
     acting.value = true
-    await mktWarehouseApi[manual ? 'useManual' : 'selectErp'](row.id)
-    ElMessage.success(`已切换为${manual ? '手工导入出库单' : '外部 ERP'}`)
+    await mktWarehouseApi[manual ? 'useYunshan' : 'selectErp'](row.id)
+    ElMessage.success(`已切换为${manual ? '云山发货量同步' : '外部 ERP'}`)
     await load()
     if (!manual && row.joinStatus === 3) await router.push({ path: '/crm/marketing/erp', query: { warehouseId: row.id, onboarding: 1 } })
   } catch (e) {

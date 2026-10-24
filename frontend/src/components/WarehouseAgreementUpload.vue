@@ -1,6 +1,6 @@
 <template>
   <el-dialog :model-value="visible" title="确认加盟协议并上线" width="560px" @update:model-value="emit('update:visible', $event)">
-    <p>{{ warehouse?.name }} · {{ warehouse?.orderMode === 'manual' ? '人工导入订单模式' : 'ERP 接入模式' }}</p>
+    <p>{{ warehouse?.name }} · {{ ['yunshan', 'manual'].includes(warehouse?.orderMode) ? '云山发货量同步模式' : 'ERP 接入模式' }}</p>
     <el-alert type="info" :closable="false" title="请核对已签署的协议。确认后云仓正式上线，人工导入模式不会被标记为 ERP 已联通。" />
     <div class="upload-area"><el-upload :show-file-list="false" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" :http-request="upload" :before-upload="beforeUpload" :disabled="busy"><el-button :loading="uploading">上传已签署协议</el-button></el-upload></div>
     <el-button v-if="file" link type="primary" @click="download">{{ file.name }}</el-button>

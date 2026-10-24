@@ -25,6 +25,9 @@ public class MktWarehouseOnboardingService {
     public static final int JS_QUALIFYING = 2;
     public static final int JS_ERP_CONNECTING = 3;
     public static final int JS_PENDING_AGREEMENT = 4;
+    /** 订单接入方式:云山发货量同步(不接外部 ERP)。历史值 manual 等同于它,V99 已迁移。 */
+    public static final String ORDER_MODE_YUNSHAN = "yunshan";
+    public static boolean isYunshanMode(String mode) { return ORDER_MODE_YUNSHAN.equals(mode) || "manual".equals(mode); }
     public static final int JS_ONLINE = 5;
     public static final int JS_PAUSED = 6;
     public static final int JS_EXITED = 7;
@@ -107,31 +110,31 @@ public class MktWarehouseOnboardingService {
         rejectStep(warehouseId, STEP_QUALIFY, reason);
     }
 
-    /** 只有真正的外部握手可以更新 ERP 状态，运营录单使用独立模式。 */
+    /** 只有真正的外部握手可以更新 ERP 状态，云山发货量同步使用独立模式。 */
     @Transactional
     public void markErpConnected(Long warehouseId, String operator) {
-        throw new BizException("不能人工标记 ERP 已联通；请配置人工导入订单模式，或完成真实 ERP 接入");
+        throw new BizException("不能人工标记 ERP 已联通；请选择云山发货量同步，或完成真实 ERP 接入");
     }
 
     @Transactional
-    public void useManualOrders(Long warehouseId) {
+    public void useYunshanOrders(Long warehouseId) {
         int updated = warehouseMapper.update(null, new LambdaUpdateWrapper<MktWarehouse>()
                 .eq(MktWarehouse::getId, warehouseId).eq(MktWarehouse::getJoinStatus, JS_ERP_CONNECTING)
                 .set(MktWarehouse::getJoinStatus, JS_PENDING_AGREEMENT)
-                .set(MktWarehouse::getOrderMode, "manual").set(MktWarehouse::getErpStatus, ERP_NONE));
+                .set(MktWarehouse::getOrderMode, ORDER_MODE_YUNSHAN).set(MktWarehouse::getErpStatus, ERP_NONE));
         if (updated == 1) {
             passStep(warehouseId, STEP_ERP);
             startStep(warehouseId, STEP_AGREEMENT);
-            auditService.log("warehouse.orders.manual", BIZ_TYPE, warehouseId, "采用运营 Excel 导入出库单，未连接外部 ERP");
+            auditService.log("warehouse.orders.yunshan", BIZ_TYPE, warehouseId, "采用云山发货量同步，未连接外部 ERP");
             return;
         }
         // 已进入协议或运营阶段后允许切换接单方式；ERP 凭证和连接状态保留，便于以后切回。
         updated = warehouseMapper.update(null, new LambdaUpdateWrapper<MktWarehouse>()
                 .eq(MktWarehouse::getId, warehouseId)
                 .in(MktWarehouse::getJoinStatus, JS_PENDING_AGREEMENT, JS_ONLINE, JS_PAUSED)
-                .set(MktWarehouse::getOrderMode, "manual"));
+                .set(MktWarehouse::getOrderMode, ORDER_MODE_YUNSHAN));
         requireUpdated(updated, warehouseId);
-        auditService.log("warehouse.orders.manual.switch", BIZ_TYPE, warehouseId, "切换为运营手工导入出库单");
+        auditService.log("warehouse.orders.yunshan.switch", BIZ_TYPE, warehouseId, "切换为云山发货量同步");
     }
 
     /** 选择 ERP 模式后进入 ERP 对接页；仍停留在接入阶段，直到正式环境真实联通。 */
@@ -211,15 +214,15 @@ public class MktWarehouseOnboardingService {
         if (!StringUtils.hasText(value) || value.trim().length() > max) throw new BizException(name + "必填且不能超过 " + max + " 字");
     }
 
-    /** 核验订单模式后确认已签署协议并上线；人工模式不更改 ERP 状态为已连接。 */
+    /** 核验订单模式后确认已签署协议并上线；云山发货量同步模式不更改 ERP 状态为已连接。 */
     @Transactional
     public void signAgreement(Long warehouseId, String contractFile) {
         if (!StringUtils.hasText(contractFile)) {
             throw new BizException("请上传加盟协议签署件");
         }
         MktWarehouse current = require(warehouseId);
-        boolean manual = "manual".equals(current.getOrderMode());
-        if (!manual && !Integer.valueOf(ERP_LIVE).equals(current.getErpStatus())) throw new BizException("请先选择人工导入模式或完成真实 ERP 接入");
+        boolean manual = isYunshanMode(current.getOrderMode());
+        if (!manual && !Integer.valueOf(ERP_LIVE).equals(current.getErpStatus())) throw new BizException("请先选择云山发货量同步或完成真实 ERP 接入");
         int updated = warehouseMapper.update(null, new LambdaUpdateWrapper<MktWarehouse>()
                 .eq(MktWarehouse::getId, warehouseId)
                 .eq(MktWarehouse::getJoinStatus, JS_PENDING_AGREEMENT)
@@ -238,11 +241,11 @@ public class MktWarehouseOnboardingService {
         transition(warehouseId, JS_PAUSED, "warehouse.pause", reason, JS_ONLINE);
     }
 
-    /** 恢复时须保有人工模式或正式 ERP 连接。 */
+    /** 恢复时须保有云山发货量同步模式或正式 ERP 连接。 */
     @Transactional
     public void resume(Long warehouseId) {
         MktWarehouse w = require(warehouseId);
-        if (!"manual".equals(w.getOrderMode()) && !Integer.valueOf(ERP_LIVE).equals(w.getErpStatus())) {
+        if (!isYunshanMode(w.getOrderMode()) && !Integer.valueOf(ERP_LIVE).equals(w.getErpStatus())) {
             throw new BizException("ERP 未联通,不能恢复上线");
         }
         transition(warehouseId, JS_ONLINE, "warehouse.resume", null, JS_PAUSED);
@@ -258,7 +261,7 @@ public class MktWarehouseOnboardingService {
     /** 已上线且已选择可用订单模式的云仓可承接客户。 */
     public boolean canAcceptCustomers(MktWarehouse w) {
         return w != null && Integer.valueOf(JS_ONLINE).equals(w.getJoinStatus())
-                && ("manual".equals(w.getOrderMode()) || Integer.valueOf(ERP_LIVE).equals(w.getErpStatus()));
+                && (isYunshanMode(w.getOrderMode()) || Integer.valueOf(ERP_LIVE).equals(w.getErpStatus()));
     }
 
     // ---------------- 内部 ----------------

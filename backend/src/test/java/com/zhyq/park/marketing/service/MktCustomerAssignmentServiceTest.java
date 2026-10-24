@@ -51,7 +51,7 @@ class MktCustomerAssignmentServiceTest {
         customer.setVersion(4); customer.setProjectId(1L); customer.setReferrerId(8L);
         customer.setIntendedWarehouseId(20L); customer.setAssignedWarehouseId(20L); customer.setWarehouseAssignmentStatus(1);
         warehouse = new MktWarehouse(); warehouse.setId(20L); warehouse.setName("测试云仓"); warehouse.setProjectId(1L);
-        warehouse.setJoinStatus(5); warehouse.setErpStatus(0); warehouse.setOrderMode("manual");
+        warehouse.setJoinStatus(5); warehouse.setErpStatus(0); warehouse.setOrderMode("yunshan");
         lenient().when(customers.selectForUpdate(11L)).thenReturn(customer);
         lenient().when(warehouses.selectForUpdate(20L)).thenReturn(warehouse);
     }

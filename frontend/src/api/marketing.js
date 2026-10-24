@@ -130,7 +130,7 @@ export const mktWarehouseApi = {
   steps: (id) => request.get(`${BASE}/warehouse/${id}/steps`),
   passQualification: (id, data) => request.post(`${BASE}/warehouse/${id}/qualify/pass`, data),
   rejectQualification: (id, data) => request.post(`${BASE}/warehouse/${id}/qualify/reject`, data),
-  useManual: (id) => request.post(`${BASE}/warehouse/${id}/order-mode/manual`),
+  useYunshan: (id) => request.post(`${BASE}/warehouse/${id}/order-mode/yunshan`),
   selectErp: (id) => request.post(`${BASE}/warehouse/${id}/order-mode/erp`),
   confirmErp: (id) => request.post(`${BASE}/warehouse/${id}/order-mode/erp/confirm`),
   markErp: (id) => request.post(`${BASE}/warehouse/${id}/erp/mark-connected`),
@@ -151,9 +151,6 @@ export const mktOrderApi = {
   // 合同链路已产生佣金(按成员汇总)
   contractCommissions: (params) => request.get(`${BASE}/order/contract-commissions`, { params }),
   get: (id) => request.get(`${BASE}/order/${id}`),
-  importExcel: (formData) => upload(`${BASE}/order/import`, formData),
-  // 接口有鉴权，裸 <a href> 不带 token；通过 axios 获取 blob。
-  template: () => request.get(`${BASE}/order/import-template`, { responseType: 'blob' }),
   void: (id, data) => request.post(`${BASE}/order/${id}/void`, data),
   splits: (id) => request.get(`${BASE}/order/${id}/splits`)
 }
