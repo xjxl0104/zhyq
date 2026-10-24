@@ -293,9 +293,9 @@ class MktTransitionGuardTest {
         @Test @DisplayName("资质审核 → 申请(驳回,可重提)")
         void qualifyReject() { service.rejectQualification(3L, "资质不全"); first().isStatusTransition("join_status", JS_APPLIED, JS_QUALIFYING); }
 
-        @Test @DisplayName("人工订单模式 → 待签协议,ERP 保持未连接")
+        @Test @DisplayName("云山发货量同步 → 待签协议,ERP 保持未连接")
         void erpMarked() {
-            service.useManualOrders(3L);
+            service.useYunshanOrders(3L);
             first().isStatusTransition("join_status", JS_PENDING_AGREEMENT, JS_ERP_CONNECTING);
             assertThat(first().setValue("erp_status")).isEqualTo(String.valueOf(MktWarehouseOnboardingService.ERP_NONE));
         }

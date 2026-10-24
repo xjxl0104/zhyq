@@ -173,7 +173,7 @@ public class MpBizController {
     public Result<List<Map<String, Object>>> warehouses() {
         return Result.ok(warehouseMapper.selectList(new LambdaQueryWrapper<MktWarehouse>()
                 .eq(MktWarehouse::getJoinStatus, MktWarehouseOnboardingService.JS_ONLINE)
-                .and(q -> q.eq(MktWarehouse::getOrderMode, "manual").or().eq(MktWarehouse::getErpStatus, MktWarehouseOnboardingService.ERP_LIVE)))
+                .and(q -> q.in(MktWarehouse::getOrderMode, "yunshan", "manual").or().eq(MktWarehouse::getErpStatus, MktWarehouseOnboardingService.ERP_LIVE)))
                 .stream().map(w -> Map.<String, Object>of("id", w.getId(), "code", w.getCode(), "name", w.getName(), "region", String.valueOf(w.getRegion())))
                 .collect(Collectors.toList()));
     }

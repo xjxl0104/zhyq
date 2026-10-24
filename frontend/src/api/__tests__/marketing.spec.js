@@ -64,14 +64,6 @@ it('settle sends only ids and does not get projectId injected into the body', as
   expect(JSON.parse(received.body)).toEqual({ ids: [11, 12] })
 })
 
-// 模板接口有 @PreAuthorize,裸 <a href> 不带 token 会 401;必须走 axios 带 Authorization 拿 blob。
-it('template download goes through axios with the login token and returns a blob', async () => {
-  const res = await mktOrderApi.template()
-  expect(received.authorization).toBe('Bearer mkt-test-token')
-  expect(received.url).toBe('/api/crm/marketing/order/import-template?projectId=7')
-  expect(res.data).toBeInstanceOf(Blob)
-})
-
 it('customer pricing uses the authenticated read endpoint scoped to the selected project', async () => {
   await mktCustomerApi.pricing(17)
   expect(received.method).toBe('GET')

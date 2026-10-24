@@ -55,7 +55,7 @@ public class MktWarehouseSettlementService {
                 .le(MktWarehouseSettlement::getPeriodStart, end).ge(MktWarehouseSettlement::getPeriodEnd, start)
                 .and(q -> q.ne(MktWarehouseSettlement::getPeriodStart, start).or().ne(MktWarehouseSettlement::getPeriodEnd, end))) > 0)
             throw new BizException("结算期间与已有批次重叠");
-        var snapshot = "manual".equals(w.getOrderMode()) ? null : reconciliation.requireConfirmed(warehouseId, start, end);
+        var snapshot = com.zhyq.park.marketing.service.MktWarehouseOnboardingService.isYunshanMode(w.getOrderMode()) ? null : reconciliation.requireConfirmed(warehouseId, start, end);
         BigDecimal perOrder = rate(w.getFeeModel(), "perOrder"), perItem = rate(w.getFeeModel(), "perItem");
         if (perOrder.add(perItem).signum() <= 0) throw new BizException("请先配置云仓应付单票/按件费率");
         List<MktServiceFeeBill> bills = billMapper.selectList(new LambdaQueryWrapper<MktServiceFeeBill>()
@@ -126,7 +126,7 @@ public class MktWarehouseSettlementService {
         s = requireOwned(id, s.getWarehouseId());
         if (Integer.valueOf(PAID).equals(s.getStatus())) throw new BizException("已付款结算单保留原对账版本，差异须另行处理");
         MktErpReconcileSnapshot current = null;
-        if (s.getReconcileSnapshotId() != null || !"manual".equals(warehouse.getOrderMode()))
+        if (s.getReconcileSnapshotId() != null || !com.zhyq.park.marketing.service.MktWarehouseOnboardingService.isYunshanMode(warehouse.getOrderMode()))
             current = reconciliation.requireConfirmed(s.getWarehouseId(), s.getPeriodStart(), s.getPeriodEnd());
         boolean rebound = current != null && !Objects.equals(current.getId(), s.getReconcileSnapshotId());
         if (!Set.of(DISPUTED, FROZEN).contains(s.getStatus()) && !rebound) throw new BizException("当前结算单无需处理争议或冻结");
@@ -229,7 +229,7 @@ public class MktWarehouseSettlementService {
         var warehouse = lockWarehouse(s.getWarehouseId());
         s = requireOwned(s.getId(), s.getWarehouseId());
         if (Integer.valueOf(PAID).equals(s.getStatus())) return s;
-        if (s.getReconcileSnapshotId() != null || !"manual".equals(warehouse.getOrderMode())) {
+        if (s.getReconcileSnapshotId() != null || !com.zhyq.park.marketing.service.MktWarehouseOnboardingService.isYunshanMode(warehouse.getOrderMode())) {
             var current = reconciliation.requireConfirmed(s.getWarehouseId(), s.getPeriodStart(), s.getPeriodEnd());
             if (!Objects.equals(current.getId(), s.getReconcileSnapshotId()))
                 throw new BizException("结算引用的对账版本已过期，请填写处理说明并重新核对结算");

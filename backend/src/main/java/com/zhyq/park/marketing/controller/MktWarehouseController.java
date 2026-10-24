@@ -95,7 +95,7 @@ public class MktWarehouseController {
     public Result<List<MktWarehouse>> online() {
         return Result.ok(warehouseMapper.selectList(new LambdaQueryWrapper<MktWarehouse>()
                 .eq(MktWarehouse::getJoinStatus, MktWarehouseOnboardingService.JS_ONLINE)
-                .and(q -> q.eq(MktWarehouse::getOrderMode, "manual").or().eq(MktWarehouse::getErpStatus, MktWarehouseOnboardingService.ERP_LIVE))
+                .and(q -> q.in(MktWarehouse::getOrderMode, "yunshan", "manual").or().eq(MktWarehouse::getErpStatus, MktWarehouseOnboardingService.ERP_LIVE))
                 .select(MktWarehouse::getId, MktWarehouse::getCode, MktWarehouse::getName, MktWarehouse::getRegion)));
     }
 
@@ -169,10 +169,10 @@ public class MktWarehouseController {
     @Operation(summary = "人工标记 ERP 已联通(阶段 A)") @PreAuthorize("hasAuthority('crm:marketing:onboarding:audit')") @PostMapping("/{id}/erp/mark-connected")
     public Result<Void> markErp(@PathVariable Long id) { onboardingService.markErpConnected(id, MktAuditService.currentOperator()); return Result.ok(); }
 
-    @Operation(summary = "采用人工导入出库单")
+    @Operation(summary = "采用云山发货量同步")
     @PreAuthorize("hasAuthority('crm:marketing:onboarding:audit')")
-    @PostMapping("/{id}/order-mode/manual")
-    public Result<Void> useManual(@PathVariable Long id) { onboardingService.useManualOrders(id); return Result.ok(); }
+    @PostMapping("/{id}/order-mode/yunshan")
+    public Result<Void> useYunshan(@PathVariable Long id) { onboardingService.useYunshanOrders(id); return Result.ok(); }
 
     @Operation(summary = "选择外部 ERP 订单接入")
     @PreAuthorize("hasAuthority('crm:marketing:onboarding:audit')")

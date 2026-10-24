@@ -69,7 +69,7 @@ class MktOnboardingAndLockServiceTest {
 
         private MktWarehouse completeWarehouse() {
             MktWarehouse w = new MktWarehouse(); w.setId(7L); w.setName("杭州仓"); w.setPhone("13800000000");
-            w.setContact("联系人"); w.setRegion("杭州"); w.setAddress("杭州园区"); w.setOrderMode("manual"); w.setErpStatus(0); return w;
+            w.setContact("联系人"); w.setRegion("杭州"); w.setAddress("杭州园区"); w.setOrderMode("yunshan"); w.setErpStatus(0); return w;
         }
 
         @Test
@@ -119,23 +119,23 @@ class MktOnboardingAndLockServiceTest {
         }
 
         @Test
-        void manualOrdersFromWrongStateThrows() {
+        void yunshanOrdersFromWrongStateThrows() {
             when(warehouseMapper.update(isNull(), any(Wrapper.class))).thenReturn(0);
-            assertThatThrownBy(() -> service.useManualOrders(7L)).isInstanceOf(BizException.class);
+            assertThatThrownBy(() -> service.useYunshanOrders(7L)).isInstanceOf(BizException.class);
         }
 
         @Test
-        void manualOrdersMovesToPendingAgreement() {
+        void yunshanOrdersMovesToPendingAgreement() {
             when(warehouseMapper.update(isNull(), any(Wrapper.class))).thenReturn(1);
-            service.useManualOrders(7L);
-            verify(auditService).log(eq("warehouse.orders.manual"), any(), eq(7L), any());
+            service.useYunshanOrders(7L);
+            verify(auditService).log(eq("warehouse.orders.yunshan"), any(), eq(7L), any());
         }
 
         @Test
         void onlineWarehouseCanSwitchToManualWithoutDiscardingErpConnection() {
             when(warehouseMapper.update(isNull(), any(Wrapper.class))).thenReturn(0, 1);
-            service.useManualOrders(7L);
-            verify(auditService).log(eq("warehouse.orders.manual.switch"), any(), eq(7L), any());
+            service.useYunshanOrders(7L);
+            verify(auditService).log(eq("warehouse.orders.yunshan.switch"), any(), eq(7L), any());
             verify(stepMapper, never()).update(isNull(), any(Wrapper.class));
             ArgumentCaptor<Wrapper> updates = ArgumentCaptor.forClass(Wrapper.class);
             verify(warehouseMapper, times(2)).update(isNull(), updates.capture());
@@ -192,7 +192,7 @@ class MktOnboardingAndLockServiceTest {
             assertThat(service.canAcceptCustomers(w)).isTrue();
             w.setErpStatus(0);
             assertThat(service.canAcceptCustomers(w)).isFalse();
-            w.setOrderMode("manual");
+            w.setOrderMode("yunshan");
             assertThat(service.canAcceptCustomers(w)).isTrue();
             w.setErpStatus(2); w.setJoinStatus(6);
             assertThat(service.canAcceptCustomers(w)).isFalse();

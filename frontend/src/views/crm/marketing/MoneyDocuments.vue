@@ -94,7 +94,7 @@ const tagType=s=>({2:'warning',3:'primary',4:'success',5:'danger',6:'danger'}[s]
 const query=reactive({pageNo:1,pageSize:20,warehouseId:null,status:null}), rows=ref([]),total=ref(0),loading=ref(false),saving=ref(false),error=ref('')
 const warehouses=ref([]),contracts=ref([]),choicesLoading=ref(false),parkContracts=computed(()=>contracts.value.filter(c=>c.signMode===1&&[4,5,6,7].includes(c.status))),directContracts=computed(()=>contracts.value.filter(c=>c.signMode===2&&[4,5,6,7].includes(c.status)))
 const warehouseName=id=>warehouses.value.find(w=>w.id===id)?.name||`云仓 #${id}`
-const requiresReconciliation=row=>!!row.reconcileSnapshotId || warehouses.value.some(w=>w.id===row.warehouseId && w.orderMode!=='manual')
+const requiresReconciliation=row=>!!row.reconcileSnapshotId || warehouses.value.some(w=>w.id===row.warehouseId && !['yunshan','manual'].includes(w.orderMode))
 async function load(){loading.value=true;error.value='';try{const r=await api.value.page(query);rows.value=r.records||[];total.value=r.total||0}catch(e){error.value=e.message||'单据加载失败，请重试'}finally{loading.value=false}}
 function search(){query.pageNo=1;load()} function reset(){Object.assign(query,{pageNo:1,warehouseId:null,status:null});load()}
 const generation=reactive({visible:false,targetId:null,period:[]}),payment=reactive({visible:false,row:null,number:'',files:[]}),direct=reactive({visible:false,contractId:null,amount:'',paymentNo:'',files:[],period:[]})

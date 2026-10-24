@@ -55,7 +55,7 @@ class MktWarehouseSettlementServiceTest {
     }
     @Test void latePaidBillCreatesSupplementWithoutChangingPaidBatch() {
         var old = settlement(4); when(settlements.selectOne(any())).thenReturn(old);
-        var w=new MktWarehouse(); w.setId(11L); w.setJoinStatus(5); w.setOrderMode("manual");
+        var w=new MktWarehouse(); w.setId(11L); w.setJoinStatus(5); w.setOrderMode("yunshan");
         w.setFeeModel("{\"perOrder\":2,\"perItem\":0.5}"); when(warehouses.selectOne(any())).thenReturn(w);
         var bill=new MktServiceFeeBill();bill.setId(20L);bill.setAmount(new BigDecimal("100.00"));
         when(bills.selectList(any())).thenAnswer(inv -> {
@@ -86,7 +86,7 @@ class MktWarehouseSettlementServiceTest {
     }
     @Test void switchingToManualDoesNotBypassAnExistingErpSnapshot() {
         var s=settlement(2);s.setReconcileSnapshotId(100L);when(settlements.selectById(40L)).thenReturn(s);
-        var warehouse=new MktWarehouse();warehouse.setOrderMode("manual");when(warehouses.selectOne(any())).thenReturn(warehouse);
+        var warehouse=new MktWarehouse();warehouse.setOrderMode("yunshan");when(warehouses.selectOne(any())).thenReturn(warehouse);
         when(reconciliation.requireConfirmed(11L,START,END)).thenThrow(new BizException("订单已变化"));
         assertThatThrownBy(()->service().confirm(40L,11L)).isInstanceOf(BizException.class).hasMessageContaining("已变化");
         verify(settlements,never()).update(any(),any());
@@ -121,7 +121,7 @@ class MktWarehouseSettlementServiceTest {
     }
     @Test void paymentRequiresConfirmedExactAmountAndProof() {
         var s=settlement(3);when(settlements.selectById(40L)).thenReturn(s);
-        var warehouse = new MktWarehouse(); warehouse.setOrderMode("manual");when(warehouses.selectOne(any())).thenReturn(warehouse);
+        var warehouse = new MktWarehouse(); warehouse.setOrderMode("yunshan");when(warehouses.selectOne(any())).thenReturn(warehouse);
         assertThatThrownBy(()->service().pay(40L,"P1","file:1",new BigDecimal("9.00"),"admin"))
                 .isInstanceOf(BizException.class).hasMessageContaining("实付金额");
         verifyNoInteractions(proofs);

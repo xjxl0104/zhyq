@@ -19,7 +19,7 @@
           <template #default="{ row }"><el-tag :type="row.joinStatus === 3 ? 'primary' : 'warning'">{{ JOIN[row.joinStatus] }}</el-tag></template>
         </el-table-column>
         <el-table-column label="订单接入方式" width="135">
-          <template #default="{ row }">{{ row.orderMode === 'manual' ? '手工导入' : row.orderMode === 'erp' ? '外部 ERP' : '待选择' }}</template>
+          <template #default="{ row }">{{ ['yunshan', 'manual'].includes(row.orderMode) ? '云山发货量同步' : row.orderMode === 'erp' ? '外部 ERP' : '待选择' }}</template>
         </el-table-column>
         <el-table-column prop="createTime" label="申请时间" width="160" />
         <el-table-column label="操作" width="420" fixed="right">
@@ -30,7 +30,7 @@
               <el-button :disabled="acting" link type="danger" @click="withReason(row, 'rejectQualification', '驳回资质')">驳回</el-button>
             </template>
             <template v-else-if="row.joinStatus === 3">
-              <el-button :disabled="acting" link type="success" @click="act(row, 'useManual')">{{ row.orderMode === 'erp' ? '切换手工导入' : '选择手工导入' }}</el-button>
+              <el-button :disabled="acting" link type="success" @click="act(row, 'useYunshan')">{{ row.orderMode === 'erp' ? '切换云山发货量同步' : '选择云山发货量同步' }}</el-button>
               <el-button :disabled="acting" link type="primary" @click="selectErp(row)">{{ row.orderMode === 'erp' ? '继续配置 ERP' : '选择 ERP 接入' }}</el-button>
               <el-button :disabled="acting || row.erpStatus !== 2 || row.orderMode !== 'erp'" link type="success" @click="act(row, 'confirmErp')">ERP 已联通，继续</el-button>
             </template>

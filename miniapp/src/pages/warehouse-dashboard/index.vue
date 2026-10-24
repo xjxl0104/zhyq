@@ -2,7 +2,7 @@
   <view class="page-wrap">
     <view class="card hero-card">
       <view class="hero-title">{{ profile?.warehouseName || '云仓工作台' }}</view>
-      <view class="hero-subtitle">{{ JOIN[stats.joinStatus] || '正在读取状态' }} · {{ stats.orderMode === 'manual' ? '人工导入出库单' : '外部 ERP 接入' }}</view>
+      <view class="hero-subtitle">{{ JOIN[stats.joinStatus] || '正在读取状态' }} · {{ ['yunshan', 'manual'].includes(stats.orderMode) ? '云山发货量同步' : '外部 ERP 接入' }}</view>
     </view>
     <view v-if="profile && !profile.profileComplete && profile.profileEditable" class="card profile-prompt">
       <view class="wh-item-title">个人信息可稍后补充</view>
@@ -21,7 +21,7 @@
         <view class="wh-item"><view class="wh-note">今日出库</view><view class="wh-title">{{ stats.todayOrders ?? '—' }}</view></view>
         <view class="wh-item"><view class="wh-note">本月出库</view><view class="wh-title">{{ stats.monthOrders ?? '—' }}</view></view>
       </view>
-      <view class="wh-note">{{ stats.orderMode === 'manual' ? '订单由园区运营导入后同步展示。' : 'ERP 状态：' + (ERP[stats.erpStatus] || '待确认') }}</view>
+      <view class="wh-note">{{ ['yunshan', 'manual'].includes(stats.orderMode) ? '发货量每日由云山同步，佣金按发货票数计算。' : 'ERP 状态：' + (ERP[stats.erpStatus] || '待确认') }}</view>
     </view>
     <view class="card">
       <view class="wh-item-title">业务办理</view>
