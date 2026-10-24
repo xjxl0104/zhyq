@@ -64,6 +64,7 @@ public class MpMeController {
     private final com.zhyq.park.common.setting.BizSettings bizSettings;
     private final MktSelfProfileService profiles;
     private final com.zhyq.park.marketing.admin.MktAccountControl accountControl;
+    private final com.zhyq.park.marketing.service.MktPromoterService promoterService;
 
     @Operation(summary = "我的资料") @GetMapping("/me")
     public Result<Map<String, Object>> me() {
@@ -158,8 +159,19 @@ public class MpMeController {
                     Map<String, Object> m = new HashMap<>();
                     m.put("id", t.getId()); m.put("name", t.getName()); m.put("avatar", t.getAvatar());
                     m.put("positionCode", t.getPositionCode()); m.put("status", t.getStatus()); m.put("joinTime", t.getCreateTime());
+                    m.put("loginable", t.getPhone() != null && !t.getPhone().startsWith("p:"));
                     return m;
                 }).collect(Collectors.toList()));
+    }
+
+    @Operation(summary = "新增团队成员:登录成员必须填手机号(微信授权后自动绑定);不登录成员不填手机号")
+    @PostMapping("/team/member")
+    public Result<Map<String, Object>> addTeamMember(@RequestBody Map<String, String> body) {
+        MktPromoter member = promoterService.addTeamMember(MpAuthService.currentPromoterId(), body.get("name"), body.get("phone"));
+        Map<String, Object> m = new HashMap<>();
+        m.put("id", member.getId()); m.put("name", member.getName()); m.put("positionCode", member.getPositionCode());
+        m.put("loginable", !member.getPhone().startsWith("p:"));
+        return Result.ok(m);
     }
 
     @Operation(summary = "团队分配:本团队各岗位默认份额/下限/当前覆盖(仅顶格岗位可见)") @GetMapping("/team/allocation")

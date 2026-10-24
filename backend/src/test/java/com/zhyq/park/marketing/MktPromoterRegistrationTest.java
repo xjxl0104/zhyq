@@ -82,6 +82,53 @@ class MktPromoterRegistrationTest {
         assertThat(saved.getPath()).isEqualTo("/9/");
     }
 
+    private MktPromoter actor(String position) {
+        MktPromoter a = new MktPromoter(); a.setId(5L); a.setName("丁超"); a.setStatus(1); a.setPositionCode(position);
+        a.setInviteCode("ABCD2345"); a.setPath("/5/"); return a;
+    }
+
+    @Test void loginMemberNeedsPhoneAndHangsUnderActorOneLevelLower() {
+        when(promoters.selectForUpdate(5L)).thenReturn(actor("P4"));
+        when(promoters.selectOne(any())).thenReturn(actor("P4"));
+        when(promoters.insert(any(MktPromoter.class))).thenAnswer(call -> {
+            ((MktPromoter) call.getArgument(0)).setId(20L); return 1;
+        });
+        MktPromoter saved = service.addTeamMember(5L, " 张三 ", "13900139000");
+        assertThat(saved.getName()).isEqualTo("张三");
+        assertThat(saved.getPhone()).isEqualTo("13900139000");
+        assertThat(saved.getParentId()).isEqualTo(5L);
+        assertThat(saved.getPositionCode()).isEqualTo("P3");
+        assertThat(saved.getPath()).isEqualTo("/5/20/");
+        assertThat(saved.getSource()).isEqualTo("team");
+    }
+
+    @Test void nonLoginMemberGetsPlaceholderPhoneThatCannotLogIn() {
+        when(promoters.selectForUpdate(5L)).thenReturn(actor("P3"));
+        when(promoters.selectOne(any())).thenReturn(actor("P3"));
+        when(promoters.insert(any(MktPromoter.class))).thenAnswer(call -> {
+            ((MktPromoter) call.getArgument(0)).setId(21L); return 1;
+        });
+        MktPromoter saved = service.addTeamMember(5L, "李四", "");
+        assertThat(saved.getPhone()).startsWith("p:");
+        assertThat(saved.getPositionCode()).isEqualTo("P2");
+        assertThat(saved.getOpenid()).isNull();
+    }
+
+    @Test void invalidPhoneDuplicatePhoneAndBlankNameAreRejected() {
+        when(promoters.selectForUpdate(5L)).thenReturn(actor("P4"));
+        assertThatThrownBy(() -> service.addTeamMember(5L, "王五", "123")).isInstanceOf(BizException.class).hasMessageContaining("11 位手机号");
+        assertThatThrownBy(() -> service.addTeamMember(5L, "  ", "13900139000")).isInstanceOf(BizException.class).hasMessageContaining("姓名");
+        when(promoters.selectCount(any())).thenReturn(1L);
+        assertThatThrownBy(() -> service.addTeamMember(5L, "王五", "13900139000")).isInstanceOf(BizException.class).hasMessageContaining("已是伙伴");
+        verify(promoters, never()).insert(any(MktPromoter.class));
+    }
+
+    @Test void frozenActorCannotAddMembers() {
+        MktPromoter frozen = actor("P4"); frozen.setStatus(2);
+        when(promoters.selectForUpdate(5L)).thenReturn(frozen);
+        assertThatThrownBy(() -> service.addTeamMember(5L, "赵六", null)).isInstanceOf(BizException.class);
+    }
+
     private MktPromoter profile() {
         MktPromoter p = new MktPromoter(); p.setPhone("13800138000"); p.setName("测试伙伴"); return p;
     }

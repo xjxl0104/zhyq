@@ -31,7 +31,7 @@
 
     <div v-show="view === 'list'" class="table-card">
       <div class="toolbar">
-        <el-button type="primary" @click="openManual"><el-icon><Plus /></el-icon>录入伙伴</el-button>
+        <el-button type="primary" @click="openManual"><el-icon><Plus /></el-icon>新增团队成员</el-button>
         <span class="hint">注册时绑定上级邀请码。P4 拥有定价权，P1–P4 的按单金额由 P4 设定。</span>
       </div>
       <el-table :data="list" v-loading="loading" border stripe>
@@ -90,10 +90,17 @@
     </el-dialog>
 
     <!-- 录入伙伴 -->
-    <el-dialog v-model="manual.visible" title="录入伙伴" width="520px">
+    <el-dialog v-model="manual.visible" title="新增团队成员" width="520px">
       <el-form ref="manualRef" :model="manual.form" :rules="manualRules" label-width="100px">
+        <el-form-item label="成员类型">
+          <el-radio-group v-model="manual.form.memberType">
+            <el-radio value="login">登录成员</el-radio>
+            <el-radio value="nologin">不登录成员</el-radio>
+          </el-radio-group>
+          <div class="hint">{{ manual.form.memberType === 'login' ? '必须填写手机号；该手机号微信授权登录小程序后自动绑定本档案。' : '不填手机号，只作记录和分佣对象，不能登录小程序。' }}</div>
+        </el-form-item>
         <el-form-item label="姓名" prop="name"><el-input v-model="manual.form.name" /></el-form-item>
-        <el-form-item label="手机号" prop="phone"><el-input v-model="manual.form.phone" maxlength="11" /></el-form-item>
+        <el-form-item v-if="manual.form.memberType === 'login'" label="手机号" prop="phone"><el-input v-model="manual.form.phone" maxlength="11" /></el-form-item>
         <el-form-item label="上级邀请码">
           <el-input v-model="manual.form.parentInviteCode" placeholder="留空 = 独立根节点" maxlength="8" />
         </el-form-item>
@@ -294,7 +301,7 @@ function reset() {
 // ---- 录入 ----
 const manualRef = ref()
 const manual = reactive({ visible: false, form: emptyManual() })
-function emptyManual() { return { name: '', phone: '', parentInviteCode: '', positionCode: 'P1', remark: '' } }
+function emptyManual() { return { memberType: 'login', name: '', phone: '', parentInviteCode: '', positionCode: 'P1', remark: '' } }
 const manualRules = {
   name: [{ required: true, message: '请输入姓名', trigger: 'blur' }],
   phone: [{ required: true, pattern: /^1\d{10}$/, message: '请输入 11 位手机号', trigger: 'blur' }]
@@ -302,8 +309,10 @@ const manualRules = {
 function openManual() { Object.assign(manual.form, emptyManual()); manual.visible = true }
 async function submitManual() {
   await manualRef.value.validate()
-  await mktPromoterApi.manual(manual.form)
-  ElMessage.success('已录入')
+  const { memberType, ...payload } = manual.form
+  if (memberType !== 'login') payload.phone = ''
+  await mktPromoterApi.manual(payload)
+  ElMessage.success('已新增')
   manual.visible = false
   load()
 }

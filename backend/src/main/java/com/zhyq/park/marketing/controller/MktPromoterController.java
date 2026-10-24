@@ -194,6 +194,8 @@ public class MktPromoterController {
         p.setPositionCode(req.getPositionCode());
         p.setRemark(req.getRemark());
         p.setProjectId(req.getProjectId());
+        // 登录成员必须填手机号；不登录成员留空手机号，只作记录/分佣对象。
+        if (req.getPhone() == null || req.getPhone().isBlank()) return Result.ok(promoterService.registerManaged(p, req.getParentInviteCode()));
         return Result.ok(promoterService.register(p, req.getParentInviteCode(), "admin"));
     }
 

@@ -8,7 +8,7 @@
       <view v-if="canManage" class="team-note">显示邀请体系内的正常成员。您可以设置 P1–P4 称号，金额仍按客户单独配置。P4 拥有定价权。</view>
       <view v-if="!list.length" class="team-note">还没有可显示的成员。朋友通过您的邀请码注册后会加入团队。</view>
       <view class="row member-row" v-for="member in list" :key="member.id">
-        <view class="member-info"><view class="member-name">{{ member.name || '未命名伙伴' }}</view><view class="team-note">{{ member.positionCode }} · {{ member.positionName || positionName(member.positionCode) }}<text v-if="member.joinTime"> · {{ member.joinTime.slice(0, 10) }}</text></view></view>
+        <view class="member-info"><view class="member-name">{{ member.name || '未命名伙伴' }}<text v-if="member.loginable === false" class="tag"> 不登录</text></view><view class="team-note">{{ member.positionCode }} · {{ member.positionName || positionName(member.positionCode) }}<text v-if="member.joinTime"> · {{ member.joinTime.slice(0, 10) }}</text></view></view>
         <picker v-if="canManage && String(member.id) !== String(me.id)" :range="positionOptions" :value="positionIndex(member.positionCode)" :disabled="loading || !!savingMemberId || !positions.length" @change="event => changePosition(member, event)">
           <view class="position-action" :class="{ 'is-disabled': loading || !!savingMemberId }">{{ String(savingMemberId) === String(member.id) ? '保存中…' : '设置称号 ›' }}</view>
         </picker>
@@ -16,7 +16,8 @@
       </view>
       <view v-if="savedMessage" class="success-text" role="status">{{ savedMessage }}</view>
     </view>
-    <button class="btn" @click="switchTab('/pages/me/index')">查看我的邀请码</button>
+    <button class="btn" @click="navigateTo('/pages/team-add/index')">新增团队成员</button>
+    <button class="btn secondary" @click="switchTab('/pages/me/index')">查看我的邀请码</button>
   </view>
 </template>
 
