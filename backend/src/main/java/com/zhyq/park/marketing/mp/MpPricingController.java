@@ -16,6 +16,7 @@ import java.util.Map;
 public class MpPricingController {
     private final MktCustomerPricingService pricingService;
     private final com.zhyq.park.marketing.mapper.MktPositionMapper positionMapper;
+    private final com.zhyq.park.marketing.service.MktPromoterService promoterService;
 
     @GetMapping("/positions")
     public Result<List<Map<String,String>>> positions() {
@@ -35,7 +36,11 @@ public class MpPricingController {
     }
     @GetMapping("/team")
     public Result<List<Candidate>> team() {
-        return Result.ok(pricingService.team(MpAuthService.currentPromoterId()));
+        List<Candidate> team = pricingService.team(MpAuthService.currentPromoterId());
+        // 没有手机号但有账号密码的成员也能登录
+        java.util.Set<Long> byCredential = promoterService.credentialLoginIds(team.stream().filter(c -> !c.loginable()).map(Candidate::id).toList());
+        return Result.ok(team.stream().map(c -> !c.loginable() && byCredential.contains(c.id())
+                ? new Candidate(c.id(), c.name(), c.positionCode(), c.phoneTail(), true) : c).toList());
     }
     @PutMapping("/team/{promoterId}/position")
     public Result<Void> setTeamPosition(@PathVariable Long promoterId, @RequestBody Map<String,String> input) {

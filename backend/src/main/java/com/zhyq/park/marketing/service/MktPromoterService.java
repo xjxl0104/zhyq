@@ -148,6 +148,26 @@ public class MktPromoterService {
         return member;
     }
 
+    /** 真实手机号（非占位）或已绑定微信，即可登录；其余再看是否有账号密码凭证。 */
+    public java.util.Set<Long> loginableIds(java.util.Collection<MktPromoter> promoters) {
+        java.util.Set<Long> result = new java.util.HashSet<>();
+        java.util.List<Long> rest = new java.util.ArrayList<>();
+        for (MktPromoter p : promoters) {
+            if ((p.getPhone() != null && !p.getPhone().startsWith("p:")) || StringUtils.hasText(p.getOpenid())) result.add(p.getId());
+            else rest.add(p.getId());
+        }
+        result.addAll(credentialLoginIds(rest));
+        return result;
+    }
+
+    /** 有可用小程序账号密码的伙伴（即使没有手机号也能登录）。 */
+    public java.util.Set<Long> credentialLoginIds(java.util.Collection<Long> ids) {
+        if (ids == null || ids.isEmpty()) return java.util.Set.of();
+        String in = ids.stream().map(String::valueOf).collect(java.util.stream.Collectors.joining(","));
+        java.util.List<Long> found = jdbc.queryForList("SELECT identity_id FROM crm_marketing_credential WHERE identity_type='mp' AND deleted=0 AND status=1 AND identity_id IN (" + in + ")", Long.class);
+        return found == null ? java.util.Set.of() : new java.util.HashSet<>(found);
+    }
+
     private MktPromoter createProfile(MktPromoter p, String parentInviteCode, String source) {
         // Both phone and profile-later registration require attribution; manual root creation remains available.
         if ("mp".equals(source)) {

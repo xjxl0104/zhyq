@@ -66,7 +66,7 @@ public class MktPromoterController {
                 .and(projectId != null, q -> q.eq(MktPromoter::getProjectId, projectId).or().isNull(MktPromoter::getProjectId))
                 .orderByDesc(MktPromoter::getId);
         IPage<MktPromoter> p = promoterMapper.selectPage(new Page<>(pageNo, pageSize), qw);
-        return Result.ok(PageResult.of(p.getTotal(), p.getRecords().stream().map(PromoterVO::of).collect(java.util.stream.Collectors.toList())));
+        return Result.ok(PageResult.of(p.getTotal(), toVos(p.getRecords())));
     }
 
     @Operation(summary = "详情")
@@ -75,7 +75,7 @@ public class MktPromoterController {
     public Result<PromoterVO> get(@PathVariable Long id) {
         MktPromoter p = promoterMapper.selectById(id);
         if (p == null) throw new BizException("伙伴不存在");
-        return Result.ok(PromoterVO.of(p));
+        return Result.ok(toVos(List.of(p)).get(0));
     }
 
     public record DeleteRequest(String reason) {}
@@ -108,8 +108,8 @@ public class MktPromoterController {
     @PreAuthorize("hasAuthority('crm:marketing:promoter:query')")
     @GetMapping("/{id}/team")
     public Result<List<PromoterVO>> team(@PathVariable Long id) {
-        return Result.ok(promoterMapper.selectList(new LambdaQueryWrapper<MktPromoter>()
-                .eq(MktPromoter::getParentId, id).orderByDesc(MktPromoter::getId)).stream().map(PromoterVO::of).collect(java.util.stream.Collectors.toList()));
+        return Result.ok(toVos(promoterMapper.selectList(new LambdaQueryWrapper<MktPromoter>()
+                .eq(MktPromoter::getParentId, id).orderByDesc(MktPromoter::getId))));
     }
 
     /** 伙伴对外视图:剔除 openid/unionid/registerIp/deviceId 等登录与设备身份(最低角色可批量拉,不能外泄 PII)。 */
@@ -117,13 +117,20 @@ public class MktPromoterController {
                                     String path, String positionCode, LocalDateTime positionSince, Integer status,
                                     Integer isInternal, String agreementVersion, LocalDateTime agreedAt, Integer idVerified,
                                     LocalDateTime bindTime, LocalDateTime inviteDeadline, LocalDateTime lastLogin,
-                                    String source, String remark, Long projectId, LocalDateTime createTime) {
-        static PromoterVO of(MktPromoter p) {
+                                    String source, String remark, Long projectId, LocalDateTime createTime, boolean loginable) {
+        static PromoterVO of(MktPromoter p, java.util.Set<Long> loginableIds) {
+            boolean loginable = (p.getPhone() != null && !p.getPhone().startsWith("p:")) || (p.getOpenid() != null && !p.getOpenid().isBlank())
+                    || (loginableIds != null && loginableIds.contains(p.getId()));
             return new PromoterVO(p.getId(), p.getName(), p.jsonPhone(), p.getAvatar(), p.getInviteCode(), p.getParentId(),
                     p.getPath(), p.getPositionCode(), p.getPositionSince(), p.getStatus(), p.getIsInternal(),
                     p.getAgreementVersion(), p.getAgreedAt(), p.getIdVerified(), p.getBindTime(), p.getInviteDeadline(),
-                    p.getLastLogin(), p.getSource(), p.getRemark(), p.getProjectId(), p.getCreateTime());
+                    p.getLastLogin(), p.getSource(), p.getRemark(), p.getProjectId(), p.getCreateTime(), loginable);
         }
+    }
+
+    private java.util.List<PromoterVO> toVos(java.util.List<MktPromoter> rows) {
+        java.util.Set<Long> ids = promoterService.loginableIds(rows);
+        return rows.stream().map(p -> PromoterVO.of(p, ids)).collect(java.util.stream.Collectors.toList());
     }
 
     @Operation(summary = "推荐的客户")
