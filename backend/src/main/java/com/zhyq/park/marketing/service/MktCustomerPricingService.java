@@ -60,7 +60,8 @@ public class MktCustomerPricingService {
         static Candidate of(MktPromoter p) {
             String phone = p.getPhone();
             String tail = phone != null && phone.matches("^1\\d{10}$") ? phone.substring(7) : null;
-            return new Candidate(p.getId(), p.getName(), p.getPositionCode(), tail, phone != null && !phone.startsWith("p:"));
+            boolean loginable = (phone != null && !phone.startsWith("p:")) || (p.getOpenid() != null && !p.getOpenid().isBlank());
+            return new Candidate(p.getId(), p.getName(), p.getPositionCode(), tail, loginable);
         }
     }
     public record PricingSnapshot(Long pricingId, Long ownerPromoterId, String ownerPositionCode,

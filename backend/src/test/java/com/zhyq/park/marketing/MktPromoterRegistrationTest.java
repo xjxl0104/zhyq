@@ -169,6 +169,15 @@ class MktPromoterRegistrationTest {
         assertThat(service.setMemberPhone(5L, 34L, "13700137002").getPhone()).isEqualTo("13700137002");
     }
 
+    @Test void loginableMeansRealPhoneOrWechatOrPasswordCredential() {
+        MktPromoter real = member(1L, 5L, "13800138000", "/5/1/");
+        MktPromoter placeholder = member(2L, 5L, "p:abc", "/5/2/");
+        MktPromoter wechat = member(3L, 5L, "p:def", "/5/3/"); wechat.setOpenid("openid-3");
+        MktPromoter password = member(4L, 5L, "p:ghi", "/5/4/");
+        when(jdbc.queryForList(anyString(), eq(Long.class))).thenReturn(java.util.List.of(4L));
+        assertThat(service.loginableIds(java.util.List.of(real, placeholder, wechat, password))).containsExactlyInAnyOrder(1L, 3L, 4L);
+    }
+
     @Test void frozenActorCannotAddMembers() {
         MktPromoter frozen = actor("P4"); frozen.setStatus(2);
         when(promoters.selectForUpdate(5L)).thenReturn(frozen);

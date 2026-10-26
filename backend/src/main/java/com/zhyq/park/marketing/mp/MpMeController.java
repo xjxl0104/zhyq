@@ -154,12 +154,14 @@ public class MpMeController {
     @Operation(summary = "我的团队(直属一层,不回隔级、不回金额)") @GetMapping("/team")
     public Result<List<Map<String, Object>>> team() {
         Long pid = MpAuthService.currentPromoterId();
-        return Result.ok(promoterMapper.selectList(new LambdaQueryWrapper<MktPromoter>().eq(MktPromoter::getParentId, pid).orderByDesc(MktPromoter::getId))
+        List<MktPromoter> children = promoterMapper.selectList(new LambdaQueryWrapper<MktPromoter>().eq(MktPromoter::getParentId, pid).orderByDesc(MktPromoter::getId));
+        Set<Long> loginable = promoterService.loginableIds(children);
+        return Result.ok(children
                 .stream().map(t -> {
                     Map<String, Object> m = new HashMap<>();
                     m.put("id", t.getId()); m.put("name", t.getName()); m.put("avatar", t.getAvatar());
                     m.put("positionCode", t.getPositionCode()); m.put("status", t.getStatus()); m.put("joinTime", t.getCreateTime());
-                    m.put("loginable", t.getPhone() != null && !t.getPhone().startsWith("p:"));
+                    m.put("loginable", loginable.contains(t.getId()));
                     return m;
                 }).collect(Collectors.toList()));
     }
