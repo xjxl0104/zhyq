@@ -167,11 +167,18 @@ public class MpMeController {
     @Operation(summary = "新增团队成员:登录成员必须填手机号(微信授权后自动绑定);不登录成员不填手机号")
     @PostMapping("/team/member")
     public Result<Map<String, Object>> addTeamMember(@RequestBody Map<String, String> body) {
-        MktPromoter member = promoterService.addTeamMember(MpAuthService.currentPromoterId(), body.get("name"), body.get("phone"));
+        MktPromoter member = promoterService.addTeamMember(MpAuthService.currentPromoterId(), body.get("name"), body.get("phone"), body.get("positionCode"));
         Map<String, Object> m = new HashMap<>();
         m.put("id", member.getId()); m.put("name", member.getName()); m.put("positionCode", member.getPositionCode());
         m.put("loginable", !member.getPhone().startsWith("p:"));
         return Result.ok(m);
+    }
+
+    @Operation(summary = "给还没有手机号的团队成员补录手机号（补录后才能登录）")
+    @PutMapping("/team/member/{id}/phone")
+    public Result<Void> setMemberPhone(@PathVariable Long id, @RequestBody Map<String, String> body) {
+        promoterService.setMemberPhone(MpAuthService.currentPromoterId(), id, body.get("phone"));
+        return Result.ok();
     }
 
     @Operation(summary = "团队分配:本团队各岗位默认份额/下限/当前覆盖(仅顶格岗位可见)") @GetMapping("/team/allocation")

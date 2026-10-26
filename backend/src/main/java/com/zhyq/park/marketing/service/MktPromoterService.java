@@ -80,7 +80,11 @@ public class MktPromoterService {
      * 登录成员必须填手机号,之后该手机号微信授权登录时自动绑定本档案;不登录成员不填手机号,只作记录/分佣对象,不能登录。
      */
     @Transactional
-    public MktPromoter addTeamMember(Long actorId, String name, String phone) {
+    public MktPromoter addTeamMember(Long actorId, String name, String phone) { return addTeamMember(actorId, name, phone, null); }
+
+    /** positionCode 只有 P4 可以指定（P1–P3）；其他人新增的成员固定比自己低一级。 */
+    @Transactional
+    public MktPromoter addTeamMember(Long actorId, String name, String phone, String positionCode) {
         MktPromoter actor = actorId == null ? null : promoterMapper.selectForUpdate(actorId);
         if (actor == null || actor.getStatus() == null || actor.getStatus() != ST_NORMAL) throw new BizException("账号状态异常，不能新增团队成员");
         String memberName = name == null ? "" : name.trim();
@@ -97,6 +101,15 @@ public class MktPromoterService {
         } else {
             p.setPhone("p:" + UUID.randomUUID().toString().replace("-", "").substring(0, 18));
         }
+        if (StringUtils.hasText(positionCode)) {
+            String code = positionCode.trim().toUpperCase(Locale.ROOT);
+            if (!"P4".equals(actor.getPositionCode())) {
+                if (!code.equals(positionUnder(actor))) throw new BizException("只有 P4 可以指定新成员的称号");
+            } else if (!java.util.Set.of("P1", "P2", "P3").contains(code)) {
+                throw new BizException("新成员称号须为 P1、P2 或 P3");
+            }
+            p.setPositionCode(code);
+        }
         p.setStatus(ST_NORMAL);
         p.setRemark((login ? "登录成员" : "不登录成员") + "，由 " + (actor.getName() == null ? "#" + actor.getId() : actor.getName()) + " 新增");
         try {
@@ -104,6 +117,35 @@ public class MktPromoterService {
         } catch (DuplicateKeyException dup) {
             throw new BizException("该手机号已被使用，请换一个");
         }
+    }
+
+    /**
+     * 给还没有手机号的团队成员补录手机号，补录后该手机号微信授权登录即绑定本档案。
+     * 只有成员的直属上级，或成员所在团队里的 P4 可以补录；已经能登录（有真实手机号）的成员不能再改。
+     */
+    @Transactional
+    public MktPromoter setMemberPhone(Long actorId, Long memberId, String phone) {
+        MktPromoter actor = actorId == null ? null : promoterMapper.selectForUpdate(actorId);
+        if (actor == null || actor.getStatus() == null || actor.getStatus() != ST_NORMAL) throw new BizException("账号状态异常，不能补录手机号");
+        MktPromoter member = memberId == null ? null : promoterMapper.selectForUpdate(memberId);
+        if (member == null || actorId.equals(member.getId())) throw new BizException("成员不存在");
+        boolean directParent = actorId.equals(member.getParentId());
+        boolean teamP4 = "P4".equals(actor.getPositionCode()) && member.getPath() != null && member.getPath().contains("/" + actorId + "/");
+        if (!directParent && !teamP4) throw new BizException("只能给自己团队的成员补录手机号");
+        if (member.getPhone() != null && !member.getPhone().startsWith("p:")) throw new BizException("该成员已经可以登录，不能修改手机号");
+        String mobile = phone == null ? "" : phone.trim();
+        if (!mobile.matches("^1\\d{10}$")) throw new BizException("请输入 11 位手机号");
+        if (promoterMapper.selectCount(new LambdaQueryWrapper<MktPromoter>().eq(MktPromoter::getPhone, mobile)) > 0)
+            throw new BizException("该手机号已是伙伴，不能重复使用");
+        try {
+            promoterMapper.update(null, new LambdaUpdateWrapper<MktPromoter>().eq(MktPromoter::getId, memberId)
+                    .set(MktPromoter::getPhone, mobile).set(MktPromoter::getIsInternal, 0));
+        } catch (DuplicateKeyException dup) {
+            throw new BizException("该手机号已被使用，请换一个");
+        }
+        auditService.log("promoter.phone.set", BIZ_TYPE, memberId, "补录手机号，操作人 #" + actorId);
+        member.setPhone(mobile);
+        return member;
     }
 
     private MktPromoter createProfile(MktPromoter p, String parentInviteCode, String source) {

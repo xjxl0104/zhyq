@@ -123,6 +123,52 @@ class MktPromoterRegistrationTest {
         verify(promoters, never()).insert(any(MktPromoter.class));
     }
 
+    @Test void onlyP4CanChooseThePositionOfANewMember() {
+        when(promoters.selectForUpdate(5L)).thenReturn(actor("P4"));
+        when(promoters.selectOne(any())).thenReturn(actor("P4"));
+        when(promoters.insert(any(MktPromoter.class))).thenAnswer(call -> {
+            ((MktPromoter) call.getArgument(0)).setId(22L); return 1;
+        });
+        assertThat(service.addTeamMember(5L, "甲", null, "p1").getPositionCode()).isEqualTo("P1");
+        assertThatThrownBy(() -> service.addTeamMember(5L, "乙", null, "P4")).isInstanceOf(BizException.class).hasMessageContaining("P1、P2 或 P3");
+        when(promoters.selectForUpdate(5L)).thenReturn(actor("P3"));
+        when(promoters.selectOne(any())).thenReturn(actor("P3"));
+        assertThat(service.addTeamMember(5L, "丙", null, "P2").getPositionCode()).isEqualTo("P2");
+        assertThatThrownBy(() -> service.addTeamMember(5L, "丁", null, "P1")).isInstanceOf(BizException.class).hasMessageContaining("只有 P4");
+    }
+
+    private MktPromoter member(Long id, Long parentId, String phone, String path) {
+        MktPromoter m = new MktPromoter(); m.setId(id); m.setParentId(parentId); m.setPhone(phone); m.setPath(path); m.setStatus(1); return m;
+    }
+
+    @Test void parentCanAddPhoneLaterButOnlyForMembersWithoutRealPhone() {
+        when(promoters.selectForUpdate(5L)).thenReturn(actor("P3"));
+        when(promoters.selectForUpdate(30L)).thenReturn(member(30L, 5L, "p:abc", "/5/30/"));
+        MktPromoter saved = service.setMemberPhone(5L, 30L, "13700137000");
+        assertThat(saved.getPhone()).isEqualTo("13700137000");
+        verify(promoters).update(isNull(), any());
+
+        when(promoters.selectForUpdate(31L)).thenReturn(member(31L, 5L, "13600136000", "/5/31/"));
+        assertThatThrownBy(() -> service.setMemberPhone(5L, 31L, "13700137001")).isInstanceOf(BizException.class).hasMessageContaining("已经可以登录");
+    }
+
+    @Test void phoneCannotBeAddedByOutsidersOrWithBadOrDuplicateNumber() {
+        when(promoters.selectForUpdate(5L)).thenReturn(actor("P3"));
+        when(promoters.selectForUpdate(32L)).thenReturn(member(32L, 9L, "p:abc", "/9/32/"));
+        assertThatThrownBy(() -> service.setMemberPhone(5L, 32L, "13700137000")).isInstanceOf(BizException.class).hasMessageContaining("自己团队");
+        when(promoters.selectForUpdate(33L)).thenReturn(member(33L, 5L, "p:abc", "/5/33/"));
+        assertThatThrownBy(() -> service.setMemberPhone(5L, 33L, "123")).isInstanceOf(BizException.class).hasMessageContaining("11 位手机号");
+        when(promoters.selectCount(any())).thenReturn(1L);
+        assertThatThrownBy(() -> service.setMemberPhone(5L, 33L, "13700137000")).isInstanceOf(BizException.class).hasMessageContaining("已是伙伴");
+        verify(promoters, never()).update(any(), any());
+    }
+
+    @Test void p4CanAddPhoneForAnyoneInTheirTeam() {
+        when(promoters.selectForUpdate(5L)).thenReturn(actor("P4"));
+        when(promoters.selectForUpdate(34L)).thenReturn(member(34L, 30L, "p:abc", "/5/30/34/"));
+        assertThat(service.setMemberPhone(5L, 34L, "13700137002").getPhone()).isEqualTo("13700137002");
+    }
+
     @Test void frozenActorCannotAddMembers() {
         MktPromoter frozen = actor("P4"); frozen.setStatus(2);
         when(promoters.selectForUpdate(5L)).thenReturn(frozen);
