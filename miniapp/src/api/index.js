@@ -21,6 +21,7 @@ export const meApi = {
   position: () => get('/position'),
   team: () => get('/team'),
   addTeamMember: (data) => post('/team/member', data),
+  setMemberPhone: (id, phone) => put(`/team/member/${id}/phone`, { phone }),
   poster: () => get('/poster')
 }
 export const pricingApi = {

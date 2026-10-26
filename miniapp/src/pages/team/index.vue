@@ -8,7 +8,7 @@
       <view v-if="canManage" class="team-note">显示邀请体系内的正常成员。您可以设置 P1–P4 称号，金额仍按客户单独配置。P4 拥有定价权。</view>
       <view v-if="!list.length" class="team-note">还没有可显示的成员。朋友通过您的邀请码注册后会加入团队。</view>
       <view class="row member-row" v-for="member in list" :key="member.id">
-        <view class="member-info"><view class="member-name">{{ member.name || '未命名伙伴' }}<text v-if="member.loginable === false" class="tag"> 不登录</text></view><view class="team-note">{{ member.positionCode }} · {{ member.positionName || positionName(member.positionCode) }}<text v-if="member.joinTime"> · {{ member.joinTime.slice(0, 10) }}</text></view></view>
+        <view class="member-info"><view class="member-name">{{ member.name || '未命名伙伴' }}<text class="tag" :class="member.loginable === false ? 'warn' : 'ok'"> {{ member.loginable === false ? '不可登录' : '可登录' }}</text></view><view class="team-note">{{ member.positionCode }} · {{ member.positionName || positionName(member.positionCode) }}<text v-if="member.joinTime"> · {{ member.joinTime.slice(0, 10) }}</text></view><view v-if="member.loginable === false && String(member.id) !== String(me.id)" class="team-note"><text class="position-action" @click="setPhone(member)">补录手机号后才能登录 ›</text></view></view>
         <picker v-if="canManage && String(member.id) !== String(me.id)" :range="positionOptions" :value="positionIndex(member.positionCode)" :disabled="loading || !!savingMemberId || !positions.length" @change="event => changePosition(member, event)">
           <view class="position-action" :class="{ 'is-disabled': loading || !!savingMemberId }">{{ String(savingMemberId) === String(member.id) ? '保存中…' : '设置称号 ›' }}</view>
         </picker>
@@ -62,6 +62,27 @@ async function load() {
     error.value = failure.message || '团队读取失败，请重新加载'
   } finally {
     loading.value = false
+  }
+}
+async function setPhone(member) {
+  if (loading.value || savingMemberId.value) return
+  const input = await new Promise(resolve => uni.showModal({
+    title: `${member.name || '成员'}的手机号`, editable: true, placeholderText: '请输入 11 位手机号',
+    confirmText: '保存', cancelText: '取消', success: result => resolve(result.confirm ? String(result.content || '').trim() : null), fail: () => resolve(null)
+  }))
+  if (input === null) return
+  if (!/^1\d{10}$/.test(input)) { error.value = '请输入 11 位手机号'; return }
+  savingMemberId.value = member.id
+  error.value = ''
+  savedMessage.value = ''
+  try {
+    await meApi.setMemberPhone(member.id, input)
+    await load()
+    savedMessage.value = `${member.name || '成员'}已补录手机号，该手机号微信登录后即可使用`
+  } catch (failure) {
+    error.value = failure.message || '手机号保存失败，请重试'
+  } finally {
+    savingMemberId.value = ''
   }
 }
 async function changePosition(member, event) {

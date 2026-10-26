@@ -38,8 +38,8 @@
         <el-table-column prop="id" label="ID" width="60" />
         <el-table-column prop="name" label="姓名" min-width="150"><template #default="{ row }"><div>{{ row.name }}</div><div class="project-note">{{ projectLabel(row.projectId) }}</div></template></el-table-column>
         <el-table-column prop="parentId" label="上级 ID" width="90" align="center" />
-        <el-table-column label="手机" width="130">
-          <template #default="{ row }">{{ maskPhone(row.phone) }}</template>
+        <el-table-column label="手机" width="190">
+          <template #default="{ row }">{{ maskPhone(row.phone) }}<el-tag size="small" :type="isPlaceholderPhone(row.phone) ? 'warning' : 'success'" style="margin-left:6px">{{ isPlaceholderPhone(row.phone) ? '不可登录' : '可登录' }}</el-tag></template>
         </el-table-column>
         <el-table-column prop="inviteCode" label="邀请码" width="110" />
         <el-table-column label="角色 / 称号" width="160">
@@ -234,7 +234,8 @@ const statusOptions = [
 const statusText = (v) => statusOptions.find(s => s.value === v)?.label || '-'
 const statusType = (v) => ({ 1: 'success', 2: 'warning', 3: 'warning', 4: 'info' }[v] || 'info')
 const commissionStatus = (v) => ({ 1: '冻结', 2: '可结算', 3: '已结算', 4: '已提现', 5: '作废' }[v] || '-')
-const maskPhone = (p) => (p && p.length === 11 ? p.slice(0, 3) + '****' + p.slice(7) : p || '-')
+const isPlaceholderPhone = (p) => !!p && p.startsWith('p:')
+const maskPhone = (p) => (isPlaceholderPhone(p) ? '未录入' : p && p.length === 11 ? p.slice(0, 3) + '****' + p.slice(7) : p || '-')
 
 const canReviewAccount = computed(() => hasPermission('crm:marketing:account:audit'))
 const canDelete = computed(() => hasPermission('ROLE_admin'))
