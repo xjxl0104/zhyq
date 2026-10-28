@@ -4,6 +4,7 @@
     { "path": "pages/demo/index", "style": { "navigationBarTitleText": "测试体验" } },
     { "path": "pages/home/index", "style": { "navigationBarTitleText": "全民营销" } },
     { "path": "pages/login/index", "style": { "navigationBarTitleText": "登录" } },
+    { "path": "pages/agreement/index", "style": { "navigationBarTitleText": "协议" } },
     { "path": "pages/referral/index", "style": { "navigationBarTitleText": "推荐客户" } },
     { "path": "pages/customers/index", "style": { "navigationBarTitleText": "我的客户" } },
     { "path": "pages/customer-detail/index", "style": { "navigationBarTitleText": "客户详情" } },

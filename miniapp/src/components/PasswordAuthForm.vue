@@ -16,7 +16,14 @@
         <view class="auth-caption">注册后加入邀请人的团队。</view>
       </template>
       <checkbox-group @change="form.agreed = $event.detail.value.includes('agree')">
-        <label class="agreement"><checkbox value="agree" :checked="form.agreed" :disabled="busy" color="#3857f5" /><text>我同意{{ warehouse ? '云仓入驻' : '园区伙伴' }}协议与隐私协议</text></label>
+        <view class="agreement">
+          <label class="agreement-check"><checkbox value="agree" :checked="form.agreed" :disabled="busy" color="#3857f5" /><text>我同意</text></label>
+          <view class="agreement-links">
+            <text class="agreement-link" @tap.stop="openAgreement(warehouse ? 'warehouse' : 'partner')">《{{ warehouse ? '云仓入驻' : '园区伙伴' }}协议》</text>
+            <text>与</text>
+            <text class="agreement-link" @tap.stop="openPrivacy">《隐私协议》</text>
+          </view>
+        </view>
       </checkbox-group>
     </template>
     <view v-if="error" class="auth-error" role="alert">{{ error }}</view>
@@ -29,6 +36,7 @@
 import { computed, reactive, ref, watch } from 'vue'
 import { authApi } from '@/api'
 import { warehouseAuthApi } from '@/api/warehouse'
+import { openAgreement, openPrivacy } from '@/utils/agreement'
 const props = defineProps({ warehouse: Boolean, inviteCode: { type: String, default: '' } })
 const emit = defineEmits(['authenticated', 'busy'])
 const registering = ref(false)
@@ -76,5 +84,8 @@ async function submit() {
 .auth-error { margin-top: 24rpx; color: #a3293e; font-size: 28rpx; line-height: 1.6; }
 .auth-link { margin-top: 12rpx; padding: 14rpx 4rpx; color: #2e47cc; background: transparent; font-size: 28rpx; line-height: 1.5; }
 .auth-link:focus-visible { outline: 2px solid var(--park-blue); }
-.agreement { display: flex; align-items: flex-start; gap: 10rpx; margin-top: 20rpx; color: #58617d; font-size: 26rpx; line-height: 1.6; }
+.agreement { display: flex; flex-wrap: wrap; align-items: center; margin-top: 20rpx; color: #58617d; font-size: 26rpx; line-height: 1.6; }
+.agreement-check { display: flex; align-items: center; gap: 10rpx; }
+.agreement-links { display: flex; flex-wrap: wrap; align-items: center; }
+.agreement-link { padding: 8rpx 0; color: #2e47cc; }
 </style>

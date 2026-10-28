@@ -12,10 +12,14 @@
       <input class="input" v-model="testPhone" type="number" maxlength="11" :disabled="busy" placeholder="手机号（仅测试手机号登录时填写）" aria-label="测试手机号" />
     </template>
     <checkbox-group @change="agreed = $event.detail.value.includes('agree')">
-      <label class="agreement">
-        <checkbox value="agree" :checked="agreed" :disabled="busy" color="#3857f5" />
-        <text>我已阅读并同意{{ warehouse ? '云仓入驻' : '园区伙伴' }}协议与隐私协议</text>
-      </label>
+      <view class="agreement">
+        <label class="agreement-check"><checkbox value="agree" :checked="agreed" :disabled="busy" color="#3857f5" /><text>我已阅读并同意</text></label>
+        <view class="agreement-links">
+          <text class="agreement-link" @tap.stop="openAgreement(warehouse ? 'warehouse' : 'partner')">《{{ warehouse ? '云仓入驻' : '园区伙伴' }}协议》</text>
+          <text>与</text>
+          <text class="agreement-link" @tap.stop="openPrivacy">《隐私协议》</text>
+        </view>
+      </view>
     </checkbox-group>
     <view v-if="error" class="quick-error" role="alert">{{ error }}</view>
     <button class="btn" :loading="busy && !usingPhone" :disabled="busy || !agreed" @click="login()">微信一键登录</button>
@@ -30,6 +34,7 @@ import { computed, ref, watch } from 'vue'
 import { authApi } from '@/api'
 import { warehouseAuthApi } from '@/api/warehouse'
 import { partnerMock, warehouseMock, getWechatLogin } from '@/utils/wechat'
+import { openAgreement, openPrivacy } from '@/utils/agreement'
 
 const props = defineProps({ warehouse: Boolean, inviteCode: { type: String, default: '' } })
 const emit = defineEmits(['authenticated', 'busy'])
@@ -87,7 +92,10 @@ function loginWithTestPhone() {
 <style scoped>
 .quick-note { margin: 14rpx 0 28rpx; color: #58617d; font-size: 28rpx; line-height: 1.6; }
 .secondary-note { margin: 26rpx 0 0; font-size: 26rpx; }
-.agreement { display: flex; align-items: flex-start; gap: 10rpx; margin: 28rpx 0; color: #58617d; font-size: 26rpx; line-height: 1.6; }
+.agreement { display: flex; flex-wrap: wrap; align-items: center; margin: 28rpx 0; color: #58617d; font-size: 26rpx; line-height: 1.6; }
+.agreement-check { display: flex; align-items: center; gap: 10rpx; }
+.agreement-links { display: flex; flex-wrap: wrap; align-items: center; }
+.agreement-link { padding: 8rpx 0; color: #2e47cc; }
 .quick-error { margin: 22rpx 0; color: #a3293e; font-size: 28rpx; line-height: 1.6; }
 .field-label { margin-top: 24rpx; color: var(--park-text); font-size: 28rpx; font-weight: 500; }
 button:focus-visible { outline: 2px solid var(--park-blue); outline-offset: 2px; }
