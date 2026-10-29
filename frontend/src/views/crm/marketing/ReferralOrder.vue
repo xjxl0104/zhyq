@@ -75,10 +75,10 @@
         <el-table :data="alloc.form.members" size="small" border>
           <el-table-column prop="positionCode" label="岗位" width="70" align="center" />
           <el-table-column prop="name" label="成员" min-width="130">
-            <template #default="{ row }">{{ row.name }}<el-tag v-if="row.isOwner" size="small" class="ml4" type="success">P4 本人</el-tag><el-tag v-if="row.former" size="small" class="ml4" type="warning">原链路成员</el-tag></template>
+            <template #default="{ row }">{{ row.name }}<el-tag v-if="row.isOwner" size="small" class="ml4" type="success">P4 本人</el-tag><el-tag v-if="row.former || row.added" size="small" class="ml4" type="warning">额外分成成员</el-tag></template>
           </el-table-column>
           <el-table-column label="关系" width="90" align="center">
-            <template #default="{ row }">{{ row.former ? '原上级' : row.promoterId === alloc.view.partnerId ? '成交' : '上级' }}</template>
+            <template #default="{ row }">{{ row.former || row.added ? '团队成员' : row.promoterId === alloc.view.partnerId ? '成交' : '上级' }}</template>
           </el-table-column>
           <el-table-column label="分成比例(%)" width="150" align="right">
             <template #default="{ row }">
@@ -89,7 +89,17 @@
           <el-table-column label="每单金额(元)" width="130" align="right">
             <template #default="{ row }">{{ fixed3(amountOf(row.pct)) }}</template>
           </el-table-column>
+          <el-table-column v-if="alloc.view.canEdit" label="操作" width="70" align="center">
+            <template #default="{ row }"><el-button v-if="!row.isOwner && (row.former || row.added)" link type="danger" @click="removeMember(row)">移除</el-button></template>
+          </el-table-column>
         </el-table>
+        <div v-if="alloc.view.canEdit" class="add-member">
+          <el-select v-model="alloc.addId" filterable clearable placeholder="添加本人团队里的其他成员参与分佣" style="width: 320px" :disabled="!addableMembers.length">
+            <el-option v-for="m in addableMembers" :key="m.id" :label="`${m.name || '未命名伙伴'} · ${m.positionCode}${m.phoneTail ? ' · 尾号' + m.phoneTail : ''}（#${m.id}）`" :value="m.id" />
+          </el-select>
+          <el-button type="primary" plain :disabled="!alloc.addId" @click="addMember">添加成员</el-button>
+          <span v-if="!addableMembers.length" class="hint">本人团队里暂无可添加的其他正常成员。</span>
+        </div>
         <p class="hint alloc-sum">
           成员分成合计 <span :class="{ neg: allocOver }">{{ allocPct }}%</span>（上限 {{ 100 - PLATFORM_PCT }}%，平台固定留存 {{ PLATFORM_PCT }}%）,
           折合每单 {{ allocSum }} 元 / 每单总佣金 {{ allocTotal }} 元,
@@ -168,8 +178,20 @@ function resetSummary() {
 }
 
 // ==================== 合同佣金分配 ====================
-const alloc = reactive({ visible: false, view: null, saving: false, commissions: [], commissionLoading: false,
+const alloc = reactive({ visible: false, view: null, saving: false, commissions: [], commissionLoading: false, addId: null,
   form: { totalPerOrder: 0, members: [] } })
+// P4 团队里还没出现在分成表里的正常成员，可以加进来分佣
+const addableMembers = computed(() => {
+  const used = new Set(alloc.form.members.map(m => String(m.promoterId)))
+  return (alloc.view?.teamMembers || []).filter(m => !used.has(String(m.id)))
+})
+function addMember() {
+  const m = (alloc.view?.teamMembers || []).find(x => String(x.id) === String(alloc.addId))
+  if (!m) return
+  alloc.form.members.push({ promoterId: m.id, name: m.name || '未命名伙伴', positionCode: m.positionCode, status: 1, isOwner: false, former: false, added: true, pct: 0 })
+  alloc.addId = null
+}
+function removeMember(row) { alloc.form.members = alloc.form.members.filter(m => m !== row) }
 const fixed3 = (v) => Number(v || 0).toFixed(3)
 // 平台固定留存每单总佣金的 5%，其余 95% 由 P4 按比例分给链路成员；比例乘总佣金后向下取到 0.001 元
 const PLATFORM_PCT = 5
@@ -184,7 +206,7 @@ const allocTotal = computed(() => fixed3(alloc.form.totalPerOrder))
 const allocCompany = computed(() => fixed3(Number(alloc.form.totalPerOrder || 0) - allocSumNumber.value))
 
 async function openAlloc(row) {
-  Object.assign(alloc, { visible: true, view: null, saving: false, commissions: [], commissionLoading: false, form: { totalPerOrder: 0, members: [] } })
+  Object.assign(alloc, { visible: true, view: null, saving: false, commissions: [], commissionLoading: false, addId: null, form: { totalPerOrder: 0, members: [] } })
   try {
     const view = await mktOrderApi.contractPricing({ contractId: row.contractId })
     alloc.view = view
@@ -242,5 +264,6 @@ onMounted(() => { loadSummary(); loadOptions() })
 .dim { color: var(--el-text-color-placeholder); }
 .ml4 { margin-left: 4px; }
 .alloc-sum { margin-top: 8px; }
+.add-member { display: flex; align-items: center; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
 .neg { color: var(--el-color-danger); }
 </style>

@@ -157,6 +157,28 @@ class MktCustomerPricingServiceTest {
         var again = service.saveContract(4L, 100L, new PricingInput(bd("0.300"), bd("0.100"), List.of(new BeneficiaryInput(3L, bd("0.050")))));
         assertThat(again.beneficiaries()).extracting(Beneficiary::promoterId).containsExactly(3L);
     }
+    @Test void contractAllocationCanShareWithAnyNormalMemberOfTheP4Team() {
+        // 乙(2)是成交伙伴，原P3(3)在链路上；P4 想再分给团队里不在这条链路上的成员
+        var contract = new MktServiceContract(); contract.setId(100L); contract.setContractNo("CS-X");
+        contract.setCustomerId(10L); contract.setPartnerId(2L);
+        when(contractMapper.selectById(100L)).thenReturn(contract);
+        service.saveContract(4L, 100L, new PricingInput(bd("0.300"), bd("0.100"), List.of(new BeneficiaryInput(1L, bd("0.050")))));
+        var inserted = ArgumentCaptor.forClass(MktCustomerPricing.class);
+        verify(pricingMapper).insert(inserted.capture());
+        assertThat(inserted.getValue().getBeneficiariesJson()).contains("\"promoterId\":1");
+    }
+
+    @Test void contractViewListsTeamMembersForP4ToPickFrom() {
+        var contract = new MktServiceContract(); contract.setId(100L); contract.setContractNo("CS-X");
+        contract.setCustomerId(10L); contract.setPartnerId(2L);
+        when(contractMapper.selectById(100L)).thenReturn(contract);
+        team.get(4L).setPath("/4/");
+        when(promoterMapper.selectList(any())).thenReturn(new ArrayList<>(team.values()));
+        var view = service.contractView(100L, team.get(4L));
+        assertThat(view.canEdit()).isTrue();
+        assertThat(view.teamMembers()).extracting(Candidate::id).doesNotContain(4L).contains(1L, 2L, 3L);
+    }
+
     @Test void positionPreviewShowsNewParentAndContractsWithoutSavedAllocation() {
         var c1 = new MktServiceContract(); c1.setId(100L); var c2 = new MktServiceContract(); c2.setId(101L);
         when(contractMapper.selectList(any())).thenReturn(List.of(c1, c2));
