@@ -47,7 +47,7 @@ public class MktCustomerPricingService {
                                       Long ownerPromoterId, String ownerName, BigDecimal totalPerOrder,
                                       BigDecimal ownerPerOrder, BigDecimal allocatedPerOrder, BigDecimal companyPerOrder,
                                       List<ContractChainMember> chain, List<Beneficiary> beneficiaries,
-                                      LocalDateTime updatedAt, String readOnlyReason) {}
+                                      LocalDateTime updatedAt, String readOnlyReason, List<Candidate> teamMembers) {}
     public record PricingView(Long customerId, String customerName, boolean configured, boolean canEdit,
                               Long ownerPromoterId, String ownerName, BigDecimal totalPerOrder,
                               BigDecimal ownerPerOrder, BigDecimal allocatedPerOrder, BigDecimal remainingPerOrder,
@@ -316,7 +316,8 @@ public class MktCustomerPricingService {
                 configured ? pricing.getTotalPerOrder().subtract(allocated) : null,
                 chain, configured ? readBeneficiaries(pricing) : List.of(),
                 configured ? pricing.getCreateTime() : null,
-                canEdit ? null : readOnlyReason(actor, partner));
+                canEdit ? null : readOnlyReason(actor, partner),
+                canEdit ? team(actor.getId()) : List.of());
     }
 
     /** 说明为什么当前后台账号只能查看、不能设置合同分配，便于排查（尤其是后台账号未关联 P4 伙伴档案）。 */
@@ -340,25 +341,13 @@ public class MktCustomerPricingService {
             throw new BizException(403, "该合同的成交伙伴不在本人邀请体系内");
         }
         validateContractAmounts(input);
-        Set<Long> chainIds = new HashSet<>();
-        MktPromoter cur = partner;
-        Set<Long> seen = new HashSet<>();
-        while (cur != null && seen.add(cur.getId()) && seen.size() <= 64) {
-            chainIds.add(cur.getId());
-            cur = cur.getParentId() == null ? null : promoterMapper.selectById(cur.getParentId());
-        }
-        // 已保存分配里的成员（含被调整层级前的原上级）仍可保留，不会因再次保存而丢失分成。
-        MktCustomerPricing previous = latestByContract(contractId);
-        if (previous != null) readBeneficiaries(previous).forEach(b -> { if (b.promoterId() != null) chainIds.add(b.promoterId()); });
         List<Beneficiary> beneficiaries = new ArrayList<>();
         Set<Long> ids = new HashSet<>();
         for (BeneficiaryInput item : input.beneficiaries()) {
             if (item.promoterId() == null || actorId.equals(item.promoterId()) || !ids.add(item.promoterId())) {
                 throw new BizException("受益人不能重复或选择 P4 本人，请在本人金额中填写");
             }
-            if (!chainIds.contains(item.promoterId())) {
-                throw new BizException("受益人必须是该合同邀请链路上的成员");
-            }
+            // 受益人可以是该合同链路上的成员，也可以是 P4 邀请体系内的其他正常成员（由 requireRecipient 校验）。
             MktPromoter recipient = promoterMapper.selectById(item.promoterId());
             requireRecipient(recipient, actorId);
             beneficiaries.add(new Beneficiary(recipient.getId(), recipient.getName(), recipient.getPositionCode(), item.amountPerOrder()));

@@ -80,6 +80,31 @@ describe('合同佣金分配：平台固定 5% + 按比例分成', () => {
     ])
   })
 
+  it('P4 可以把自己团队里的其他成员加进分成表，可移除，保存时一并提交', async () => {
+    mktOrderApi.contractPricing.mockResolvedValue({
+      contractId: 5, contractNo: 'CS-1', partnerId: 2, ownerPromoterId: 4, canEdit: true, configured: false, chain,
+      teamMembers: [{ id: 2, name: '乙', positionCode: 'P2' }, { id: 9, name: '新人', positionCode: 'P1', phoneTail: '1234' }]
+    })
+    const wrapper = mount(); await flushPromises()
+    await wrapper.vm.openAlloc({ contractId: 5 }); await flushPromises()
+    // 已在链路表里的成员(乙)不会再出现在可添加列表
+    expect(wrapper.vm.addableMembers.map(m => m.id)).toEqual([9])
+    wrapper.vm.alloc.addId = 9
+    wrapper.vm.addMember()
+    const added = wrapper.vm.alloc.form.members.find(m => m.promoterId === 9)
+    expect(added).toMatchObject({ added: true, pct: 0, name: '新人' })
+    expect(wrapper.vm.addableMembers).toEqual([])
+    wrapper.vm.alloc.form.totalPerOrder = 0.2
+    wrapper.vm.alloc.form.members.find(m => m.promoterId === 4).pct = 60
+    added.pct = 20
+    await wrapper.vm.saveAlloc()
+    expect(mktOrderApi.saveContractPricing.mock.calls[0][0]).toEqual({
+      contractId: 5, totalPerOrder: 0.2, ownerPerOrder: 0.12, beneficiaries: [{ promoterId: 9, amountPerOrder: 0.04 }]
+    })
+    wrapper.vm.removeMember(added)
+    expect(wrapper.vm.alloc.form.members.some(m => m.promoterId === 9)).toBe(false)
+  })
+
   it('只读账号不能保存', async () => {
     mktOrderApi.contractPricing.mockResolvedValue({ contractId: 5, contractNo: 'CS-1', partnerId: 2, canEdit: false, configured: false, readOnlyReason: '当前后台账号未关联伙伴档案', chain })
     const wrapper = mount(); await flushPromises()
