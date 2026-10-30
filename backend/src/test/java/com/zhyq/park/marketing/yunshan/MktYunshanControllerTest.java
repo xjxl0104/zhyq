@@ -47,9 +47,8 @@ class MktYunshanControllerTest {
         when(connections.resolve(any(), any())).thenReturn(client);
     }
 
-    @Test void configPrefersTheWarehouseOwnInterfaceAndFallsBackToTheSharedOne() {
-        when(client.configured()).thenReturn(true); when(client.baseUrl()).thenReturn("https://shared.example/api"); when(client.maskedAppId()).thenReturn("sha****red");
-        assertThat(controller.config(7L).getData()).containsEntry("source", "SHARED").containsEntry("baseUrl", "https://shared.example/api");
+    @Test void configReportsOnlyTheWarehouseOwnInterface() {
+        assertThat(controller.config(7L).getData()).containsEntry("configured", false).containsEntry("source", "NONE");
         var own = mock(YunshanClient.class);
         when(own.configured()).thenReturn(true); when(own.baseUrl()).thenReturn("https://own.example/api"); when(own.maskedAppId()).thenReturn("own****app");
         when(connections.forWarehouse(8L)).thenReturn(own);

@@ -60,6 +60,10 @@ public class YunshanClient {
         this.publicKeyText = publicKeyText;
     }
 
+    /** 仅供同包的连接初始化使用，凭证不得经接口返回。 */
+    String rawAppId() { return appId; }
+    String rawPublicKey() { return publicKeyText; }
+
     public boolean configured() {
         return StringUtils.hasText(baseUrl) && StringUtils.hasText(appId) && StringUtils.hasText(publicKeyText);
     }

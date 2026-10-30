@@ -25,7 +25,7 @@ class YunshanConnectionsTest {
         assertThat(encryption.decrypt(mapping.getConnectionPublicKeyEnc())).isEqualTo(publicKey);
         assertThat(json.writeValueAsString(mapping)).doesNotContain(input.appId(), publicKey, "connectionAppIdEnc", "connectionPublicKeyEnc");
         assertThat(connections.forMapping(mapping).maskedAppId()).isEqualTo("cus****123");
-        assertThat(connections.forMapping(new MktYunshanVolumeMap())).isSameAs(shared);
+        assertThatThrownBy(() -> connections.forMapping(new MktYunshanVolumeMap())).hasMessageContaining("还没有配置发货量接口");
     }
 
     @Test void warehouseInterfaceIsSharedByItsCustomersAndEncrypted() throws Exception {
@@ -36,7 +36,7 @@ class YunshanConnectionsTest {
         var warehouse = new com.zhyq.park.marketing.entity.MktWarehouse(); warehouse.setId(7L); warehouse.setTenantId(1L);
         when(mapper.selectOne(any())).thenReturn(null);
         assertThat(withStore.forWarehouse(7L)).isNull();
-        assertThat(withStore.forMapping(mappingOf(7L))).isSameAs(shared);
+        assertThatThrownBy(() -> withStore.forMapping(mappingOf(7L))).hasMessageContaining("还没有配置发货量接口");
 
         withStore.saveWarehouse(warehouse, new YunshanConnections.Input("CUSTOM", "https://second.example/api/", "wh-app-777", publicKey));
         var saved = org.mockito.ArgumentCaptor.forClass(com.zhyq.park.marketing.entity.MktWarehouseYunshanConn.class);
@@ -64,9 +64,11 @@ class YunshanConnectionsTest {
         assertThat(connections.validateBaseUrl("https://second.example/api")).isEqualTo("https://second.example/api");
     }
 
-    @Test void missingSharedConfigurationDoesNotSilentlyEnableSync() {
-        var empty = mock(YunshanClient.class);
-        assertThatThrownBy(() -> new YunshanConnections(empty, json, encryption, "").preview(
-            new YunshanConnections.Input("SHARED", null, null, null))).hasMessageContaining("尚未配置");
+    @Test void warehouseWithoutItsOwnInterfaceNeverFallsBackToTheServerConfiguredOne() {
+        assertThatThrownBy(() -> connections.resolve(7L, new YunshanConnections.Input("SHARED", null, null, null)))
+            .hasMessageContaining("还没有配置发货量接口");
+        assertThatThrownBy(() -> connections.preview(new YunshanConnections.Input("SHARED", null, null, null)))
+            .hasMessageContaining("接口地址");
     }
 }
+
