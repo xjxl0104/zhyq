@@ -46,7 +46,7 @@
         <p v-if="selectedSite?.address" class="hint selected-address">仓库地址：{{ selectedSite.address }}</p>
         <el-alert v-if="errors.sites" :title="errors.sites" type="error" :closable="false" />
         <el-alert v-if="errors.saveLink" :title="errors.saveLink" type="error" :closable="false" />
-        <p class="hint">保存后仅建立客户与作业仓库的业务关系；发货数据来源需另行配置。</p>
+        <p class="hint">保存后建立客户与作业仓库的业务关系，并接着开通该客户的发货量同步（使用本云仓的接口，可跳过，之后在列表里点“配置同步”）。</p>
       </el-form>
       <template #footer><el-button :disabled="loading.saveLink || siteDialog.visible" @click="linkDialog.visible = false">取消</el-button><el-button type="primary" :loading="loading.saveLink" :disabled="!canSaveLink || siteDialog.visible" @click="saveLink">保存关联</el-button></template>
     </el-dialog>
@@ -71,7 +71,7 @@ import { hasPermission } from '@/utils/permission'
 
 const props = defineProps({ warehouseId: { type: [String, Number], required: true }, warehouseName: { type: String, default: '' } })
 // select: 选中/取消选中某一行(null 表示取消)，用于联动下方发货量同步；configure: 为该客户配置发货量同步
-const emit = defineEmits(['select', 'configure'])
+const emit = defineEmits(['select', 'configure', 'linked'])
 const canQuery = computed(() => hasPermission('crm:marketing:erp:query'))
 const canConfig = computed(() => hasPermission('crm:marketing:erp:config'))
 // IDs are strings throughout: server-generated warehouse and customer IDs can exceed Number.MAX_SAFE_INTEGER.
@@ -227,11 +227,14 @@ async function saveLink() {
   if (!canSaveLink.value || siteDialog.visible) return
   const context = epoch, warehouse = warehouseKey.value, dialog = linkEpoch
   const payload = { customerId: linkDialog.customerId, operationWarehouseId: linkDialog.operationWarehouseId }
+  const created = { customerId: payload.customerId, operationWarehouseId: payload.operationWarehouseId, customerName: selectedCustomer.value?.name || '' }
   loading.saveLink = true; errors.saveLink = ''
   try {
     await mktWarehouseOperationsApi.createLink(warehouse, payload)
     if (!current(context, warehouse) || dialog !== linkEpoch) return
     ElMessage.success('客户关联已保存'); linkDialog.visible = false; linkPage.value = 1; await loadLinks()
+    // 保存关联后接着开通发货量同步（已带入客户和作业仓库，可取消，之后在列表里“配置同步”）
+    if (current(context, warehouse)) emit('linked', created)
   } catch (error) { if (current(context, warehouse) && dialog === linkEpoch) errors.saveLink = error.message || '客户关联保存失败，请重试。' }
   finally { if (current(context, warehouse)) loading.saveLink = false }
 }

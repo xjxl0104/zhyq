@@ -56,6 +56,8 @@ describe('客户与手动作业仓库建档', () => {
     await wrapper.vm.saveLink()
     expect(mktWarehouseOperationsApi.createLink).toHaveBeenCalledWith(warehouseId, { customerId: newCustomer.id, operationWarehouseId: site.id })
     for (const method of ['config', 'owners', 'warehouses', 'createMap']) expect(mktYunshanApi[method]).not.toHaveBeenCalled()
+    // 保存关联后通知父页面接着开通发货量同步，带上客户和作业仓库
+    expect(wrapper.emitted('linked')).toEqual([[{ customerId: newCustomer.id, operationWarehouseId: site.id, customerName: newCustomer.name }]])
   })
 
   it('超级棒棒猪与已有棒棒猪客户保持两个独立客户编号', async () => {
