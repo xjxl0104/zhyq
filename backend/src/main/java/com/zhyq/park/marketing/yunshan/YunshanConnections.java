@@ -44,14 +44,18 @@ public class YunshanConnections {
         return preview(new Input("CUSTOM", row.getBaseUrl(), encryption.decrypt(row.getAppIdEnc()), encryption.decrypt(row.getPublicKeyEnc())));
     }
 
-    /** 新增客户对应时用：选“共享”即使用该云仓的接口，云仓未配置时退回服务端共享接口。 */
-    public YunshanClient resolve(Long warehouseId, Input input) {
-        if (input == null || "SHARED".equals(input.mode())) {
-            YunshanClient own = forWarehouse(warehouseId);
-            if (own != null) return own;
-        }
-        return preview(input);
+    /** 每个云仓只用自己的接口：该云仓下的客户统一使用它，未配置时必须先配置，不退回其他接口。 */
+    public YunshanClient requireWarehouse(Long warehouseId) {
+        YunshanClient own = forWarehouse(warehouseId);
+        if (own == null) throw new BizException("该云仓还没有配置发货量接口，请先在 ERP 对接页配置云仓发货量接口");
+        return own;
     }
+
+    /** 新增客户对应、读取授权目录时用：一律使用该云仓自己的接口。 */
+    public YunshanClient resolve(Long warehouseId, Input input) {
+        return requireWarehouse(warehouseId);
+    }
+
 
     /** 保存云仓接口（先校验地址与公钥）。 */
     public YunshanClient saveWarehouse(MktWarehouse warehouse, Input input) {
@@ -76,10 +80,7 @@ public class YunshanConnections {
                         @Size(max = 8192) String publicKey) {}
 
     public YunshanClient preview(Input input) {
-        if (input == null || "SHARED".equals(input.mode())) {
-            if (!shared.configured()) throw new BizException("共享接口尚未配置，请填写客户专用接口");
-            return shared;
-        }
+        if (input == null || "SHARED".equals(input.mode())) throw new BizException("请填写接口地址、App ID 和 RSA 公钥");
         if (!"CUSTOM".equals(input.mode()) || input.appId() == null || input.appId().isBlank()
                 || input.appId().length() > 256 || input.publicKey() == null || input.publicKey().length() > 8192)
             throw new BizException("请填写接口地址、App ID 和 RSA 公钥");
@@ -99,10 +100,7 @@ public class YunshanConnections {
     }
 
     public YunshanClient forMapping(MktYunshanVolumeMap mapping) {
-        if (mapping.getConnectionBaseUrl() == null) {
-            YunshanClient own = forWarehouse(mapping.getWarehouseId());
-            return own != null ? own : shared;
-        }
+        if (mapping.getConnectionBaseUrl() == null) return requireWarehouse(mapping.getWarehouseId());
         return preview(new Input("CUSTOM", mapping.getConnectionBaseUrl(),
             encryption.decrypt(mapping.getConnectionAppIdEnc()), encryption.decrypt(mapping.getConnectionPublicKeyEnc())));
     }

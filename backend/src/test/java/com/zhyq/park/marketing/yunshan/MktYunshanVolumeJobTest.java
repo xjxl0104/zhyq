@@ -22,7 +22,7 @@ class MktYunshanVolumeJobTest {
         TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new MybatisConfiguration(), ""), MktYunshanVolumeMap.class);
     }
 
-    @Test void missingSharedCredentialsStillRunsCustomerDedicatedConnections() {
+    @Test void everyActiveMappingIsSyncedWithItsWarehouseOwnInterface() {
         var client = mock(YunshanClient.class);
         var mapper = mock(MktYunshanVolumeMapMapper.class);
         var service = mock(YunshanVolumeSyncService.class);
@@ -32,7 +32,7 @@ class MktYunshanVolumeJobTest {
         new MktYunshanVolumeJob(client, mapper, service, 7).run();
         LocalDate today = LocalDate.now(YunshanVolumeSyncService.SHANGHAI);
         verify(service).sync(2L, today.minusDays(7), today.minusDays(1), 1);
-        verify(service, never()).sync(eq(1L), any(), any(), anyInt());
+        verify(service).sync(1L, today.minusDays(7), today.minusDays(1), 1);
     }
 
     @Test void failedOrThrowingSyncPushesAnAlertAndDefaultWindowIs35Days() throws Exception {

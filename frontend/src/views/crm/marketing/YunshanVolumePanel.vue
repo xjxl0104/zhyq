@@ -18,7 +18,7 @@
       <el-table-column prop="customerName" label="客户（货主）" min-width="130"><template #default="{ row }">{{ row.customerName || row.customerId }}</template></el-table-column>
       <el-table-column label="接口返回的货主" min-width="170"><template #default="{ row }"><div>{{ row.parentOwnerName || '未命名客户' }}</div><div class="entity-no">{{ row.parentOwnerNo }}</div><el-tag v-if="row.identityMismatch" type="danger">客户身份不一致，已阻止同步</el-tag></template></el-table-column>
       <el-table-column label="作业仓库" min-width="170"><template #default="{ row }"><div>{{ row.operationWarehouseName || '历史配置（未关联本地仓库）' }}</div><div class="entity-no">接口仓库：{{ row.parentWarehouseName }} · {{ row.parentWarehouseNo }}</div></template></el-table-column>
-      <el-table-column label="接口配置" min-width="140"><template #default="{ row }">{{ row.connectionMode === 'CUSTOM' ? '客户专用接口' : '共享接口' }}<div class="entity-no">{{ row.connectionBaseUrl || config?.baseUrl }}</div></template></el-table-column>
+      <el-table-column label="发货量接口" min-width="140"><template #default="{ row }">云仓接口<div class="entity-no">{{ row.connectionBaseUrl || config?.baseUrl }}</div></template></el-table-column>
       <el-table-column label="每日拉取" width="90"><template #default="{ row }"><el-tag :type="row.status === 1 ? 'success' : 'info'">{{ row.status === 1 ? '启用' : '停用' }}</el-tag></template></el-table-column>
       <el-table-column label="最近拉取" min-width="180"><template #default="{ row }">{{ row.lastSyncAt || '尚未拉取' }}<el-tag v-if="row.lastSyncOk != null" class="sync-state" :type="row.lastSyncOk === 1 ? 'success' : 'danger'">{{ row.lastSyncOk === 1 ? '成功' : '失败' }}</el-tag></template></el-table-column>
       <el-table-column label="操作" :width="canConfig ? 150 : 80" fixed="right"><template #default="{ row }">
@@ -162,17 +162,7 @@
         </el-form-item>
         <el-alert v-if="mapDialog.customerId && !loading.sites && !localSites.length" type="warning" :closable="false" title="该客户尚无启用的作业仓库，请先在上方“客户与作业仓库”中建档。" />
         <el-divider>配置该客户的发货量接口</el-divider>
-        <el-form-item label="连接方式">
-          <el-radio-group v-model="connection.mode" :disabled="loading.save">
-            <el-radio value="SHARED" :disabled="!config?.configured">使用云仓接口</el-radio><el-radio value="CUSTOM">该客户使用专用接口</el-radio>
-          </el-radio-group>
-        </el-form-item>
-        <template v-if="connection.mode === 'CUSTOM'">
-          <el-form-item label="接口基础地址" required><el-input v-model="connection.baseUrl" :disabled="loading.save" maxlength="500" placeholder="接口提供方的基础地址（支持云山协议）" /></el-form-item>
-          <el-form-item label="App ID" required><el-input v-model="connection.appId" :disabled="loading.save" maxlength="256" autocomplete="off" /></el-form-item>
-          <el-form-item label="RSA 公钥" required><el-input v-model="connection.publicKey" :disabled="loading.save" type="textarea" :rows="3" maxlength="8192" placeholder="粘贴接口提供方的 RSA 公钥" /></el-form-item>
-        </template>
-        <p v-else-if="config?.configured" class="hint">云仓接口：{{ config.baseUrl }} · {{ config.appId }}</p>
+        <p v-if="config?.configured" class="hint">使用该云仓的发货量接口：{{ config.baseUrl }} · {{ config.appId }}</p>
         <el-alert v-else type="warning" :closable="false" title="该云仓还没有配置发货量接口，请先关闭本窗口，在页面上方配置接口。" />
         <el-button :loading="loading.owners" :disabled="!mapDialog.customerId || !connectionReady || loading.save" @click="reloadDirectory">验证接口并读取客户授权</el-button>
         <template v-if="mapDialog.customerId && directoryState.ownersLoaded">
@@ -409,7 +399,7 @@ async function openMap() {
   closeMap()
   Object.assign(mapDialog, { visible: true, customerId: '', operationWarehouseId: '', parentOwnerNo: '', parentWarehouseNo: '', identityConfirmed: false, syncAfterSave: true }); owners.value = []; entityWarehouses.value = []; errors.directory = ''; errors.save = ''
   selectedCustomer.value = null; ownerMatchKind.value = ''; localSites.value = []
-  Object.assign(connection, { mode: config.value?.configured ? 'SHARED' : 'CUSTOM', baseUrl: config.value?.baseUrl || '', appId: '', publicKey: '' })
+  Object.assign(connection, { mode: 'SHARED', baseUrl: config.value?.baseUrl || '', appId: '', publicKey: '' })
   customerPage.value = 1; customerKeyword.value = ''; customers.value = []; customerTotal.value = 0; await loadCustomers()
   if (props.focus?.customerId) await presetCustomer(props.focus)
 }

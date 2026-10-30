@@ -88,13 +88,12 @@ public class MktYunshanController {
     public record VolumeResult(List<MktYunshanDailyVolume> records, long total, String totalConsignNum,
                                int daysWithData, int daysMissing, String dataState) {}
 
-    @Operation(summary = "云山云仓接口配置状态（不返回凭证）；传云仓 ID 时优先返回该云仓自己的接口")
+    @Operation(summary = "该云仓的发货量接口配置状态（不返回凭证）")
     @GetMapping("/config") @PreAuthorize("hasAuthority('crm:marketing:erp:query')")
     public Result<Map<String, Object>> config(@RequestParam(required = false) Long warehouseId) {
         YunshanClient own = connections.forWarehouse(warehouseId);
-        YunshanClient source = own != null ? own : client;
-        return Result.ok(Map.of("configured", source.configured(), "baseUrl", source.baseUrl(), "appId", source.maskedAppId(),
-                "source", own != null ? "WAREHOUSE" : source.configured() ? "SHARED" : "NONE"));
+        if (own == null) return Result.ok(Map.of("configured", false, "baseUrl", "", "appId", "", "source", "NONE"));
+        return Result.ok(Map.of("configured", true, "baseUrl", own.baseUrl(), "appId", own.maskedAppId(), "source", "WAREHOUSE"));
     }
 
     @Operation(summary = "配置云仓发货量接口（一个云仓配置一次，其下客户共用）")
@@ -195,7 +194,6 @@ public class MktYunshanController {
         mapping.setCustomerId(customer.getId()); mapping.setWarehouseId(warehouseId);
         customerScope.requireSite(warehouseId, input.customerId(), input.operationWarehouseId());
         mapping.setOperationWarehouseId(site.getId()); mapping.setOperationWarehouseName(site.getName());
-        connections.store(mapping, input.connection());
         mapping.setParentOwnerNo(owner.no()); mapping.setParentOwnerName(owner.name());
         mapping.setParentWarehouseNo(remoteWarehouse.no()); mapping.setParentWarehouseName(remoteWarehouse.name());
         mapping.setStatus(1); mapping.setProjectId(warehouse.getProjectId()); mapping.setTenantId(warehouse.getTenantId());

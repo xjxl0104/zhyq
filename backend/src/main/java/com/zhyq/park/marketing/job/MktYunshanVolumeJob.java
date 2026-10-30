@@ -49,7 +49,6 @@ public class MktYunshanVolumeJob {
         for (MktYunshanVolumeMap mapping : mapMapper.selectList(new LambdaQueryWrapper<MktYunshanVolumeMap>()
                 .eq(MktYunshanVolumeMap::getTenantId, MyMetaObjectHandler.DEFAULT_TENANT_ID)
                 .eq(MktYunshanVolumeMap::getStatus, 1).orderByAsc(MktYunshanVolumeMap::getId))) {
-            if (mapping.getConnectionBaseUrl() == null && !client.configured()) continue;
             try {
                 MktYunshanSyncLog result = syncService.sync(mapping.getId(), today.minusDays(syncDays), today.minusDays(1), YunshanVolumeSyncService.TRIGGER_SCHEDULED);
                 if (result != null && !Integer.valueOf(1).equals(result.getOk())) {

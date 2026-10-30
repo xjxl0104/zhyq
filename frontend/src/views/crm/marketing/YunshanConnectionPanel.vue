@@ -8,7 +8,7 @@
     </div>
     <p class="hint">{{ warehouseName || '当前云仓' }}对接一次发货量接口即可，该云仓下的所有客户共用，不需要重复对接；没有客户时也可以先对接。</p>
     <el-alert v-if="error" type="error" :closable="false" :title="error" />
-    <p v-if="config?.configured" class="config-note">接口：{{ config.baseUrl }}<span v-if="config.appId"> · 应用：{{ config.appId }}</span><span v-if="config.source === 'SHARED'"> · 沿用平台共享接口</span></p>
+    <p v-if="config?.configured" class="config-note">接口：{{ config.baseUrl }}<span v-if="config.appId"> · 应用：{{ config.appId }}</span></p>
     <el-alert v-else-if="config" type="info" :closable="false" title="该云仓还没有配置发货量接口，请先配置，再到下方为客户配置发货量同步。" />
 
     <el-dialog v-model="dialog.visible" title="配置云仓发货量接口" width="min(560px, calc(100vw - 32px))" :close-on-click-modal="false" @closed="reset">

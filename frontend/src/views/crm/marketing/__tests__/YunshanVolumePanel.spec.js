@@ -74,45 +74,29 @@ describe('发货量同步与云山云仓接口授权边界', () => {
     expect(wrapper.vm.localSites.map(row => row.id)).toEqual(['SITE-1'])
     expect(wrapper.vm.mapDialog.operationWarehouseId).toBe('SITE-1')
   })
-  it('无共享配置仍可填写专用接口，修改凭证必须重新验证', async () => {
+  it('云仓还没有配置接口时，不能读取授权目录或保存客户同步', async () => {
     permissions.add('crm:marketing:erp:config')
-    mktYunshanApi.config.mockResolvedValue({ configured: false, baseUrl: '', appId: '' })
+    mktYunshanApi.config.mockResolvedValue({ configured: false, baseUrl: '', appId: '', source: 'NONE' })
     const wrapper = mount(); await flushPromises(); await wrapper.vm.openMap(); await flushPromises()
     expect(wrapper.vm.mapDialog.visible).toBe(true)
-    expect(wrapper.vm.connection.mode).toBe('CUSTOM')
+    expect(wrapper.vm.connection.mode).toBe('SHARED')
     wrapper.vm.mapDialog.customerId = map.customerId; await wrapper.vm.matchCustomer()
     expect(mktYunshanApi.directory).not.toHaveBeenCalled()
-    Object.assign(wrapper.vm.connection, { baseUrl: 'https://customer.example/api', appId: 'customer-app', publicKey: 'public-key' })
-    await wrapper.vm.reloadDirectory(); wrapper.vm.mapDialog.identityConfirmed = true
-    expect(wrapper.vm.canSaveMap).toBeTruthy()
-    wrapper.vm.connection.appId = 'changed-app'
+    wrapper.vm.mapDialog.identityConfirmed = true
     expect(wrapper.vm.canSaveMap).toBeFalsy()
-    expect(wrapper.vm.owners).toEqual([])
+    expect(wrapper.text()).toContain('还没有配置发货量接口')
   })
-  it('保存后自动同步新配置，专用接口不依赖共享连接', async () => {
+  it('使用云仓自己的接口保存客户同步，保存后立即补拉近 7 天', async () => {
     permissions.add('crm:marketing:erp:config')
-    mktYunshanApi.config.mockResolvedValue({ configured: false, baseUrl: '', appId: '' })
     const wrapper = mount(); await flushPromises(); await wrapper.vm.openMap(); await flushPromises()
-    wrapper.vm.mapDialog.customerId = map.customerId; await wrapper.vm.matchCustomer()
-    Object.assign(wrapper.vm.connection, { baseUrl: 'https://customer.example/api', appId: 'customer-app', publicKey: 'public-key' })
-    await wrapper.vm.reloadDirectory(); wrapper.vm.mapDialog.identityConfirmed = true
+    wrapper.vm.mapDialog.customerId = map.customerId; await wrapper.vm.matchCustomer(); await flushPromises()
+    expect(mktYunshanApi.directory).toHaveBeenCalled()
+    wrapper.vm.mapDialog.identityConfirmed = true
     mktYunshanApi.createMap.mockResolvedValue(map.id)
-    mktYunshanApi.maps.mockResolvedValue([{ ...map, connectionMode: 'CUSTOM' }])
     mktYunshanApi.sync.mockResolvedValue({ daysFetched: 7, daysChanged: 0, daysMissing: 0 })
     await wrapper.vm.saveMap()
+    expect(mktYunshanApi.createMap).toHaveBeenCalledWith('9007199254740997', expect.objectContaining({ connection: expect.objectContaining({ mode: 'SHARED' }) }))
     expect(mktYunshanApi.sync).toHaveBeenCalledWith(map.id, expect.objectContaining({ startDate: expect.any(String), endDate: expect.any(String) }))
-    expect(wrapper.vm.connection.appId).toBe('')
-    expect(wrapper.vm.connection.publicKey).toBe('')
-  })
-  it('更换客户清除上一客户的专用接口凭证', async () => {
-    permissions.add('crm:marketing:erp:config')
-    const wrapper = mount(); await flushPromises(); await wrapper.vm.openMap()
-    wrapper.vm.mapDialog.customerId = map.customerId; await wrapper.vm.matchCustomer()
-    Object.assign(wrapper.vm.connection, { mode: 'CUSTOM', baseUrl: 'https://customer.example/api', appId: 'previous-app', publicKey: 'previous-key' })
-    wrapper.vm.mapDialog.customerId = 'OTHER'; await wrapper.vm.matchCustomer()
-    expect(wrapper.vm.connection.appId).toBe('')
-    expect(wrapper.vm.connection.publicKey).toBe('')
-    expect(wrapper.vm.canSaveMap).toBeFalsy()
   })
   it('同名仅作为候选，唯一仓库可带出但必须明确确认身份才允许保存', async () => {
     permissions.add('crm:marketing:erp:config')
