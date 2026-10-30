@@ -32,4 +32,16 @@ describe('云仓数据来源绑定当前云仓', () => {
     expect(w.vm.warehouse.id).toBe('10')
     expect(w.vm.warehouseName).toBe('新仓')
   })
+
+  it('新增客户关联后：云仓接口已配置才接着开通发货量同步，未配置则跳过', async () => {
+    const w = mount(); await flushPromises()
+    const link = { customerId: '1', operationWarehouseId: '2', customerName: '客户' }
+    const openMap = vi.fn()
+    w.vm.yunshanPanel = { ready: false, openMap }
+    await w.vm.afterLinked(link)
+    expect(openMap).not.toHaveBeenCalled()
+    w.vm.yunshanPanel = { ready: true, openMap }
+    await w.vm.afterLinked(link)
+    expect(openMap).toHaveBeenCalledWith(link)
+  })
 })

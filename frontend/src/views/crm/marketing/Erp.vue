@@ -15,7 +15,7 @@
       <YunshanConnectionPanel :key="`conn-${warehouseId}`" :warehouse-id="warehouseId" :warehouse-name="warehouseName"
                               @changed="yunshanPanel?.refresh()" />
       <CustomerOperationWarehousePanel ref="opsPanel" :key="warehouseId" :warehouse-id="warehouseId" :warehouse-name="warehouseName"
-                                       @select="focus = $event" @configure="configureFor" />
+                                       @select="focus = $event" @configure="configureFor" @linked="afterLinked" />
       <YunshanVolumePanel ref="yunshanPanel" class="mb" :key="warehouseId" :warehouse-id="warehouseId" :warehouse-name="warehouseName"
                           :focus="focus" @changed="opsPanel?.reload()" />
     </template>
@@ -46,6 +46,11 @@ async function configureFor(link) {
   focus.value = link
   await nextTick()
   await yunshanPanel.value?.openMap()
+}
+
+// 新增客户关联保存后接着开通发货量同步；云仓还没配置接口时跳过，配置后在列表里点“配置同步”
+async function afterLinked(link) {
+  if (yunshanPanel.value?.ready) await yunshanPanel.value.openMap(link)
 }
 
 async function loadWarehouse() {
