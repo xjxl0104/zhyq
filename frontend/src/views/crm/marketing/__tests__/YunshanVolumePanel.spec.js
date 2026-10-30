@@ -245,9 +245,9 @@ describe('发货量同步与云山云仓接口授权边界', () => {
   it('明确区分加盟云仓与接口目录，显示单一授权选项的来源', async () => {
     permissions.add('crm:marketing:erp:config')
     const wrapper = mount(); await flushPromises(); await wrapper.vm.openMap(); await flushPromises()
-    expect(wrapper.text()).toContain('云仓发货量同步')
-    expect(wrapper.text()).toContain('按客户和作业仓库同步每日发货票数，并核对数据。统计在次日生成。')
-    expect(wrapper.text()).toContain('目前支持云山接口协议')
+    expect(wrapper.text()).toContain('客户发货量同步')
+    expect(wrapper.text()).toContain('按客户和作业仓库同步每日发货票数，并核对数据。统计在次日生成')
+    expect(wrapper.text()).toContain('无需重复对接')
     expect(wrapper.text()).toContain('当前云仓有效合同下的客户')
     wrapper.vm.mapDialog.customerId = map.customerId; await wrapper.vm.matchCustomer()
     expect(wrapper.text()).toContain('加盟云仓：云山')
@@ -294,7 +294,7 @@ describe('发货量同步与云山云仓接口授权边界', () => {
   })
   it('查询权限可读历史；没有配置权限不能打开目录、停用或补拉', async () => {
     const wrapper = mount(); await flushPromises()
-    expect(wrapper.text()).not.toContain('配置接口同步'); expect(wrapper.text()).not.toContain('补拉此区间'); expect(wrapper.text()).toContain('只读对账')
+    expect(wrapper.text()).not.toContain('配置客户同步'); expect(wrapper.text()).not.toContain('补拉此区间'); expect(wrapper.text()).toContain('只读对账')
     await wrapper.vm.openMap(); await wrapper.vm.sync(); await wrapper.vm.toggleStatus(map)
     expect(mktYunshanApi.owners).not.toHaveBeenCalled(); expect(mktYunshanApi.sync).not.toHaveBeenCalled(); expect(mktYunshanApi.setStatus).not.toHaveBeenCalled()
   })

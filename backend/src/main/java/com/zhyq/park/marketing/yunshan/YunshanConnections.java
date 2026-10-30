@@ -2,26 +2,73 @@ package com.zhyq.park.marketing.yunshan;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.zhyq.park.common.exception.BizException;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.zhyq.park.marketing.entity.MktWarehouse;
+import com.zhyq.park.marketing.entity.MktWarehouseYunshanConn;
 import com.zhyq.park.marketing.entity.MktYunshanVolumeMap;
+import com.zhyq.park.marketing.mapper.MktWarehouseYunshanConnMapper;
 import com.zhyq.park.receivable.service.FieldEncryptionService;
 import jakarta.validation.constraints.*;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import java.net.URI;
 import java.util.Arrays;
 import java.util.Objects;
 
-/** 每条客户仓库映射保存自己的连接，历史映射可沿用已有共享连接。 */
+/** 连接优先级：客户专用 > 云仓接口 > 服务端共享接口。云仓接口配置一次，该云仓下所有客户共用。 */
 @Service
 public class YunshanConnections {
     private final YunshanClient shared;
     private final ObjectMapper json;
     private final FieldEncryptionService encryption;
     private final String allowedOrigins;
+    private final MktWarehouseYunshanConnMapper warehouseConns;
 
+    @Autowired
     public YunshanConnections(YunshanClient shared, ObjectMapper json, FieldEncryptionService encryption,
-            @Value("${zhyq.yunshan.allowed-origins:}") String allowedOrigins) {
+            @Value("${zhyq.yunshan.allowed-origins:}") String allowedOrigins, MktWarehouseYunshanConnMapper warehouseConns) {
         this.shared = shared; this.json = json; this.encryption = encryption; this.allowedOrigins = allowedOrigins;
+        this.warehouseConns = warehouseConns;
+    }
+
+    public YunshanConnections(YunshanClient shared, ObjectMapper json, FieldEncryptionService encryption, String allowedOrigins) {
+        this(shared, json, encryption, allowedOrigins, null);
+    }
+
+    /** 该云仓自己配置的接口；未配置返回 null。 */
+    public YunshanClient forWarehouse(Long warehouseId) {
+        MktWarehouseYunshanConn row = warehouseId == null || warehouseConns == null ? null : warehouseConns.selectOne(
+            new LambdaQueryWrapper<MktWarehouseYunshanConn>().eq(MktWarehouseYunshanConn::getWarehouseId, warehouseId).last("LIMIT 1"));
+        if (row == null) return null;
+        return preview(new Input("CUSTOM", row.getBaseUrl(), encryption.decrypt(row.getAppIdEnc()), encryption.decrypt(row.getPublicKeyEnc())));
+    }
+
+    /** 新增客户对应时用：选“共享”即使用该云仓的接口，云仓未配置时退回服务端共享接口。 */
+    public YunshanClient resolve(Long warehouseId, Input input) {
+        if (input == null || "SHARED".equals(input.mode())) {
+            YunshanClient own = forWarehouse(warehouseId);
+            if (own != null) return own;
+        }
+        return preview(input);
+    }
+
+    /** 保存云仓接口（先校验地址与公钥）。 */
+    public YunshanClient saveWarehouse(MktWarehouse warehouse, Input input) {
+        if (input == null || !"CUSTOM".equals(input.mode())) throw new BizException("请填写接口地址、App ID 和 RSA 公钥");
+        YunshanClient client = preview(input);
+        MktWarehouseYunshanConn row = warehouseConns.selectOne(
+            new LambdaQueryWrapper<MktWarehouseYunshanConn>().eq(MktWarehouseYunshanConn::getWarehouseId, warehouse.getId()).last("LIMIT 1"));
+        boolean create = row == null;
+        if (create) {
+            row = new MktWarehouseYunshanConn();
+            row.setWarehouseId(warehouse.getId()); row.setTenantId(warehouse.getTenantId()); row.setProjectId(warehouse.getProjectId());
+        }
+        row.setBaseUrl(validateBaseUrl(input.baseUrl()));
+        row.setAppIdEnc(encryption.encrypt(input.appId().trim()));
+        row.setPublicKeyEnc(encryption.encrypt(input.publicKey().trim()));
+        if (create) warehouseConns.insert(row); else warehouseConns.updateById(row);
+        return client;
     }
 
     public record Input(@NotBlank @Pattern(regexp = "SHARED|CUSTOM") String mode,
@@ -44,15 +91,18 @@ public class YunshanConnections {
     }
 
     public void store(MktYunshanVolumeMap mapping, Input input) {
-        preview(input);
         if (input == null || "SHARED".equals(input.mode())) return;
+        preview(input);
         mapping.setConnectionBaseUrl(validateBaseUrl(input.baseUrl()));
         mapping.setConnectionAppIdEnc(encryption.encrypt(input.appId().trim()));
         mapping.setConnectionPublicKeyEnc(encryption.encrypt(input.publicKey().trim()));
     }
 
     public YunshanClient forMapping(MktYunshanVolumeMap mapping) {
-        if (mapping.getConnectionBaseUrl() == null) return shared;
+        if (mapping.getConnectionBaseUrl() == null) {
+            YunshanClient own = forWarehouse(mapping.getWarehouseId());
+            return own != null ? own : shared;
+        }
         return preview(new Input("CUSTOM", mapping.getConnectionBaseUrl(),
             encryption.decrypt(mapping.getConnectionAppIdEnc()), encryption.decrypt(mapping.getConnectionPublicKeyEnc())));
     }

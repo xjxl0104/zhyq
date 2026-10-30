@@ -44,6 +44,34 @@ class MktYunshanControllerTest {
         var site = new MktOperationWarehouse(); site.setId(99L); site.setName("本地仓库");
         when(scope.requireSite(any(), any(), any())).thenReturn(site);
         when(connections.preview(any())).thenReturn(client);
+        when(connections.resolve(any(), any())).thenReturn(client);
+    }
+
+    @Test void configPrefersTheWarehouseOwnInterfaceAndFallsBackToTheSharedOne() {
+        when(client.configured()).thenReturn(true); when(client.baseUrl()).thenReturn("https://shared.example/api"); when(client.maskedAppId()).thenReturn("sha****red");
+        assertThat(controller.config(7L).getData()).containsEntry("source", "SHARED").containsEntry("baseUrl", "https://shared.example/api");
+        var own = mock(YunshanClient.class);
+        when(own.configured()).thenReturn(true); when(own.baseUrl()).thenReturn("https://own.example/api"); when(own.maskedAppId()).thenReturn("own****app");
+        when(connections.forWarehouse(8L)).thenReturn(own);
+        assertThat(controller.config(8L).getData()).containsEntry("source", "WAREHOUSE").containsEntry("appId", "own****app");
+    }
+
+    @Test void saveConnectionVerifiesTheInterfaceAndNeverReturnsCredentials() {
+        var warehouse = new MktWarehouse(); warehouse.setId(7L); when(warehouses.selectForUpdate(7L)).thenReturn(warehouse);
+        var input = new YunshanConnections.Input("CUSTOM", "https://own.example/api", "own-app", "public-key");
+        var own = mock(YunshanClient.class);
+        when(own.baseUrl()).thenReturn("https://own.example/api"); when(own.maskedAppId()).thenReturn("own****app");
+        when(own.owners(null, null, 1)).thenReturn(new YunshanClient.EntityPage(List.of(), 3, 1));
+        when(connections.saveWarehouse(warehouse, input)).thenReturn(own);
+        var result = controller.saveConnection(7L, input).getData();
+        assertThat(result).containsEntry("ownerCount", 3L).containsEntry("source", "WAREHOUSE").doesNotContainKeys("publicKey", "appIdEnc");
+        verify(audit).log(eq("yunshan.connection.save"), eq("warehouse"), eq(7L), anyString(), isNull(), any());
+    }
+
+    @Test void saveConnectionRejectsMissingWarehouse() {
+        assertThatThrownBy(() -> controller.saveConnection(9L, new YunshanConnections.Input("CUSTOM", "https://own.example/api", "a", "k")))
+            .hasMessageContaining("云仓不存在");
+        verifyNoInteractions(audit);
     }
     @BeforeAll static void metadata() {
         var assistant = new MapperBuilderAssistant(new MybatisConfiguration(), "");
@@ -185,7 +213,9 @@ class MktYunshanControllerTest {
                 List.of(new SimpleGrantedAuthority("crm:marketing:erp:query"))));
         try {
             when(client.baseUrl()).thenReturn(""); when(client.maskedAppId()).thenReturn("");
-            assertThat(guarded.config().getData()).containsEntry("configured", false);
+            assertThat(guarded.config(null).getData()).containsEntry("configured", false);
+            assertThatThrownBy(() -> guarded.saveConnection(7L, new YunshanConnections.Input("CUSTOM", "https://own.example/api", "a", "k")))
+                    .isInstanceOf(AccessDeniedException.class);
             assertThatThrownBy(() -> guarded.sync(1L, new MktYunshanController.SyncInput(LocalDate.now(), LocalDate.now())))
                     .isInstanceOf(AccessDeniedException.class);
             assertThatThrownBy(() -> guarded.owners(null, null, 1)).isInstanceOf(AccessDeniedException.class);
