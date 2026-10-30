@@ -12,6 +12,8 @@
 
     <el-alert v-if="error" type="error" :closable="false" :title="error" class="mb" />
     <template v-if="warehouseId">
+      <YunshanConnectionPanel :key="`conn-${warehouseId}`" :warehouse-id="warehouseId" :warehouse-name="warehouseName"
+                              @changed="yunshanPanel?.refresh()" />
       <CustomerOperationWarehousePanel ref="opsPanel" :key="warehouseId" :warehouse-id="warehouseId" :warehouse-name="warehouseName"
                                        @select="focus = $event" @configure="configureFor" />
       <YunshanVolumePanel ref="yunshanPanel" class="mb" :key="warehouseId" :warehouse-id="warehouseId" :warehouse-name="warehouseName"
@@ -26,6 +28,7 @@ import { useRoute } from 'vue-router'
 import { mktYunshanApi } from '@/api/marketing'
 import CustomerOperationWarehousePanel from './CustomerOperationWarehousePanel.vue'
 import YunshanVolumePanel from './YunshanVolumePanel.vue'
+import YunshanConnectionPanel from './YunshanConnectionPanel.vue'
 
 const route = useRoute()
 const warehouses = ref([])

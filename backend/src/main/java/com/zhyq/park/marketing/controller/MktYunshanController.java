@@ -77,7 +77,7 @@ public class MktYunshanController {
     public Result<YunshanClient.EntityPage> directory(@PathVariable Long warehouseId, @Valid @RequestBody DirectoryInput input) {
         customerScope.requireSigned(warehouseId, input.customerId());
         validateDirectory(null, input.parentOwnerNo(), input.current());
-        YunshanClient source = connections.preview(input.connection());
+        YunshanClient source = connections.resolve(warehouseId, input.connection());
         return Result.ok(input.parentOwnerNo() == null ? source.owners(null, null, input.current())
             : source.warehouses(null, input.parentOwnerNo(), input.current()));
     }
@@ -88,10 +88,29 @@ public class MktYunshanController {
     public record VolumeResult(List<MktYunshanDailyVolume> records, long total, String totalConsignNum,
                                int daysWithData, int daysMissing, String dataState) {}
 
-    @Operation(summary = "云山云仓接口配置状态（不返回凭证）")
+    @Operation(summary = "云山云仓接口配置状态（不返回凭证）；传云仓 ID 时优先返回该云仓自己的接口")
     @GetMapping("/config") @PreAuthorize("hasAuthority('crm:marketing:erp:query')")
-    public Result<Map<String, Object>> config() {
-        return Result.ok(Map.of("configured", client.configured(), "baseUrl", client.baseUrl(), "appId", client.maskedAppId()));
+    public Result<Map<String, Object>> config(@RequestParam(required = false) Long warehouseId) {
+        YunshanClient own = connections.forWarehouse(warehouseId);
+        YunshanClient source = own != null ? own : client;
+        return Result.ok(Map.of("configured", source.configured(), "baseUrl", source.baseUrl(), "appId", source.maskedAppId(),
+                "source", own != null ? "WAREHOUSE" : source.configured() ? "SHARED" : "NONE"));
+    }
+
+    @Operation(summary = "配置云仓发货量接口（一个云仓配置一次，其下客户共用）")
+    @PutMapping("/warehouse/{warehouseId}/connection") @PreAuthorize("hasAuthority('crm:marketing:erp:config')")
+    @Transactional
+    public Result<Map<String, Object>> saveConnection(@PathVariable Long warehouseId, @Valid @RequestBody YunshanConnections.Input input) {
+        MktWarehouse warehouse = warehouses.selectForUpdate(warehouseId);
+        if (warehouse == null) throw new BizException("云仓不存在或已删除");
+        YunshanClient source = connections.saveWarehouse(warehouse, input);
+        long owners;
+        try { owners = source.owners(null, null, 1).total(); }
+        catch (YunshanApiException e) { throw new BizException("接口验证失败，请核对地址、App ID 和公钥：" + e.getMessage()); }
+        audit.log("yunshan.connection.save", "warehouse", warehouseId, "配置云仓发货量接口", null,
+                Map.of("warehouseId", warehouseId, "baseUrl", source.baseUrl(), "ownerCount", owners));
+        return Result.ok(Map.of("configured", true, "baseUrl", source.baseUrl(), "appId", source.maskedAppId(),
+                "source", "WAREHOUSE", "ownerCount", owners));
     }
 
     @Operation(summary = "ERP页面云仓候选（仅接入所需字段）")
@@ -161,7 +180,7 @@ public class MktYunshanController {
     public Result<String> createMapping(@PathVariable Long warehouseId, @Valid @RequestBody MapInput input) {
         if (!Boolean.TRUE.equals(input.identityConfirmed())) throw new BizException("请核对并确认接口货主确为该客户");
         MktOperationWarehouse site = customerScope.requireSite(warehouseId, input.customerId(), input.operationWarehouseId());
-        YunshanClient source = connections.preview(input.connection());
+        YunshanClient source = connections.resolve(warehouseId, input.connection());
         YunshanClient.Entity owner = findEntity(input.parentOwnerNo(), page -> source.owners(null, input.parentWarehouseNo(), page));
         YunshanClient.Entity remoteWarehouse = findEntity(input.parentWarehouseNo(),
                 page -> source.warehouses(null, input.parentOwnerNo(), page));

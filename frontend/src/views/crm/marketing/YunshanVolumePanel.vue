@@ -1,20 +1,19 @@
 <template>
   <section v-if="canQuery" class="table-card yunshan-panel" aria-labelledby="yunshan-title">
     <div class="toolbar">
-      <h2 id="yunshan-title" class="title">云仓发货量同步</h2>
-      <el-tag v-if="config" :type="hasConfiguredSource ? 'success' : 'warning'">{{ hasConfiguredSource ? '已配置' : '待配置' }}</el-tag>
+      <h2 id="yunshan-title" class="title">客户发货量同步</h2>
+      <el-tag v-if="config" :type="hasConfiguredSource ? 'success' : 'warning'">{{ hasConfiguredSource ? '接口已配置' : '接口未配置' }}</el-tag>
       <el-button :loading="loading.maps" @click="refresh">刷新</el-button>
-      <el-button v-if="canConfig" type="primary" @click="openMap">配置接口同步</el-button>
+      <el-button v-if="canConfig" type="primary" @click="openMap">配置客户同步</el-button>
     </div>
-    <p class="hint">按客户和作业仓库同步每日发货票数，并核对数据。统计在次日生成。</p>
-    <p class="hint">先选择与当前云仓有有效已签合同的客户，自动带出已建档的作业仓库，再配置该客户的发货量接口。目前支持云山接口协议。</p>
-    <el-alert v-if="config && !config.configured" type="info" :closable="false" title="尚无共享接口，可点击“配置接口同步”为客户填写专用接口。历史快照仍可查询。" />
-    <p v-if="config?.configured" class="config-note">共享接口：{{ config.baseUrl }}<span v-if="config.appId"> · 应用：{{ config.appId }}</span></p>
+    <p class="hint">按客户和作业仓库同步每日发货票数，并核对数据。统计在次日生成；使用上方云仓的发货量接口，无需重复对接。</p>
+    <p class="hint">先选择与当前云仓有有效已签合同的客户，自动带出已建档的作业仓库，再核对该客户在接口里的货主和仓库。</p>
+    <el-alert v-if="config && !config.configured" type="info" :closable="false" title="该云仓还没有配置发货量接口，请先在页面上方配置。历史快照仍可查询。" />
     <el-alert v-if="errors.maps" type="error" :closable="false" :title="errors.maps" />
     <el-alert v-if="lastRun?.result?.failed > 0" type="error" show-icon :closable="false"
               :title="`上次${lastRun.trigger}生成佣金订单（${lastRun.at}）有 ${lastRun.result.failed} 个发货日失败：${lastRun.result.errors?.[0] || '未知原因'}`"
               description="常见原因：合同还没配置每单总佣金。配置后下一次每天 10:00 的自动生成会补上；失败也会推送告警。" />
-    <el-alert v-if="focus && maps.length && !visibleMaps.length" type="info" :closable="false" title="所选客户在该作业仓库尚未配置发货量同步，可点击上方客户列表中的“配置同步”或本区的“配置接口同步”为其配置。" />
+    <el-alert v-if="focus && maps.length && !visibleMaps.length" type="info" :closable="false" title="所选客户在该作业仓库尚未配置发货量同步，可点击上方客户列表中的“配置同步”或本区的“配置客户同步”为其配置。" />
     <el-table v-loading="loading.maps" :data="visibleMaps" size="small" border empty-text="暂无云仓发货量同步配置，不影响客户与作业仓库建档。">
       <el-table-column prop="customerName" label="客户（货主）" min-width="130"><template #default="{ row }">{{ row.customerName || row.customerId }}</template></el-table-column>
       <el-table-column label="接口返回的货主" min-width="170"><template #default="{ row }"><div>{{ row.parentOwnerName || '未命名客户' }}</div><div class="entity-no">{{ row.parentOwnerNo }}</div><el-tag v-if="row.identityMismatch" type="danger">客户身份不一致，已阻止同步</el-tag></template></el-table-column>
@@ -145,7 +144,7 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="mapDialog.visible" title="配置云仓发货量同步" width="min(560px, calc(100vw - 32px))" :close-on-click-modal="false" @closed="closeMap">
+    <el-dialog v-model="mapDialog.visible" title="配置客户发货量同步" width="min(560px, calc(100vw - 32px))" :close-on-click-modal="false" @closed="closeMap">
       <p class="dialog-hint">加盟云仓：{{ warehouseName || '当前所选云仓' }}。仅为该客户本人配置数据来源，不得使用其他客户的发货数据。</p>
       <el-form label-position="top" @submit.prevent="saveMap">
         <el-form-item label="客户（货主）" required>
@@ -165,7 +164,7 @@
         <el-divider>配置该客户的发货量接口</el-divider>
         <el-form-item label="连接方式">
           <el-radio-group v-model="connection.mode" :disabled="loading.save">
-            <el-radio value="CUSTOM">填写客户专用接口</el-radio><el-radio value="SHARED" :disabled="!config?.configured">使用已配置共享接口</el-radio>
+            <el-radio value="SHARED" :disabled="!config?.configured">使用云仓接口</el-radio><el-radio value="CUSTOM">该客户使用专用接口</el-radio>
           </el-radio-group>
         </el-form-item>
         <template v-if="connection.mode === 'CUSTOM'">
@@ -173,7 +172,8 @@
           <el-form-item label="App ID" required><el-input v-model="connection.appId" :disabled="loading.save" maxlength="256" autocomplete="off" /></el-form-item>
           <el-form-item label="RSA 公钥" required><el-input v-model="connection.publicKey" :disabled="loading.save" type="textarea" :rows="3" maxlength="8192" placeholder="粘贴接口提供方的 RSA 公钥" /></el-form-item>
         </template>
-        <p v-else class="hint">共享接口：{{ config?.baseUrl }} · {{ config?.appId }}</p>
+        <p v-else-if="config?.configured" class="hint">云仓接口：{{ config.baseUrl }} · {{ config.appId }}</p>
+        <el-alert v-else type="warning" :closable="false" title="该云仓还没有配置发货量接口，请先关闭本窗口，在页面上方配置接口。" />
         <el-button :loading="loading.owners" :disabled="!mapDialog.customerId || !connectionReady || loading.save" @click="reloadDirectory">验证接口并读取客户授权</el-button>
         <template v-if="mapDialog.customerId && directoryState.ownersLoaded">
           <el-alert :type="selectedOwner ? 'info' : 'warning'" :closable="false" :title="customerLinkNotice" />
@@ -339,7 +339,7 @@ async function refresh() {
   if (!canQuery.value || !props.warehouseId) return
   const version = ++versions.maps; loading.maps = true; errors.maps = ''
   try {
-    const [settings, rows] = await Promise.all([mktYunshanApi.config(), mktYunshanApi.maps(String(props.warehouseId))])
+    const [settings, rows] = await Promise.all([mktYunshanApi.config(String(props.warehouseId)), mktYunshanApi.maps(String(props.warehouseId))])
     if (disposed || version !== versions.maps) return
     config.value = settings; maps.value = rows; loadMonthly(); loadLastRun()
     if (!visibleMaps.value.some(item => String(item.id) === mapId.value)) mapId.value = visibleMaps.value.length ? String(visibleMaps.value[0].id) : ''
@@ -521,7 +521,7 @@ watch(() => props.focus, () => {
   loadMonthly()
 })
 onBeforeUnmount(() => { disposed = true; Object.keys(versions).forEach(key => versions[key]++) })
-defineExpose({ openMap })
+defineExpose({ openMap, refresh })
 </script>
 
 <style scoped>
