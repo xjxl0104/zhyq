@@ -1,6 +1,7 @@
 package com.zhyq.park.auth;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.zhyq.park.auth.mapper.AuthQueryMapper;
 import com.zhyq.park.common.exception.BizException;
 import com.zhyq.park.common.result.Result;
@@ -94,7 +95,8 @@ public class AuthController {
                     menu.getType(), menu.getPath(), menu.getPerm(), menu.getStatus());
         }
     }
-    public record MyAccess(boolean admin, List<GrantedMenu> menus) {}
+    /** portalUid / name 给前端的平台应用日报心跳用(没绑门户则为 null); 不参与任何鉴权 */
+    public record MyAccess(boolean admin, List<GrantedMenu> menus, String portalUid, String name) {}
 
     @Operation(summary = "当前用户的有效导航与操作权限")
     @GetMapping("/my-access")
@@ -105,8 +107,13 @@ public class AuthController {
         if (user == null) throw new BizException(401, "登录状态已失效");
         boolean admin = auth.getAuthorities().stream()
                 .anyMatch(authority -> "ROLE_admin".equals(authority.getAuthority()));
+        // portal_uid 列由门户 SSO 迁移加在 sys_user 上, 实体没映射, 这里单查一列
+        Object portalUid = userMapper.selectMaps(new QueryWrapper<SysUser>().select("portal_uid").eq("id", user.getId()))
+                .stream().findFirst().map(m -> m == null ? null : m.get("portal_uid")).orElse(null);
+        String name = user.getNickname() != null && !user.getNickname().isBlank() ? user.getNickname() : user.getUsername();
         return Result.ok(new MyAccess(admin, admin ? List.of()
                 : authQueryMapper.selectGrantedMenusByUserId(user.getId()).stream()
-                        .map(GrantedMenu::of).toList()));
+                        .map(GrantedMenu::of).toList(),
+                portalUid == null || portalUid.toString().isBlank() ? null : portalUid.toString().trim(), name));
     }
 }
