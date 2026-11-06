@@ -2,6 +2,7 @@ package com.zhyq.park.common.audit;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.zhyq.park.common.audit.mapper.OperLogMapper;
+import com.zhyq.park.common.config.MyMetaObjectHandler;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -19,7 +20,7 @@ import java.time.LocalDateTime;
  * 操作审计切面(批次② §审计)。
  *
  * <p>拦截标注 {@link OperationLog} 的方法,记录模块/操作/方法/入参/操作人/IP/成败/耗时到 {@code sys_oper_log}。
- * 操作人当前恒为 "system"(无登录鉴权,#7 落地后从上下文取真实用户)。<b>审计写入失败一律吞掉,
+ * 操作人取当前登录用户名(与 create_by 同口径),无认证上下文(定时任务)记 "system"。<b>审计写入失败一律吞掉,
  * 绝不影响业务主流程与原方法返回。</b></p>
  */
 @Slf4j
@@ -57,7 +58,7 @@ public class AuditAspect {
         logEntry.setAction(ann.action());
         MethodSignature sig = (MethodSignature) pjp.getSignature();
         logEntry.setMethod(sig.getDeclaringType().getSimpleName() + "." + sig.getName());
-        logEntry.setOperator("system");
+        logEntry.setOperator(MyMetaObjectHandler.currentOperator());
         logEntry.setSuccess(error == null ? 1 : 0);
         if (error != null) {
             logEntry.setErrorMsg(truncate(error.getMessage(), 500));
