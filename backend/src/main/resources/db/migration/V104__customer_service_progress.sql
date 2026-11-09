@@ -11,7 +11,7 @@ CREATE TABLE crm_customer_progress_history (
     source VARCHAR(32) NOT NULL,
     create_time DATETIME NOT NULL,
     KEY idx_customer_progress (customer_id, tenant_id, create_time, id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='伙伴可见服务进度的追加历史';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='伙伴可见服务进度的追加历史';
 
 START TRANSACTION;
 UPDATE crm_customer
@@ -37,7 +37,7 @@ SELECT c.id, c.tenant_id, NULL, TRIM(c.public_progress), 'historical', 'legacy-s
 FROM crm_customer c
 WHERE c.deleted = 0 AND CHAR_LENGTH(TRIM(c.public_progress)) BETWEEN 1 AND 500
   AND NOT EXISTS (SELECT 1 FROM crm_customer_progress_history h
-                  WHERE h.customer_id = c.id AND h.tenant_id = c.tenant_id AND h.summary = TRIM(c.public_progress)
+                  WHERE h.customer_id = c.id AND h.tenant_id = c.tenant_id AND BINARY h.summary = BINARY TRIM(c.public_progress)
                     AND h.create_time = COALESCE(c.progress_updated_at, NOW()));
 
 -- 本次启用百分比时的已知阶段快照，与旧的文本历史明确区分。
