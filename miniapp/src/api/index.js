@@ -34,6 +34,7 @@ export const pricingApi = {
   save: (customerId, data) => put(`/pricing/customer/${customerId}`, data)
 }
 export const bizApi = {
+  referralLink: () => get('/referral-link'),
   referral: (data) => post('/referral', data),
   customers: (params) => get('/referral/page', params),
   customer: (id) => get(`/referral/${id}`),
@@ -54,4 +55,8 @@ export const accountAdminApi = {
   invite: (id, data) => put(`/admin/accounts/mp/${id}/invite-code`, data),
   status: (type, id, data) => put(`/admin/accounts/${type}/${id}/login-status`, data),
   remove: (type, id, reason) => request('DELETE', `/admin/accounts/${type}/${id}`, { reason })
+}
+export const publicReferralApi = {
+  info: token => get(`/public/referral/${encodeURIComponent(token)}`),
+  submit: (token, data) => post(`/public/referral/${encodeURIComponent(token)}`, data)
 }

@@ -19,6 +19,12 @@ public class Customer extends BaseEntity {
     private String industry;
     /** 需求面积段 */
     private String demandArea;
+    /** 客户自填/伙伴代填的结构化仓配需求，由业务入口统一校验。 */
+    @JsonProperty(access = JsonProperty.Access.READ_ONLY)
+    private String fulfillmentRequirements;
+    /** 填报人提交的备注，与运营内部 remark 隔离，历史内部备注不得回传伙伴/云仓。 */
+    @JsonProperty(access = JsonProperty.Access.READ_ONLY)
+    private String intakeRemark;
     /** 意向等级 A/B/C */
     private String intentLevel;
     /** 来源线索 */
@@ -54,4 +60,7 @@ public class Customer extends BaseEntity {
     private String publicProgress;
     @JsonProperty(access = JsonProperty.Access.READ_ONLY)
     private LocalDateTime progressUpdatedAt;
+    /** 服务对接进度百分比，仅由进度业务入口更新。 */
+    @JsonProperty(access = JsonProperty.Access.READ_ONLY)
+    private Integer progressPercentage;
 }

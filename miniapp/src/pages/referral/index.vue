@@ -1,54 +1,80 @@
 <template>
-  <view>
+  <view class="page-wrap">
     <view class="card">
-      <view class="muted">推荐后客户进入 7 天预锁,专员联系确认后转为 180 天有效锁定;期内成交归您。</view>
-      <input class="input" v-model="form.name" placeholder="客户公司 / 店铺名称 *" />
-      <input class="input" v-model="form.brandName" maxlength="100" placeholder="品牌名称（选填，请填写准确名称）" />
-      <input class="input" v-model="form.contact" placeholder="联系人" />
-      <input class="input" v-model="form.phone" type="number" maxlength="11" placeholder="联系手机（选填）" />
-      <picker :range="TYPES" range-key="label" @change="e => form.serviceType = TYPES[e.detail.value].value">
-        <view class="input">需求类型:{{ TYPES.find(t => t.value === form.serviceType)?.label }}</view>
-      </picker>
-      <picker v-if="form.serviceType !== 4" :range="warehouses" range-key="name" @change="e => form.warehouseId = warehouses[e.detail.value].id">
-        <view class="input">意向云仓:{{ warehouses.find(w => w.id === form.warehouseId)?.name || '不限' }}</view>
-      </picker>
-      <input class="input" v-model="form.demand" placeholder="需求(面积 / 日单量 / 品类)" />
-      <textarea class="input" v-model="form.remark" placeholder="备注" style="height:120rpx" />
-      <button class="btn" :loading="loading" :disabled="loading" @click="submit">提交推荐</button>
+      <view class="title">我的客户填写码</view>
+      <view class="muted qr-note">发给客户，客户扫码即可自行填写需求，推荐归属自动记在您名下。</view>
+      <view v-if="linkError" class="error">{{ linkError }}</view>
+      <button v-if="!link.token" class="btn ghost" :loading="linkLoading" :disabled="linkLoading" @click="loadLink">重新读取专属二维码</button>
+      <button v-if="link.token" class="btn ghost" :loading="codeLoading" :disabled="codeLoading" @click="makeCode">{{ codeImage ? '重新生成二维码' : '生成我的专属二维码' }}</button>
+      <image v-if="codeImage" :src="codeImage" mode="widthFix" class="qr-image" @click="preview" />
+      <button v-if="codeImage" class="btn ghost" @click="saveCode">保存二维码</button>
+      <!-- #ifdef MP-WEIXIN -->
+      <button v-if="link.token" class="btn" open-type="share">发给客户填写</button>
+      <!-- #endif -->
+    </view>
+    <view class="card">
+      <view class="muted">推荐后直接锁定 3 个自然月；签约成交后，推荐归属长期有效。</view>
+      <ReferralForm :form="form" :warehouses="warehouses" :loading="loading" @submit="submit" />
     </view>
   </view>
 </template>
-
-<script>
-import { appShareMixin } from '@/utils/share'
-
-export default { mixins: [appShareMixin] }
-</script>
-
 <script setup>
 import { ref, reactive } from 'vue'
-import { onLoad } from '@dcloudio/uni-app'
+import { onLoad, onUnload, onShareAppMessage } from '@dcloudio/uni-app'
 import { bizApi } from '@/api'
-
-const TYPES = [{ value: 2, label: '一件代发' }, { value: 1, label: '仓储' }, { value: 3, label: '仓配一体' }, { value: 4, label: '园区入驻(租仓/租办公)' }]
-const warehouses = ref([{id:null,name:'不限'}])
-const loading = ref(false)
-const form = reactive({ name: '', brandName: '', contact: '', phone: '', serviceType: 2, warehouseId: null, demand: '', remark: '' })
-
-onLoad(async () => { try { warehouses.value = [{id:null,name:'不限'}, ...await bizApi.warehouses()] } catch (e) { /* 可为空 */ } })
-
-async function submit() {
+import { downloadReferralCode } from '@/utils/request'
+import { newReferralForm, referralShare } from '@/utils/referral-intake.mjs'
+import ReferralForm from '@/components/ReferralForm.vue'
+const warehouses = ref([]), loading = ref(false), form = reactive(newReferralForm())
+const link = ref({}), linkError = ref(''), linkLoading = ref(false), codeLoading = ref(false), codeImage = ref('')
+onLoad(async () => {
+  await Promise.all([loadLink(), bizApi.warehouses().then(items => { warehouses.value = items }).catch(() => {})])
+})
+onShareAppMessage(() => referralShare(link.value.token))
+onUnload(releaseImage)
+function releaseImage() {
+  // #ifdef H5
+  if (codeImage.value?.startsWith('blob:')) URL.revokeObjectURL(codeImage.value)
+  // #endif
+}
+async function loadLink() {
+  if (linkLoading.value) return
+  linkLoading.value = true; linkError.value = ''
+  try { link.value = await bizApi.referralLink() } catch (e) { linkError.value = e.message || '专属二维码读取失败，请重试' } finally { linkLoading.value = false }
+}
+async function makeCode() {
+  if (codeLoading.value || !link.value.token) return
+  codeLoading.value = true; linkError.value = ''
+  try {
+    let env = 'release'
+    // #ifdef MP-WEIXIN
+    env = uni.getAccountInfoSync().miniProgram.envVersion || 'release'
+    // #endif
+    const image = await downloadReferralCode(env)
+    releaseImage(); codeImage.value = image
+  } catch (e) { linkError.value = e.message || '二维码生成失败，请重试' } finally { codeLoading.value = false }
+}
+const preview = () => uni.previewImage({ urls: [codeImage.value] })
+async function saveCode() {
+  // #ifdef H5
+  const a = document.createElement('a'); a.href = codeImage.value; a.download = '客户填写专属二维码.png'; a.click()
+  // #endif
+  // #ifdef MP-WEIXIN
+  try { await uni.saveImageToPhotosAlbum({ filePath: codeImage.value }); uni.showToast({ title: '已保存' }) }
+  catch (e) { linkError.value = '保存未完成，请允许保存到相册，或点击二维码长按保存' }
+  // #endif
+}
+async function submit(body) {
   if (loading.value) return
-  if (!form.name.trim()) return uni.showToast({ title: '请填客户名称', icon: 'none' })
-  const phone = form.phone.trim()
-  if (phone && !/^1\d{10}$/.test(phone)) return uni.showToast({ title: '手机号格式不对', icon: 'none' })
   loading.value = true
   try {
-    const r = await bizApi.referral({...form, phone: phone || null, warehouseId:form.serviceType === 4 ? null : form.warehouseId})
-    uni.showModal({ title: '推荐成功', content: `已为您预锁至 ${r.prelockUntil?.slice(0, 10)},招商专员将尽快联系客户。`, showCancel: false,
+    const r = await bizApi.referral(body)
+    uni.showModal({ title: '推荐成功', content: `客户已锁定${r.lockUntil ? '至 ' + r.lockUntil.slice(0, 10) : ' 3 个自然月'}，签约成交后长期有效。园区专员将跟进您的客户。`, showCancel: false,
       success: () => uni.switchTab({ url: '/pages/customers/index' }) })
-  } catch (e) {
-    uni.showToast({ title: e.message || '推荐提交失败，请重试', icon: 'none' })
-  } finally { loading.value = false }
+  } catch (e) { uni.showToast({ title: e.message || '推荐提交失败，请重试', icon: 'none' }) }
+  finally { loading.value = false }
 }
 </script>
+<style scoped>
+.qr-note{margin-top:16rpx;line-height:1.7}.qr-image{display:block;width:360rpx;margin:24rpx auto}.error{color:#a3293e;margin-top:16rpx;line-height:1.6}
+</style>

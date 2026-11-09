@@ -1,6 +1,6 @@
 <template>
   <view class="page-wrap">
-    <view v-if="error" class="card"><view class="error">{{ error }}</view><button @click="load">重新加载</button></view>
+    <view v-if="error" class="card"><view class="error">{{ error }}</view><button @click="load()">重新加载</button></view>
     <view v-if="loading && !c" class="card muted">正在读取客户资料…</view>
     <template v-if="c">
       <view class="card">
@@ -14,22 +14,15 @@
         <view class="row"><text class="muted">承接状态</text><text>{{ ASSIGN[c.warehouseAssignmentStatus || 0] }}</text></view>
         <view class="row"><text class="muted">推荐时间</text><text>{{ c.createTime?.slice(0, 16) }}</text></view>
       </view>
+      <CustomerRequirements :requirements="c.requirements" :demand="c.demand || c.demandArea" :remark="c.remark" />
       <view v-if="me.positionCode === 'P4' && Number(me.status) === 1" class="card">
         <view class="title">客户定价与分佣</view>
         <view class="muted" style="margin-top:16rpx">由您自定义总佣金、P4 本人和具体受益人的每单金额。</view>
         <button class="btn secondary" @click="navigateTo('/pages/allocation/index?customerId=' + c.id)">设置每单金额</button>
       </view>
-      <view class="card">
-        <view class="title">服务进度</view>
-        <view class="progress">{{ c.publicProgress || '园区尚未更新服务进度，请稍后查看。' }}</view>
-        <view v-if="c.progressUpdatedAt" class="muted">更新于 {{ c.progressUpdatedAt.slice(0, 16) }}</view>
-      </view>
-      <view v-if="c.canExtend" class="card">
-        <view class="muted">已进入有效锁定且尚未延期过的客户，可以延长锁定90天，每个客户仅限延期一次。</view>
-        <button class="btn" :loading="busy" :disabled="busy" @click="extend">延长锁定90天</button>
-      </view>
-      <button class="btn ghost" :disabled="loading" @click="load">刷新进度</button>
-      <DeleteCustomerButton :customer="c" :disabled="loading || busy" @deleted="switchTab('/pages/customers/index')" />
+      <CustomerProgress :customer="c" />
+      <button class="btn ghost" :disabled="loading" @click="load()">刷新进度</button>
+      <DeleteCustomerButton :customer="c" :disabled="loading" @deleted="switchTab('/pages/customers/index')" />
     </template>
   </view>
 </template>
@@ -41,34 +34,43 @@ export default { mixins: [appShareMixin] }
 
 <script setup>
 import { ref, computed } from 'vue'
-import { onLoad, onShow } from '@dcloudio/uni-app'
+import { onLoad, onShow, onHide, onUnload } from '@dcloudio/uni-app'
 import { bizApi, meApi } from '@/api'
 import { navigateTo, switchTab } from '@/utils/nav.mjs'
 import DeleteCustomerButton from '@/components/DeleteCustomerButton.vue'
+import CustomerRequirements from '@/components/CustomerRequirements.vue'
+import CustomerProgress from '@/components/CustomerProgress.vue'
 const STATUS = {1:'跟进中',2:'已签约',3:'已流失'}
 const ASSIGN = {0:'待分派',1:'待商家确认',2:'已承接',3:'商家已拒绝，等待重新分派'}
-const c = ref(null), me = ref({}), error = ref(''), loading = ref(false), busy = ref(false)
-let id
+const c = ref(null), me = ref({}), error = ref(''), loading = ref(false)
+let id, refreshTimer, requestSequence = 0, visible = false
 onLoad(q => { id = q.id })
-onShow(load)
-async function load() {
-  if (!id || loading.value) return
+onShow(() => {
+  visible = true
+  load()
+  clearInterval(refreshTimer)
+  refreshTimer = setInterval(() => load(true), 15000)
+})
+function stopRefresh() { visible = false; requestSequence++; loading.value = false; clearInterval(refreshTimer) }
+onHide(stopRefresh)
+onUnload(stopRefresh)
+async function load(silent = false) {
+  if (!id || !visible || loading.value) return
+  const sequence = ++requestSequence
   loading.value = true; error.value = ''
-  try { [c.value, me.value] = await Promise.all([bizApi.customer(id), meApi.me()]) } catch (e) { c.value = null; error.value = e.message } finally { loading.value = false }
+  try {
+    const result = await Promise.all([bizApi.customer(id), meApi.me()])
+    if (visible && sequence === requestSequence) [c.value, me.value] = result
+  } catch (e) {
+    if (visible && sequence === requestSequence) { if (!silent) c.value = null; error.value = e.message }
+  } finally { if (sequence === requestSequence) loading.value = false }
 }
 const lockText = computed(() => {
   const x = c.value
-  if (x.lockStatus === 1) return `预锁，剩余${x.lockDaysLeft}天`
-  if (x.lockStatus === 2) return `有效锁定，剩余${x.lockDaysLeft}天`
-  if (x.lockStatus === 3) return '已成交'
+  if (x.lockStatus === 1 || x.lockStatus === 2) return `锁定，剩余${x.lockDaysLeft}天`
+  if (x.lockStatus === 3) return '已成交 · 长期有效'
   return x.lockStatus === 4 ? '已释放' : '未锁定'
 })
-async function extend() {
-  if (busy.value) return
-  busy.value = true
-  try { await bizApi.extend(id, '伙伴申请延长锁定'); uni.showToast({title:'已延期'}); await load() }
-  catch (e) { error.value = e.message } finally { busy.value = false }
-}
 </script>
 <style scoped>
 .row{gap:24rpx;align-items:flex-start}.row text:last-child{max-width:66%;text-align:right;overflow-wrap:anywhere}.progress{margin:20rpx 0;white-space:pre-wrap;line-height:1.7;overflow-wrap:anywhere}.error{color:#a3293e;margin-bottom:20rpx}

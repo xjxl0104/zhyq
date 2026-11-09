@@ -50,7 +50,7 @@ class MktCustomerDeletionSecurityTest {
                     mock(MktCustomerAssignmentService.class), deletion);
         }
         @Bean MpBizController partner(CustomerMapper customers, MktCustomerDeletionService deletion) {
-            return new MpBizController(customers, mock(MktPromoterMapper.class), mock(MktWarehouseMapper.class),
+            return new MpBizController(mock(com.zhyq.park.marketing.service.MktReferralService.class), customers, mock(MktPromoterMapper.class), mock(MktWarehouseMapper.class),
                     mock(MktPromoterCommissionMapper.class), mock(MktReferralOrderMapper.class), mock(MktWithdrawalMapper.class),
                     mock(TenantMessageMapper.class), mock(MktLockService.class), mock(MktWithdrawalService.class),
                     mock(BizSettings.class), mock(MktAuditService.class), mock(MktCustomerAssignmentService.class), deletion);

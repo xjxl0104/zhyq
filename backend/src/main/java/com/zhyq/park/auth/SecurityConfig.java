@@ -64,6 +64,9 @@ public class SecurityConfig {
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/mp/v1/auth/password-setup", "/mp/v1/auth/password-status").hasRole("MP")
                 .requestMatchers("/wh/v1/auth/password-setup", "/wh/v1/auth/password-status").hasRole("WH")
+                // Only the opaque partner-bound customer intake route is anonymous.
+                .requestMatchers(HttpMethod.GET, "/mp/v1/public/referral/{token}").permitAll()
+                .requestMatchers(HttpMethod.POST, "/mp/v1/public/referral/{token}").permitAll()
                 .requestMatchers(
                         "/auth/login",
                         "/mp/v1/auth/**",

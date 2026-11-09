@@ -6,6 +6,7 @@
     { "path": "pages/login/index", "style": { "navigationBarTitleText": "登录" } },
     { "path": "pages/agreement/index", "style": { "navigationBarTitleText": "协议" } },
     { "path": "pages/referral/index", "style": { "navigationBarTitleText": "推荐客户" } },
+    { "path": "pages/customer-intake/index", "style": { "navigationBarTitleText": "填写需求" } },
     { "path": "pages/customers/index", "style": { "navigationBarTitleText": "我的客户" } },
     { "path": "pages/customer-detail/index", "style": { "navigationBarTitleText": "客户详情" } },
     { "path": "pages/position/index", "style": { "navigationBarTitleText": "我的称号" } },

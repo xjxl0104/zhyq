@@ -25,12 +25,11 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 /**
- * 伙伴锁客(PARK-MKT-001 §2.2a 两段式报备):
- * 1预锁(7 天,专员确认)→ 2有效锁定(180 天,可延期一次 +90)→ 3已成交 / 4已释放(进公海)。
+ * 伙伴报备后直接锁定三个自然月；签约成交后归属长期有效。
  *
  * <p>并发:一个客户同一时刻只能有一把活锁,靠 crm_customer_lock.active_key 生成列 + 唯一键兜底,
  * 后到者撞 {@link DuplicateKeyException} 直接报「该客户已被报备」,不需要 Redis。
- * 上限按岗位 lock_cap(含预锁);释放后原伙伴 lock_cooldown_days 内不可再锁同一客户。</p>
+ * 上限按岗位 lock_cap；释放后原伙伴 lock_cooldown_days 内不可再锁同一客户。</p>
  */
 @Service
 @RequiredArgsConstructor
@@ -43,7 +42,6 @@ public class MktLockService {
 
     static final String MODULE = "marketing";
     private static final String BIZ_TYPE = "customer_lock";
-    private static final int MAX_EXTENSIONS = 1;
 
     private final MktCustomerLockMapper lockMapper;
     private final MktPromoterMapper promoterMapper;
@@ -55,10 +53,14 @@ public class MktLockService {
     private final MktCustomerAssignmentService assignmentService;
     private final MktCompetitionProtectionService protectionService;
 
-    /** 报备 = 预锁。校验:伙伴正常、未超岗位上限、不在冷却期;唯一键兜底并发。 */
+    /** 兼容旧报备接口名称，直接锁定三个自然月，不再创建预锁。 */
     @Transactional
     public MktCustomerLock prelock(Long customerId, Long promoterId) {
         Customer customer = requireCustomer(customerId);
+        MktCustomerLock previous = displayLockOf(customerId);
+        if (previous != null && Integer.valueOf(LS_DEAL).equals(previous.getStatus())) {
+            throw new BizException("已成交客户归属长期有效，不能重新报备");
+        }
         protectionService.assertUnprotected(customer.getTenantId(), customer.getName(), customer.getBrandName());
         assignmentService.assertNoActiveContracts(customerId);
         if (customer.getReferrerId() != null && !Objects.equals(customer.getReferrerId(), promoterId)) {
@@ -76,8 +78,8 @@ public class MktLockService {
         MktCustomerLock lock = new MktCustomerLock();
         lock.setCustomerId(customerId);
         lock.setPromoterId(promoterId);
-        lock.setStatus(LS_PRELOCK);
-        lock.setPrelockUntil(LocalDateTime.now().plusDays(bizSettings.getInt(MODULE, "prelock_days", 7)));
+        lock.setStatus(LS_LOCKED);
+        lock.setLockUntil(LocalDateTime.now().plusMonths(3));
         lock.setExtendedCount(0);
         lock.setProjectId(p.getProjectId());
         try {
@@ -86,48 +88,23 @@ public class MktLockService {
             throw new BizException("该客户已被报备");
         }
         publish(lock);
-        auditService.log("lock.prelock", BIZ_TYPE, lock.getId(), null);
+        auditService.log("lock.create", BIZ_TYPE, lock.getId(), "推荐后直接锁定三个自然月");
         return lock;
     }
 
-    /** 专员确认「联系上·非重复·真实需求」→ 有效锁定 180 天。 */
+    /** 旧客户端不能通过确认接口重置锁定期限。 */
     @Transactional
     public void confirm(Long lockId, String confirmedBy) {
-        int days = bizSettings.getInt(MODULE, "lock_days", 90);
-        int updated = lockMapper.update(null, new LambdaUpdateWrapper<MktCustomerLock>()
-                .eq(MktCustomerLock::getId, lockId)
-                .eq(MktCustomerLock::getStatus, LS_PRELOCK)
-                .set(MktCustomerLock::getStatus, LS_LOCKED)
-                .set(MktCustomerLock::getLockUntil, LocalDateTime.now().plusDays(days))
-                .set(MktCustomerLock::getConfirmedBy, confirmedBy)
-                .set(MktCustomerLock::getConfirmedAt, LocalDateTime.now()));
-        requireUpdated(updated, lockId);
-        auditService.log("lock.confirm", BIZ_TYPE, lockId, null);
-        publish(require(lockId));
+        throw new BizException("客户推荐后直接锁定三个月，无需再次确认");
     }
 
-    /** 延期一次 +90 天。本方法只校验“已锁定且未延期过”，不校验到访/方案记录；小程序端和后台均按此规则展示。 */
+    /** 锁定期限统一为三个自然月，签约后自动长期有效，不再提供手工延期。 */
     @Transactional
     public void extend(Long lockId, String reason) {
-        requireReason(reason);
-        MktCustomerLock lock = require(lockId);
-        if (lock.getExtendedCount() != null && lock.getExtendedCount() >= MAX_EXTENSIONS) {
-            throw new BizException("该锁定已延期过,不能再延");
-        }
-        int days = bizSettings.getInt(MODULE, "lock_extend_days", 90);
-        LocalDateTime base = lock.getLockUntil() == null ? LocalDateTime.now() : lock.getLockUntil();
-        int updated = lockMapper.update(null, new LambdaUpdateWrapper<MktCustomerLock>()
-                .eq(MktCustomerLock::getId, lockId)
-                .eq(MktCustomerLock::getStatus, LS_LOCKED)
-                .eq(MktCustomerLock::getExtendedCount, lock.getExtendedCount() == null ? 0 : lock.getExtendedCount())
-                .set(MktCustomerLock::getLockUntil, base.plusDays(days))
-                .set(MktCustomerLock::getExtendedCount, (lock.getExtendedCount() == null ? 0 : lock.getExtendedCount()) + 1)
-                .set(MktCustomerLock::getExtendReason, reason));
-        requireUpdated(updated, lockId);
-        auditService.log("lock.extend", BIZ_TYPE, lockId, reason);
+        throw new BizException("客户统一锁定三个月，签约成交后长期有效，无需手工延期");
     }
 
-    /** 合同生效 → 已成交(归属固定到合同期)。 */
+    /** 合同生效 → 已成交，伙伴归属长期有效。 */
     @Transactional
     public void markDeal(Long customerId) {
         markDeal(customerId, requireCustomer(customerId).getReferrerId());
@@ -160,31 +137,24 @@ public class MktLockService {
         if (!Objects.equals(expectedPromoterId, active.getPromoterId())) {
             throw new BizException("合同伙伴与锁客伙伴不一致,不能成交");
         }
-        if (Integer.valueOf(LS_PRELOCK).equals(active.getStatus())) throw new BizException("请先确认客户报备归属，再签署生效合同");
         int updated = lockMapper.update(null, new LambdaUpdateWrapper<MktCustomerLock>()
                 .eq(MktCustomerLock::getId, active.getId())
-                .eq(MktCustomerLock::getStatus, LS_LOCKED)
-                .set(MktCustomerLock::getStatus, LS_DEAL));
+                .in(MktCustomerLock::getStatus, LS_PRELOCK, LS_LOCKED)
+                .set(MktCustomerLock::getStatus, LS_DEAL)
+                .set(MktCustomerLock::getPrelockUntil, null)
+                .set(MktCustomerLock::getLockUntil, null));
         requireUpdated(updated, active.getId());
         auditService.log("lock.deal", BIZ_TYPE, active.getId(), "合同生效");
         active.setStatus(LS_DEAL);
+        active.setPrelockUntil(null);
+        active.setLockUntil(null);
         publish(active);
     }
 
-    /** 最后一份有效合同关闭后释放成交锁，保留历史供两端展示。 */
+    /** 合同关闭不改变已成交客户的长期归属。保留方法供旧合同关闭流程调用。 */
     @Transactional
     public void releaseDeal(Long customerId, String reason) {
         requireCustomer(customerId);
-        assignmentService.assertNoActiveContracts(customerId);
-        MktCustomerLock deal = displayLockOf(customerId);
-        if (deal == null || !Integer.valueOf(LS_DEAL).equals(deal.getStatus())) return;
-        requireUpdated(lockMapper.update(null, new LambdaUpdateWrapper<MktCustomerLock>()
-                .eq(MktCustomerLock::getId, deal.getId()).eq(MktCustomerLock::getStatus, LS_DEAL)
-                .set(MktCustomerLock::getStatus, LS_RELEASED).set(MktCustomerLock::getReleasedReason, reason)
-                .set(MktCustomerLock::getReleasedBy, "contract").set(MktCustomerLock::getReleasedAt, LocalDateTime.now())), deal.getId());
-        auditService.log("lock.contract.release", BIZ_TYPE, deal.getId(), reason);
-        deal.setStatus(LS_RELEASED);
-        publish(deal);
     }
 
     /** 释放(到期 / 客户拒绝 / 专员判无效 / 运营释放)→ 公海。 */
@@ -203,7 +173,7 @@ public class MktLockService {
         publish(require(lockId));
     }
 
-    /** 运营转移给另一位伙伴:释放旧锁 + 为新伙伴建有效锁定(跳过预锁),一个事务。 */
+    /** 未成交客户转移给另一位伙伴，保留原锁定截止时间，不能通过转移无限续期。 */
     @Transactional
     public MktCustomerLock transfer(Long lockId, Long toPromoterId, String reason) {
         requireReason(reason);
@@ -225,7 +195,7 @@ public class MktLockService {
         lock.setPromoterId(toPromoterId);
         lock.setStatus(LS_LOCKED);
         lock.setLockUntil(old.getLockUntil() == null
-                ? LocalDateTime.now().plusDays(bizSettings.getInt(MODULE, "lock_days", 90)) : old.getLockUntil());
+                ? LocalDateTime.now().plusMonths(3) : old.getLockUntil());
         lock.setConfirmedBy(MktAuditService.currentOperator());
         lock.setConfirmedAt(LocalDateTime.now());
         lock.setExtendedCount(old.getExtendedCount());
@@ -236,19 +206,19 @@ public class MktLockService {
         return lock;
     }
 
-    /** LockExpireJob:预锁超时未确认 → 释放;有效锁定到期 → 释放。返回释放条数。 */
+    /** LockExpireJob:未成交的有效锁定到期释放；已成交客户永不自动释放。 */
     @Transactional
     public int expire(LocalDateTime now) {
         List<MktCustomerLock> due = lockMapper.selectList(new LambdaQueryWrapper<MktCustomerLock>()
-                .and(w -> w.eq(MktCustomerLock::getStatus, LS_PRELOCK).le(MktCustomerLock::getPrelockUntil, now))
-                .or(w -> w.eq(MktCustomerLock::getStatus, LS_LOCKED).le(MktCustomerLock::getLockUntil, now)));
+                .eq(MktCustomerLock::getStatus, LS_LOCKED).le(MktCustomerLock::getLockUntil, now));
         int n = 0;
         for (MktCustomerLock l : due) {
             int updated = lockMapper.update(null, new LambdaUpdateWrapper<MktCustomerLock>()
                     .eq(MktCustomerLock::getId, l.getId())
-                    .eq(MktCustomerLock::getStatus, l.getStatus())
+                    .eq(MktCustomerLock::getStatus, LS_LOCKED)
+                    .le(MktCustomerLock::getLockUntil, now)
                     .set(MktCustomerLock::getStatus, LS_RELEASED)
-                    .set(MktCustomerLock::getReleasedReason, l.getStatus() == LS_PRELOCK ? "预锁到期未确认" : "锁定期满未成交")
+                    .set(MktCustomerLock::getReleasedReason, "锁定期满未成交")
                     .set(MktCustomerLock::getReleasedBy, "system")
                     .set(MktCustomerLock::getReleasedAt, now));
             if (updated == 1) {

@@ -93,8 +93,8 @@ public class MktCustomerDeletionService {
                             + (table.equals("fin_bill") ? " AND b.source='mkt_service'" : "") + " LIMIT 1 FOR UPDATE",
                     "该客户的合同已有账单或收款记录，需保留财务档案，不能删除", id);
         }
-        if (!closedCloudContract) block("SELECT id FROM crm_customer_lock WHERE customer_id=? AND status=3 LIMIT 1 FOR UPDATE",
-                "该客户已有成交记录，需保留业务档案，不能删除", id);
+        block("SELECT id FROM crm_customer_lock WHERE customer_id=? AND status=3 LIMIT 1 FOR UPDATE",
+                "该客户已有成交记录，伙伴归属长期有效，需保留业务档案，不能删除", id);
         block("SELECT id FROM crm_customer_erp_map WHERE customer_id=? AND deleted=0 LIMIT 1 FOR UPDATE",
                 "该客户已绑定 ERP 货主编码，请先解除映射后再删除", id);
         block("SELECT id FROM crm_yunshan_volume_map WHERE customer_id=? AND status=1 AND deleted=0 LIMIT 1 FOR UPDATE",
@@ -108,8 +108,7 @@ public class MktCustomerDeletionService {
                 + "WHERE customer_id=? AND deleted=0 AND status=1", operator, id);
         // 释放活动锁归还伙伴配额；历史记录仍在数据库中，普通业务查询不再显示。
         jdbc.update("UPDATE crm_customer_lock SET status=4, released_reason=?, released_by=?, released_at=NOW(), "
-                + "version=version+1, update_by=?, update_time=NOW() WHERE customer_id=? AND deleted=0 AND status IN "
-                + (closedCloudContract ? "(1,2,3)" : "(1,2)"),
+                + "version=version+1, update_by=?, update_time=NOW() WHERE customer_id=? AND deleted=0 AND status IN (1,2)",
                 reason, operator, operator, id);
         jdbc.update("UPDATE crm_customer_lock SET deleted=1, version=version+1, update_by=?, update_time=NOW() "
                 + "WHERE customer_id=? AND deleted=0", operator, id);
