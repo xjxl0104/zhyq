@@ -129,7 +129,7 @@ class MktCustomerDeletionServiceTest {
         customer.setBizLine(2); customer.setStatus(2);
         when(jdbc.queryForList(contains("status IN (7,8)"), eq(Long.class), eq(42L))).thenReturn(List.of(99L));
         service.deleteAsAdmin(42L);
-        verify(jdbc).update(contains("AND status IN (1,2,3)"), anyString(), anyString(), anyString(), eq(42L));
+        verify(jdbc).update(contains("AND status IN (1,2)"), anyString(), anyString(), anyString(), eq(42L));
         verify(jdbc).update(startsWith("UPDATE crm_customer SET deleted=1"), anyString(), eq(42L));
     }
 
@@ -141,6 +141,14 @@ class MktCustomerDeletionServiceTest {
         login("mp:7");
         assertThatThrownBy(() -> service.deleteOwnReferral(42L)).hasMessageContaining("已签约");
         verify(jdbc, never()).update(anyString(), any(Object[].class));
+    }
+    @Test void endedContractDoesNotAllowDeletingPermanentDealAttribution() {
+        customer.setBizLine(2); customer.setStatus(2);
+        when(jdbc.queryForList(contains("status IN (7,8)"), eq(Long.class), eq(42L))).thenReturn(List.of(99L));
+        when(jdbc.queryForList(startsWith("SELECT id FROM crm_customer_lock WHERE"), eq(Long.class), eq(42L))).thenReturn(List.of(100L));
+        assertThatThrownBy(() -> service.deleteAsAdmin(42L)).hasMessageContaining("长期有效");
+        verify(jdbc, never()).update(anyString(), any(Object[].class));
+        verifyNoInteractions(audits);
     }
 
     @ParameterizedTest @org.junit.jupiter.params.provider.ValueSource(strings={"fin_bill", "crm_service_fee_bill", "crm_direct_sign_payment"})

@@ -62,6 +62,20 @@ class DefaultWxSessionClientTest {
         assertThatThrownBy(() -> client.invitationCode("app", "secret", "malicious?scene", "release")).isInstanceOf(BizException.class);
         assertThat(tokenCalls.get()).isZero();
     }
+    @Test void customerCodeUsesDedicatedAnonymousIntakePageAndOpaqueScene() throws Exception {
+        server.createContext("/wxa/getwxacodeunlimit", exchange -> {
+            requestBody.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+            byte[] bytes = new byte[]{(byte)137,80,78,71,13,10,26,10,0};
+            exchange.sendResponseHeaders(200, bytes.length); exchange.getResponseBody().write(bytes); exchange.close();
+        });
+        String token = "0123456789abcdef0123456789abcdef";
+        assertThat(client.customerReferralCode("app", "secret", token, "release")).hasSize(9);
+        var body = mapper.readTree(requestBody.get());
+        assertThat(body.path("scene").asText()).isEqualTo(token);
+        assertThat(body.path("page").asText()).isEqualTo("pages/customer-intake/index");
+        assertThat(body.path("check_path").asBoolean()).isTrue();
+        assertThatThrownBy(() -> client.customerReferralCode("app", "secret", "7", "release")).isInstanceOf(BizException.class);
+    }
     @AfterEach void stop() { server.stop(0); }
 
     @Test void exchangesDynamicPhoneCodeAndCachesStableToken() throws Exception {

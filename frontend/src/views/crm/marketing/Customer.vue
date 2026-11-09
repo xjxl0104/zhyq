@@ -20,12 +20,13 @@
 
     <div class="table-card">
       <div class="toolbar">
+        <el-button v-if="canEdit" type="primary" @click="creationVisible = true">新增客户</el-button>
         <span class="hint">管理推荐归属、云仓承接和伙伴可见进度。云仓按单佣金由所属 P4 在小程序配置，可在此查看金额与分配明细。</span>
         <el-button v-if="canViewProtection" type="warning" plain @click="openProtection">查看竞争保护白名单</el-button>
       </div>
       <el-table :data="list" v-loading="loading" border stripe>
         <el-table-column prop="name" label="客户 / 品牌 / 联系方式" min-width="180">
-          <template #default="{ row }"><div>{{ row.name }}</div><div class="project-note">{{ row.contact || '联系人未填写' }} · {{ row.phone || '电话未填写' }}</div><div class="project-note">{{ projectLabel(row.projectId) }}</div></template>
+          <template #default="{ row }"><el-button link type="primary" @click="openDetail(row)">{{ row.name }}</el-button><div class="project-note">{{ row.contact || '联系人未填写' }} · {{ row.phone || '电话未填写' }}</div><div class="project-note">{{ projectLabel(row.projectId) }}</div></template>
         </el-table-column>
         <el-table-column label="推荐来源" width="100">
           <template #default="{ row }">{{ row.referrerName || (row.referrerId ? `#${row.referrerId}` : '—') }}</template>
@@ -42,7 +43,9 @@
         <el-table-column label="云仓承接" min-width="150">
           <template #default="{ row }"><div>{{ row.assignedWarehouseName || '尚未分派' }}</div><div class="project-note">{{ ASSIGN[row.warehouseAssignmentStatus || 0] }}</div><div v-if="row.intendedWarehouseName" class="project-note">意向：{{ row.intendedWarehouseName }}</div></template>
         </el-table-column>
-        <el-table-column prop="publicProgress" label="伙伴可见进度" min-width="155" show-overflow-tooltip />
+        <el-table-column label="伙伴可见进度" min-width="180">
+          <template #default="{ row }"><el-progress :percentage="progressPercent(row)" :stroke-width="8" /><div class="project-note">{{ row.publicProgress || '待更新进度' }}</div></template>
+        </el-table-column>
         <el-table-column label="操作" :width="canDelete ? 270 : 215" fixed="right">
           <template #default="{ row }">
             <el-button v-if="row.bizLine !== 1" link type="primary" @click="openPricing(row)">按单佣金</el-button>
@@ -61,6 +64,28 @@
     </div>
 
     <CustomerPricingDrawer v-model="pricing.visible" :customer="pricing.row" />
+    <CustomerCreateDialog v-model="creationVisible" @created="load" />
+    <el-drawer v-model="detail.visible" :title="detail.row?.name || '客户详情'" size="min(680px, 94vw)">
+      <div v-loading="detail.loading">
+        <el-alert v-if="detail.error" :title="detail.error" type="error" :closable="false" />
+        <template v-if="detail.row">
+          <el-descriptions :column="1" border class="mb">
+            <el-descriptions-item label="客户 / 店铺">{{ detail.row.name }}</el-descriptions-item>
+            <el-descriptions-item label="品牌名称">{{ detail.row.brandName || '未填写' }}</el-descriptions-item>
+            <el-descriptions-item label="联系人">{{ detail.row.contact || '未填写' }}</el-descriptions-item>
+            <el-descriptions-item label="联系手机">{{ detail.row.phone || '未填写' }}</el-descriptions-item>
+            <el-descriptions-item label="推荐伙伴">{{ detail.row.referrerName || '园区直接客户' }}</el-descriptions-item>
+            <el-descriptions-item label="需求类型">{{ SERVICE[detail.row.serviceType] || '未填写' }}</el-descriptions-item>
+            <el-descriptions-item label="意向云仓">{{ detail.row.intendedWarehouseName || '不限' }}</el-descriptions-item>
+            <el-descriptions-item label="需求">{{ detail.row.demand || '未填写' }}</el-descriptions-item>
+          </el-descriptions>
+          <CustomerRequirements :model-value="detail.row.requirements || {}" readonly />
+          <el-descriptions :column="1" border style="margin-top:12px"><el-descriptions-item label="备注">{{ detail.row.remark || '未填写' }}</el-descriptions-item></el-descriptions>
+          <div class="detail-progress"><h4>当前跟进进度</h4><el-progress :percentage="progressPercent(detail.row)" :stroke-width="12" /><p>{{ detail.row.publicProgress || '暂无进度说明' }}</p></div>
+          <CustomerProgressHistory :items="detail.row.progressHistory || []" :has-more="detail.row.progressHistoryHasMore" />
+        </template>
+      </div>
+    </el-drawer>
 
     <el-dialog v-model="removal.visible" title="删除推荐客户" width="min(460px, 92vw)" :close-on-click-modal="false" :close-on-press-escape="!removal.busy" :show-close="!removal.busy">
       <p class="delete-target">确认删除客户「{{ removal.row?.name }}」？</p>
@@ -80,10 +105,18 @@
       </el-form>
       <template #footer><el-button @click="assignment.visible = false">取消</el-button><el-button type="primary" :loading="assignment.busy" @click="assignWarehouse">确认分派</el-button></template>
     </el-dialog>
-    <el-dialog v-model="progress.visible" title="更新伙伴可见进度" width="500px">
+    <el-dialog v-model="progress.visible" title="更新伙伴可见进度" width="min(620px, 94vw)" :close-on-click-modal="false" :close-on-press-escape="!progress.busy" :show-close="!progress.busy">
       <el-alert type="info" :closable="false" title="此内容会展示给推荐伙伴，请填写可对外说明的进度。" />
-      <el-input v-model="progress.summary" type="textarea" :rows="4" maxlength="500" show-word-limit style="margin-top:20px" />
-      <template #footer><el-button @click="progress.visible = false">取消</el-button><el-button type="primary" :loading="progress.busy" @click="saveProgress">发布进度</el-button></template>
+      <div v-loading="progress.loading">
+        <el-form label-width="90px" style="margin-top:20px">
+          <el-form-item label="进度比例"><el-slider v-model="progress.percentage" :min="0" :max="progress.signed ? 100 : 95" :step="5" :disabled="progress.signed" show-input /></el-form-item>
+          <div class="project-note">待分派 0% · 已分派 30% · 已承接 60% · 正式签约 100%；未签约最高可填写 95%。</div>
+          <el-form-item label="进度说明" style="margin-top:16px"><el-input v-model="progress.summary" type="textarea" :rows="4" maxlength="500" show-word-limit /></el-form-item>
+        </el-form>
+        <CustomerProgressHistory :items="progress.history" :has-more="progress.hasMore" />
+      </div>
+      <el-alert v-if="progress.error" :title="progress.error" type="error" :closable="false" show-icon />
+      <template #footer><el-button :disabled="progress.busy" @click="progress.visible = false">关闭</el-button><el-button type="primary" :loading="progress.busy" :disabled="progress.loading || !progress.ready" @click="saveProgress">发布进度</el-button></template>
     </el-dialog>
     <!-- 评级 -->
     <el-dialog v-model="grade.visible" title="客户评级" width="460px">
@@ -121,17 +154,14 @@
 
     <!-- 锁定 -->
     <el-drawer v-model="lock.visible" :title="`锁定 · ${lock.row?.name || ''}`" size="520px">
+      <el-alert class="mb" title="推荐后锁定 3 个自然月，签约成交后归属长期有效。" type="info" :closable="false" />
       <template v-if="lock.data">
         <el-descriptions :column="1" border>
           <el-descriptions-item label="状态">{{ LOCK[lock.data.status] }}</el-descriptions-item>
           <el-descriptions-item label="伙伴">#{{ lock.data.promoterId }}</el-descriptions-item>
-          <el-descriptions-item label="预锁截止">{{ lock.data.prelockUntil || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="锁定截止">{{ lock.data.lockUntil || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="已延期">{{ lock.data.extendedCount || 0 }} 次</el-descriptions-item>
+          <el-descriptions-item label="锁定截止">{{ lock.data.status === 3 ? '长期有效' : (lock.data.lockUntil || '-') }}</el-descriptions-item>
         </el-descriptions>
         <div class="lock-actions">
-          <el-button v-if="lock.data.status === 1" type="success" @click="lockAct('confirmLock', '确认锁定')">专员确认 → 有效锁定</el-button>
-          <el-button v-if="lock.data.status === 2" @click="lockReason('extendLock', '延期 +90 天')">延期</el-button>
           <el-button v-if="[1, 2].includes(lock.data.status)" type="warning" @click="lockReason('releaseLock', '释放到公海')">释放</el-button>
           <el-button v-if="[1, 2].includes(lock.data.status)" @click="lockTransfer">转移给其他伙伴</el-button>
         </div>
@@ -140,7 +170,7 @@
         <el-empty :description="lock.data ? '该客户已释放，可以重新报备' : '当前没有有效锁定（公海）'">
           <el-form :inline="true">
             <el-form-item label="伙伴 ID"><el-input-number v-model="lock.newPromoterId" :min="1" /></el-form-item>
-            <el-button type="primary" @click="lockPrelock">代伙伴报备(预锁 7 天)</el-button>
+            <el-button type="primary" @click="lockPrelock">代伙伴报备(锁定 3 个月)</el-button>
           </el-form>
         </el-empty>
       </template>
@@ -179,8 +209,23 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { mktCompetitionProtectionApi, mktCustomerApi, mktWarehouseApi } from '@/api/marketing'
 import { useProjectStore } from '@/stores/project'
 import CustomerPricingDrawer from './CustomerPricingDrawer.vue'
+import CustomerCreateDialog from './CustomerCreateDialog.vue'
+import CustomerRequirements from './CustomerRequirements.vue'
+import CustomerProgressHistory from './CustomerProgressHistory.vue'
 
 const projectStore = useProjectStore()
+const creationVisible = ref(false)
+const SERVICE = { 1:'仓储', 2:'一件代发', 3:'仓配一体', 4:'园区入驻' }
+const progressPercent = row => Math.min(100, Math.max(0, Number(row.progressPercentage) || (row.status === 2 ? 100 : 0)))
+const detail = reactive({ visible:false, row:null, loading:false, error:'' })
+let detailRequest = 0
+async function openDetail(row) {
+  const request = ++detailRequest
+  Object.assign(detail, { visible:true, row:null, loading:true, error:'' })
+  try { const data = await mktCustomerApi.get(row.id); if (request === detailRequest) detail.row = data }
+  catch (e) { if (request === detailRequest) detail.error = e?.message || '客户资料读取失败' }
+  finally { if (request === detailRequest) detail.loading = false }
+}
 const canDelete = computed(() => hasPermission('ROLE_admin'))
 const canViewProtection = computed(() => hasPermission('ROLE_admin'))
 const removal = reactive({ visible: false, row: null, busy: false, error: '' })
@@ -232,7 +277,7 @@ async function loadProtection() {
   finally { protection.loading = false }
 }
 const assignment = reactive({visible:false,id:null,warehouseId:null,reason:'',busy:false})
-const progress = reactive({visible:false,id:null,summary:'',busy:false})
+const progress = reactive({visible:false,id:null,summary:'',percentage:0,history:[],hasMore:false,signed:false,busy:false,loading:false,ready:false,error:''})
 async function openAssignment(row) {
   warehouses.value = await mktWarehouseApi.online()
   Object.assign(assignment,{visible:true,id:row.id,warehouseId:row.assignedWarehouseId || row.intendedWarehouseId,reason:'',busy:false})
@@ -243,16 +288,31 @@ async function assignWarehouse() {
   try { await mktCustomerApi.assignWarehouse(assignment.id,{warehouseId:assignment.warehouseId,reason:assignment.reason}); assignment.visible=false; ElMessage.success('已分派，等待商家确认'); await load() }
   finally { assignment.busy=false }
 }
-function openProgress(row) { Object.assign(progress,{visible:true,id:row.id,summary:row.publicProgress || '',busy:false}) }
+async function openProgress(row) {
+  Object.assign(progress,{visible:true,id:row.id,summary:'',percentage:0,history:[],hasMore:false,signed:false,loading:true,ready:false,error:''})
+  try {
+    const current = await mktCustomerApi.get(row.id)
+    if (progress.id !== row.id) return
+    Object.assign(progress,{summary:current.publicProgress || '',percentage:progressPercent(current),history:current.progressHistory || [],hasMore:!!current.progressHistoryHasMore,signed:current.status === 2,ready:true})
+  } catch (e) { progress.error = e?.message || '进度读取失败，请关闭后重试' }
+  finally { progress.loading=false }
+}
 async function saveProgress() {
+  if (progress.busy || progress.loading || !progress.ready) return
   if (!progress.summary.trim()) return ElMessage.error('请填写进度')
   progress.busy=true
-  try { await mktCustomerApi.progress(progress.id,{summary:progress.summary}); progress.visible=false; ElMessage.success('已发布'); await load() }
+  progress.error=''
+  try {
+    const id = progress.id
+    await mktCustomerApi.progress(id,{summary:progress.summary.trim(),percentage:progress.percentage})
+    ElMessage.success('已发布'); await load(); await openProgress({id})
+    if (detail.visible && detail.row?.id === id) await openDetail({id})
+  } catch (e) { progress.error = e?.message || '进度发布失败，请重试' }
   finally { progress.busy=false }
 }
 const BIZ = { 1: '租赁', 2: '云仓' }
 const SIGN = { 1: '园区签', 2: '云仓直签' }
-const LOCK = { 1: '预锁', 2: '有效锁定', 3: '已成交', 4: '已释放' }
+const LOCK = { 1: '锁定', 2: '锁定', 3: '已成交·长期有效', 4: '已释放' }
 const STATUS = { 1: '跟进中', 2: '已签约', 3: '已流失' }
 const statusType = (v) => ({ 1: 'primary', 2: 'success', 3: 'info' }[v] || 'info')
 const gradeType = (g) => ({ A: 'danger', B: 'warning', C: '', D: 'info' }[g] || 'info')
@@ -330,7 +390,6 @@ async function openLock(row) {
   lock.data = await mktCustomerApi.lock(row.id)
   lock.visible = true
 }
-async function lockAct(fn, okMsg) { await mktCustomerApi[fn](lock.data.id); ElMessage.success(okMsg); await openLock(lock.row); load() }
 async function lockReason(fn, title) {
   const { value } = await ElMessageBox.prompt('请填写原因', title, { inputPattern: /\S+/, inputErrorMessage: '原因必填' })
   await mktCustomerApi[fn](lock.data.id, { reason: value }); ElMessage.success('已处理'); await openLock(lock.row); load()
@@ -344,7 +403,7 @@ async function lockTransfer() {
 async function lockPrelock() {
   if (!lock.newPromoterId) return ElMessage.error('请输入伙伴 ID')
   await mktCustomerApi.prelock(lock.row.id, { promoterId: lock.newPromoterId })
-  ElMessage.success('已预锁'); await openLock(lock.row); load()
+  ElMessage.success('已锁定'); await openLock(lock.row); load()
 }
 
 onMounted(load)

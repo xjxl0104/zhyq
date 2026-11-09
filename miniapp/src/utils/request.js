@@ -30,7 +30,8 @@ function sessionError(auth, sentToken, loginPath, statusCode, bodyCode) {
 
 function requestWith(base, auth, loginPath, method, url, data = {}) {
   const sentToken = auth.get()
-  const publicAuth = /^\/auth\/(quick-login|wx-login|bind-phone|password-login|password-register)$/.test(url)
+  const publicIntake = base === BASE && ['GET', 'POST'].includes(method) && /^\/public\/referral\/[a-f0-9]{32}$/.test(url)
+  const publicAuth = publicIntake || /^\/auth\/(quick-login|wx-login|bind-phone|password-login|password-register)$/.test(url)
   return new Promise((resolve, reject) => {
     uni.request({
       url: base + url,
@@ -38,14 +39,16 @@ function requestWith(base, auth, loginPath, method, url, data = {}) {
       // 微信 GET 会把 undefined/null 序列化为文字，导致 Integer 等后端参数绑定失败。
       data: method === 'GET' ? Object.fromEntries(Object.entries(data || {}).filter(([, value]) => value != null)) : data,
       timeout: 15000,
-      header: { 'Content-Type': 'application/json', Authorization: sentToken ? 'Bearer ' + sentToken : '' },
+      header: { 'Content-Type': 'application/json', ...(!publicIntake && sentToken ? { Authorization: 'Bearer ' + sentToken } : {}) },
       success: ({ statusCode, data: body }) => {
         const authError = !publicAuth && sessionError(auth, sentToken, loginPath, statusCode, body?.code)
         if (authError) return reject(authError)
         if (body && body.code === 0) return resolve(body.data)
         const msg = (body && body.message) || `请求失败 ${statusCode}`
         uni.showToast({ title: msg, icon: 'none', duration: 2500 })
-        reject(new Error(msg))
+        const error = new Error(msg)
+        error.code = body?.code || statusCode
+        reject(error)
       },
       fail: (e) => {
         const error = createNetworkError(e)
@@ -120,28 +123,31 @@ export async function openWarehouseFile(id, name = '附件') {
   // #endif
 }
 
-export async function downloadInvitationCode(env = 'release') {
+export const downloadInvitationCode = (env = 'release') => downloadPartnerCode('/poster/code', env)
+export const downloadReferralCode = (env = 'release') => downloadPartnerCode('/referral-link/code', env)
+async function downloadPartnerCode(path, env) {
+  if (!['release', 'trial', 'develop'].includes(env)) throw new Error('小程序版本无效')
   const sentToken = token.get()
   // #ifdef H5
-  const res = await fetch(BASE + '/poster/code?env=' + env, { headers: { Authorization: 'Bearer ' + sentToken } }).catch(e => { throw createNetworkError(e) })
+  const res = await fetch(BASE + path + '?env=' + env, { headers: { Authorization: 'Bearer ' + sentToken } }).catch(e => { throw createNetworkError(e) })
   const authError = sessionError(token, sentToken, '/pages/login/index', res.status)
   if (authError) throw authError
   if (!res.ok || !res.headers.get('content-type')?.startsWith('image/')) {
     let body; try { body = await res.json() } catch (_) { /* use fallback */ }
     const bodyAuthError = sessionError(token, sentToken, '/pages/login/index', res.status, body?.code)
     if (bodyAuthError) throw bodyAuthError
-    throw new Error(body?.message || '小程序码生成失败，可先复制邀请码')
+    throw new Error(body?.message || '二维码生成失败，可先分享卡片')
   }
   return URL.createObjectURL(await res.blob())
   // #endif
   // #ifdef MP-WEIXIN
   return new Promise((resolve, reject) => uni.downloadFile({
-    url: BASE + '/poster/code?env=' + env, header: { Authorization: 'Bearer ' + sentToken },
+    url: BASE + path + '?env=' + env, header: { Authorization: 'Bearer ' + sentToken },
     success: r => {
       const authError = sessionError(token, sentToken, '/pages/login/index', r.statusCode)
       if (authError) return reject(authError)
-      if (r.statusCode !== 200) return reject(new Error('小程序码生成失败，可先分享卡片或复制邀请码'))
-      uni.getImageInfo({src:r.tempFilePath,success:()=>resolve(r.tempFilePath),fail:()=>reject(new Error('小程序码尚不可用，请检查小程序发布状态；可先复制邀请码'))})
+      if (r.statusCode !== 200) return reject(new Error('二维码生成失败，可先分享卡片'))
+      uni.getImageInfo({src:r.tempFilePath,success:()=>resolve(r.tempFilePath),fail:()=>reject(new Error('二维码尚不可用，请稍后重试；可先分享卡片'))})
     }, fail: e => reject(createNetworkError(e))
   }))
   // #endif

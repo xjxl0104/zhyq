@@ -21,6 +21,13 @@ class MktWithdrawalSettingTest {
     private final JdbcTemplate jdbc = mock(JdbcTemplate.class);
     private final MktAuditService audit = mock(MktAuditService.class);
     private final MktSettingController controller = new MktSettingController(jdbc, audit);
+    @ParameterizedTest
+    @ValueSource(strings = { "prelock_days", "lock_days", "lock_extend_days" })
+    void aStaleAdminPageCannotRestoreRetiredLockRules(String key) {
+        assertThatThrownBy(() -> controller.update(List.of(Map.of("skey", key, "svalue", "180"))))
+                .isInstanceOf(BizException.class).hasMessageContaining("旧锁定参数已停用");
+        verifyNoInteractions(jdbc, audit);
+    }
 
     @ParameterizedTest
     @ValueSource(strings = { "min_withdraw", "withdraw_free_times" })

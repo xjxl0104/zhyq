@@ -34,6 +34,7 @@ class MktCustomerAssignmentServiceTest {
     @Mock MktWarehouseMapper warehouses;
     @Mock MktServiceContractMapper contracts;
     @Mock MktAuditService audit;
+    @Mock MktCustomerProgressService progress;
     @InjectMocks MktCustomerAssignmentService service;
     Customer customer;
     MktWarehouse warehouse;
@@ -79,6 +80,7 @@ class MktCustomerAssignmentServiceTest {
         LambdaUpdateWrapper<?> update = (LambdaUpdateWrapper<?>) cap.getValue();
         assertThat(update.getSqlSegment()).contains("assigned_warehouse_id", "warehouse_assignment_status", "version");
         assertThat(update.getSqlSet()).contains("warehouse_assignment_status", "version = version + 1");
+        verify(progress).transition(11L, 60, "云仓已确认承接，正在对接服务需求", "accepted");
     }
 
     @Test
@@ -127,6 +129,7 @@ class MktCustomerAssignmentServiceTest {
         verify(customers).update(isNull(), cap.capture());
         assertThat(((LambdaUpdateWrapper<?>)cap.getValue()).getSqlSet()).contains("assigned_warehouse_id", "warehouse_assignment_status", "status");
         verify(audit).log("customer.contract.closed", "customer", 11L, "有效服务合同已结束，返回跟进");
+        verify(progress).transition(eq(11L), eq(0), contains("伙伴成交归属继续有效"), eq("following"));
     }
 
     @Test void closureKeepsAssignmentWhenAnotherDraftStillNeedsWarehouse() {
@@ -155,17 +158,20 @@ class MktCustomerAssignmentServiceTest {
         assertThat(projection).doesNotContainKeys("remark", "referrerId", "commission");
         assertThat(projection.get("phone")).isEqualTo("138****5678");
         assertThat(projection.get("publicProgress")).isEqualTo("已完成需求沟通");
+        customer.setIntakeRemark("客户填写的打包要求");
+        assertThat(service.warehouseView(customer).get("remark")).isEqualTo("客户填写的打包要求");
         customer.setWarehouseAssignmentStatus(3);
         assertThat(service.warehouseView(customer)).doesNotContainKeys("contact", "phone");
     }
 
     @Test
     void genericCustomerJsonCannotBypassAssignmentAndPublicProgress() throws Exception {
-        Customer submitted = new ObjectMapper().readValue("{\"name\":\"合法名字\",\"intendedWarehouseId\":99,\"assignedWarehouseId\":99,\"warehouseAssignmentStatus\":2,\"publicProgress\":\"伪造进度\"}", Customer.class);
+        Customer submitted = new ObjectMapper().readValue("{\"name\":\"合法名字\",\"intendedWarehouseId\":99,\"assignedWarehouseId\":99,\"warehouseAssignmentStatus\":2,\"publicProgress\":\"伪造进度\",\"progressPercentage\":100}", Customer.class);
         assertThat(submitted.getName()).isEqualTo("合法名字");
         assertThat(submitted.getIntendedWarehouseId()).isNull();
         assertThat(submitted.getAssignedWarehouseId()).isNull();
         assertThat(submitted.getWarehouseAssignmentStatus()).isNull();
         assertThat(submitted.getPublicProgress()).isNull();
+        assertThat(submitted.getProgressPercentage()).isNull();
     }
 }

@@ -231,16 +231,17 @@ class MktOnboardingAndLockServiceTest {
         }
 
         @Test
-        void prelockCreatesRowWithPrelockDeadline() {
+        void referralDirectlyLocksForThreeCalendarMonths() {
             when(promoterMapper.selectForUpdate(9L)).thenReturn(normalPromoter());
             capOf(50, 0L);
-            when(bizSettings.getInt(eq("marketing"), eq("prelock_days"), anyInt())).thenReturn(7);
             when(bizSettings.getInt(eq("marketing"), eq("lock_cooldown_days"), anyInt())).thenReturn(30);
+            LocalDateTime before = LocalDateTime.now();
 
             MktCustomerLock lock = service.prelock(5L, 9L);
 
-            assertThat(lock.getStatus()).isEqualTo(MktLockService.LS_PRELOCK);
-            assertThat(lock.getPrelockUntil()).isAfter(LocalDateTime.now().plusDays(6));
+            assertThat(lock.getStatus()).isEqualTo(MktLockService.LS_LOCKED);
+            assertThat(lock.getPrelockUntil()).isNull();
+            assertThat(lock.getLockUntil()).isBetween(before.plusMonths(3), LocalDateTime.now().plusMonths(3));
             verify(lockMapper).insert(lock);
             verify(eventPublisher).publishEvent(any(DomainEvent.CustomerLockChanged.class));
         }
@@ -263,7 +264,6 @@ class MktOnboardingAndLockServiceTest {
         void prelockTranslatesDuplicateKeyIntoAlreadyReported() {
             when(promoterMapper.selectForUpdate(9L)).thenReturn(normalPromoter());
             capOf(50, 0L);
-            when(bizSettings.getInt(eq("marketing"), eq("prelock_days"), anyInt())).thenReturn(7);
             when(bizSettings.getInt(eq("marketing"), eq("lock_cooldown_days"), anyInt())).thenReturn(30);
             when(lockMapper.insert(any(MktCustomerLock.class))).thenThrow(new DuplicateKeyException("uk_lock_active"));
 
@@ -271,38 +271,33 @@ class MktOnboardingAndLockServiceTest {
         }
 
         @Test
-        void confirmMovesPrelockToLocked() {
-            when(bizSettings.getInt(eq("marketing"), eq("lock_days"), anyInt())).thenReturn(180);
-            when(lockMapper.update(isNull(), any(Wrapper.class))).thenReturn(1);
-            MktCustomerLock l = new MktCustomerLock(); l.setId(1L); l.setStatus(2);
-            when(lockMapper.selectById(1L)).thenReturn(l);
-            service.confirm(1L, "专员甲");
-            verify(auditService).log(eq("lock.confirm"), any(), eq(1L), isNull());
+        void legacyConfirmationCannotResetLockDeadline() {
+            assertThatThrownBy(() -> service.confirm(1L, "专员甲"))
+                    .isInstanceOf(BizException.class).hasMessageContaining("无需再次确认");
+            verify(lockMapper, never()).update(isNull(), any(Wrapper.class));
         }
 
         @Test
-        void confirmFromWrongStateThrows() {
-            when(bizSettings.getInt(eq("marketing"), eq("lock_days"), anyInt())).thenReturn(180);
-            when(lockMapper.update(isNull(), any(Wrapper.class))).thenReturn(0);
-            assertThatThrownBy(() -> service.confirm(1L, "x")).isInstanceOf(BizException.class);
+        void closingLastContractDoesNotReleasePermanentAttribution() {
+            service.releaseDeal(5L, "合同终止");
+            verify(lockMapper, never()).update(isNull(), any(Wrapper.class));
+            verify(eventPublisher, never()).publishEvent(any(DomainEvent.CustomerLockChanged.class));
         }
 
         @Test
-        void extendOnlyOnce() {
-            MktCustomerLock l = new MktCustomerLock(); l.setId(1L); l.setStatus(2); l.setExtendedCount(1);
-            when(lockMapper.selectById(1L)).thenReturn(l);
-            assertThatThrownBy(() -> service.extend(1L, "有到访")).isInstanceOf(BizException.class).hasMessageContaining("延期过");
+        void permanentDealCannotBeReportedAgain() {
+            MktCustomerLock deal = new MktCustomerLock(); deal.setId(1L); deal.setStatus(3); deal.setPromoterId(9L);
+            when(lockMapper.selectOne(any(Wrapper.class))).thenReturn(deal);
+            assertThatThrownBy(() -> service.prelock(5L, 9L))
+                    .isInstanceOf(BizException.class).hasMessageContaining("长期有效");
+            verify(lockMapper, never()).insert(any(MktCustomerLock.class));
         }
 
         @Test
-        void extendAddsDays() {
-            MktCustomerLock l = new MktCustomerLock(); l.setId(1L); l.setStatus(2); l.setExtendedCount(0);
-            l.setLockUntil(LocalDateTime.of(2027, 1, 1, 0, 0));
-            when(lockMapper.selectById(1L)).thenReturn(l);
-            when(bizSettings.getInt(eq("marketing"), eq("lock_extend_days"), anyInt())).thenReturn(90);
-            when(lockMapper.update(isNull(), any(Wrapper.class))).thenReturn(1);
-            service.extend(1L, "近 60 天有方案");
-            verify(auditService).log(eq("lock.extend"), any(), eq(1L), eq("近 60 天有方案"));
+        void legacyExtensionCannotBypassThreeMonthPolicy() {
+            assertThatThrownBy(() -> service.extend(1L, "近 60 天有方案"))
+                    .isInstanceOf(BizException.class).hasMessageContaining("无需手工延期");
+            verify(lockMapper, never()).update(isNull(), any(Wrapper.class));
         }
 
         @Test
@@ -332,7 +327,7 @@ class MktOnboardingAndLockServiceTest {
 
         @Test
         void expireReleasesDueLocks() {
-            MktCustomerLock a = new MktCustomerLock(); a.setId(1L); a.setStatus(1);
+            MktCustomerLock a = new MktCustomerLock(); a.setId(1L); a.setStatus(2);
             MktCustomerLock b = new MktCustomerLock(); b.setId(2L); b.setStatus(2);
             when(lockMapper.selectList(any(Wrapper.class))).thenReturn(List.of(a, b));
             when(lockMapper.update(isNull(), any(Wrapper.class))).thenReturn(1);

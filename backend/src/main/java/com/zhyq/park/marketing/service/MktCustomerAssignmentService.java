@@ -31,6 +31,7 @@ public class MktCustomerAssignmentService {
     private final MktWarehouseMapper warehouses;
     private final MktServiceContractMapper contracts;
     private final MktAuditService audit;
+    private final MktCustomerProgressService progress;
 
     public MktWarehouse requireAvailableWarehouse(Long warehouseId, Long projectId) {
         if (warehouseId == null || warehouseId <= 0) throw new BizException("请选择承接云仓");
@@ -65,6 +66,8 @@ public class MktCustomerAssignmentService {
             update.set(Customer::getProjectId, warehouse.getProjectId());
         }
         requireUpdated(customers.update(null, update));
+        progress.transition(customerId, warehouseId == null ? 0 : 30,
+                warehouseId == null ? "已取消云仓分派，等待重新对接" : "已分派云仓，等待商家确认承接", "assigned");
         audit.log("customer.warehouse.assign", "customer", customerId, reason, customer.getAssignedWarehouseId(), warehouseId);
     }
 
@@ -78,6 +81,7 @@ public class MktCustomerAssignmentService {
         requireUpdated(customers.update(null, versionGuard(customer)
                 .eq(Customer::getAssignedWarehouseId, warehouseId).eq(Customer::getWarehouseAssignmentStatus, PENDING)
                 .set(Customer::getWarehouseAssignmentStatus, ACCEPTED)));
+        progress.transition(customerId, 60, "云仓已确认承接，正在对接服务需求", "accepted");
         audit.log("customer.warehouse.accept", "customer", customerId, "云仓确认承接");
     }
 
@@ -91,19 +95,28 @@ public class MktCustomerAssignmentService {
         requireUpdated(customers.update(null, versionGuard(customer)
                 .eq(Customer::getAssignedWarehouseId, warehouseId).eq(Customer::getWarehouseAssignmentStatus, PENDING)
                 .set(Customer::getWarehouseAssignmentStatus, REJECTED)));
+        progress.transition(customerId, 0, "云仓未承接，等待重新分派", "rejected");
         audit.log("customer.warehouse.reject", "customer", customerId, reason);
     }
 
     @Transactional
     public void updateProgress(Long customerId, String summary) {
-        publishProgress(requireLocked(customerId), summary);
+        updateProgress(customerId, summary, null);
+    }
+    @Transactional
+    public void updateProgress(Long customerId, String summary, Integer percentage) {
+        publishProgress(requireLocked(customerId), summary, percentage, "admin");
     }
 
     @Transactional
     public void updateWarehouseProgress(Long customerId, Long warehouseId, String summary) {
+        updateWarehouseProgress(customerId, warehouseId, summary, null);
+    }
+    @Transactional
+    public void updateWarehouseProgress(Long customerId, Long warehouseId, String summary, Integer percentage) {
         Customer customer = requireAssigned(customerId, warehouseId);
         if (!Integer.valueOf(ACCEPTED).equals(customer.getWarehouseAssignmentStatus())) throw new BizException(403, "仅已承接客户可以发布进度");
-        publishProgress(customer, summary);
+        publishProgress(customer, summary, percentage, "warehouse");
     }
 
     /** 调用者处于合同事务：锁定同一客户并核验当前承接，防止签署时分派已变化。 */
@@ -127,8 +140,12 @@ public class MktCustomerAssignmentService {
     public void contractEffective(MktServiceContract contract) {
         Customer customer = validateContractWarehouse(contract);
         if (!Objects.equals(contract.getPartnerId(), customer.getReferrerId())) throw new BizException("合同推荐伙伴与客户当前归属不一致，请重新核对合同");
-        if (Integer.valueOf(2).equals(customer.getStatus())) return;
+        if (Integer.valueOf(2).equals(customer.getStatus())) {
+            progress.transition(customer.getId(), 100, "新增服务合同已生效，继续为客户提供服务", "signed");
+            return;
+        }
         requireUpdated(customers.update(null, versionGuard(customer).eq(Customer::getStatus, 1).set(Customer::getStatus, 2)));
+        progress.transition(customer.getId(), 100, "服务合同已签约生效，服务对接完成", "signed");
         audit.log("customer.contract.effective", "customer", customer.getId(), "服务合同生效");
     }
 
@@ -136,7 +153,10 @@ public class MktCustomerAssignmentService {
     @Transactional
     public boolean contractClosed(Long customerId) {
         Customer customer = requireLocked(customerId);
-        if (activeContractCount(customerId) > 0) return false;
+        if (activeContractCount(customerId) > 0) {
+            progress.transition(customerId, 100, "一份服务合同已结束，其他有效合同继续履约", "signed");
+            return false;
+        }
         boolean releaseAssignment = contracts.selectCount(new LambdaQueryWrapper<MktServiceContract>()
                 .eq(MktServiceContract::getCustomerId, customerId).in(MktServiceContract::getStatus, 1, 2, 3)) == 0;
         boolean signed = Integer.valueOf(2).equals(customer.getStatus());
@@ -146,6 +166,9 @@ public class MktCustomerAssignmentService {
             if (releaseAssignment) update.set(Customer::getAssignedWarehouseId, null)
                     .set(Customer::getWarehouseAssignmentStatus, UNASSIGNED);
             requireUpdated(customers.update(null, update));
+            int remainingStage = releaseAssignment ? 0 : Integer.valueOf(ACCEPTED).equals(customer.getWarehouseAssignmentStatus()) ? 60
+                    : Integer.valueOf(PENDING).equals(customer.getWarehouseAssignmentStatus()) ? 30 : 0;
+            progress.transition(customerId, remainingStage, "有效服务合同已结束，返回服务跟进；伙伴成交归属继续有效", "following");
             audit.log("customer.contract.closed", "customer", customerId, "有效服务合同已结束，返回跟进");
         }
         return true;
@@ -164,6 +187,7 @@ public class MktCustomerAssignmentService {
         out.put("warehouseAssignmentStatus", customer.getWarehouseAssignmentStatus() == null ? UNASSIGNED : customer.getWarehouseAssignmentStatus());
         out.put("publicProgress", customer.getPublicProgress());
         out.put("progressUpdatedAt", customer.getProgressUpdatedAt());
+        out.putAll(progress.view(customer));
         return out;
     }
 
@@ -173,8 +197,12 @@ public class MktCustomerAssignmentService {
         out.put("serviceType", customer.getServiceType()); out.put("status", customer.getStatus()); out.put("grade", customer.getGrade());
         out.put("warehouseAssignmentStatus", customer.getWarehouseAssignmentStatus());
         out.put("publicProgress", customer.getPublicProgress()); out.put("progressUpdatedAt", customer.getProgressUpdatedAt());
+        out.putAll(progress.view(customer));
         if (Integer.valueOf(PENDING).equals(customer.getWarehouseAssignmentStatus()) || Integer.valueOf(ACCEPTED).equals(customer.getWarehouseAssignmentStatus())) {
             out.put("contact", customer.getContact());
+            out.put("brandName", customer.getBrandName()); out.put("demand", customer.getDemandArea());
+            if (customer.getIntakeRemark() != null) out.put("remark", customer.getIntakeRemark());
+            out.put("requirements", MktReferralRequirements.parse(customer.getFulfillmentRequirements()));
             String phone = customer.getPhone();
             out.put("phone", phone == null || phone.length() < 7 ? null : phone.substring(0, 3) + "****" + phone.substring(phone.length() - 4));
         }
@@ -198,10 +226,9 @@ public class MktCustomerAssignmentService {
                 .in(MktServiceContract::getStatus, MktServiceContractService.ST_EFFECTIVE, MktServiceContractService.ST_PERFORMING, MktServiceContractService.ST_AMENDING));
     }
 
-    private void publishProgress(Customer customer, String summary) {
+    private void publishProgress(Customer customer, String summary, Integer percentage, String source) {
         summary = text(summary, "请填写可向伙伴公开的跟进进度");
-        requireUpdated(customers.update(null, versionGuard(customer).set(Customer::getPublicProgress, summary)
-                .set(Customer::getProgressUpdatedAt, LocalDateTime.now())));
+        progress.publish(customer.getId(), summary, percentage, source);
         audit.log("customer.progress.publish", "customer", customer.getId(), "发布伙伴可见进度", customer.getPublicProgress(), summary);
     }
 

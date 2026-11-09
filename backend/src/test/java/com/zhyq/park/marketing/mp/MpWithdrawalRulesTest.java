@@ -36,7 +36,7 @@ class MpWithdrawalRulesTest {
         when(settings.getString(eq("marketing"), eq("withdraw_arrival_time"), anyString())).thenAnswer(call -> call.getArgument(2));
         var service = new MktWithdrawalService(withdrawals, commissions, promoters, settings, mock(MktAuditService.class),
                 mock(MktPromoterAccountMapper.class), mock(MktPaymentProofService.class));
-        var controller = new MpBizController(mock(CustomerMapper.class), promoters, mock(MktWarehouseMapper.class),
+        var controller = new MpBizController(mock(com.zhyq.park.marketing.service.MktReferralService.class), mock(CustomerMapper.class), promoters, mock(MktWarehouseMapper.class),
                 commissions, mock(MktReferralOrderMapper.class), withdrawals, mock(TenantMessageMapper.class),
                 mock(MktLockService.class), service, settings, mock(MktAuditService.class),
                 mock(MktCustomerAssignmentService.class), mock(MktCustomerDeletionService.class));

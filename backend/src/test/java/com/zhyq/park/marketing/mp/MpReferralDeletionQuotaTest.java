@@ -27,7 +27,7 @@ class MpReferralDeletionQuotaTest {
     final MktPromoterMapper promoters = mock(MktPromoterMapper.class);
     final BizSettings settings = mock(BizSettings.class);
     final MktLockService locks = mock(MktLockService.class);
-    final MpBizController controller = new MpBizController(customers, promoters, mock(MktWarehouseMapper.class),
+    final MpBizController controller = new MpBizController(new MktReferralService(customers, promoters, locks, settings, mock(MktAuditService.class), mock(MktCustomerAssignmentService.class), mock(MktCustomerIntakeGuard.class), mock(MktCustomerProgressService.class)), customers, promoters, mock(MktWarehouseMapper.class),
             mock(MktPromoterCommissionMapper.class), mock(MktReferralOrderMapper.class), mock(MktWithdrawalMapper.class),
             mock(TenantMessageMapper.class), locks, mock(MktWithdrawalService.class), settings,
             mock(MktAuditService.class), mock(MktCustomerAssignmentService.class), mock(MktCustomerDeletionService.class));
@@ -74,7 +74,8 @@ class MpReferralDeletionQuotaTest {
         Map<String, Object> body = new java.util.HashMap<>(); body.put("name", "无电话客户");
         if (phone != null) body.put("phone", phone);
         assertThat(controller.referral(body).getCode()).isZero();
-        verify(customers, never()).selectCount(any());
+        // Only the customer-name check runs; no blank-phone comparison against other customers.
+        verify(customers, times(1)).selectCount(any());
         verify(locks).prelock(42L, 7L);
     }
 

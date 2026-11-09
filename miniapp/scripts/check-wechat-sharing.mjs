@@ -97,7 +97,22 @@ for (const page of pages) {
       meApi.poster = poster
     }
   } else {
-    assert.deepEqual(plain, defaultShare, `${page}: generic share must use public entry and image`)
+    if (['pages/referral/index', 'pages/customer-intake/index'].includes(page)) {
+      assert.equal(plain.path, '/pages/entry/index', 'Missing referral token must fall back to public entry')
+      assert.equal(plain.imageUrl, defaultShare.imageUrl)
+      const { bizApi, publicReferralApi } = load(resolve(root, 'api/index.js'))
+      const oldLink = bizApi.referralLink, oldWarehouses = bizApi.warehouses, oldInfo = publicReferralApi.info
+      const token = '0123456789abcdef0123456789abcdef'
+      try {
+        bizApi.referralLink = async () => ({ token })
+        bizApi.warehouses = async () => []
+        publicReferralApi.info = async () => ({ partnerName: '测试伙伴', warehouses: [] })
+        await instance.onLoad(page === 'pages/customer-intake/index' ? { scene: token } : {})
+        const referral = instance.onShareAppMessage({ from: 'button' })
+        assert.equal(referral.path, `/pages/customer-intake/index?token=${token}`, 'Share must retain referring partner')
+        assert.equal(referral.imageUrl, defaultShare.imageUrl)
+      } finally { bizApi.referralLink = oldLink; bizApi.warehouses = oldWarehouses; publicReferralApi.info = oldInfo }
+    } else assert.deepEqual(plain, defaultShare, `${page}: generic share must use public entry and image`)
   }
   options.lifetimes.detached?.call(instance)
 }

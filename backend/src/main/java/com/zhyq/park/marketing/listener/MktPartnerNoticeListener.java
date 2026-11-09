@@ -10,7 +10,7 @@ public class MktPartnerNoticeListener {
     private final MktPartnerNoticeService notices;
     @EventListener
     public void lock(DomainEvent.CustomerLockChanged e) {
-        String status = switch(e.status()) { case 1 -> "预锁"; case 2 -> "有效锁定"; case 3 -> "已成交"; default -> "已释放"; };
+        String status = switch(e.status()) { case 1, 2 -> "有效锁定"; case 3 -> "已成交，归属长期有效"; default -> "已释放"; };
         notices.push(e.promoterId(),"客户归属更新","客户编号"+e.customerId()+"的归属状态已更新为"+status+"，可在我的客户查看。");
     }
     @EventListener

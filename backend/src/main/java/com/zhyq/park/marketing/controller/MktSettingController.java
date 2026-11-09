@@ -32,7 +32,7 @@ public class MktSettingController {
             "ladder_depth", "override_enabled", "freeze_days",
             "daily_referral_cap", "attribution_rule", "protect_days", "dup_customer_fields", "clawback_days",
             "old_channel_exclusive", "internal_commission", "monthly_cap", "tax_mode", "tax_rate",
-            "default_sign_mode", "prelock_days", "lock_days", "lock_extend_days", "lock_cooldown_days",
+            "default_sign_mode", "lock_cooldown_days",
             "lease_clawback_days", "lease_renew_ratio", "invite_grace_days",
             "withdraw_window_start_day", "withdraw_window_end_day", ARRIVAL_TIME);
 
@@ -45,7 +45,7 @@ public class MktSettingController {
     public Result<List<Map<String, Object>>> all() {
         List<Map<String, Object>> rows = new ArrayList<>(jdbc.queryForList(
                 "SELECT skey, svalue, remark FROM biz_setting WHERE module = ? AND deleted = 0 "
-                        + "AND skey NOT IN ('min_withdraw', 'withdraw_free_times') ORDER BY id", MODULE));
+                        + "AND skey NOT IN ('min_withdraw', 'withdraw_free_times', 'prelock_days', 'lock_days', 'lock_extend_days') ORDER BY id", MODULE));
         // The default is visible without writing during GET; saving it creates the missing setting.
         if (rows.stream().noneMatch(row -> ARRIVAL_TIME.equals(row.get("skey")))) {
             rows.add(Map.of("skey", ARRIVAL_TIME, "svalue", MktWithdrawalService.DEFAULT_ARRIVAL_TIME, "remark", ARRIVAL_REMARK));
@@ -61,6 +61,9 @@ public class MktSettingController {
         for (Map<String, String> it : items) {
             String key = it.get("skey");
             String value = it.get("svalue");
+            if (Set.of("prelock_days", "lock_days", "lock_extend_days").contains(key == null ? "" : key)) {
+                throw new BizException("客户统一锁定三个月，签约成交后长期有效；旧锁定参数已停用，请刷新页面");
+            }
             if ("min_withdraw".equals(key) || "withdraw_free_times".equals(key)) {
                 throw new BizException("提现按分申请，不限每日次数且不收手续费；旧参数已停用，请刷新页面");
             }

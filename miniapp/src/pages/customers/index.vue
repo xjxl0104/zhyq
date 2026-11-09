@@ -37,7 +37,7 @@ const STATUS = { 1: '跟进中', 2: '已签约', 3: '已流失' }
 const state = reactive({})
 const pager = createPager(bizApi.customers, state)
 const list = computed(() => state.records)
-const lockText = (c) => !c.lockStatus ? '未锁定' : c.lockStatus === 1 ? `预锁 · 剩 ${c.lockDaysLeft} 天` : c.lockStatus === 2 ? `锁定 · 剩 ${c.lockDaysLeft} 天` : c.lockStatus === 3 ? '已成交' : '已释放'
+const lockText = (c) => !c.lockStatus ? '未锁定' : [1, 2].includes(c.lockStatus) ? `锁定 · 剩 ${c.lockDaysLeft} 天` : c.lockStatus === 3 ? '已成交 · 长期有效' : '已释放'
 const lockClass = (c) => c.lockStatus === 2 || c.lockStatus === 3 ? 'ok' : c.lockStatus === 1 ? 'warn' : ''
 
 onShow(() => pager.refresh())

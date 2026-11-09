@@ -20,6 +20,7 @@ import com.zhyq.park.marketing.service.MktAuditService;
 import com.zhyq.park.marketing.service.MktCustomerAssignmentService;
 import com.zhyq.park.marketing.service.MktCustomerDeletionService;
 import com.zhyq.park.marketing.service.MktLockService;
+import com.zhyq.park.marketing.service.MktReferralRequirements;
 import com.zhyq.park.marketing.service.MktPromoterService;
 import com.zhyq.park.marketing.service.MktServiceContractService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -136,7 +137,12 @@ public class MktCustomerController {
         if (StringUtils.hasText(c.getPhone()) && c.getPhone().equals(p.getPhone())) throw new BizException("不能自我推荐");
         if (c.getProjectId() != null && p.getProjectId() != null && !c.getProjectId().equals(p.getProjectId())) throw new BizException("不能跨园区调整推荐归属");
         if (c.getReferrerId() != null && !StringUtils.hasText(body.get("reason"))) throw new BizException("更换推荐人必须填写原因");
-        if (!p.getId().equals(c.getReferrerId())) assignmentService.assertNoActiveContracts(id);
+        if (!p.getId().equals(c.getReferrerId())) {
+            MktCustomerLock displayed = lockService.displayLockOf(id);
+            if (displayed != null && Integer.valueOf(MktLockService.LS_DEAL).equals(displayed.getStatus()))
+                throw new BizException("已成交客户归属长期有效，不能更换推荐伙伴");
+            assignmentService.assertNoActiveContracts(id);
+        }
         // 已存在别的伙伴的有效锁/预锁时,变更推荐人会和锁定归属打架,要求先释放或转移
         MktCustomerLock active = lockService.activeLockOf(id);
         if (active != null && active.getPromoterId() != null && !active.getPromoterId().equals(p.getId())) {
@@ -164,8 +170,10 @@ public class MktCustomerController {
     @Operation(summary = "发布伙伴可见的跟进进度（不公开内部备注）")
     @PreAuthorize("hasAuthority('crm:marketing:customer:edit')")
     @PostMapping("/{id}/progress")
-    public Result<Void> publishProgress(@PathVariable Long id, @RequestBody Map<String, String> body) {
-        assignmentService.updateProgress(id, body.get("summary"));
+    public Result<Void> publishProgress(@PathVariable Long id, @RequestBody Map<String, Object> body) {
+        assignmentService.updateProgress(id,
+                com.zhyq.park.marketing.service.MktReferralRequirements.text(body.get("summary"), 500, "公开进度"),
+                com.zhyq.park.marketing.service.MktCustomerProgressService.requestPercentage(body.get("percentage")));
         return Result.ok();
     }
 
@@ -227,7 +235,7 @@ public class MktCustomerController {
         return Result.ok(lockService.displayLockOf(id));
     }
 
-    @Operation(summary = "代伙伴报备(预锁)")
+    @Operation(summary = "代伙伴报备(锁定三个月)")
     @PreAuthorize("hasAuthority('crm:marketing:customer:edit')")
     @PostMapping("/{id}/lock/prelock")
     public Result<MktCustomerLock> prelock(@PathVariable Long id, @RequestBody Map<String, Long> body) {
@@ -277,6 +285,8 @@ public class MktCustomerController {
         Map<String, Object> m = new HashMap<>();
         m.put("id", c.getId()); m.put("name", c.getName()); m.put("contact", c.getContact()); m.put("phone", c.getPhone());
         m.put("projectId", c.getProjectId());
+        m.put("brandName", c.getBrandName()); m.put("demand", c.getDemandArea()); m.put("remark", c.getRemark());
+        m.put("requirements", MktReferralRequirements.parse(c.getFulfillmentRequirements()));
         m.put("grade", c.getGrade()); m.put("referrerId", c.getReferrerId()); m.put("serviceType", c.getServiceType());
         m.put("bizLine", c.getBizLine()); m.put("signMode", c.getSignMode()); m.put("status", c.getStatus());
         m.put("attributionNote", c.getAttributionNote()); m.put("intentLevel", c.getIntentLevel()); m.put("owner", c.getOwner());

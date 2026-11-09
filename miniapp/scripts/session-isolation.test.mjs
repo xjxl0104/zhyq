@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs'
 import vm from 'node:vm'
 
 const source = readFileSync(new URL('../src/utils/request.js', import.meta.url), 'utf8')
+  .replaceAll('\r\n', '\n')
   .replace(/^import .*$/gm, '').replaceAll('import.meta.env', '{}').replace(/^export /gm, '')
   .replace(/\/\/ #ifdef (H5|MP-WEIXIN)\n([\s\S]*?)\/\/ #endif/g, (_, name, body) => name === 'MP-WEIXIN' ? body : '')
 

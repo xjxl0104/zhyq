@@ -39,6 +39,10 @@ class PasswordAuthSecurityTest {
     @EnableWebSecurity
     @Import(SecurityConfig.class)
     static class Beans {
+        @Bean com.zhyq.park.marketing.service.MktReferralLinkService referralLinks() { return mock(com.zhyq.park.marketing.service.MktReferralLinkService.class); }
+        @Bean com.zhyq.park.marketing.mp.PublicReferralController publicReferral(com.zhyq.park.marketing.service.MktReferralLinkService links) {
+            return new com.zhyq.park.marketing.mp.PublicReferralController(links, mock(PasswordAttemptLimiter.class), new ClientAddressResolver(""));
+        }
         @Bean PasswordAuthService service() { return mock(PasswordAuthService.class); }
         @Bean PasswordAuthController controller(PasswordAuthService service) {
             return new PasswordAuthController(service, new ClientAddressResolver("172.24.0.5/32,172.24.0.2/32"));
@@ -57,10 +61,11 @@ class PasswordAuthSecurityTest {
     @Autowired PasswordAuthService service;
     @Autowired JwtService jwt;
     @Autowired JwtAccountService accounts;
+    @Autowired com.zhyq.park.marketing.service.MktReferralLinkService referralLinks;
     MockMvc mvc;
 
     @BeforeEach void setup() {
-        reset(service, accounts);
+        reset(service, accounts, referralLinks);
         when(accounts.load("mp", 9L)).thenReturn(new JwtAccountService.Account("mp", 9L, "mp:9", List.of("ROLE_MP"), "v1"));
         when(accounts.load("wh", 8L)).thenReturn(new JwtAccountService.Account("wh", 8L, "wh:8", List.of("ROLE_WH"), "v1"));
         when(accounts.load("admin", 1L)).thenReturn(new JwtAccountService.Account("admin", 1L, "admin", List.of("ROLE_admin"), "v1"));
@@ -74,6 +79,20 @@ class PasswordAuthSecurityTest {
             mvc.perform(get("/" + prefix + "/v1/auth/password-status")).andExpect(status().isUnauthorized());
         }
         verifyNoInteractions(service);
+    }
+    @Test void anonymousIntakeIsLimitedToGetAndPostExactTokenRoute() throws Exception {
+        String token = "0123456789abcdef0123456789abcdef";
+        when(referralLinks.form(token)).thenReturn(java.util.Map.of("partnerName", "伙伴"));
+        when(referralLinks.submit(eq(token), anyMap())).thenReturn(java.util.Map.of("lockStatus", 2));
+        mvc.perform(get("/mp/v1/public/referral/" + token)).andExpect(status().isOk()).andExpect(jsonPath("data.partnerName").value("伙伴"));
+        mvc.perform(post("/mp/v1/public/referral/" + token).contentType(MediaType.APPLICATION_JSON).content("{}"))
+                .andExpect(status().isOk());
+        mvc.perform(delete("/mp/v1/public/referral/" + token)).andExpect(status().isUnauthorized());
+        mvc.perform(get("/mp/v1/public/referral/" + token + "/customers")).andExpect(status().isUnauthorized());
+        for (String path : List.of("/mp/v1/referral/page", "/mp/v1/referral-link", "/mp/v1/referral-link/code"))
+            mvc.perform(get(path)).andExpect(status().isUnauthorized());
+        mvc.perform(post("/mp/v1/referral").contentType(MediaType.APPLICATION_JSON).content("{}"))
+                .andExpect(status().isUnauthorized());
     }
 
     @Test void otherPortalAndAdministratorTokensCannotSetPassword() throws Exception {
