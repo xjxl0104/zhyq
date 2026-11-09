@@ -5,7 +5,7 @@
       <input class="input" v-model="form.name" placeholder="客户公司 / 店铺名称 *" />
       <input class="input" v-model="form.brandName" maxlength="100" placeholder="品牌名称（选填，请填写准确名称）" />
       <input class="input" v-model="form.contact" placeholder="联系人" />
-      <input class="input" v-model="form.phone" type="number" maxlength="11" placeholder="联系手机 *" />
+      <input class="input" v-model="form.phone" type="number" maxlength="11" placeholder="联系手机（选填）" />
       <picker :range="TYPES" range-key="label" @change="e => form.serviceType = TYPES[e.detail.value].value">
         <view class="input">需求类型:{{ TYPES.find(t => t.value === form.serviceType)?.label }}</view>
       </picker>
@@ -40,10 +40,11 @@ onLoad(async () => { try { warehouses.value = [{id:null,name:'不限'}, ...await
 async function submit() {
   if (loading.value) return
   if (!form.name.trim()) return uni.showToast({ title: '请填客户名称', icon: 'none' })
-  if (!/^1\d{10}$/.test(form.phone)) return uni.showToast({ title: '手机号格式不对', icon: 'none' })
+  const phone = form.phone.trim()
+  if (phone && !/^1\d{10}$/.test(phone)) return uni.showToast({ title: '手机号格式不对', icon: 'none' })
   loading.value = true
   try {
-    const r = await bizApi.referral({...form, warehouseId:form.serviceType === 4 ? null : form.warehouseId})
+    const r = await bizApi.referral({...form, phone: phone || null, warehouseId:form.serviceType === 4 ? null : form.warehouseId})
     uni.showModal({ title: '推荐成功', content: `已为您预锁至 ${r.prelockUntil?.slice(0, 10)},招商专员将尽快联系客户。`, showCancel: false,
       success: () => uni.switchTab({ url: '/pages/customers/index' }) })
   } catch (e) {
