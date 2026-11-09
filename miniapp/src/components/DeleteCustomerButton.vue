@@ -36,8 +36,8 @@ async function remove() {
 </script>
 
 <style scoped>
-.customer-delete { margin-top: 20rpx; }
-.delete-button { min-height: 88rpx; margin: 0; padding: 0 24rpx; color: #a3293e; border: 1rpx solid #ecc9d0; border-radius: 16rpx; background: #fff; font-size: 28rpx; line-height: 88rpx; }
+.customer-delete { margin: 24rpx; text-align: center; }
+.delete-button { display: inline-block; width: auto; min-height: 72rpx; margin: 0; padding: 0 32rpx; color: #a3293e; border: 1rpx solid #ecc9d0; border-radius: 12rpx; background: #fff; font-size: 26rpx; line-height: 72rpx; }
 .delete-button::after { border: 0; }
 .delete-button[disabled] { opacity: .5; }
 .delete-error { margin-top: 14rpx; color: #a3293e; font-size: 28rpx; line-height: 1.6; overflow-wrap: anywhere; }

@@ -61,4 +61,28 @@ class MpReferralDeletionQuotaTest {
         assertThat(controller.referral(Map.of("name", "再次报备", "phone", "13800000042")).getCode()).isZero();
         verify(customers).insert(any(Customer.class));
     }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.NullAndEmptySource
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"   "})
+    void missingPhoneIsStoredAsNullAndDoesNotDeduplicateUnrelatedCustomers(String phone) {
+        when(customers.insert(any(Customer.class))).thenAnswer(inv -> {
+            Customer c = inv.getArgument(0); assertThat(c.getPhone()).isNull(); c.setId(42L); return 1;
+        });
+        MktCustomerLock lock = new MktCustomerLock(); lock.setStatus(1);
+        when(locks.prelock(42L, 7L)).thenReturn(lock);
+        Map<String, Object> body = new java.util.HashMap<>(); body.put("name", "无电话客户");
+        if (phone != null) body.put("phone", phone);
+        assertThat(controller.referral(body).getCode()).isZero();
+        verify(customers, never()).selectCount(any());
+        verify(locks).prelock(42L, 7L);
+    }
+
+    @Test void suppliedPhoneStillRejectsInvalidSelfAndDuplicateNumbers() {
+        assertThatThrownBy(() -> controller.referral(Map.of("name", "客户", "phone", "123"))).hasMessageContaining("11 位手机号");
+        assertThatThrownBy(() -> controller.referral(Map.of("name", "客户", "phone", "13800000007"))).hasMessageContaining("自我推荐");
+        when(customers.selectCount(any())).thenReturn(1L);
+        assertThatThrownBy(() -> controller.referral(Map.of("name", "客户", "phone", "13800000042"))).hasMessageContaining("已被推荐");
+        verify(customers, never()).insert(any(Customer.class));
+    }
 }
