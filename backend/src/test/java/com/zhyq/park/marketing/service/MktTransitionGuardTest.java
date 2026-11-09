@@ -7,6 +7,8 @@ import com.baomidou.mybatisplus.core.conditions.Wrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.zhyq.park.common.setting.BizSettings;
+import com.zhyq.park.common.exception.BizException;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.zhyq.park.finance.mapper.BillMapper;
 import com.zhyq.park.crm.mapper.CustomerMapper;
 import com.zhyq.park.crm.entity.Customer;
@@ -86,6 +88,8 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 
 /**
  * 五个状态机的「条件更新前态集合」守卫。
@@ -229,30 +233,30 @@ class MktTransitionGuardTest {
             return WrapperAssert.of((LambdaUpdateWrapper<?>) captor.getValue());
         }
 
-        @Test @DisplayName("预锁 → 有效锁定(专员确认)")
-        void confirm() { service.confirm(7L, "专员A"); last().isStatusTransition("status", LS_LOCKED, LS_PRELOCK).hasWhereId(7L); }
-
-        @Test @DisplayName("延期只对 有效锁定 生效,状态不变,extended_count 做 CAS")
+        @Test @DisplayName("旧确认接口不能重置三个月锁定期限")
+        void confirm() {
+            assertThatThrownBy(() -> service.confirm(7L, "专员A")).isInstanceOf(BizException.class);
+            verify(lockMapper, never()).update(isNull(), any(Wrapper.class));
+        }
+        @Test @DisplayName("旧延期接口不能绕过三个月规则")
         void extend() {
-            service.extend(7L, "近 60 天有到访");
-            assertThat(last().whereIn("status")).containsExactly(LS_LOCKED);
-            assertThat(last().whereEq("extended_count")).isEqualTo("0");
-            assertThat(last().setValue("status")).isNull();
-            assertThat(last().setValue("extended_count")).isEqualTo("1");
+            assertThatThrownBy(() -> service.extend(7L, "近 60 天有到访")).isInstanceOf(BizException.class);
+            verify(lockMapper, never()).update(isNull(), any(Wrapper.class));
         }
-
-        @Test @DisplayName("§2.2a 成交只能从 有效锁定 出发 —— 预锁未经专员确认不能直接成交")
-        void markDealOnlyFromLocked() {
+        @Test @DisplayName("签约成交允许历史预锁，并清除所有到期时间")
+        void markDealPermanentlyLocksAttribution() {
             service.markDeal(5L);
-            last().isStatusTransition("status", LS_DEAL, LS_LOCKED);
+            last().isStatusTransition("status", LS_DEAL, LS_PRELOCK, LS_LOCKED);
+            assertThat(((LambdaUpdateWrapper<?>) captor.getValue()).getSqlSet()).contains("lock_until=", "prelock_until=");
+            assertThat(last().setValue("lock_until")).isEqualTo("null");
+            assertThat(last().setValue("prelock_until")).isEqualTo("null");
         }
-
         @Test @DisplayName("释放可从 预锁 / 有效锁定 出发")
         void release() { service.release(7L, "客户拒绝", "运营"); last().isStatusTransition("status", LS_RELEASED, LS_PRELOCK, LS_LOCKED); }
 
         @Test @DisplayName("到期释放按每条记录当前状态做 CAS,不会把已成交的锁释放掉")
         void expireUsesRowStatusAsGuard() {
-            MktCustomerLock pre = new MktCustomerLock(); pre.setId(1L); pre.setStatus(LS_PRELOCK);
+            MktCustomerLock pre = new MktCustomerLock(); pre.setId(1L); pre.setStatus(LS_LOCKED);
             MktCustomerLock locked = new MktCustomerLock(); locked.setId(2L); locked.setStatus(LS_LOCKED);
             when(lockMapper.selectList(any())).thenReturn(List.of(pre, locked));
 
@@ -260,7 +264,7 @@ class MktTransitionGuardTest {
 
             List<Wrapper<MktCustomerLock>> all = captor.getAllValues();
             assertThat(all).hasSize(2);
-            WrapperAssert.of((LambdaUpdateWrapper<?>) all.get(0)).isStatusTransition("status", LS_RELEASED, LS_PRELOCK).hasWhereId(1L);
+            WrapperAssert.of((LambdaUpdateWrapper<?>) all.get(0)).isStatusTransition("status", LS_RELEASED, LS_LOCKED).hasWhereId(1L);
             WrapperAssert.of((LambdaUpdateWrapper<?>) all.get(1)).isStatusTransition("status", LS_RELEASED, LS_LOCKED).hasWhereId(2L);
         }
     }

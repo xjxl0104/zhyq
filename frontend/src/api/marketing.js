@@ -61,6 +61,8 @@ export const mktGradeApi = {
 
 // 客户(复用 crm_customer,加评级/推荐人/签约方式/锁定)
 export const mktCustomerApi = {
+  create: (data) => request.post(`${BASE}/customer`, data),
+  referrers: (params) => request.get(`${BASE}/customer/referrers`, { params }),
   page: (params) => request.get(`${BASE}/customer/page`, { params }),
   get: (id) => request.get(`${BASE}/customer/${id}`),
   pricing: (id) => request.get(`${BASE}/customer/${id}/pricing`),

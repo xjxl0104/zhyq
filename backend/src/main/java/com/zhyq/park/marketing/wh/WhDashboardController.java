@@ -88,8 +88,10 @@ public class WhDashboardController {
     }
 
     @PostMapping("/customers/{id}/progress")
-    public Result<Void> progress(@PathVariable Long id, @RequestBody Map<String, String> body) {
-        assignments.updateWarehouseProgress(id, WhAuthContext.currentWarehouseId(), body.get("summary")); return Result.ok();
+    public Result<Void> progress(@PathVariable Long id, @RequestBody Map<String, Object> body) {
+        assignments.updateWarehouseProgress(id, WhAuthContext.currentWarehouseId(),
+                com.zhyq.park.marketing.service.MktReferralRequirements.text(body.get("summary"), 500, "公开进度"),
+                com.zhyq.park.marketing.service.MktCustomerProgressService.requestPercentage(body.get("percentage"))); return Result.ok();
     }
 
     private LambdaQueryWrapper<Customer> customerScope(MktWarehouse w) {

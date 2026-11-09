@@ -14,7 +14,7 @@
         <el-table-column label="按单定价权限" width="150">
           <template #default="{ row }"><el-tag :type="row.code === 'P4' ? 'success' : 'info'">{{ row.code === 'P4' ? '可自定义金额' : '由 P4 设置金额' }}</el-tag></template>
         </el-table-column>
-        <el-table-column label="锁定客户上限（含预锁）" width="220">
+        <el-table-column label="锁定客户上限" width="220">
           <template #default="{ row }"><el-input-number v-model="row.lockCap" :min="0" :max="2147483647" :step="1" :precision="0" :aria-label="`${row.code} 锁定客户上限`" size="small" controls-position="right" /></template>
         </el-table-column>
       </el-table>

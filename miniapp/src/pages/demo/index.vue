@@ -51,7 +51,7 @@
 
       <view v-else-if="section === 'customer-detail' && selectedCustomer">
         <view class="demo-section-heading"><view><view class="demo-section-label">CUSTOMER DETAIL</view><view class="demo-section-title">客户详情</view></view><button class="mini-action" @click="section = 'customers'">返回列表</button></view>
-        <view class="demo-card detail-card"><view class="detail-profile"><view class="detail-avatar">{{ selectedCustomer.name.slice(0, 1) }}</view><view><view class="detail-name">{{ selectedCustomer.name }}</view><view class="demo-muted">{{ selectedCustomer.contact }} · {{ selectedCustomer.phone }}</view></view></view><view class="detail-status"><text :class="['status-tag', selectedCustomer.statusTone]">{{ selectedCustomer.status }}</text><text class="demo-muted">{{ selectedCustomer.updated }}</text></view><view class="detail-line"><text>需求类型</text><text>{{ selectedCustomer.service }}</text></view><view class="detail-line"><text>跟进阶段</text><text>{{ selectedCustomer.stage }}</text></view><view class="detail-line"><text>预锁状态</text><text>{{ selectedCustomer.lock }}</text></view><button class="demo-disabled-button" @click="demoOnly">删除 / 延长预锁（登录后可用）</button></view>
+        <view class="demo-card detail-card"><view class="detail-profile"><view class="detail-avatar">{{ selectedCustomer.name.slice(0, 1) }}</view><view><view class="detail-name">{{ selectedCustomer.name }}</view><view class="demo-muted">{{ selectedCustomer.contact }} · {{ selectedCustomer.phone }}</view></view></view><view class="detail-status"><text :class="['status-tag', selectedCustomer.statusTone]">{{ selectedCustomer.status }}</text><text class="demo-muted">{{ selectedCustomer.updated }}</text></view><view class="detail-line"><text>需求类型</text><text>{{ selectedCustomer.service }}</text></view><view class="detail-line"><text>跟进阶段</text><text>{{ selectedCustomer.stage }}</text></view><view class="detail-line"><text>锁定状态</text><text>{{ selectedCustomer.lock }}</text></view><button class="demo-disabled-button" @click="demoOnly">客户管理（登录后可用）</button></view>
       </view>
 
       <view v-else-if="section === 'income'">
@@ -146,7 +146,7 @@ const warehouseSections = [
 ]
 const sections = computed(() => role.value === 'partner' ? partnerSections : warehouseSections)
 const partnerStats = [
-  { icon: '客', label: '有效客户', value: '28', tone: 'blue' }, { icon: '锁', label: '预锁客户', value: '6', tone: 'cyan' },
+  { icon: '客', label: '有效客户', value: '28', tone: 'blue' }, { icon: '锁', label: '锁定客户', value: '6', tone: 'cyan' },
   { icon: '佣', label: '待结佣金', value: '¥3.2k', tone: 'gold' }, { icon: '团', label: '团队人数', value: '12', tone: 'purple' },
 ]
 const warehouseStats = [
@@ -192,7 +192,7 @@ const warehouseNotices = [
   { title: '结算单待确认', time: '今天 09:30', copy: '9 月仓储与代发服务费已生成，请登录后确认。', tone: 'gold' }, { title: 'ERP 接入状态更新', time: '昨天 17:20', copy: '聚水潭 ERP 已完成首次库存同步。', tone: 'cyan' },
 ]
 const partnerCustomers = ref([
-  { id: 1, name: '远山生活', contact: '王女士', phone: '138****6012', service: '一件代发', status: '跟进中', statusTone: 'blue', stage: '方案确认', lock: '预锁剩 5 天', updated: '今天更新' }, { id: 2, name: '拾光家居', contact: '李先生', phone: '139****7288', service: '仓储', status: '已签约', statusTone: 'ok', stage: '合同生效', lock: '有效锁定', updated: '昨天更新' }, { id: 3, name: '禾木食品', contact: '赵女士', phone: '186****4490', service: '仓配一体', status: '待跟进', statusTone: 'gold', stage: '待首次沟通', lock: '未锁定', updated: '9 月 25 日' },
+  { id: 1, name: '远山生活', contact: '王女士', phone: '138****6012', service: '一件代发', status: '跟进中', statusTone: 'blue', stage: '方案确认', lock: '锁定剩 30 天', updated: '今天更新' }, { id: 2, name: '拾光家居', contact: '李先生', phone: '139****7288', service: '仓储', status: '已签约', statusTone: 'ok', stage: '合同生效', lock: '有效锁定', updated: '昨天更新' }, { id: 3, name: '禾木食品', contact: '赵女士', phone: '186****4490', service: '仓配一体', status: '待跟进', statusTone: 'gold', stage: '待首次沟通', lock: '未锁定', updated: '9 月 25 日' },
 ])
 
 function setRole(value) { role.value = value; section.value = 'home'; selectedCustomer.value = null }
@@ -201,7 +201,7 @@ function exit() { uni.reLaunch({ url: '/pages/entry/index' }) }
 function submitDemo() {
   if (!form.name.trim()) return toast('请填写客户名称')
   if (!/^1\d{10}$/.test(form.phone.trim())) return toast('请输入正确的演示手机号')
-  partnerCustomers.value.unshift({ id: Date.now(), name: form.name.trim(), contact: form.contact.trim() || '待补充', phone: form.phone.slice(0, 3) + '****' + form.phone.slice(-4), service: '一件代发', status: '待跟进', statusTone: 'gold', stage: '待首次沟通', lock: '演示预锁', updated: '刚刚新增' })
+  partnerCustomers.value.unshift({ id: Date.now(), name: form.name.trim(), contact: form.contact.trim() || '待补充', phone: form.phone.slice(0, 3) + '****' + form.phone.slice(-4), service: '一件代发', status: '待跟进', statusTone: 'gold', stage: '待首次沟通', lock: '锁定 3 个月', updated: '刚刚新增' })
   form.name = ''; form.contact = ''; form.phone = ''; showAdd.value = false; toast('已加入演示客户，仅当前页面有效')
 }
 function demoOnly() { toast('当前为体验模式，不会提交数据；登录后可使用') }

@@ -135,7 +135,7 @@ describe('称号和评级不提交固定分成', () => {
     await flushPromises()
     expect(wrapper.findAll('button').map(button => button.text())).toEqual(['保存设置'])
     expect(wrapper.findAllComponents({ name: 'ElTableColumn' }).map(column => column.props('label')))
-      .toEqual(['角色', '称号', '按单定价权限', '锁定客户上限（含预锁）'])
+      .toEqual(['角色', '称号', '按单定价权限', '锁定客户上限'])
     expect(wrapper.text()).toContain('自动晋升与降级已停用')
     expect(wrapper.text()).toContain('P4 可在小程序中手动设置邀请体系内成员')
     expect(mktPositionApi.reviewNow).not.toHaveBeenCalled()

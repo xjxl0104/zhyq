@@ -55,6 +55,7 @@ import java.util.stream.Collectors;
 @PreAuthorize("hasRole('MP')")
 public class MpBizController {
 
+    private final com.zhyq.park.marketing.service.MktReferralService referralService;
     private static final String MODULE = "marketing";
 
     private final CustomerMapper customerMapper;
@@ -73,67 +74,11 @@ public class MpBizController {
 
     // ---------------- 推荐 / 报备(§2.2 + §2.2a) ----------------
 
-    @Operation(summary = "推荐客户 = 报备(预锁 7 天):自我推荐拒、重复客户拒(不暴露是谁)、日上限")
+    @Operation(summary = "推荐客户：直接锁定三个自然月，成交后长期有效")
     @PostMapping("/referral")
-    @Transactional
     public Result<Map<String, Object>> referral(@RequestBody Map<String, Object> body) {
-        Long pid = MpAuthService.currentPromoterId();
-        MktPromoter me = promoterMapper.selectForUpdate(pid);
-        if (me == null || !Integer.valueOf(1).equals(me.getStatus())) throw new BizException("伙伴不存在或状态异常，不能推荐客户");
-        String phone = str(body, "phone");
-        if (!StringUtils.hasText(phone)) phone = null;
-        String name = str(body, "name");
-        if (!StringUtils.hasText(name)) throw new BizException("客户名称必填");
-        if (phone != null && !phone.matches("^1\\d{10}$")) throw new BizException("请填写正确的 11 位手机号，或留空");
-        if (phone != null && phone.equals(me.getPhone())) throw new BizException("不能自我推荐");
-        int cap = bizSettings.getInt(MODULE, "daily_referral_cap", 20);
-        long today = customerMapper.countReferralsSince(pid, LocalDate.now().atStartOfDay());
-        if (today >= cap) throw new BizException("今日推荐已达上限 " + cap + " 个");
-        if (phone != null && customerMapper.selectCount(new LambdaQueryWrapper<Customer>().eq(Customer::getPhone, phone)) > 0) {
-            throw new BizException("该客户已在系统中(已被推荐)");
-        }
-        Customer c = new Customer();
-        c.setTenantId(me.getTenantId());
-        c.setName(name); c.setContact(str(body, "contact")); c.setPhone(phone);
-        String brandName = str(body, "brandName");
-        if (name.length() > 100 || (brandName != null && brandName.length() > 100)) throw new BizException("公司或品牌名称最多 100 字");
-        c.setBrandName(brandName);
-        c.setIndustry(str(body, "industry")); c.setDemandArea(str(body, "demand"));
-        Object st = body.get("serviceType");
-        int serviceType;
-        try { serviceType = st == null ? 2 : Integer.parseInt(st.toString()); }
-        catch (NumberFormatException e) { throw new BizException("需求类型不正确"); }
-        if (serviceType < 1 || serviceType > 4) throw new BizException("需求类型不正确");
-        c.setServiceType(serviceType);
-        c.setBizLine(c.getServiceType() == 4 ? 1 : 2);
-        String intended = str(body, "warehouseId");
-        if (StringUtils.hasText(intended)) {
-            Long warehouseId;
-            try { warehouseId = Long.valueOf(intended); }
-            catch (NumberFormatException e) { throw new BizException("意向云仓不正确"); }
-            if (serviceType == 4) throw new BizException("园区入驻需求不选择云仓");
-            assignmentService.requireAvailableWarehouse(warehouseId, me.getProjectId());
-            c.setIntendedWarehouseId(warehouseId);
-        }
-        c.setWarehouseAssignmentStatus(MktCustomerAssignmentService.UNASSIGNED);
-        c.setReferrerId(pid);
-        c.setStatus(1);
-        c.setOwner("待分配");
-        c.setRemark(str(body, "remark"));
-        c.setAttributionNote("小程序推荐,伙伴 " + me.getInviteCode());
-        c.setProjectId(me.getProjectId());
-        try {
-            customerMapper.insert(c);
-        } catch (DuplicateKeyException dup) {
-            throw new BizException("该客户已在系统中(已被推荐)");
-        }
-        MktCustomerLock lock = lockService.prelock(c.getId(), pid);
-        auditService.log("referral.create", "customer", c.getId(), "小程序推荐");
-        Map<String, Object> m = new HashMap<>();
-        m.put("customerId", c.getId()); m.put("lockStatus", lock.getStatus()); m.put("prelockUntil", lock.getPrelockUntil());
-        return Result.ok(m);
+        return Result.ok(referralService.create(MpAuthService.currentPromoterId(), body));
     }
-
     @Operation(summary = "我的客户:状态·评级·承接云仓·锁定剩余天数(不回金额)")
     @GetMapping("/referral/page")
     public Result<PageResult<Map<String, Object>>> myCustomers(@RequestParam(defaultValue = "1") int pageNo,
@@ -257,13 +202,16 @@ public class MpBizController {
         m.put("id", c.getId()); m.put("name", c.getName()); m.put("contact", c.getContact());
         m.put("phone", c.getPhone() == null || c.getPhone().length() < 11 ? c.getPhone() : c.getPhone().substring(0, 3) + "****" + c.getPhone().substring(7));
         m.put("grade", c.getGrade()); m.put("serviceType", c.getServiceType()); m.put("status", c.getStatus()); m.put("createTime", c.getCreateTime());
+        m.put("brandName", c.getBrandName()); m.put("demand", c.getDemandArea()); m.put("remark", c.getIntakeRemark());
+        m.put("requirements", com.zhyq.park.marketing.service.MktReferralRequirements.parse(c.getFulfillmentRequirements()));
         m.putAll(assignmentService.assignmentView(c));
         MktCustomerLock lock = lockService.displayLockOf(c.getId());
         if (lock != null) {
             m.put("lockStatus", lock.getStatus());
             LocalDateTime until = lock.getStatus() == MktLockService.LS_PRELOCK ? lock.getPrelockUntil() : lock.getLockUntil();
             m.put("lockDaysLeft", until == null ? null : Math.max(0, (Duration.between(LocalDateTime.now(), until).getSeconds() + 86_399) / 86_400));
-            m.put("canExtend", lock.getStatus() == MktLockService.LS_LOCKED && (lock.getExtendedCount() == null || lock.getExtendedCount() == 0));
+            m.put("canExtend", false);
+            m.put("lockUntil", lock.getLockUntil());
         }
         return m;
     }
