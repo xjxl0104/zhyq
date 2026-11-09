@@ -109,7 +109,7 @@ public class AuthController {
                 .anyMatch(authority -> "ROLE_admin".equals(authority.getAuthority()));
         // portal_uid 列由门户 SSO 迁移加在 sys_user 上, 实体没映射, 这里单查一列
         Object portalUid = userMapper.selectMaps(new QueryWrapper<SysUser>().select("portal_uid").eq("id", user.getId()))
-                .stream().findFirst().map(m -> m == null ? null : m.get("portal_uid")).orElse(null);
+                .stream().filter(java.util.Objects::nonNull).findFirst().map(m -> m.get("portal_uid")).orElse(null);
         String name = user.getNickname() != null && !user.getNickname().isBlank() ? user.getNickname() : user.getUsername();
         return Result.ok(new MyAccess(admin, admin ? List.of()
                 : authQueryMapper.selectGrantedMenusByUserId(user.getId()).stream()
