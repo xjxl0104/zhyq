@@ -81,13 +81,15 @@ public class MpBizController {
         MktPromoter me = promoterMapper.selectForUpdate(pid);
         if (me == null || !Integer.valueOf(1).equals(me.getStatus())) throw new BizException("伙伴不存在或状态异常，不能推荐客户");
         String phone = str(body, "phone");
+        if (!StringUtils.hasText(phone)) phone = null;
         String name = str(body, "name");
-        if (!StringUtils.hasText(name) || phone == null || !phone.matches("^1\\d{10}$")) throw new BizException("客户名称与 11 位手机号必填");
-        if (phone.equals(me.getPhone())) throw new BizException("不能自我推荐");
+        if (!StringUtils.hasText(name)) throw new BizException("客户名称必填");
+        if (phone != null && !phone.matches("^1\\d{10}$")) throw new BizException("请填写正确的 11 位手机号，或留空");
+        if (phone != null && phone.equals(me.getPhone())) throw new BizException("不能自我推荐");
         int cap = bizSettings.getInt(MODULE, "daily_referral_cap", 20);
         long today = customerMapper.countReferralsSince(pid, LocalDate.now().atStartOfDay());
         if (today >= cap) throw new BizException("今日推荐已达上限 " + cap + " 个");
-        if (customerMapper.selectCount(new LambdaQueryWrapper<Customer>().eq(Customer::getPhone, phone)) > 0) {
+        if (phone != null && customerMapper.selectCount(new LambdaQueryWrapper<Customer>().eq(Customer::getPhone, phone)) > 0) {
             throw new BizException("该客户已在系统中(已被推荐)");
         }
         Customer c = new Customer();
