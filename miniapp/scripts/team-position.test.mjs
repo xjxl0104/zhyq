@@ -40,11 +40,12 @@ test('新增成员只能选择P1至P3，异常选项不提交', async () => {
   const calls = []
   const context = vm.createContext({
     ref: value => ({ value }), computed: getter => ({ get value() { return getter() } }), onShow: () => {},
-    meApi: { addTeamMember: async value => calls.push(value) },
+    meApi: { me: async () => ({ positionCode: 'P4', status: 1 }), addTeamMember: async value => calls.push(value) },
     uni: { showToast: () => {} }, setTimeout: () => {}
   })
   vm.runInContext(addSource, context)
-  vm.runInContext("me.value = {positionCode:'P4',status:1}; name.value='成员乙'; positionIndex.value=3", context)
+  await vm.runInContext('loadProfile()', context)
+  vm.runInContext("name.value='成员乙'; positionIndex.value=3", context)
   await vm.runInContext('submit()', context)
   assert.equal(calls.length, 0)
   assert.match(vm.runInContext('error.value', context), /P1–P3/)

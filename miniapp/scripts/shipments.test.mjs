@@ -2,7 +2,16 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import vm from 'node:vm'
-import { PAGE_SIZE, chinaToday, rangePreset, validateRange, formatVolume } from '../src/utils/shipments.mjs'
+import { PAGE_SIZE, chinaToday, rangePreset, validateRange, formatVolume, shipmentNavigation } from '../src/utils/shipments.mjs'
+test('one shipment entry routes active higher tiers to team and ordinary partners to their customers', () => {
+  for (const positionCode of ['P2', 'P3', 'P4']) {
+    assert.equal(shipmentNavigation({ positionCode, status: 1 }).title, '团队发货量')
+    assert.match(shipmentNavigation({ positionCode, status: '1' }).url, /scope=team$/)
+    assert.match(shipmentNavigation({ positionCode, status: 2 }).url, /scope=own$/)
+  }
+  assert.equal(shipmentNavigation({ positionCode: 'P1', status: 1 }).title, '客户发货量')
+  assert.match(shipmentNavigation(null).url, /scope=own$/)
+})
 
 test('business date uses China day across UTC midnight and leap months', () => {
   const now = new Date('2026-11-08T18:00:00Z')

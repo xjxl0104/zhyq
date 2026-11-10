@@ -6,7 +6,7 @@ import vm from 'node:vm'
 const read = path => readFileSync(new URL(path, import.meta.url), 'utf8')
 const component = read('../src/components/WechatAuthForm.vue')
 const scriptOf = source => source.split('<script setup>')[1].split('</script>')[0].replace(/^import .*$/gm, '')
-const forPlatform = (source, platform) => source.replace(/\/\/ #(ifdef|ifndef) (H5|MP-WEIXIN)\n([\s\S]*?)\/\/ #endif/g,
+const forPlatform = (source, platform) => source.replace(/\/\/ #(ifdef|ifndef) (H5|MP-WEIXIN)\r?\n([\s\S]*?)\/\/ #endif/g,
   (_, condition, name, body) => (condition === 'ifdef') === (name === platform) ? body : '')
 const wechatHelper = forPlatform(read('../src/utils/wechat.js')
   .split('export async function getWechatLogin')[1].split('export function readPhoneAuthorization')[0], 'MP-WEIXIN')

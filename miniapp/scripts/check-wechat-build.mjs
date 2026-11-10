@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { verifyWechatComponents } from './wechat-components.mjs'
 const manifest = JSON.parse(readFileSync(resolve('src/manifest.json'), 'utf8'))
 const project = JSON.parse(readFileSync(resolve('dist/build/mp-weixin/project.config.json'), 'utf8'))
 const customers = readFileSync(resolve('dist/build/mp-weixin/pages/customers/index.wxml'), 'utf8')
@@ -13,3 +14,5 @@ if (manifest['mp-weixin'].setting?.urlCheck !== true || project.setting?.urlChec
   throw new Error('微信发布构建必须启用合法域名校验（urlCheck=true），请检查源码并重新构建。')
 }
 console.log(`微信构建已核验 AppID：${project.appid}。请在开发者工具重新编译此目录后再真机预览。`)
+const componentCount = verifyWechatComponents(resolve('src'), resolve('dist/build/mp-weixin'))
+console.log(`微信组件已核验：${componentCount} 处自定义组件注册及客户填写表单完整。`)

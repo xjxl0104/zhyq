@@ -80,7 +80,11 @@ public class MktReferralService {
             try { wid = Long.valueOf(rawWarehouse.toString()); }
             catch (NumberFormatException e) { throw new BizException("意向云仓不正确"); }
             if (type == 4) throw new BizException("园区入驻需求不选择云仓");
-            assignment.requireAvailableWarehouse(wid, effectiveProject); c.setIntendedWarehouseId(wid);
+            var warehouse = assignment.requireAvailableWarehouse(wid, effectiveProject);
+            Long warehouseTenant = warehouse.getTenantId() == null
+                    ? com.zhyq.park.common.config.MyMetaObjectHandler.DEFAULT_TENANT_ID : warehouse.getTenantId();
+            if (!tenantId.equals(warehouseTenant)) throw new BizException(403, "意向云仓与推荐伙伴不属于同一运营主体");
+            c.setIntendedWarehouseId(wid);
         }
         c.setWarehouseAssignmentStatus(MktCustomerAssignmentService.UNASSIGNED);
         c.setReferrerId(promoterId); c.setStatus(1); c.setOwner("待分配");

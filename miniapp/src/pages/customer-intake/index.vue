@@ -33,6 +33,7 @@ import { ref, reactive } from 'vue'
 import { onLoad, onShareAppMessage } from '@dcloudio/uni-app'
 import { publicReferralApi } from '@/api'
 import { newReferralForm, newSubmissionId, parseReferralToken, referralShare } from '@/utils/referral-intake.mjs'
+import ReferralForm from '@/components/ReferralForm.vue'
 const form = reactive(newReferralForm()), info = ref({}), error = ref(''), referralToken = ref('')
 const initialLoading = ref(false), ready = ref(false), agreed = ref(false), submitting = ref(false), submitted = ref(false)
 const pendingBody = ref(null)

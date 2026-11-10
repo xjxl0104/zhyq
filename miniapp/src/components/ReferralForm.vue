@@ -4,10 +4,10 @@
     <input class="input" v-model="form.brandName" maxlength="100" placeholder="品牌名称（选填，请填写准确名称）" />
     <input class="input" v-model="form.contact" maxlength="50" placeholder="联系人（选填）" />
     <input class="input" v-model="form.phone" type="number" maxlength="11" placeholder="联系手机（选填）" />
-    <picker :range="SERVICE_TYPES" range-key="label" @change="e => form.serviceType = SERVICE_TYPES[e.detail.value].value">
+    <picker :range="SERVICE_TYPES" :value="selectedIndex(SERVICE_TYPES, form.serviceType)" range-key="label" @change="e => form.serviceType = SERVICE_TYPES[e.detail.value].value">
       <view class="input">需求类型：{{ SERVICE_TYPES.find(t => t.value === form.serviceType)?.label }}</view>
     </picker>
-    <picker v-if="form.serviceType !== 4" :range="warehouseOptions" range-key="name" @change="e => form.warehouseId = warehouseOptions[e.detail.value].id">
+    <picker v-if="form.serviceType !== 4" :range="warehouseOptions" :value="selectedIndex(warehouseOptions, form.warehouseId, 'id')" range-key="name" @change="e => form.warehouseId = warehouseOptions[e.detail.value].id">
       <view class="input">意向云仓：{{ warehouseOptions.find(w => w.id === form.warehouseId)?.name || '不限' }}</view>
     </picker>
     <input class="input" v-model="form.demand" maxlength="200" placeholder="需求（面积 / 日单量 / 品类，选填）" />
@@ -28,7 +28,7 @@
         </view>
       </checkbox-group>
     </view>
-    <picker v-for="field in rangeFields" :key="field.key" :range="field.options" range-key="label" @change="e => form.requirements[field.key] = field.options[e.detail.value].value">
+    <picker v-for="field in rangeFields" :key="field.key" :range="field.options" :value="selectedIndex(field.options, form.requirements[field.key])" range-key="label" @change="e => form.requirements[field.key] = field.options[e.detail.value].value">
       <view class="input">{{ field.label }}：{{ form.requirements[field.key] ? rangeLabel(form.requirements[field.key], field.unit) : '请选择（选填）' }}</view>
     </picker>
     <textarea class="input" v-model="form.requirements.packaging" maxlength="500" placeholder="打包方式（选填，如纸箱、气泡袋等）" style="height:140rpx" />
@@ -39,7 +39,7 @@
       </checkbox-group>
       <input v-if="form.requirements.couriers.includes('其他')" class="input" v-model="form.requirements.courierOther" maxlength="100" placeholder="请填写其他快递承运商" />
     </view>
-    <picker :range="invoiceOptions" range-key="label" @change="e => form.requirements.invoiceRequired = invoiceOptions[e.detail.value].value">
+    <picker :range="invoiceOptions" :value="selectedIndex(invoiceOptions, form.requirements.invoiceRequired)" range-key="label" @change="e => form.requirements.invoiceRequired = invoiceOptions[e.detail.value].value">
       <view class="input">是否开发票：{{ invoiceOptions.find(x => x.value === form.requirements.invoiceRequired)?.label }}</view>
     </picker>
     <textarea class="input" v-model="form.remark" maxlength="1000" placeholder="备注（选填）" style="height:160rpx" />
@@ -60,6 +60,7 @@ const rangeFields = [
   { key: 'dailyOrders', label: '日均单量', unit: '单', ranges: ORDER_RANGES }
 ].map(f => ({ ...f, options: [{ value: '', label: '暂不填写' }, ...f.ranges.map(value => ({ value, label: rangeLabel(value, f.unit) }))] }))
 const invoiceOptions = [{ value: null, label: '请选择（选填）' }, { value: true, label: '是' }, { value: false, label: '否' }]
+const selectedIndex = (options, value, key = 'value') => Math.max(0, options.findIndex(option => option[key] === value))
 const selectedWeight = range => props.form.requirements.productWeights.some(x => x.range === range)
 const weightPercentage = range => props.form.requirements.productWeights.find(x => x.range === range)?.percentage ?? ''
 function changeWeights(e) {
