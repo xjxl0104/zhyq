@@ -2,7 +2,7 @@
   <view class="page-wrap team-add-page">
     <view class="card">
       <view class="title">新增团队成员</view>
-      <view class="note">新成员会挂在您名下。{{ isP4 ? '您可以指定他的称号。' : '称号比您低一级。' }}</view>
+      <view class="note">新成员会挂在您名下。{{ isP4 ? '您可以指定 P1–P3 称号，P4 由后台授予。' : '称号比您低一级。' }}</view>
 
       <view class="field-label">姓名</view>
       <input class="input" v-model="name" maxlength="20" :disabled="busy" placeholder="成员姓名" aria-label="成员姓名" />
@@ -54,6 +54,7 @@ async function submit() {
   const mobile = phone.value.trim()
   if (!memberName) { error.value = '请填写成员姓名'; return }
   if (mobile && !/^1\d{10}$/.test(mobile)) { error.value = '请输入 11 位手机号，或留空'; return }
+  if (isP4.value && !POSITIONS[positionIndex.value]) { error.value = '请选择 P1–P3 称号'; return }
   busy.value = true
   try {
     await meApi.addTeamMember({ name: memberName, phone: mobile, positionCode: isP4.value ? POSITIONS[positionIndex.value][0] : undefined })

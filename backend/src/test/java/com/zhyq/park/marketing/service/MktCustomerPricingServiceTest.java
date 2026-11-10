@@ -99,6 +99,33 @@ class MktCustomerPricingServiceTest {
         assertThatThrownBy(() -> service.setTeamPosition(4L,4L,"P1")).hasMessageContaining("其他");
         assertThatThrownBy(() -> service.setTeamPosition(1L,2L,"P4")).hasMessageContaining("P4");
     }
+    @Test void mobileManagerMayAssignOnlyLowerTitlesWithinOwnTeam() {
+        for (String code : List.of("P1", "P2", "P3")) {
+            service.setMobileTeamPosition(4L, 1L, code);
+            verify(positionService).changeManually(eq(1L), eq(code), anyString());
+        }
+        assertThatThrownBy(() -> service.setMobileTeamPosition(4L, 8L, "P1")).hasMessageContaining("邀请体系");
+        assertThatThrownBy(() -> service.setMobileTeamPosition(4L, 4L, "P1")).hasMessageContaining("其他");
+    }
+    @Test void mobileCannotGrantP4OrChangeAnExistingP4Title() {
+        assertThatThrownBy(() -> service.setMobileTeamPosition(4L, 1L, "P4"))
+                .isInstanceOf(BizException.class).hasMessageContaining("只能在后台");
+        team.get(3L).setPositionCode("P4");
+        for (String code : List.of("P1", "P2", "P3", "P4")) {
+            assertThatThrownBy(() -> service.setMobileTeamPosition(4L, 3L, code))
+                    .isInstanceOf(BizException.class).hasMessageContaining("只能在后台");
+        }
+        verifyNoInteractions(positionService);
+    }
+    @Test void mobileTitleChangesKeepManagerAuthorizationAndRejectForgedCodes() {
+        assertThatThrownBy(() -> service.setMobileTeamPosition(1L, 2L, "P3")).hasMessageContaining("P4");
+        for (String code : java.util.Arrays.asList(null, "P5", "p4", " P4 ")) {
+            assertThatThrownBy(() -> service.setMobileTeamPosition(4L, 1L, code)).hasMessageContaining("P1、P2 或 P3");
+        }
+        team.get(4L).setStatus(2);
+        assertThatThrownBy(() -> service.setMobileTeamPosition(4L, 1L, "P1")).hasMessageContaining("正常状态");
+        verifyNoInteractions(positionService);
+    }
 
     @Test void noConfigurationNeverFallsBackToGradeOrPositionPercentage() {
         assertThatThrownBy(() -> service.forAccrual(10L)).isInstanceOf(BizException.class).hasMessageContaining("配置后重试");

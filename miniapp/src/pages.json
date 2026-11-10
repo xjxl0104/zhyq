@@ -10,6 +10,7 @@
     { "path": "pages/customers/index", "style": { "navigationBarTitleText": "我的客户" } },
     { "path": "pages/customer-detail/index", "style": { "navigationBarTitleText": "客户详情" } },
     { "path": "pages/position/index", "style": { "navigationBarTitleText": "我的称号" } },
+    { "path": "pages/shipments/index", "style": { "navigationBarTitleText": "发货量", "enablePullDownRefresh": true } },
     { "path": "pages/team/index", "style": { "navigationBarTitleText": "我的团队" } },
     { "path": "pages/team-add/index", "style": { "navigationBarTitleText": "新增团队成员" } },
     { "path": "pages/allocation/index", "style": { "navigationBarTitleText": "客户定价与分佣" } },

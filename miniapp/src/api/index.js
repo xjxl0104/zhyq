@@ -1,4 +1,7 @@
 import { get, post, put, request } from '@/utils/request'
+export const shipmentApi = {
+  report: params => get('/shipments', params)
+}
 
 export const authApi = {
   quickLogin: data => post('/auth/quick-login', data),
