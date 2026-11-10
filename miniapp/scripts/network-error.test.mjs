@@ -35,7 +35,7 @@ async function adapter(platform) {
   const transformed = source
     .replace("'./network-error.mjs'", JSON.stringify(new URL('../src/utils/network-error.mjs', import.meta.url).href))
     .replaceAll('import.meta.env', '{}')
-    .replace(/\/\/ #ifdef (H5|MP-WEIXIN)\n([\s\S]*?)\/\/ #endif/g, (_, name, body) => name === platform ? body : '')
+    .replace(/\/\/ #ifdef (H5|MP-WEIXIN)\r?\n([\s\S]*?)\/\/ #endif/g, (_, name, body) => name === platform ? body : '')
   return import(`data:text/javascript;base64,${Buffer.from(transformed).toString('base64')}`)
 }
 const mp = await adapter('MP-WEIXIN')
@@ -81,7 +81,8 @@ test('server business rejection remains a business error, including public login
     globalThis.uni = runtime({ request: options => options.success({ statusCode, data: { code: statusCode, message: '账号或密码错误' } }) })
     await assert.rejects(mp.post('/auth/password-login', {}), error => {
       assert.equal(error.message, '账号或密码错误')
-      assert.equal(error.code, undefined)
+      assert.equal(error.code, statusCode)
+      assert.equal(error.name, 'Error')
       assert.equal(error.cause, undefined)
       return true
     })
