@@ -38,8 +38,7 @@
       <view class="card">
         <button v-if="me.superAdmin" class="menu-row" @click="go('/pages/admin-accounts/index')">账号管理 <text>超级管理员 ›</text></button>
         <button class="menu-row" @click="go('/pages/account-security/index?role=mp')">账号与密码 <text>设置密码登录 ›</text></button>
-        <button class="menu-row" @click="go('/pages/shipments/index')">我的发货量 <text>按客户合同查看 ›</text></button>
-        <button v-if="['P2', 'P3', 'P4'].includes(me.positionCode) && Number(me.status) === 1" class="menu-row" @click="go('/pages/shipments/index?scope=team')">团队发货量 <text>按下级查看 ›</text></button>
+        <button class="menu-row" @click="go(shipmentEntry.url)">{{ shipmentEntry.title }} <text>{{ shipmentEntry.description }} ›</text></button>
         <button class="menu-row" @click="go('/pages/team/index')">我的团队 <text>›</text></button>
         <button class="menu-row" @click="go('/pages/position/index')">我的称号 <text>›</text></button>
         <button v-if="me.positionCode === 'P4' && Number(me.status) === 1" class="menu-row" @click="go('/pages/allocation/index')">客户定价与分佣 <text>自定义金额 ›</text></button>
@@ -61,9 +60,11 @@ import { ref, reactive, computed } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import { authApi, meApi } from '@/api'
 import { token } from '@/utils/request'
+import { shipmentNavigation } from '@/utils/shipments.mjs'
 const POS = { P1:'园区伙伴', P2:'银牌合伙人', P3:'金牌合伙人', P4:'钻石合伙人' }
 const TYPES = ['微信', '银行卡', '支付宝']
 const me = ref(null), account = ref({}), loading = ref(false), busy = ref(false), error = ref(''), formError = ref(''), invite = ref(''), showAccount = ref(false)
+const shipmentEntry = computed(() => shipmentNavigation(me.value))
 const acc = reactive({ realName:'', idNo:'', accountType:2, accountNo:'', bankName:'' })
 const accountLabel = computed(() => !account.value.submitted ? '未提交' : ({0:'待人工审核',1:'审核通过',2:'已退回'}[account.value.reviewStatus] || '待审核'))
 async function load() {

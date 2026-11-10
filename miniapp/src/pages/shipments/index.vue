@@ -2,8 +2,8 @@
   <view class="page-wrap shipments-page">
     <view class="card filter-card">
       <view class="scope-tabs">
-        <button :class="['scope-tab', { selected: scope === 'own' }]" @click="switchScope('own')">我的发货量</button>
-        <button v-if="canViewTeam || scope === 'team'" :class="['scope-tab', { selected: scope === 'team' }]" @click="switchScope('team')">团队发货量</button>
+        <button :class="['scope-tab', { selected: scope === 'own' }]" @click="switchScope('own')">本人客户</button>
+        <button v-if="canViewTeam || scope === 'team'" :class="['scope-tab', { selected: scope === 'team' }]" @click="switchScope('team')">下级成员</button>
       </view>
       <view class="presets"><button v-for="item in presets" :key="item.key" :class="['preset', { active: preset === item.key }]" @click="choosePreset(item.key)">{{ item.label }}</button></view>
       <view class="date-row">
@@ -64,7 +64,7 @@ const presets = [{ key: 'month', label: '本月' }, { key: 'lastMonth', label: '
 const teamOverview = computed(() => scope.value === 'team' && !memberId.value)
 const rows = computed(() => report.value ? (teamOverview.value ? report.value.members : report.value.contracts) || [] : [])
 const visibleRows = computed(() => rows.value.slice(0, shown.value))
-const summaryTitle = computed(() => memberId.value ? `${report.value?.memberName || '团队成员'}的发货量` : scope.value === 'team' ? '团队发货量汇总' : '我的发货量汇总')
+const summaryTitle = computed(() => memberId.value ? `${report.value?.memberName || '团队成员'}的发货量` : scope.value === 'team' ? '团队发货量汇总' : '本人客户发货量汇总')
 const formatTime = value => String(value).replace('T', ' ').slice(0, 16)
 let sequence = 0, visible = false
 onLoad(query => { scope.value = query.scope === 'team' ? 'team' : 'own' })

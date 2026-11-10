@@ -1,5 +1,13 @@
 const DAY = 86400000
 export const PAGE_SIZE = 20
+export function shipmentNavigation(profile) {
+  const team = ['P2', 'P3', 'P4'].includes(profile?.positionCode) && Number(profile?.status) === 1
+  return {
+    title: team ? '团队发货量' : '客户发货量',
+    description: team ? '汇总 / 下级成员明细' : '汇总 / 客户合同明细',
+    url: `/pages/shipments/index?scope=${team ? 'team' : 'own'}`
+  }
+}
 export function chinaToday(now = new Date()) {
   return new Date(now.getTime() + 8 * 3600000).toISOString().slice(0, 10)
 }
