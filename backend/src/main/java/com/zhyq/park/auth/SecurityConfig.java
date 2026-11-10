@@ -78,7 +78,7 @@ public class SecurityConfig {
                         "/favicon.ico", "/error"
                 ).permitAll()
                 // 应用日报日汇总:控制器校验配置里的固定 Bearer 令牌,不走 JWT。
-                .requestMatchers(HttpMethod.GET, "/ops/daily-usage").permitAll()
+                .requestMatchers(HttpMethod.GET, "/ops/daily-usage", "/ops/perf-period").permitAll()
                 // 接口文档只在显式开启时匿名可读；关闭后静态文档页也不再对外。
                 .requestMatchers("/doc.html", "/webjars/**", "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html")
                         .access((authentication, context) -> new AuthorizationDecision(apiDocsEnabled))
