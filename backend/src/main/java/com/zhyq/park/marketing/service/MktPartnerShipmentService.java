@@ -26,6 +26,7 @@ public class MktPartnerShipmentService {
      * One query keeps totals/details consistent. Renewals replace the current date range, so daily
      * snapshots also match complete historical terms. Explicit orders retain their recorded contract.
      * Termination includes its business date; older records without audit use the contract update date.
+     * Historical JSON dates need the explicit CHAR cast before DATE on MySQL.
      */
     static final String FACT_SQL = """
         WITH historical_terms AS (
@@ -52,8 +53,8 @@ public class MktPartnerShipmentService {
                    WHERE h.contract_id=c.id AND h.tenant_id=c.tenant_id
                      AND h.end_date REGEXP '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
                      AND (h.start_date IS NULL OR (h.start_date REGEXP '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
-                          AND CAST(h.start_date AS DATE)<=v.stat_date))
-                     AND CAST(h.end_date AS DATE)>=v.stat_date
+                          AND CAST(CAST(h.start_date AS CHAR) AS DATE)<=v.stat_date))
+                     AND CAST(CAST(h.end_date AS CHAR) AS DATE)>=v.stat_date
                  ))
             AND (c.status<>8 OR v.stat_date<=DATE(COALESCE((
               SELECT MIN(a.create_time) FROM sys_audit a
