@@ -21,9 +21,10 @@ public class MpPricingController {
     @GetMapping("/positions")
     public Result<List<Map<String,String>>> positions() {
         return Result.ok(positionMapper.selectList(new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<com.zhyq.park.marketing.entity.MktPosition>()
-                .in(com.zhyq.park.marketing.entity.MktPosition::getCode, List.of("P1","P2","P3","P4"))
+                .in(com.zhyq.park.marketing.entity.MktPosition::getCode, List.of("P1","P2","P3"))
                 .orderByAsc(com.zhyq.park.marketing.entity.MktPosition::getSort))
-                .stream().map(p -> Map.of("code",p.getCode(),"name",p.getName())).toList());
+                .stream().filter(p -> List.of("P1", "P2", "P3").contains(p.getCode()))
+                .map(p -> Map.of("code",p.getCode(),"name",p.getName())).toList());
     }
 
     @GetMapping("/customers")
@@ -44,7 +45,7 @@ public class MpPricingController {
     }
     @PutMapping("/team/{promoterId}/position")
     public Result<Void> setTeamPosition(@PathVariable Long promoterId, @RequestBody Map<String,String> input) {
-        pricingService.setTeamPosition(MpAuthService.currentPromoterId(), promoterId, input.get("code"));
+        pricingService.setMobileTeamPosition(MpAuthService.currentPromoterId(), promoterId, input.get("code"));
         return Result.ok();
     }
     @GetMapping("/customer/{customerId}")

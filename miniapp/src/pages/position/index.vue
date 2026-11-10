@@ -17,7 +17,7 @@
     </view>
     <view class="card">
       <view style="font-weight:600;margin-bottom:12rpx">称号说明</view>
-      <view class="muted">称号由所属 P4 设置，不按成交额或单数自动晋升。P4 可管理邀请体系成员称号，并配置负责客户的每单金额。</view>
+      <view class="muted">P1–P3 称号由所属 P4 设置，不按成交额或单数自动晋升。P4 称号只能由后台授予或调整；P4 可配置负责客户的每单金额。</view>
       <button v-if="p.code === 'P4'" class="btn secondary" @click="navigateTo('/pages/team/index')">管理团队称号</button>
     </view>
     </template>

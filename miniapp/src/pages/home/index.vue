@@ -33,6 +33,8 @@
 
     <view class="section-head"><text class="section-title">快捷入口</text><text class="section-link">运营服务</text></view>
     <view class="grid quick-grid">
+      <view class="quick-card pressable" @click="go('/pages/shipments/index')"><view class="quick-icon">单</view><view><view class="quick-title">我的发货量</view><view class="quick-desc">汇总 / 客户合同明细</view></view></view>
+      <view v-if="['P2', 'P3', 'P4'].includes(me.positionCode) && Number(me.status) === 1" class="quick-card pressable" @click="go('/pages/shipments/index?scope=team')"><view class="quick-icon">量</view><view><view class="quick-title">团队发货量</view><view class="quick-desc">汇总 / 下级成员明细</view></view></view>
       <view class="quick-card pressable" @click="go('/pages/referral/index')">
         <view class="quick-icon">荐</view><view><view class="quick-title">推荐客户</view><view class="quick-desc">园区入驻 / 云仓服务</view></view>
       </view>

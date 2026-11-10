@@ -104,6 +104,14 @@ public class MktCustomerPricingService {
 
     @Transactional
     public void setTeamPosition(Long actorId, Long promoterId, String code) {
+        setTeamPositionInternal(actorId, promoterId, code, false);
+    }
+    /** 手机端仅管理 P1–P3；P4 的授予和调整保留给后台。 */
+    @Transactional
+    public void setMobileTeamPosition(Long actorId, Long promoterId, String code) {
+        setTeamPositionInternal(actorId, promoterId, code, true);
+    }
+    private void setTeamPositionInternal(Long actorId, Long promoterId, String code, boolean mobile) {
         if (actorId == null || promoterId == null || actorId.equals(promoterId)) {
             throw new BizException(403, "只能设置本人邀请体系内其他正常伙伴的角色");
         }
@@ -114,6 +122,12 @@ public class MktCustomerPricingService {
         MktPromoter member = locked.get(promoterId);
         if (actorId.equals(promoterId) || member == null || !Integer.valueOf(1).equals(member.getStatus()) || !inTeam(member, actorId)) {
             throw new BizException(403, "只能设置本人邀请体系内其他正常伙伴的角色");
+        }
+        if (mobile && ("P4".equals(code) || "P4".equals(member.getPositionCode()))) {
+            throw new BizException(403, "P4 称号只能在后台设置或调整");
+        }
+        if (mobile && (code == null || !Set.of("P1", "P2", "P3").contains(code))) {
+            throw new BizException("手机端称号须为 P1、P2 或 P3");
         }
         if (code == null || !Set.of("P1", "P2", "P3", "P4").contains(code)) throw new BizException("角色须为 P1、P2、P3 或 P4");
         positionService.changeManually(promoterId, code, "P4 " + actorId + " 设置邀请体系成员角色");
