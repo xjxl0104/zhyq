@@ -5,17 +5,19 @@
     <view v-if="loaded" class="card">
       <view class="row team-heading"><text class="title">{{ canManage ? '邀请体系成员' : '直属成员' }} {{ list.length }} 人</text>
         <button v-if="canManage" class="text-button" @click="navigateTo('/pages/allocation/index')">客户定价 ›</button></view>
-      <view v-if="canManage" class="team-note">显示邀请体系内的正常成员。您可以设置 P1–P4 称号，金额仍按客户单独配置。P4 拥有定价权。</view>
+      <view v-if="canManage" class="team-note">显示邀请体系内的正常成员。您可以设置 P1–P3 称号，金额仍按客户单独配置。P4 称号由后台管理。</view>
       <view v-if="!list.length" class="team-note">还没有可显示的成员。朋友通过您的邀请码注册后会加入团队。</view>
       <view class="row member-row" v-for="member in list" :key="member.id">
         <view class="member-info"><view class="member-name">{{ member.name || '未命名伙伴' }}<text class="tag" :class="member.loginable === false ? 'warn' : 'ok'"> {{ member.loginable === false ? '不可登录' : '可登录' }}</text></view><view class="team-note">{{ member.positionCode }} · {{ member.positionName || positionName(member.positionCode) }}<text v-if="member.joinTime"> · {{ member.joinTime.slice(0, 10) }}</text></view><view v-if="member.loginable === false && String(member.id) !== String(me.id)" class="team-note"><text class="position-action" @click="setPhone(member)">补录手机号后才能登录 ›</text></view></view>
-        <picker v-if="canManage && String(member.id) !== String(me.id)" :range="positionOptions" :value="positionIndex(member.positionCode)" :disabled="loading || !!savingMemberId || !positions.length" @change="event => changePosition(member, event)">
+        <picker v-if="canManage && member.positionCode !== 'P4' && String(member.id) !== String(me.id)" :range="positionOptions" :value="positionIndex(member.positionCode)" :disabled="loading || !!savingMemberId || !positions.length" @change="event => changePosition(member, event)">
           <view class="position-action" :class="{ 'is-disabled': loading || !!savingMemberId }">{{ String(savingMemberId) === String(member.id) ? '保存中…' : '设置称号 ›' }}</view>
         </picker>
+        <text v-else-if="member.positionCode === 'P4'" class="team-note">P4 · 后台管理</text>
         <text v-else class="tag" :class="member.status === 1 ? 'ok' : 'warn'">{{ member.status === 1 ? '正常' : '冻结' }}</text>
       </view>
       <view v-if="savedMessage" class="success-text" role="status">{{ savedMessage }}</view>
     </view>
+    <button v-if="['P2', 'P3', 'P4'].includes(me.positionCode) && Number(me.status) === 1" class="btn secondary" @click="navigateTo('/pages/shipments/index?scope=team')">查看团队发货量</button>
     <button class="btn" @click="navigateTo('/pages/team-add/index')">新增团队成员</button>
     <button class="btn secondary" @click="switchTab('/pages/me/index')">查看我的邀请码</button>
   </view>
@@ -33,9 +35,9 @@ import { onShow } from '@dcloudio/uni-app'
 import { meApi, pricingApi } from '@/api'
 import { navigateTo, switchTab } from '@/utils/nav.mjs'
 const POS = { P1: '园区伙伴', P2: '银牌合伙人', P3: '金牌合伙人', P4: '钻石合伙人' }
-const CODES = ['P1', 'P2', 'P3', 'P4']
+const CODES = ['P1', 'P2', 'P3']
 const positions = ref([])
-const positionOptions = computed(() => positions.value.map(({ code, name }) => `${code} · ${name}${code === 'P4' ? '（拥有定价权）' : ''}`))
+const positionOptions = computed(() => positions.value.map(({ code, name }) => `${code} · ${name}`))
 const list = ref([]), me = ref({}), loading = ref(false), loaded = ref(false)
 const savingMemberId = ref(''), error = ref(''), savedMessage = ref('')
 const canManage = computed(() => me.value.positionCode === 'P4' && Number(me.value.status) === 1)
@@ -86,10 +88,10 @@ async function setPhone(member) {
   }
 }
 async function changePosition(member, event) {
-  if (!canManage.value || loading.value || savingMemberId.value || String(member.id) === String(me.value.id)) return
+  if (!canManage.value || member.positionCode === 'P4' || loading.value || savingMemberId.value || String(member.id) === String(me.value.id)) return
   const code = positions.value[Number(event.detail.value)]?.code
-  if (!code || code === member.positionCode) return
-  const authorityNotice = code === 'P4' ? '设为 P4 后，对方将拥有其客户的定价权，其负责客户的原定价需由对方重新设置。' : member.positionCode === 'P4' ? '调整后，对方将失去 P4 定价权，其原负责客户需由新的负责 P4 重新设置定价。' : '称号调整不会自动套用任何固定佣金金额。'
+  if (!CODES.includes(code) || code === member.positionCode) return
+  const authorityNotice = '称号调整不会自动套用任何固定佣金金额。'
   const confirmed = await new Promise(resolve => uni.showModal({
     title: '确认设置成员称号', content: `将 ${member.name || '该成员'} 设置为 ${code} · ${positionName(code)}？${authorityNotice}`,
     confirmText: '确认设置', cancelText: '取消', success: result => resolve(result.confirm), fail: () => resolve(false)
