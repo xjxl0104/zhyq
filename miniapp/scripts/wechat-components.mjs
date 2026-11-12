@@ -49,7 +49,7 @@ export function verifyWechatComponents(sourceRoot, buildRoot) {
       const componentPath = registered.startsWith('/') ? join(buildRoot, registered.slice(1)) : resolve(dirname(outputPath), registered)
       const componentWxml = readFileSync(componentPath + '.wxml', 'utf8')
       if (name === 'ReferralForm') {
-        for (const label of ['客户公司 / 店铺名称', '联系手机', '销售平台', '产品重量', '指定快递承运商']) {
+        for (const label of ['公司 / 品牌名称', '对接人职位', '联系手机', '销售平台', '产品重量', '指定快递承运商', '平均包裹产品数量', '现有仓配现状']) {
           if (!componentWxml.includes(label)) throw new Error(`ReferralForm 构建缺少表单内容：${label}`)
         }
         if (!/<slot\b/.test(componentWxml) || !/<button\b[^>]*bindtap=/.test(componentWxml)) {

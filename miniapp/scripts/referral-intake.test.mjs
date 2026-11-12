@@ -48,6 +48,25 @@ test('rental requests drop stale warehouse; false invoice is displayed', () => {
   assert.equal(body.warehouseId, null)
   assert.ok(requirementRows(body.requirements).some(row => row.label === '是否开发票' && row.value === '否'))
 })
+test('contact position, items per parcel and current logistics status', () => {
+  const f = form()
+  Object.assign(f.requirements, { contactPosition: ' 运营总监 ', itemsPerParcel: '1.5', warehouseMode: '外包云仓',
+    currentCouriers: ['京东', '其他'], currentCourierOther: '', painPoints: ['大促爆仓', '其他'], painPointOther: '退货慢' })
+  assert.throws(() => referralPayload(f), /其他快递/)
+  f.requirements.currentCourierOther = ' 德邦 '
+  const r = referralPayload(f).requirements
+  assert.equal(r.contactPosition, '运营总监'); assert.equal(r.itemsPerParcel, 1.5); assert.equal(r.currentCourierOther, '德邦')
+  const rows = Object.fromEntries(requirementRows(r).map(x => [x.label, x.value]))
+  assert.equal(rows['对接人职位'], '运营总监'); assert.equal(rows['平均包裹产品数量'], '1.5 件')
+  assert.equal(rows['目前合作快递'], '京东、其他：德邦'); assert.equal(rows['最头疼的问题'], '大促爆仓、其他：退货慢')
+  for (const bad of ['0', '-1', 'abc', '1.234']) { f.requirements.itemsPerParcel = bad; assert.throws(() => referralPayload(f), /平均包裹/) }
+  f.requirements.itemsPerParcel = ''; f.requirements.warehouseMode = '乱填'
+  assert.throws(() => referralPayload(f), /仓配方式/)
+})
+test('couriers list puts 圆通/中通 first and includes 京东/邮政', async () => {
+  const { COURIERS } = await import('../src/utils/referral-intake.mjs')
+  assert.deepEqual(COURIERS.slice(0, 2), ['圆通', '中通']); assert.ok(COURIERS.includes('京东') && COURIERS.includes('邮政'))
+})
 test('direct links and WeChat scenes preserve partner token when shared', () => {
   for (const query of [{ token: TOKEN }, { scene: TOKEN }]) {
     assert.equal(parseReferralToken(query), TOKEN)
@@ -73,7 +92,7 @@ test('public request omits existing sessions and never redirects on invalid refe
   assert.equal(calls[1].header.Authorization, 'Bearer stale-partner-token')
   calls[1].success({ statusCode: 200, data: { code: 0, data: {} } }); await privateRequest
 })
-test('submit requires consent and retry keeps identical request after a lost response', async () => {
+test('submit records consent and retry keeps identical request after a lost response', async () => {
   const source = readFileSync(new URL('../src/pages/customer-intake/index.vue', import.meta.url), 'utf8').split('<script setup>')[1].split('</script>')[0].replace(/^import .*$/gm, '')
   const sent = []; let failures = 1
   const ctx = vm.createContext({ ref: value => ({ value }), reactive: value => value, newReferralForm, newSubmissionId, parseReferralToken, referralShare,
@@ -81,9 +100,8 @@ test('submit requires consent and retry keeps identical request after a lost res
     uni: { showToast() {}, pageScrollTo() {} } })
   vm.runInContext(source, ctx)
   vm.runInContext(`ready.value=true; referralToken.value='${TOKEN}'`, ctx)
-  await vm.runInContext("submit({name:'原始客户'})", ctx); assert.equal(sent.length, 0)
-  vm.runInContext('agreed.value=true', ctx)
   await vm.runInContext("submit({name:'原始客户'})", ctx)
+  assert.equal(sent[0].agreed, true)
   await vm.runInContext("submit({name:'被修改的客户'})", ctx)
   assert.equal(sent.length, 2); assert.deepEqual(sent[0], sent[1]); assert.equal(sent[1].name, '原始客户')
   assert.match(sent[0].submissionId, /^[a-f0-9-]{36}$/)

@@ -1,5 +1,7 @@
 export const SALES_PLATFORMS = ['天猫', '京东', '拼多多', '有赞', '抖音', '视频号', '其他']
-export const COURIERS = ['顺丰', '中通', '圆通', '申通', '韵达', '极兔', '其他']
+export const COURIERS = ['圆通', '中通', '顺丰', '申通', '韵达', '极兔', '京东', '邮政', '其他']
+export const WAREHOUSE_MODES = ['自建仓', '外包云仓', '两者都有']
+export const PAIN_POINTS = ['时效慢', '错发漏发多', '大促爆仓', '成本太高', '系统对接难', '其他']
 export const WEIGHT_RANGES = ['0-0.3', '0.3-0.5', '0.5-1', '1-2', '2-3', '>=3']
 export const AREA_RANGES = ['0-50', '50-200', '200-1000', '1000-3000', '3000-5000', '>=5000']
 export const COUNT_RANGES = ['0-10', '10-20', '20-50', '50-100', '100-500', '>=500']
@@ -13,7 +15,9 @@ export function rangeLabel(value, unit = '') {
 }
 export function newReferralForm() {
   return { name: '', brandName: '', contact: '', phone: '', serviceType: 2, warehouseId: null, demand: '', remark: '',
-    requirements: { salesPlatforms: [], salesPlatformOther: '', productWeights: [], storageArea: '', productCount: '', skuCount: '', dailyOrders: '', packaging: '', couriers: [], courierOther: '', invoiceRequired: null } }
+    requirements: { contactPosition: '', salesPlatforms: [], salesPlatformOther: '', productWeights: [], storageArea: '', productCount: '', skuCount: '', dailyOrders: '', itemsPerParcel: '',
+      packaging: '', couriers: [], courierOther: '', invoiceRequired: null,
+      warehouseMode: '', currentCouriers: [], currentCourierOther: '', painPoints: [], painPointOther: '' } }
 }
 const text = value => String(value ?? '').trim()
 export function referralPayload(form) {
@@ -38,10 +42,23 @@ export function referralPayload(form) {
     if (r[key] && !ranges.includes(r[key])) throw new Error('请选择有效的需求范围')
   }
   if (![null, undefined, true, false].includes(r.invoiceRequired)) throw new Error('请选择是否开发票')
+  const contactPosition = text(r.contactPosition)
+  if (contactPosition.length > 50) throw new Error('对接人职位最多 50 字')
+  const itemsText = text(r.itemsPerParcel), itemsPerParcel = itemsText === '' ? null : Number(itemsText)
+  if (itemsPerParcel !== null && (!Number.isFinite(itemsPerParcel) || itemsPerParcel <= 0 || itemsPerParcel > 9999 || !/^\d+(\.\d{1,2})?$/.test(itemsText))) throw new Error('平均包裹产品数量请填写大于 0 的数字，最多两位小数')
+  const warehouseMode = text(r.warehouseMode)
+  if (warehouseMode && !WAREHOUSE_MODES.includes(warehouseMode)) throw new Error('请选择有效的仓配方式')
+  const currentCouriers = [...new Set(r.currentCouriers || [])], painPoints = [...new Set(r.painPoints || [])]
+  if (currentCouriers.some(x => !COURIERS.includes(x)) || painPoints.some(x => !PAIN_POINTS.includes(x))) throw new Error('请选择有效的仓配现状选项')
+  const currentCourierOther = currentCouriers.includes('其他') ? text(r.currentCourierOther) : ''
+  const painPointOther = painPoints.includes('其他') ? text(r.painPointOther) : ''
+  if (currentCouriers.includes('其他') && !currentCourierOther) throw new Error('请填写目前合作的其他快递')
+  if (painPoints.includes('其他') && !painPointOther) throw new Error('请填写其他头疼的问题')
   return { name, brandName: text(form.brandName), contact: text(form.contact), phone: phone || null,
     serviceType: form.serviceType, warehouseId: form.serviceType === 4 ? null : form.warehouseId,
-    demand: text(form.demand), remark: text(form.remark), requirements: { ...r, salesPlatforms, salesPlatformOther,
-      productWeights, couriers, courierOther, packaging: text(r.packaging), invoiceRequired: r.invoiceRequired ?? null } }
+    demand: text(form.demand), remark: text(form.remark), requirements: { ...r, contactPosition, salesPlatforms, salesPlatformOther,
+      productWeights, itemsPerParcel, couriers, courierOther, packaging: text(r.packaging), invoiceRequired: r.invoiceRequired ?? null,
+      warehouseMode, currentCouriers, currentCourierOther, painPoints, painPointOther } }
 }
 export function parseReferralToken(query = {}) {
   let value = query.token || query.scene || ''
@@ -61,13 +78,17 @@ export function newSubmissionId() {
 export function requirementRows(r = {}) {
   const multi = (items, other) => (items || []).map(x => x === '其他' && other ? `其他：${other}` : x).join('、')
   return [
+    ['对接人职位', r.contactPosition],
     ['销售平台', multi(r.salesPlatforms, r.salesPlatformOther)],
     ['产品重量', (r.productWeights || []).map(x => `${rangeLabel(x.range, 'kg')}${x.percentage == null ? '' : `（${x.percentage}%）`}`).join('；')],
     ['仓储面积', r.storageArea && rangeLabel(r.storageArea, '㎡')],
     ['销售产品种类数', r.productCount && rangeLabel(r.productCount, '种')],
     ['SKU 数量', r.skuCount && rangeLabel(r.skuCount, '个')],
     ['日均单量', r.dailyOrders && rangeLabel(r.dailyOrders, '单')],
+    ['平均包裹产品数量', r.itemsPerParcel == null || r.itemsPerParcel === '' ? '' : `${r.itemsPerParcel} 件`],
     ['打包方式', r.packaging], ['指定快递承运商', multi(r.couriers, r.courierOther)],
-    ['是否开发票', r.invoiceRequired === true ? '是' : r.invoiceRequired === false ? '否' : '']
+    ['是否开发票', r.invoiceRequired === true ? '是' : r.invoiceRequired === false ? '否' : ''],
+    ['目前仓配方式', r.warehouseMode], ['目前合作快递', multi(r.currentCouriers, r.currentCourierOther)],
+    ['最头疼的问题', multi(r.painPoints, r.painPointOther)]
   ].filter(([, value]) => value).map(([label, value]) => ({ label, value }))
 }
