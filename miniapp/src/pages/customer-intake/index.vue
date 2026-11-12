@@ -19,10 +19,8 @@
           <view class="muted">{{ submitting ? '正在提交，请稍候…' : '尚未确认提交结果。请再次确认，系统将核对同一次提交，避免重复推荐。' }}</view>
           <button class="btn" :loading="submitting" :disabled="submitting" @click="submit(pendingBody)">确认提交结果</button>
         </view>
-        <ReferralForm v-else :form="form" :warehouses="info.warehouses || []" :loading="submitting" :disabled="!agreed" submit-label="提交需求" @submit="submit">
-          <checkbox-group @change="e => agreed = e.detail.value.includes('agreed')">
-            <label class="consent"><checkbox value="agreed" :checked="agreed" color="#3857f5" /><text>我同意将以上信息提交给园区及推荐伙伴，用于需求对接和跟进。</text></label>
-          </checkbox-group>
+        <ReferralForm v-else :form="form" :warehouses="info.warehouses || []" :loading="submitting" submit-label="提交需求" @submit="submit">
+          <view class="consent">点击“提交需求”即表示您同意将以上信息提交给园区及推荐伙伴，用于需求对接和跟进。</view>
         </ReferralForm>
       </view>
     </template>
@@ -35,7 +33,7 @@ import { publicReferralApi } from '@/api'
 import { newReferralForm, newSubmissionId, parseReferralToken, referralShare } from '@/utils/referral-intake.mjs'
 import ReferralForm from '@/components/ReferralForm.vue'
 const form = reactive(newReferralForm()), info = ref({}), error = ref(''), referralToken = ref('')
-const initialLoading = ref(false), ready = ref(false), agreed = ref(false), submitting = ref(false), submitted = ref(false)
+const initialLoading = ref(false), ready = ref(false), submitting = ref(false), submitted = ref(false)
 const pendingBody = ref(null)
 // Retained for retries when a response is lost; never create a second customer on retry.
 const submissionId = newSubmissionId()
@@ -51,7 +49,7 @@ async function load() {
   finally { initialLoading.value = false }
 }
 async function submit(body) {
-  if (!ready.value || !agreed.value || submitting.value || submitted.value) return
+  if (!ready.value || submitting.value || submitted.value) return
   submitting.value = true; error.value = ''
   if (!pendingBody.value) pendingBody.value = JSON.parse(JSON.stringify({ ...body, submissionId, agreed: true }))
   try {
@@ -66,5 +64,5 @@ async function submit(body) {
 }
 </script>
 <style scoped>
-.message{margin:20rpx 0;line-height:1.7}.error{color:#a3293e;margin-top:20rpx;line-height:1.7}.consent{display:flex;align-items:flex-start;gap:12rpx;font-size:24rpx;color:var(--park-muted);line-height:1.7;margin:24rpx 0}.consent checkbox{transform:scale(.85);flex-shrink:0}
+.message{margin:20rpx 0;line-height:1.7}.error{color:#a3293e;margin-top:20rpx;line-height:1.7}.consent{font-size:24rpx;color:var(--park-muted);line-height:1.7;margin:24rpx 0}
 </style>

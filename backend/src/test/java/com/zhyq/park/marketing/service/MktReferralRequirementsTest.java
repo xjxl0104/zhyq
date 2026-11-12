@@ -33,6 +33,27 @@ class MktReferralRequirementsTest {
             assertThatThrownBy(() -> MktReferralRequirements.normalize(Map.of("productWeights", rows))).isInstanceOf(com.zhyq.park.common.exception.BizException.class);
         }
     }
+    @Test void keepsContactPositionItemsPerParcelAndCurrentLogisticsStatus() {
+        var input = new HashMap<String, Object>();
+        input.put("contactPosition", " 运营总监 "); input.put("itemsPerParcel", "1.5");
+        input.put("couriers", List.of("京东", "邮政")); input.put("warehouseMode", "外包云仓");
+        input.put("currentCouriers", List.of("圆通", "其他")); input.put("currentCourierOther", " 德邦 ");
+        input.put("painPoints", List.of("大促爆仓", "系统对接难"));
+        var saved = MktReferralRequirements.parse(MktReferralRequirements.normalize(input));
+        assertThat(saved.get("contactPosition")).isEqualTo("运营总监");
+        assertThat(saved.get("itemsPerParcel").toString()).isEqualTo("1.5");
+        assertThat(saved.get("couriers")).isEqualTo(List.of("京东", "邮政"));
+        assertThat(saved.get("warehouseMode")).isEqualTo("外包云仓");
+        assertThat(saved.get("currentCourierOther")).isEqualTo("德邦");
+        assertThat(saved.get("painPoints")).isEqualTo(List.of("大促爆仓", "系统对接难"));
+    }
+    @Test void rejectsInvalidCurrentStatusAndItemsPerParcel() {
+        for (var input : List.<Map<String, Object>>of(Map.of("warehouseMode", "乱填"), Map.of("painPoints", List.of("其他")),
+                Map.of("currentCouriers", List.of("其他")), Map.of("itemsPerParcel", 0), Map.of("itemsPerParcel", "1.234"),
+                Map.of("itemsPerParcel", "abc"), Map.of("contactPosition", "x".repeat(51)))) {
+            assertThatThrownBy(() -> MktReferralRequirements.normalize(input)).isInstanceOf(com.zhyq.park.common.exception.BizException.class);
+        }
+    }
     @Test void rejectsUnknownRangesTypesAndOtherWithoutText() {
         for (var input : List.of(Map.of("salesPlatforms", List.of("其他")), Map.of("couriers", List.of("其他")),
                 Map.of("storageArea", "bogus"), Map.of("invoiceRequired", "false"), Map.of("packaging", "x".repeat(501)))) {

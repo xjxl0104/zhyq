@@ -10,7 +10,9 @@ import java.util.*;
 public final class MktReferralRequirements {
     private static final ObjectMapper JSON = new ObjectMapper();
     private static final Set<String> PLATFORMS = Set.of("天猫", "京东", "拼多多", "有赞", "抖音", "视频号", "其他");
-    private static final Set<String> COURIERS = Set.of("顺丰", "中通", "圆通", "申通", "韵达", "极兔", "其他");
+    private static final Set<String> COURIERS = Set.of("圆通", "中通", "顺丰", "申通", "韵达", "极兔", "京东", "邮政", "其他");
+    private static final Set<String> WAREHOUSE_MODES = Set.of("自建仓", "外包云仓", "两者都有");
+    private static final Set<String> PAIN_POINTS = Set.of("时效慢", "错发漏发多", "大促爆仓", "成本太高", "系统对接难", "其他");
     private static final Set<String> WEIGHTS = Set.of("0-0.3", "0.3-0.5", "0.5-1", "1-2", "2-3", ">=3");
     private static final Set<String> AREA = Set.of("0-50", "50-200", "200-1000", "1000-3000", "3000-5000", ">=5000");
     private static final Set<String> COUNTS = Set.of("0-10", "10-20", "20-50", "50-100", "100-500", ">=500");
@@ -19,10 +21,11 @@ public final class MktReferralRequirements {
 
     public static String normalize(Object input) {
         if (input == null) return null;
-        if (!(input instanceof Map<?, ?> fields) || fields.size() > 20) throw new BizException("仓配需求格式不正确");
+        if (!(input instanceof Map<?, ?> fields) || fields.size() > 30) throw new BizException("仓配需求格式不正确");
         Map<String,Object> out = new LinkedHashMap<>();
         List<String> platforms = choices(fields.get("salesPlatforms"), PLATFORMS, "销售平台");
         List<String> couriers = choices(fields.get("couriers"), COURIERS, "指定快递承运商");
+        out.put("contactPosition", text(fields.get("contactPosition"), 50, "对接人职位"));
         out.put("salesPlatforms", platforms);
         out.put("salesPlatformOther", other(fields.get("salesPlatformOther"), platforms, "其他销售平台"));
         out.put("productWeights", weights(fields.get("productWeights")));
@@ -30,12 +33,23 @@ public final class MktReferralRequirements {
         out.put("productCount", range(fields.get("productCount"), COUNTS, "销售产品种类数"));
         out.put("skuCount", range(fields.get("skuCount"), COUNTS, "SKU 数量"));
         out.put("dailyOrders", range(fields.get("dailyOrders"), ORDERS, "日均单量"));
+        out.put("itemsPerParcel", itemsPerParcel(fields.get("itemsPerParcel")));
         out.put("packaging", text(fields.get("packaging"), 500, "打包方式"));
         out.put("couriers", couriers);
         out.put("courierOther", other(fields.get("courierOther"), couriers, "其他快递承运商"));
         Object invoice = fields.get("invoiceRequired");
         if (invoice != null && !(invoice instanceof Boolean)) throw new BizException("请选择是否开发票");
         out.put("invoiceRequired", invoice);
+        // 现有仓配现状
+        String mode = text(fields.get("warehouseMode"), 20, "目前仓配方式");
+        if (mode != null && !WAREHOUSE_MODES.contains(mode)) throw new BizException("目前仓配方式选项不正确");
+        out.put("warehouseMode", mode);
+        List<String> current = choices(fields.get("currentCouriers"), COURIERS, "目前合作快递");
+        out.put("currentCouriers", current);
+        out.put("currentCourierOther", other(fields.get("currentCourierOther"), current, "目前合作的其他快递"));
+        List<String> pains = choices(fields.get("painPoints"), PAIN_POINTS, "最头疼的问题");
+        out.put("painPoints", pains);
+        out.put("painPointOther", other(fields.get("painPointOther"), pains, "其他头疼的问题"));
         try { return JSON.writeValueAsString(out); }
         catch (Exception e) { throw new BizException("仓配需求格式不正确"); }
     }
@@ -71,6 +85,15 @@ public final class MktReferralRequirements {
     private static String range(Object value, Set<String> valid, String label) {
         String result = text(value, 40, label);
         if (result != null && !valid.contains(result)) throw new BizException(label + "选项不正确");
+        return result;
+    }
+    private static BigDecimal itemsPerParcel(Object value) {
+        if (value == null || (value instanceof String s && s.isBlank())) return null;
+        BigDecimal result;
+        try { result = new BigDecimal(value.toString().trim()); }
+        catch (NumberFormatException e) { throw new BizException("平均包裹产品数量须为数字"); }
+        if (result.signum() <= 0 || result.compareTo(new BigDecimal("9999")) > 0 || result.stripTrailingZeros().scale() > 2)
+            throw new BizException("平均包裹产品数量应大于 0，最多两位小数");
         return result;
     }
     private static List<Map<String,Object>> weights(Object input) {
