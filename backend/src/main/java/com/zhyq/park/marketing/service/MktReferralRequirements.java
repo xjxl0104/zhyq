@@ -10,7 +10,7 @@ import java.util.*;
 public final class MktReferralRequirements {
     private static final ObjectMapper JSON = new ObjectMapper();
     private static final Set<String> PLATFORMS = Set.of("天猫", "京东", "拼多多", "有赞", "抖音", "视频号", "其他");
-    private static final Set<String> COURIERS = Set.of("圆通", "中通", "顺丰", "申通", "韵达", "极兔", "京东", "邮政", "其他");
+    private static final Set<String> COURIERS = Set.of("圆通", "中通", "顺丰", "申通", "韵达", "极兔", "京东", "邮政", "其他", "无");
     private static final Set<String> WAREHOUSE_MODES = Set.of("自建仓", "外包云仓", "两者都有");
     private static final Set<String> PAIN_POINTS = Set.of("时效慢", "错发漏发多", "大促爆仓", "成本太高", "系统对接难", "其他");
     private static final Set<String> WEIGHTS = Set.of("0-0.3", "0.3-0.5", "0.5-1", "1-2", "2-3", ">=3");
@@ -74,6 +74,7 @@ public final class MktReferralRequirements {
         for (Object item : list) {
             if (!(item instanceof String str) || !valid.contains(str) || !result.add(str)) throw new BizException(label + "选项不正确");
         }
+        if (result.contains("无") && result.size() > 1) throw new BizException(label + "选了“无”，就不能再选其他选项");
         return List.copyOf(result);
     }
     private static String other(Object value, List<String> selected, String label) {

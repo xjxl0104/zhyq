@@ -1,5 +1,10 @@
 export const SALES_PLATFORMS = ['天猫', '京东', '拼多多', '有赞', '抖音', '视频号', '其他']
-export const COURIERS = ['圆通', '中通', '顺丰', '申通', '韵达', '极兔', '京东', '邮政', '其他']
+export const COURIERS = ['圆通', '中通', '顺丰', '申通', '韵达', '极兔', '京东', '邮政', '其他', '无']
+// “无”与其他快递互斥：勾选“无”时清空其他项，勾选其他项时取消“无”
+export function exclusiveNone(previous = [], next = []) {
+  if (next.includes('无') && !previous.includes('无')) return ['无']
+  return next.length > 1 ? next.filter(x => x !== '无') : next
+}
 export const WAREHOUSE_MODES = ['自建仓', '外包云仓', '两者都有']
 export const PAIN_POINTS = ['时效慢', '错发漏发多', '大促爆仓', '成本太高', '系统对接难', '其他']
 export const WEIGHT_RANGES = ['0-0.3', '0.3-0.5', '0.5-1', '1-2', '2-3', '>=3']
@@ -28,6 +33,7 @@ export function referralPayload(form) {
   const r = form.requirements || newReferralForm().requirements
   const salesPlatforms = [...new Set(r.salesPlatforms || [])], couriers = [...new Set(r.couriers || [])]
   if (salesPlatforms.some(x => !SALES_PLATFORMS.includes(x)) || couriers.some(x => !COURIERS.includes(x))) throw new Error('请选择有效的平台和快递')
+  if (couriers.includes('无') && couriers.length > 1) throw new Error('指定快递选了“无”，就不能再选其他快递')
   const salesPlatformOther = salesPlatforms.includes('其他') ? text(r.salesPlatformOther) : ''
   const courierOther = couriers.includes('其他') ? text(r.courierOther) : ''
   if (salesPlatforms.includes('其他') && !salesPlatformOther) throw new Error('请填写其他销售平台')
@@ -50,12 +56,14 @@ export function referralPayload(form) {
   if (warehouseMode && !WAREHOUSE_MODES.includes(warehouseMode)) throw new Error('请选择有效的仓配方式')
   const currentCouriers = [...new Set(r.currentCouriers || [])], painPoints = [...new Set(r.painPoints || [])]
   if (currentCouriers.some(x => !COURIERS.includes(x)) || painPoints.some(x => !PAIN_POINTS.includes(x))) throw new Error('请选择有效的仓配现状选项')
+  if (currentCouriers.includes('无') && currentCouriers.length > 1) throw new Error('目前合作快递选了“无”，就不能再选其他快递')
   const currentCourierOther = currentCouriers.includes('其他') ? text(r.currentCourierOther) : ''
   const painPointOther = painPoints.includes('其他') ? text(r.painPointOther) : ''
   if (currentCouriers.includes('其他') && !currentCourierOther) throw new Error('请填写目前合作的其他快递')
   if (painPoints.includes('其他') && !painPointOther) throw new Error('请填写其他头疼的问题')
   return { name, brandName: text(form.brandName), contact: text(form.contact), phone: phone || null,
-    serviceType: form.serviceType, warehouseId: form.serviceType === 4 ? null : form.warehouseId,
+    // 表单已不再选择意向云仓
+    serviceType: form.serviceType, warehouseId: null,
     demand: text(form.demand), remark: text(form.remark), requirements: { ...r, contactPosition, salesPlatforms, salesPlatformOther,
       productWeights, itemsPerParcel, couriers, courierOther, packaging: text(r.packaging), invoiceRequired: r.invoiceRequired ?? null,
       warehouseMode, currentCouriers, currentCourierOther, painPoints, painPointOther } }

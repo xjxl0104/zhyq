@@ -60,4 +60,10 @@ class MktReferralRequirementsTest {
             assertThatThrownBy(() -> MktReferralRequirements.normalize(input)).isInstanceOf(com.zhyq.park.common.exception.BizException.class);
         }
     }
+    @Test void noneCourierIsExclusive() {
+        var saved = MktReferralRequirements.parse(MktReferralRequirements.normalize(Map.of("couriers", List.of("无"), "currentCouriers", List.of("无"))));
+        assertThat(saved.get("couriers")).isEqualTo(List.of("无"));
+        for (var key : List.of("couriers", "currentCouriers"))
+            assertThatThrownBy(() -> MktReferralRequirements.normalize(Map.of(key, List.of("无", "圆通")))).hasMessageContaining("无");
+    }
 }
