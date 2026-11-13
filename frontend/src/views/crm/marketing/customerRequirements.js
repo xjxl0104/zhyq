@@ -1,5 +1,10 @@
 export const platformOptions = ['天猫', '京东', '拼多多', '有赞', '抖音', '视频号', '其他']
-export const courierOptions = ['圆通', '中通', '顺丰', '申通', '韵达', '极兔', '京东', '邮政', '其他']
+export const courierOptions = ['圆通', '中通', '顺丰', '申通', '韵达', '极兔', '京东', '邮政', '其他', '无']
+// “无”与其他快递互斥
+export function exclusiveNone(previous = [], next = []) {
+  if (next.includes('无') && !previous.includes('无')) return ['无']
+  return next.length > 1 ? next.filter(x => x !== '无') : next
+}
 export const warehouseModeOptions = ['自建仓', '外包云仓', '两者都有']
 export const painPointOptions = ['时效慢', '错发漏发多', '大促爆仓', '成本太高', '系统对接难', '其他']
 export const weightRanges = ['0-0.3', '0.3-0.5', '0.5-1', '1-2', '2-3', '>=3']

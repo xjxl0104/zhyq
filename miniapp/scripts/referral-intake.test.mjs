@@ -107,3 +107,15 @@ test('submit records consent and retry keeps identical request after a lost resp
   assert.match(sent[0].submissionId, /^[a-f0-9-]{36}$/)
   await vm.runInContext("submit({name:'重复客户'})", ctx); assert.equal(sent.length, 2)
 })
+test('无 is exclusive for couriers and the form no longer sends an intended warehouse', async () => {
+  const { exclusiveNone, COURIERS } = await import('../src/utils/referral-intake.mjs')
+  assert.equal(COURIERS.at(-1), '无')
+  assert.deepEqual(exclusiveNone(['圆通', '中通'], ['圆通', '中通', '无']), ['无'])
+  assert.deepEqual(exclusiveNone(['无'], ['无', '顺丰']), ['顺丰'])
+  assert.deepEqual(exclusiveNone([], ['无']), ['无'])
+  const f = form(); f.warehouseId = 12; f.requirements.couriers = ['无']; f.requirements.currentCouriers = ['无']
+  const body = referralPayload(f)
+  assert.equal(body.warehouseId, null); assert.deepEqual(body.requirements.couriers, ['无'])
+  f.requirements.couriers = ['无', '圆通']
+  assert.throws(() => referralPayload(f), /无/)
+})

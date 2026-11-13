@@ -4,9 +4,6 @@
     <input class="input" v-model="form.contact" maxlength="50" placeholder="对接人（选填）" />
     <input class="input" v-model="form.requirements.contactPosition" maxlength="50" placeholder="对接人职位（选填）" />
     <input class="input" v-model="form.phone" type="number" maxlength="11" placeholder="联系手机（选填）" />
-    <picker v-if="form.serviceType !== 4" :range="warehouseOptions" :value="selectedIndex(warehouseOptions, form.warehouseId, 'id')" range-key="name" @change="e => form.warehouseId = warehouseOptions[e.detail.value].id">
-      <view class="input">意向云仓：{{ warehouseOptions.find(w => w.id === form.warehouseId)?.name || '不限' }}</view>
-    </picker>
     <view class="section">
       <view class="field-title">销售平台 <text class="muted">可多选，选填</text></view>
       <checkbox-group class="choices" @change="e => form.requirements.salesPlatforms = e.detail.value">
@@ -30,7 +27,7 @@
     <input class="input" v-model="form.requirements.itemsPerParcel" type="digit" maxlength="7" placeholder="平均包裹产品数量（件，选填）" />
     <view class="section">
       <view class="field-title">指定快递承运商 <text class="muted">可多选，选填</text></view>
-      <checkbox-group class="choices" @change="e => form.requirements.couriers = e.detail.value">
+      <checkbox-group class="choices" @change="e => form.requirements.couriers = exclusiveNone(form.requirements.couriers, e.detail.value)">
         <label v-for="item in COURIERS" :key="item" class="choice"><checkbox :value="item" :checked="form.requirements.couriers.includes(item)" color="#3857f5" /><text>{{ item }}</text></label>
       </checkbox-group>
       <input v-if="form.requirements.couriers.includes('其他')" class="input" v-model="form.requirements.courierOther" maxlength="100" placeholder="请填写其他快递承运商" />
@@ -41,7 +38,7 @@
         <view class="input">目前是自建仓还是外包云仓：{{ form.requirements.warehouseMode || '请选择' }}</view>
       </picker>
       <view class="sub-title">目前合作的快递公司 <text class="muted">可多选</text></view>
-      <checkbox-group class="choices" @change="e => form.requirements.currentCouriers = e.detail.value">
+      <checkbox-group class="choices" @change="e => form.requirements.currentCouriers = exclusiveNone(form.requirements.currentCouriers, e.detail.value)">
         <label v-for="item in COURIERS" :key="item" class="choice"><checkbox :value="item" :checked="form.requirements.currentCouriers.includes(item)" color="#3857f5" /><text>{{ item }}</text></label>
       </checkbox-group>
       <input v-if="form.requirements.currentCouriers.includes('其他')" class="input" v-model="form.requirements.currentCourierOther" maxlength="100" placeholder="请填写目前合作的其他快递" />
@@ -57,11 +54,9 @@
   </view>
 </template>
 <script setup>
-import { computed } from 'vue'
-import { SALES_PLATFORMS, COURIERS, WEIGHT_RANGES, AREA_RANGES, COUNT_RANGES, ORDER_RANGES, WAREHOUSE_MODES, PAIN_POINTS, rangeLabel, referralPayload } from '@/utils/referral-intake.mjs'
+import { SALES_PLATFORMS, COURIERS, WEIGHT_RANGES, AREA_RANGES, COUNT_RANGES, ORDER_RANGES, WAREHOUSE_MODES, PAIN_POINTS, rangeLabel, referralPayload, exclusiveNone } from '@/utils/referral-intake.mjs'
 const props = defineProps({ form: { type: Object, required: true }, warehouses: { type: Array, default: () => [] }, loading: Boolean, disabled: Boolean, submitLabel: { type: String, default: '提交推荐' } })
 const emit = defineEmits(['submit'])
-const warehouseOptions = computed(() => [{ id: null, name: '不限' }, ...props.warehouses])
 const rangeFields = [
   { key: 'storageArea', label: '仓储面积', unit: '㎡', ranges: AREA_RANGES },
   { key: 'productCount', label: '销售产品种类数', unit: '种', ranges: COUNT_RANGES },

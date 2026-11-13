@@ -88,12 +88,12 @@ test('all picker types reopen at selected value and can return to first option',
   const pickers = []
   const visit = node => { if (node.tag === 'picker') pickers.push(node); for (const child of node.children || []) visit(child) }
   visit(parse(formSource).descriptor.template.ast)
-  assert.equal(pickers.length, 3)
+  assert.equal(pickers.length, 2)
   for (const [index, picker] of pickers.entries()) {
     const value = picker.props.find(prop => prop.type === 7 && prop.name === 'bind' && prop.arg?.content === 'value')
     assert.ok(value, `picker ${index} 必须绑定当前选择`)
     const change = picker.props.find(prop => prop.type === 7 && prop.name === 'on' && prop.arg?.content === 'change')
-    assert.equal(vm.runInContext(value.exp.content, context), [1, 2, 2][index])
+    assert.equal(vm.runInContext(value.exp.content, context), [2, 2][index])
     vm.runInContext(`(${change.exp.content})({detail:{value:0}})`, context)
     assert.equal(vm.runInContext(value.exp.content, context), 0)
   }
