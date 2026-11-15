@@ -19,3 +19,9 @@ test('体验页只使用本地演示数据，不创建 token 或调用业务接�
   assert.match(demo, /不会访问或修改真实账号、客户、订单与收益/)
   assert.match(demo, /当前为体验模式，不会提交数据/)
 })
+
+test('体验页的提现、结算、加盟等流程都能完整走通，不再提示“登录后可用”（微信审核要求可完整体验）', () => {
+  assert.doesNotMatch(demo, /登录后可用/)
+  for (const fn of ['submitWithdraw', 'advanceCustomer', 'createErpKey', 'confirmSettlement', 'advanceOnboarding']) assert.ok(demo.includes(`function ${fn}(`), fn)
+  assert.match(demo, /模拟申请提现/)
+})
