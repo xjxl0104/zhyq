@@ -34,7 +34,7 @@
         <view class="demo-section-heading"><view><view class="demo-section-label">PARTNER WORKSPACE</view><view class="demo-section-title">全民营销</view></view><text class="demo-date">本月演示</text></view>
         <view class="demo-metric-hero">
           <view class="metric-caption">累计收益（元）</view><view class="metric-number">12,860.50</view>
-          <view class="metric-foot"><text>可提现 8,240.00</text><text>本月 +18.6%</text></view>
+          <view class="metric-foot"><text>可提现 {{ money(available) }}</text><text>本月 +18.6%</text></view>
         </view>
         <view class="demo-stat-grid"><view v-for="item in partnerStats" :key="item.label" class="demo-stat"><view class="stat-icon" :class="item.tone">{{ item.icon }}</view><view class="stat-value">{{ item.value }}</view><view class="stat-label">{{ item.label }}</view></view></view>
         <view class="demo-section-heading compact"><view class="demo-section-title">快捷体验</view><text class="demo-section-link">点击卡片查看</text></view>
@@ -51,14 +51,16 @@
 
       <view v-else-if="section === 'customer-detail' && selectedCustomer">
         <view class="demo-section-heading"><view><view class="demo-section-label">CUSTOMER DETAIL</view><view class="demo-section-title">客户详情</view></view><button class="mini-action" @click="section = 'customers'">返回列表</button></view>
-        <view class="demo-card detail-card"><view class="detail-profile"><view class="detail-avatar">{{ selectedCustomer.name.slice(0, 1) }}</view><view><view class="detail-name">{{ selectedCustomer.name }}</view><view class="demo-muted">{{ selectedCustomer.contact }} · {{ selectedCustomer.phone }}</view></view></view><view class="detail-status"><text :class="['status-tag', selectedCustomer.statusTone]">{{ selectedCustomer.status }}</text><text class="demo-muted">{{ selectedCustomer.updated }}</text></view><view class="detail-line"><text>需求类型</text><text>{{ selectedCustomer.service }}</text></view><view class="detail-line"><text>跟进阶段</text><text>{{ selectedCustomer.stage }}</text></view><view class="detail-line"><text>锁定状态</text><text>{{ selectedCustomer.lock }}</text></view><button class="demo-disabled-button" @click="demoOnly">客户管理（登录后可用）</button></view>
+        <view class="demo-card detail-card"><view class="detail-profile"><view class="detail-avatar">{{ selectedCustomer.name.slice(0, 1) }}</view><view><view class="detail-name">{{ selectedCustomer.name }}</view><view class="demo-muted">{{ selectedCustomer.contact }} · {{ selectedCustomer.phone }}</view></view></view><view class="detail-status"><text :class="['status-tag', selectedCustomer.statusTone]">{{ selectedCustomer.status }}</text><text class="demo-muted">{{ selectedCustomer.updated }}</text></view><view class="detail-line"><text>需求类型</text><text>{{ selectedCustomer.service }}</text></view><view class="detail-line"><text>跟进阶段</text><text>{{ selectedCustomer.stage }}</text></view><view class="detail-line"><text>锁定状态</text><text>{{ selectedCustomer.lock }}</text></view><button class="demo-primary-button inline" @click="advanceCustomer(selectedCustomer)">更新跟进进度</button></view>
       </view>
 
       <view v-else-if="section === 'income'">
         <view class="demo-section-heading"><view><view class="demo-section-label">REVENUE CENTER</view><view class="demo-section-title">收益明细</view></view><text class="demo-date">近 30 天</text></view>
         <view class="demo-income-hero"><view><view class="metric-caption">本月预计收益</view><view class="income-number">¥ 3,260.00</view></view><view class="income-trend">↗ 18.6%</view></view>
         <view class="demo-card"><view v-for="item in partnerIncome" :key="item.title" class="income-row"><view><view class="activity-title">{{ item.title }}</view><view class="activity-time">{{ item.time }}</view></view><view class="income-value">+{{ item.amount }}</view></view></view>
-        <button class="demo-disabled-button" @click="demoOnly">申请提现（登录后可用）</button>
+        <view class="demo-card"><view class="card-title-row"><view class="demo-card-title">可提现余额</view><view class="income-value">¥ {{ money(available) }}</view></view><view class="demo-muted">演示提现只在当前页面模拟，不会真实打款。</view></view>
+        <button class="demo-primary-button" @click="openWithdraw">申请提现</button>
+        <view v-if="withdrawals.length" class="demo-card"><view class="card-title-row"><view class="demo-card-title">提现记录</view><text class="demo-muted">演示数据</text></view><view v-for="item in withdrawals" :key="item.id" class="income-row"><view><view class="activity-title">提现到 {{ item.account }}</view><view class="activity-time">{{ item.time }}</view></view><view><view class="income-value">-{{ money(item.amount) }}</view><view class="demo-muted">{{ item.status }}</view></view></view></view>
       </view>
 
       <view v-else-if="section === 'team'">
@@ -85,26 +87,27 @@
 
       <view v-else-if="section === 'orders'">
         <view class="demo-section-heading"><view><view class="demo-section-label">ORDER CENTER</view><view class="demo-section-title">出库单</view></view><text class="demo-date">今日 12 单</text></view>
-        <view v-for="order in warehouseOrders" :key="order.id" class="demo-card order-card"><view class="card-title-row"><view class="order-id">{{ order.id }}</view><text :class="['status-tag', order.tone]">{{ order.status }}</text></view><view class="order-info"><view><view class="demo-muted">客户</view><view class="activity-title">{{ order.customer }}</view></view><view><view class="demo-muted">件数</view><view class="activity-title">{{ order.count }} 件</view></view><view><view class="demo-muted">更新时间</view><view class="activity-title">{{ order.time }}</view></view></view><button class="demo-disabled-button" @click="demoOnly">查看订单详情（登录后可用）</button></view>
+        <view v-for="order in warehouseOrders" :key="order.id" class="demo-card order-card"><view class="card-title-row"><view class="order-id">{{ order.id }}</view><text :class="['status-tag', order.tone]">{{ order.status }}</text></view><view class="order-info"><view><view class="demo-muted">客户</view><view class="activity-title">{{ order.customer }}</view></view><view><view class="demo-muted">件数</view><view class="activity-title">{{ order.count }} 件</view></view><view><view class="demo-muted">更新时间</view><view class="activity-title">{{ order.time }}</view></view></view><view v-if="openOrder === order.id" class="order-detail"><view class="detail-line"><text>收件地址</text><text>{{ order.address }}</text></view><view class="detail-line"><text>快递单号</text><text>{{ order.waybill }}</text></view><view class="detail-line"><text>商品</text><text>{{ order.goods }}</text></view></view><button class="demo-primary-button inline" @click="openOrder = openOrder === order.id ? '' : order.id">{{ openOrder === order.id ? '收起订单详情' : '查看订单详情' }}</button></view>
       </view>
 
       <view v-else-if="section === 'erp'">
         <view class="demo-section-heading"><view><view class="demo-section-label">ERP CONNECTOR</view><view class="demo-section-title">ERP 接入</view></view><text class="demo-date">连接器 3 个</text></view>
         <view class="demo-card erp-card"><view v-for="item in warehouseErp" :key="item.name" class="erp-row"><view class="erp-icon">{{ item.icon }}</view><view class="erp-main"><view class="activity-title">{{ item.name }}</view><view class="activity-time">{{ item.desc }}</view></view><text :class="['status-tag', item.tone]">{{ item.status }}</text></view></view>
-        <button class="demo-disabled-button" @click="demoOnly">新建 ERP 凭证（登录后可用）</button>
+        <view v-if="erpKey" class="demo-card"><view class="demo-card-title">演示接入凭证</view><view class="detail-line"><text>AppKey</text><text>{{ erpKey }}</text></view><view class="demo-muted">仅用于演示，不能用于真实对接。</view></view>
+        <button class="demo-primary-button" @click="createErpKey">新建 ERP 凭证</button>
       </view>
 
       <view v-else-if="section === 'settlement'">
         <view class="demo-section-heading"><view><view class="demo-section-label">SETTLEMENT CENTER</view><view class="demo-section-title">结算单</view></view><text class="demo-date">本月</text></view>
-        <view class="warehouse-settle-hero"><view class="metric-caption">待结算金额</view><view class="metric-number">¥ 86,420.00</view><view class="metric-foot"><text>已结算 ¥ 248,600.00</text><text>共 24 单</text></view></view>
+        <view class="warehouse-settle-hero"><view class="metric-caption">待结算金额</view><view class="metric-number">¥ {{ settlementPending ? '86,420.00' : '0.00' }}</view><view class="metric-foot"><text>已结算 ¥ {{ settlementPending ? '248,600.00' : '335,020.00' }}</text><text>共 24 单</text></view></view>
         <view class="demo-card"><view v-for="item in warehouseSettlement" :key="item.title" class="income-row"><view><view class="activity-title">{{ item.title }}</view><view class="activity-time">{{ item.time }}</view></view><view><view class="income-value">{{ item.amount }}</view><view class="demo-muted">{{ item.status }}</view></view></view></view>
-        <button class="demo-disabled-button" @click="demoOnly">确认结算（登录后可用）</button>
+        <button class="demo-primary-button" @click="confirmSettlement">确认结算</button>
       </view>
 
       <view v-else-if="section === 'onboarding'">
         <view class="demo-section-heading"><view><view class="demo-section-label">ONBOARDING FLOW</view><view class="demo-section-title">加盟进度</view></view><text class="demo-date">4 / 6 已完成</text></view>
         <view class="demo-card timeline-card"><view v-for="item in warehouseTimeline" :key="item.title" class="timeline-row"><view :class="['timeline-dot', item.done ? 'done' : '']">{{ item.done ? '✓' : item.index }}</view><view class="timeline-main"><view class="activity-title">{{ item.title }}</view><view class="activity-time">{{ item.desc }}</view></view><text :class="['timeline-status', item.done ? 'done-text' : '']">{{ item.done ? '已完成' : '待处理' }}</text></view></view>
-        <button class="demo-disabled-button" @click="demoOnly">继续提交资料（登录后可用）</button>
+        <button class="demo-primary-button" @click="advanceOnboarding">继续提交资料</button>
       </view>
 
       <view v-else>
@@ -113,7 +116,9 @@
       </view>
     </template>
 
-    <view class="demo-boundary"><view class="boundary-icon">◇</view><view><view class="boundary-title">这是临时体验模式</view><view class="boundary-copy">推荐、提现、删除、提交、上传等操作不会写入系统。需要真实业务，请返回登录。</view></view></view>
+    <view class="demo-boundary"><view class="boundary-icon">◇</view><view><view class="boundary-title">这是临时体验模式</view><view class="boundary-copy">推荐、提现、结算、提交等流程都可在这里完整体验，操作结果只保存在当前页面，不会写入系统。需要真实业务，请返回登录。</view></view></view>
+
+    <view v-if="showWithdraw" class="demo-sheet-mask" @click="showWithdraw = false"><view class="demo-sheet" @click.stop><view class="sheet-handle" /><view class="demo-section-title">模拟申请提现</view><view class="demo-muted sheet-note">可提现 ¥ {{ money(available) }}，演示提现不会真实打款。</view><view class="detail-line"><text>到账账户</text><text>演示银行卡（尾号 8888）</text></view><input class="input" v-model="withdrawAmount" type="digit" placeholder="提现金额（元）*" /><button class="btn" @click="submitWithdraw">确认提现</button><button class="sheet-cancel" @click="showWithdraw = false">取消</button></view></view>
 
     <view v-if="showAdd" class="demo-sheet-mask" @click="showAdd = false"><view class="demo-sheet" @click.stop><view class="sheet-handle" /><view class="demo-section-title">模拟推荐客户</view><view class="demo-muted sheet-note">演示数据只在当前页面有效，退出后自动清空。</view><input class="input" v-model="form.name" placeholder="客户公司 / 店铺名称 *" /><input class="input" v-model="form.contact" placeholder="联系人" /><input class="input" v-model="form.phone" type="number" maxlength="11" placeholder="联系手机 *" /><button class="btn" @click="submitDemo">加入演示客户</button><button class="sheet-cancel" @click="showAdd = false">取消</button></view></view>
     <view v-if="notice" class="demo-toast">{{ notice }}</view>
@@ -135,6 +140,16 @@ const selectedCustomer = ref(null)
 const showAdd = ref(false)
 const notice = ref('')
 const form = reactive({ name: '', contact: '', phone: '' })
+const available = ref(8240)
+const withdrawals = ref([])
+const showWithdraw = ref(false)
+const withdrawAmount = ref('')
+const openOrder = ref('')
+const erpKey = ref('')
+const STAGES = [
+  { stage: '待首次沟通', status: '待跟进', statusTone: 'gold' }, { stage: '方案确认', status: '跟进中', statusTone: 'blue' },
+  { stage: '报价确认', status: '跟进中', statusTone: 'blue' }, { stage: '合同生效', status: '已签约', statusTone: 'ok' },
+]
 
 const partnerSections = [
   { key: 'home', label: '工作台', icon: '⌂' }, { key: 'customers', label: '客户', icon: '◎' },
@@ -144,6 +159,7 @@ const warehouseSections = [
   { key: 'home', label: '看板', icon: '⌂' }, { key: 'orders', label: '订单', icon: '▤' },
   { key: 'erp', label: 'ERP', icon: '⌘' }, { key: 'settlement', label: '结算', icon: '¥' }, { key: 'onboarding', label: '加盟', icon: '✓' }, { key: 'notices', label: '消息', icon: '•' },
 ]
+const settlementPending = computed(() => warehouseSettlement.some(item => item.status === '待确认'))
 const sections = computed(() => role.value === 'partner' ? partnerSections : warehouseSections)
 const partnerStats = [
   { icon: '客', label: '有效客户', value: '28', tone: 'blue' }, { icon: '锁', label: '锁定客户', value: '6', tone: 'cyan' },
@@ -177,17 +193,19 @@ const warehouseActivity = [
   { icon: '单', title: 'SO20260928018 已完成出库', time: '今天 14:20', status: '已完成' }, { icon: '↗', title: 'SO20260928017 等待拣货', time: '今天 13:46', status: '处理中' }, { icon: '结', title: '9 月结算单已生成', time: '昨天 18:00', status: '待确认' },
 ]
 const warehouseOrders = [
-  { id: 'SO20260928018', customer: '远山生活', count: 86, time: '14:20', status: '已完成', tone: 'ok' }, { id: 'SO20260928017', customer: '拾光家居', count: 42, time: '13:46', status: '拣货中', tone: 'blue' }, { id: 'SO20260928016', customer: '禾木食品', count: 128, time: '11:12', status: '待拣货', tone: 'gold' },
+  { id: 'SO20260928018', customer: '远山生活', count: 86, time: '14:20', status: '已完成', tone: 'ok', address: '浙江省杭州市（演示地址）', waybill: 'YT0000000018', goods: '家居收纳盒 ×86' },
+  { id: 'SO20260928017', customer: '拾光家居', count: 42, time: '13:46', status: '拣货中', tone: 'blue', address: '江苏省苏州市（演示地址）', waybill: '待生成', goods: '香薰蜡烛 ×42' },
+  { id: 'SO20260928016', customer: '禾木食品', count: 128, time: '11:12', status: '待拣货', tone: 'gold', address: '上海市（演示地址）', waybill: '待生成', goods: '坚果礼盒 ×128' },
 ]
 const warehouseErp = [
   { icon: '聚', name: '聚水潭 ERP', desc: '库存、订单双向同步', status: '已连接', tone: 'ok' }, { icon: '旺', name: '旺店通 ERP', desc: '订单自动拉取', status: '已连接', tone: 'ok' }, { icon: '自', name: '自研接口', desc: 'Webhook 事件推送', status: '待配置', tone: 'gold' },
 ]
-const warehouseSettlement = [
+const warehouseSettlement = reactive([
   { title: '9 月仓储服务费', time: '账期 09.01 - 09.30', amount: '¥ 52,800.00', status: '待确认' }, { title: '9 月代发服务费', time: '账期 09.01 - 09.30', amount: '¥ 33,620.00', status: '待确认' }, { title: '8 月结算单', time: '已于 09.10 完成', amount: '¥ 76,420.00', status: '已结算' },
-]
-const warehouseTimeline = [
+])
+const warehouseTimeline = reactive([
   { index: 1, title: '提交基本资料', desc: '联系人、营业执照', done: true }, { index: 2, title: '园区初审', desc: '资料已审核通过', done: true }, { index: 3, title: '签署入驻协议', desc: '电子协议已签署', done: true }, { index: 4, title: '配置 ERP 接入', desc: '已完成 2 / 3 个连接器', done: true }, { index: 5, title: '仓库现场核验', desc: '预约园区人员上门核验', done: false }, { index: 6, title: '正式营业', desc: '完成核验后开放全部能力', done: false },
-]
+])
 const warehouseNotices = [
   { title: '结算单待确认', time: '今天 09:30', copy: '9 月仓储与代发服务费已生成，请登录后确认。', tone: 'gold' }, { title: 'ERP 接入状态更新', time: '昨天 17:20', copy: '聚水潭 ERP 已完成首次库存同步。', tone: 'cyan' },
 ]
@@ -204,7 +222,35 @@ function submitDemo() {
   partnerCustomers.value.unshift({ id: Date.now(), name: form.name.trim(), contact: form.contact.trim() || '待补充', phone: form.phone.slice(0, 3) + '****' + form.phone.slice(-4), service: '一件代发', status: '待跟进', statusTone: 'gold', stage: '待首次沟通', lock: '锁定 3 个月', updated: '刚刚新增' })
   form.name = ''; form.contact = ''; form.phone = ''; showAdd.value = false; toast('已加入演示客户，仅当前页面有效')
 }
-function demoOnly() { toast('当前为体验模式，不会提交数据；登录后可使用') }
+function money(value) { return Number(value).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }
+function nowLabel() { const d = new Date(); return `今天 ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}` }
+function openWithdraw() { withdrawAmount.value = ''; showWithdraw.value = true }
+function submitWithdraw() {
+  const text = String(withdrawAmount.value).trim()
+  if (!/^\d+(\.\d{1,2})?$/.test(text) || Number(text) <= 0) return toast('请输入正确的提现金额')
+  const amount = Number(text)
+  if (amount > available.value) return toast('提现金额不能超过可提现余额')
+  available.value = Math.round((available.value - amount) * 100) / 100
+  withdrawals.value.unshift({ id: Date.now(), account: '演示银行卡（尾号 8888）', amount, time: nowLabel(), status: '审核中' })
+  showWithdraw.value = false; toast('当前为体验模式，不会提交数据；已模拟提交提现申请')
+}
+function advanceCustomer(customer) {
+  const index = STAGES.findIndex(item => item.stage === customer.stage)
+  if (index === STAGES.length - 1) return toast('该客户已签约，演示流程已完成')
+  Object.assign(customer, STAGES[index + 1], { updated: '刚刚更新', lock: index + 1 === STAGES.length - 1 ? '有效锁定' : customer.lock })
+  toast(`已模拟更新为「${customer.stage}」`)
+}
+function createErpKey() { erpKey.value = 'DEMO-' + Math.random().toString(36).slice(2, 10).toUpperCase(); toast('已生成演示凭证') }
+function confirmSettlement() {
+  const pending = warehouseSettlement.filter(item => item.status === '待确认')
+  if (!pending.length) return toast('本月结算单已全部确认')
+  pending.forEach(item => { item.status = '已结算' }); toast('已模拟确认结算')
+}
+function advanceOnboarding() {
+  const next = warehouseTimeline.find(item => !item.done)
+  if (!next) return toast('加盟流程已全部完成')
+  next.done = true; toast(`已模拟完成「${next.title}」`)
+}
 function toast(message) { notice.value = message; setTimeout(() => { notice.value = '' }, 2200) }
 </script>
 
@@ -276,7 +322,7 @@ function toast(message) { notice.value = message; setTimeout(() => { notice.valu
 .customer-main { margin-right: auto; }.customer-name { color: #17203e; font-size: 29rpx; font-weight: 700; }.customer-meta { margin-top: 20rpx; padding-top: 18rpx; color: #8a94aa; border-top: 1rpx solid #edf0f6; font-size: 21rpx; }.customer-meta text { margin-right: 16rpx; }.customer-arrow { margin-left: auto; color: #3857f5 !important; }
 .mini-action { min-width: 126rpx; margin: 0; padding: 10rpx 18rpx; color: #3857f5; border: 1rpx solid #dbe2ff; border-radius: 999rpx; background: #f3f5ff; font-size: 22rpx; line-height: 1.3; }
 .empty-card { color: #8993a8; text-align: center; font-size: 24rpx; }
-.detail-card { padding: 28rpx; }.detail-profile { justify-content: flex-start; }.detail-name { color: #17203e; font-size: 34rpx; font-weight: 750; }.detail-status { margin: 24rpx 0 10rpx; }.detail-line { display: flex; justify-content: space-between; padding: 21rpx 0; color: #8993a8; border-bottom: 1rpx solid #edf0f6; font-size: 24rpx; }.detail-line text:last-child { color: #253052; }.demo-disabled-button { width: 100%; margin: 22rpx 0 0; padding: 18rpx; color: #77829b; border: 1rpx dashed #cbd3e4; border-radius: 15rpx; background: #f8f9fc; font-size: 24rpx; line-height: 1.4; }
+.detail-card { padding: 28rpx; }.detail-profile { justify-content: flex-start; }.detail-name { color: #17203e; font-size: 34rpx; font-weight: 750; }.detail-status { margin: 24rpx 0 10rpx; }.detail-line { display: flex; justify-content: space-between; padding: 21rpx 0; color: #8993a8; border-bottom: 1rpx solid #edf0f6; font-size: 24rpx; }.detail-line text:last-child { color: #253052; }.demo-primary-button { margin: 18rpx 24rpx; padding: 20rpx; color: #fff; border-radius: 16rpx; background: linear-gradient(135deg, #3857f5, #5b74ff); font-size: 26rpx; font-weight: 700; line-height: 1.4; box-shadow: 0 10rpx 22rpx rgba(56,87,245,.2); }.demo-primary-button.inline { width: 100%; margin: 22rpx 0 0; }.order-detail { margin-top: 14rpx; }
 .demo-income-hero { display: flex; align-items: flex-end; justify-content: space-between; margin: 0 24rpx 16rpx; padding: 27rpx; border-radius: 22rpx; background: #eaf8f3; }.demo-income-hero .metric-caption { color: #5e8d82; }.income-number { margin-top: 8rpx; color: #147a62; font-size: 46rpx; font-weight: 750; }.income-trend { color: #147a62; font-size: 25rpx; font-weight: 700; }.income-row { display: flex; justify-content: space-between; gap: 16rpx; padding: 21rpx 0; border-bottom: 1rpx solid #edf0f6; }.income-value { color: #147a62; font-size: 25rpx; font-weight: 700; white-space: nowrap; }
 .demo-team-hero { justify-content: flex-start; margin: 0 24rpx 16rpx; padding: 24rpx; border-radius: 22rpx; background: #f1efff; }.team-ring { display: flex; align-items: center; justify-content: center; width: 86rpx; height: 86rpx; margin-right: 6rpx; color: #6953cf; border: 6rpx solid #9b8bf4; border-radius: 50%; font-size: 23rpx; font-weight: 750; }.team-title { color: #3d327f; font-size: 28rpx; font-weight: 700; }.team-row { display: flex; align-items: center; gap: 14rpx; padding: 19rpx 0; border-bottom: 1rpx solid #edf0f6; }.team-avatar { width: 56rpx; height: 56rpx; flex-basis: 56rpx; border-radius: 18rpx; color: #6953cf; background: #f0edff; font-size: 24rpx; }.team-score { color: #6953cf; font-size: 23rpx; font-weight: 700; }
 .notice-row { display: flex; gap: 16rpx; padding: 21rpx 0; border-bottom: 1rpx solid #edf0f6; }.notice-dot { width: 16rpx; height: 16rpx; flex: 0 0 16rpx; margin-top: 8rpx; border-radius: 50%; background: #3857f5; }.notice-dot.gold { background: #f5b84b; }.notice-dot.cyan { background: #42bdc9; }.notice-copy { margin-top: 9rpx; color: #5d6881; font-size: 22rpx; line-height: 1.5; }
