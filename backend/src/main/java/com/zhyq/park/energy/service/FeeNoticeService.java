@@ -523,13 +523,10 @@ public class FeeNoticeService {
                 electric.warnings());
 
         // 上一版通知单连同明细行一起带上:手工新增的收费行、手工改过的备注要按户找回
-        Map<String, FeeNotice> previous = new LinkedHashMap<>();
+        List<FeeNotice> olds = noticeMapper.selectList(new LambdaQueryWrapper<FeeNotice>()
+                .eq(FeeNotice::getFeePeriodId, periodId));
         Map<Long, FeeNotice> oldById = new LinkedHashMap<>();
-        for (FeeNotice old : noticeMapper.selectList(new LambdaQueryWrapper<FeeNotice>()
-                .eq(FeeNotice::getFeePeriodId, periodId))) {
-            oldById.put(old.getId(), old);
-            previous.putIfAbsent(FeeNoticeCalculator.noticeKey(old), old);
-        }
+        olds.forEach(old -> oldById.put(old.getId(), old));
         for (FeeNoticeItem it : itemMapper.selectList(new LambdaQueryWrapper<FeeNoticeItem>()
                 .eq(FeeNoticeItem::getFeePeriodId, periodId).orderByAsc(FeeNoticeItem::getSort))) {
             FeeNotice owner = oldById.get(it.getNoticeId());
@@ -537,7 +534,8 @@ public class FeeNoticeService {
                 owner.getItems().add(it);
             }
         }
-        NoticeBatch batch = FeeNoticeCalculator.buildNotices(p, wr, er, previous);
+        // 旧版是按楼层/区域分开出的,一个租户可能有好几张;按租户归并后再找回手工内容
+        NoticeBatch batch = FeeNoticeCalculator.buildNotices(p, wr, er, FeeNoticeCalculator.mergePrevious(olds));
 
         itemMapper.delete(new LambdaQueryWrapper<FeeNoticeItem>().eq(FeeNoticeItem::getFeePeriodId, periodId));
         noticeMapper.delete(new LambdaQueryWrapper<FeeNotice>().eq(FeeNotice::getFeePeriodId, periodId));
