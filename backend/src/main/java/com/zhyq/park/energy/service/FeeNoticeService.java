@@ -183,13 +183,19 @@ public class FeeNoticeService {
         periodMapper.update(null, new LambdaUpdateWrapper<FeePeriod>()
                 .eq(FeePeriod::getId, existed.getId())
                 .set(FeePeriod::getWaterTotalUsage, input.getWaterTotalUsage()));
+        // 公摊度数手工值允许清空(清空 = 回到自动算),updateById 跳过 null,单独写
+        periodMapper.update(null, new LambdaUpdateWrapper<FeePeriod>()
+                .eq(FeePeriod::getId, existed.getId())
+                .set(FeePeriod::getElectricPublicManual, input.getElectricPublicManual())
+                .set(FeePeriod::getWaterPublicManual, input.getWaterPublicManual()));
         touch(existed.getId());
         return require(existed.getId());
     }
 
     private static void validate(FeePeriod p) {
         for (BigDecimal v : new BigDecimal[]{p.getElectricGridUsage(), p.getElectricSolarUsage(), p.getElectricPrice(),
-                p.getWaterTotalUsage(), p.getWaterPrice(), p.getDomesticGarbageAmount(), p.getIndustrialGarbageAmount()}) {
+                p.getWaterTotalUsage(), p.getWaterPrice(), p.getElectricPublicManual(), p.getWaterPublicManual(),
+                p.getDomesticGarbageAmount(), p.getIndustrialGarbageAmount()}) {
             if (v != null && v.signum() < 0) {
                 throw new BizException("度数、单价与金额都不能为负");
             }
@@ -246,7 +252,12 @@ public class FeeNoticeService {
             total = nz(p.getElectricGridUsage()).add(nz(p.getElectricSolarUsage()));
             source = "南网 + 光伏";
         }
-        UtilityResult r = FeeNoticeCalculator.allocate(energyType, total, price, rows);
+        BigDecimal manual = FeeNoticeCalculator.TYPE_WATER.equals(energyType)
+                ? p.getWaterPublicManual() : p.getElectricPublicManual();
+        UtilityResult r = FeeNoticeCalculator.allocate(energyType, total, price, rows, manual);
+        if (manual != null) {
+            source = source + "(公摊度数手工填写)";
+        }
         return new Sheet(p, energyType, total, source, r.submeterUsage(), r.publicUsage(), r.shareBase(),
                 r.price(), r.totalFee(), r.rows(), r.warnings());
     }
@@ -541,7 +552,7 @@ public class FeeNoticeService {
         snap.setTotalLeaseArea(batch.totalLeaseArea());
         snap.setNoticeCount(batch.notices().size());
         snap.setTotalAmount(totalAmount);
-        snap.setGeneratedTime(LocalDateTime.now().withNano(0));
+        snap.setGeneratedTime(LocalDateTime.now());
         periodMapper.updateById(snap);
         return new GenerateResult(require(periodId), batch.notices(), batch.warnings());
     }
@@ -761,14 +772,14 @@ public class FeeNoticeService {
 
     private void touch(Long periodId) {
         periodMapper.update(null, new LambdaUpdateWrapper<FeePeriod>()
-                .eq(FeePeriod::getId, periodId).set(FeePeriod::getInputsChangedTime, LocalDateTime.now().withNano(0)));
+                .eq(FeePeriod::getId, periodId).set(FeePeriod::getInputsChangedTime, LocalDateTime.now()));
     }
 
     /** 表计增减、改区域等影响所有未出账月份 */
     private void touchDrafts() {
         periodMapper.update(null, new LambdaUpdateWrapper<FeePeriod>()
                 .eq(FeePeriod::getStatus, FeePeriod.ST_DRAFT)
-                .set(FeePeriod::getInputsChangedTime, LocalDateTime.now().withNano(0)));
+                .set(FeePeriod::getInputsChangedTime, LocalDateTime.now()));
     }
 
     private static String kindOf(String energyType) {
