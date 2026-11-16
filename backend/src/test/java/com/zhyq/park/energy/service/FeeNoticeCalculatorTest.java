@@ -66,12 +66,16 @@ class FeeNoticeCalculatorTest {
         assertThat(r.submeterUsage()).isEqualByComparingTo("675");
         assertThat(r.publicUsage()).isEqualByComparingTo("451");
         SheetRow yunpa = r.rows().get(0);
-        assertThat(yunpa.getPublicUsage()).isEqualByComparingTo("12.6948");
+        // 全部保留 2 位小数,12.6948 取 12.69;公摊费 = 12.69 × 5.51
+        assertThat(yunpa.getPublicUsage()).isEqualByComparingTo("12.69");
         assertThat(yunpa.getFee()).isEqualByComparingTo("104.69");
-        assertThat(yunpa.getPublicFee()).isEqualByComparingTo("69.95");
-        // 全部公摊度数都摊出去了(允许 4 位小数的尾差)
+        assertThat(yunpa.getPublicFee()).isEqualByComparingTo("69.92");
+        // 各户公摊度数之和恰好等于公摊池 451,一分都不差
         BigDecimal allocated = r.rows().stream().map(SheetRow::getPublicUsage).reduce(BigDecimal.ZERO, BigDecimal::add);
-        assertThat(allocated.subtract(new BigDecimal("451")).abs()).isLessThan(new BigDecimal("0.01"));
+        assertThat(allocated).isEqualByComparingTo("451");
+        // 页面合计 = 各行之和
+        BigDecimal feeSum = r.rows().stream().map(SheetRow::getTotalFee).reduce(BigDecimal.ZERO, BigDecimal::add);
+        assertThat(r.totalFee()).isEqualByComparingTo(feeSum);
         assertThat(r.warnings()).isEmpty();
     }
 
@@ -97,7 +101,7 @@ class FeeNoticeCalculatorTest {
         assertThat(pile.getTotalFee()).isEqualByComparingTo("374.92");
         BigDecimal shared = r.rows().stream().filter(SheetRow::isSharing)
                 .map(SheetRow::getPublicUsage).reduce(BigDecimal.ZERO, BigDecimal::add);
-        assertThat(shared.subtract(new BigDecimal("8000")).abs()).isLessThan(new BigDecimal("0.01"));
+        assertThat(shared).isEqualByComparingTo("8000");
     }
 
     @Test
@@ -167,6 +171,13 @@ class FeeNoticeCalculatorTest {
         assertThat(pile.getItems()).noneMatch(i -> i.getItemType().startsWith("GARBAGE"));
         assertThat(pile.getNoticeNo()).isEqualTo("DIPARK-202610-室外-01");
         assertThat(batch.warnings()).anyMatch(w -> w.contains("没有关联到在租合同"));
+        // 云山 2层B/C 没填面积不该报警:面积挂在 2层A 上,按整户算
+        assertThat(batch.warnings()).noneMatch(w -> w.contains("没有填计租面积"));
+        // 通知单上的垃圾费之和恰好等于两笔总额
+        assertThat(batch.notices().stream().map(FeeNotice::getDomesticGarbageFee).reduce(BigDecimal.ZERO, BigDecimal::add))
+                .isEqualByComparingTo("2402.78");
+        assertThat(batch.notices().stream().map(FeeNotice::getIndustrialGarbageFee).reduce(BigDecimal.ZERO, BigDecimal::add))
+                .isEqualByComparingTo("1854");
     }
 
     @Test
@@ -193,6 +204,40 @@ class FeeNoticeCalculatorTest {
         // 小计 100 + 20 公摊 + 3.75 = 123.75;应收 = 123.75 − 50
         assertThat(second.getSubtotal()).isEqualByComparingTo("123.75");
         assertThat(second.getTotalDue()).isEqualByComparingTo("73.75");
+    }
+
+    @Test
+    @DisplayName("最大余数法:平均分三份 100 元,三份相加恰好 100.00")
+    void apportionSumsExactly() {
+        List<BigDecimal> parts = FeeNoticeCalculator.apportion(new BigDecimal("100"),
+                List.of(BigDecimal.ONE, BigDecimal.ONE, BigDecimal.ONE));
+        assertThat(parts).extracting(BigDecimal::toPlainString).containsExactly("33.34", "33.33", "33.33");
+        assertThat(parts.stream().reduce(BigDecimal.ZERO, BigDecimal::add)).isEqualByComparingTo("100.00");
+        assertThat(FeeNoticeCalculator.apportion(new BigDecimal("50"), List.of(BigDecimal.ZERO, BigDecimal.ZERO)))
+                .allMatch(x -> x.signum() == 0);
+    }
+
+    @Test
+    @DisplayName("垃圾费按单元面积分摊:不参与的单元不摊,各单元合计等于总额")
+    void garbageSplitSumsToTotal() {
+        FeePeriod p = new FeePeriod();
+        p.setDomesticGarbageAmount(new BigDecimal("2402.78"));
+        p.setIndustrialGarbageAmount(new BigDecimal("1854"));
+        List<SheetRow> rows = List.of(
+                row(1, "1层A区", "甲", 1L, "电", "1", true, "3300"),
+                row(2, "1层B区", "乙", 2L, "电", "1", true, "3600"),
+                row(3, "1层C区", "丙", 3L, "电", "1", true, "3500"),
+                row(4, "室外", "充电柱", null, "电", "1", false, "999"));
+        FeeNoticeCalculator.GarbageSplit split = FeeNoticeCalculator.splitGarbage(p, rows);
+
+        assertThat(split.totalArea()).isEqualByComparingTo("10400");
+        assertThat(split.units().get("室外").domestic()).isEqualByComparingTo("0");
+        BigDecimal domestic = split.units().values().stream().map(FeeNoticeCalculator.UnitShare::domestic)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal industrial = split.units().values().stream().map(FeeNoticeCalculator.UnitShare::industrial)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        assertThat(domestic).isEqualByComparingTo("2402.78");
+        assertThat(industrial).isEqualByComparingTo("1854");
     }
 
     @Test

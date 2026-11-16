@@ -1,16 +1,21 @@
 package com.zhyq.park.energy.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.zhyq.park.common.exception.BizException;
 import com.zhyq.park.energy.entity.FeeNotice;
 import com.zhyq.park.energy.entity.FeeNoticeItem;
 import com.zhyq.park.energy.entity.FeePeriod;
+import com.zhyq.park.energy.entity.FeeSnapshot;
 import com.zhyq.park.energy.entity.Meter;
 import com.zhyq.park.energy.entity.Reading;
 import com.zhyq.park.energy.mapper.FeeNoticeItemMapper;
 import com.zhyq.park.energy.mapper.FeeNoticeMapper;
 import com.zhyq.park.energy.mapper.FeePeriodMapper;
+import com.zhyq.park.energy.mapper.FeeSnapshotMapper;
 import com.zhyq.park.energy.mapper.MeterMapper;
 import com.zhyq.park.energy.mapper.ReadingMapper;
 import com.zhyq.park.energy.service.FeeNoticeCalculator.NoticeBatch;
@@ -56,6 +61,8 @@ public class FeeNoticeService {
     private final ReadingMapper readingMapper;
     private final BillMapper billMapper;
     private final JdbcTemplate jdbc;
+    private final FeeSnapshotMapper snapshotMapper;
+    private final ObjectMapper objectMapper;
 
     /** 一种能源的工作表:行 + 汇总,给 电费 / 水费 页面 */
     public record Sheet(FeePeriod period, String energyType, BigDecimal total, String totalSource,
@@ -78,6 +85,10 @@ public class FeeNoticeService {
     /** 取某月账期,没有就建一条,单价与抬头沿用最近一个账期 */
     @Transactional(rollbackFor = Exception.class)
     public FeePeriod open(String period, Long ignoredProjectId) {
+        return decorate(openRaw(period));
+    }
+
+    private FeePeriod openRaw(String period) {
         // 园区只有一个,账期按月唯一;表计表里 project_id 历史上没统一填,这里不按项目过滤
         Long projectId = null;
         YearMonth ym = parse(period);
@@ -131,7 +142,7 @@ public class FeeNoticeService {
         if (p == null) {
             throw new BizException("缴费账期不存在: " + id);
         }
-        return p;
+        return decorate(p);
     }
 
     private FeePeriod requireDraft(Long id) {
@@ -172,6 +183,7 @@ public class FeeNoticeService {
         periodMapper.update(null, new LambdaUpdateWrapper<FeePeriod>()
                 .eq(FeePeriod::getId, existed.getId())
                 .set(FeePeriod::getWaterTotalUsage, input.getWaterTotalUsage()));
+        touch(existed.getId());
         return require(existed.getId());
     }
 
@@ -192,13 +204,26 @@ public class FeeNoticeService {
         requireDraft(id);
         itemMapper.delete(new LambdaQueryWrapper<FeeNoticeItem>().eq(FeeNoticeItem::getFeePeriodId, id));
         noticeMapper.delete(new LambdaQueryWrapper<FeeNotice>().eq(FeeNotice::getFeePeriodId, id));
+        snapshotMapper.delete(new LambdaQueryWrapper<FeeSnapshot>().eq(FeeSnapshot::getFeePeriodId, id));
         periodMapper.deleteById(id);
     }
 
     // ------------------------------------------------------------------ 工作表
 
     public Sheet sheet(Long periodId, String energyType) {
-        FeePeriod p = require(periodId);
+        return sheetOf(require(periodId), energyType);
+    }
+
+    /** 已确认出账的月份读确认时冻结的快照;草稿月份实时计算 */
+    private Sheet sheetOf(FeePeriod p, String energyType) {
+        if (FeePeriod.ST_CONFIRMED.equals(p.getStatus())) {
+            Sheet frozen = readSnapshot(p.getId(), kindOf(energyType), Sheet.class);
+            if (frozen != null) {
+                return new Sheet(p, frozen.energyType(), frozen.total(), frozen.totalSource(), frozen.submeterUsage(),
+                        frozen.publicUsage(), frozen.shareBase(), frozen.price(), frozen.totalFee(), frozen.rows(),
+                        frozen.warnings());
+            }
+        }
         return sheet(p, energyType);
     }
 
@@ -390,6 +415,8 @@ public class FeeNoticeService {
             } else {
                 readingMapper.updateById(r);
             }
+            // 本月读数就是下个月的上期读数:下个月已经录过的,把它的上期读数、用量、费用一起改过来
+            cascadeNext(meter, p, in.currReading());
             // 没有更晚的抄表时把表计「上次读数」同步成本期读数
             Long later = readingMapper.selectCount(new LambdaQueryWrapper<Reading>()
                     .eq(Reading::getMeterId, meter.getId()).gt(Reading::getReadTime, r.getReadTime()));
@@ -399,6 +426,7 @@ public class FeeNoticeService {
             }
             saved++;
         }
+        touch(periodId);
         return saved;
     }
 
@@ -426,52 +454,47 @@ public class FeeNoticeService {
             meterMapper.update(null, new LambdaUpdateWrapper<Meter>()
                     .eq(Meter::getArea, meter.getArea()).set(Meter::getLeaseArea, leaseArea));
         }
+        touchDrafts();
     }
 
     // ------------------------------------------------------------------ 垃圾费工作表
 
     public GarbageSheet garbageSheet(Long periodId) {
-        FeePeriod p = require(periodId);
+        return garbageOf(require(periodId));
+    }
+
+    private GarbageSheet garbageOf(FeePeriod p) {
+        if (FeePeriod.ST_CONFIRMED.equals(p.getStatus())) {
+            GarbageSheet frozen = readSnapshot(p.getId(), KIND_GARBAGE, GarbageSheet.class);
+            if (frozen != null) {
+                return new GarbageSheet(p, frozen.totalLeaseArea(), frozen.rows());
+            }
+        }
+        return garbageLive(p);
+    }
+
+    /** 与通知单共用 FeeNoticeCalculator.splitGarbage,两边金额逐分一致 */
+    private GarbageSheet garbageLive(FeePeriod p) {
         List<SheetRow> rows = new ArrayList<>();
         rows.addAll(loadRows(p, FeeNoticeCalculator.TYPE_WATER));
         rows.addAll(loadRows(p, FeeNoticeCalculator.TYPE_ELECTRIC));
+        FeeNoticeCalculator.GarbageSplit split = FeeNoticeCalculator.splitGarbage(p, rows);
         Map<String, List<SheetRow>> byUnit = new LinkedHashMap<>();
         for (SheetRow r : rows) {
             if (r.isTenant()) {
                 byUnit.computeIfAbsent(FeeNoticeCalculator.unitKey(r), k -> new ArrayList<>()).add(r);
             }
         }
-        BigDecimal totalArea = BigDecimal.ZERO;
-        Map<String, BigDecimal> areaByUnit = new LinkedHashMap<>();
-        for (Map.Entry<String, List<SheetRow>> e : byUnit.entrySet()) {
-            BigDecimal area = e.getValue().stream().map(SheetRow::getLeaseArea)
-                    .filter(a -> a != null && a.signum() > 0).max(BigDecimal::compareTo).orElse(BigDecimal.ZERO);
-            areaByUnit.put(e.getKey(), area);
-            if (e.getValue().stream().anyMatch(SheetRow::isSharePublic)) {
-                totalArea = totalArea.add(area);
-            }
-        }
         List<GarbageRow> out = new ArrayList<>();
-        for (Map.Entry<String, List<SheetRow>> e : byUnit.entrySet()) {
-            SheetRow first = e.getValue().get(0);
-            boolean share = e.getValue().stream().anyMatch(SheetRow::isSharePublic);
-            BigDecimal area = areaByUnit.get(e.getKey());
-            BigDecimal ratio = BigDecimal.ZERO;
-            BigDecimal domestic = BigDecimal.ZERO;
-            BigDecimal industrial = BigDecimal.ZERO;
-            if (share && totalArea.signum() > 0 && area.signum() > 0) {
-                ratio = area.divide(totalArea, 8, RoundingMode.HALF_UP);
-                domestic = FeeNoticeCalculator.money(nz(p.getDomesticGarbageAmount()).multiply(area)
-                        .divide(totalArea, 10, RoundingMode.HALF_UP));
-                industrial = FeeNoticeCalculator.money(nz(p.getIndustrialGarbageAmount()).multiply(area)
-                        .divide(totalArea, 10, RoundingMode.HALF_UP));
-            }
-            out.add(new GarbageRow(e.getKey(), FeeNoticeCalculator.floorKey(first.getArea()),
+        for (FeeNoticeCalculator.UnitShare us : split.units().values()) {
+            List<SheetRow> unitRows = byUnit.getOrDefault(us.unit(), List.of());
+            SheetRow first = unitRows.get(0);
+            out.add(new GarbageRow(us.unit(), FeeNoticeCalculator.floorKey(first.getArea()),
                     FeeNoticeCalculator.firstNonBlank(first.getTenantName(), first.getCustomerName(), "-"),
-                    share, area, ratio, domestic, industrial,
-                    e.getValue().stream().map(SheetRow::getMeterId).distinct().toList()));
+                    us.share(), us.area(), us.ratio(), us.domestic(), us.industrial(),
+                    unitRows.stream().map(SheetRow::getMeterId).distinct().toList()));
         }
-        return new GarbageSheet(p, totalArea, out);
+        return new GarbageSheet(p, split.totalArea(), out);
     }
 
     // ------------------------------------------------------------------ 生成通知单
@@ -518,7 +541,7 @@ public class FeeNoticeService {
         snap.setTotalLeaseArea(batch.totalLeaseArea());
         snap.setNoticeCount(batch.notices().size());
         snap.setTotalAmount(totalAmount);
-        snap.setGeneratedTime(LocalDateTime.now());
+        snap.setGeneratedTime(LocalDateTime.now().withNano(0));
         periodMapper.updateById(snap);
         return new GenerateResult(require(periodId), batch.notices(), batch.warnings());
     }
@@ -617,6 +640,9 @@ public class FeeNoticeService {
         if (notices.isEmpty()) {
             throw new BizException("还没有生成通知单,请先点「生成通知单」");
         }
+        if (Boolean.TRUE.equals(p.getNoticeStale())) {
+            throw new BizException("生成通知单之后读数、总量或表计又有改动,请先重新生成通知单再确认出账");
+        }
         YearMonth ym = parse(p.getPeriod());
         int inserted = 0;
         int skipped = 0;
@@ -660,6 +686,7 @@ public class FeeNoticeService {
             noticeMapper.updateById(n);
             inserted++;
         }
+        freeze(p);
         int updated = periodMapper.update(null, new LambdaUpdateWrapper<FeePeriod>()
                 .eq(FeePeriod::getId, periodId).eq(FeePeriod::getStatus, FeePeriod.ST_DRAFT)
                 .set(FeePeriod::getStatus, FeePeriod.ST_CONFIRMED));
@@ -700,6 +727,7 @@ public class FeeNoticeService {
             noticeMapper.update(null, new LambdaUpdateWrapper<FeeNotice>()
                     .eq(FeeNotice::getId, n.getId()).set(FeeNotice::getBillId, null));
         }
+        snapshotMapper.delete(new LambdaQueryWrapper<FeeSnapshot>().eq(FeeSnapshot::getFeePeriodId, periodId));
         int updated = periodMapper.update(null, new LambdaUpdateWrapper<FeePeriod>()
                 .eq(FeePeriod::getId, periodId).eq(FeePeriod::getStatus, FeePeriod.ST_CONFIRMED)
                 .set(FeePeriod::getStatus, FeePeriod.ST_DRAFT));
@@ -709,6 +737,357 @@ public class FeeNoticeService {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("removed", removed);
         return m;
+    }
+
+    // ------------------------------------------------------------------ 账期状态、冻结快照与下月衔接
+
+    private static final String KIND_ELECTRIC = "ELECTRIC";
+    private static final String KIND_WATER = "WATER";
+    private static final String KIND_GARBAGE = "GARBAGE";
+
+    /** 派生状态:生成通知单之后读数 / 总量 / 表计又改过 → 通知单是旧的 */
+    private FeePeriod decorate(FeePeriod p) {
+        if (p != null) {
+            p.setNoticeStale(p.getGeneratedTime() != null && p.getInputsChangedTime() != null
+                    && p.getInputsChangedTime().isAfter(p.getGeneratedTime()));
+        }
+        return p;
+    }
+
+    public List<FeePeriod> decorate(List<FeePeriod> list) {
+        list.forEach(this::decorate);
+        return list;
+    }
+
+    private void touch(Long periodId) {
+        periodMapper.update(null, new LambdaUpdateWrapper<FeePeriod>()
+                .eq(FeePeriod::getId, periodId).set(FeePeriod::getInputsChangedTime, LocalDateTime.now().withNano(0)));
+    }
+
+    /** 表计增减、改区域等影响所有未出账月份 */
+    private void touchDrafts() {
+        periodMapper.update(null, new LambdaUpdateWrapper<FeePeriod>()
+                .eq(FeePeriod::getStatus, FeePeriod.ST_DRAFT)
+                .set(FeePeriod::getInputsChangedTime, LocalDateTime.now().withNano(0)));
+    }
+
+    private static String kindOf(String energyType) {
+        return FeeNoticeCalculator.TYPE_WATER.equals(energyType) ? KIND_WATER : KIND_ELECTRIC;
+    }
+
+    private <T> T readSnapshot(Long periodId, String kind, Class<T> type) {
+        FeeSnapshot s = snapshotMapper.selectOne(new LambdaQueryWrapper<FeeSnapshot>()
+                .eq(FeeSnapshot::getFeePeriodId, periodId).eq(FeeSnapshot::getKind, kind)
+                .orderByDesc(FeeSnapshot::getId).last("LIMIT 1"));
+        if (s == null || s.getContent() == null) {
+            return null;
+        }
+        try {
+            return objectMapper.copy().configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
+                    .readValue(s.getContent(), type);
+        } catch (JsonProcessingException e) {
+            return null; // 快照读不出来就退回实时计算,不拦住页面
+        }
+    }
+
+    private void writeSnapshot(Long periodId, String kind, Object value) {
+        snapshotMapper.delete(new LambdaQueryWrapper<FeeSnapshot>()
+                .eq(FeeSnapshot::getFeePeriodId, periodId).eq(FeeSnapshot::getKind, kind));
+        FeeSnapshot s = new FeeSnapshot();
+        s.setFeePeriodId(periodId);
+        s.setKind(kind);
+        try {
+            s.setContent(objectMapper.writeValueAsString(value));
+        } catch (JsonProcessingException e) {
+            throw new BizException("冻结账期数据失败,请重试");
+        }
+        snapshotMapper.insert(s);
+    }
+
+    /** 确认出账时把当月三张工作表冻结下来,之后表计增减不再影响这个月 */
+    private void freeze(FeePeriod p) {
+        Sheet e = sheet(p, FeeNoticeCalculator.TYPE_ELECTRIC);
+        Sheet w = sheet(p, FeeNoticeCalculator.TYPE_WATER);
+        GarbageSheet g = garbageLive(p);
+        writeSnapshot(p.getId(), KIND_ELECTRIC, new Sheet(null, e.energyType(), e.total(), e.totalSource(),
+                e.submeterUsage(), e.publicUsage(), e.shareBase(), e.price(), e.totalFee(), e.rows(), e.warnings()));
+        writeSnapshot(p.getId(), KIND_WATER, new Sheet(null, w.energyType(), w.total(), w.totalSource(),
+                w.submeterUsage(), w.publicUsage(), w.shareBase(), w.price(), w.totalFee(), w.rows(), w.warnings()));
+        writeSnapshot(p.getId(), KIND_GARBAGE, new GarbageSheet(null, g.totalLeaseArea(), g.rows()));
+    }
+
+    /**
+     * 本月读数就是下个月的上期读数。本月读数改了,下个月已经录过的同一块表要跟着改上期读数、用量与费用,
+     * 否则抄表记录与能耗统计里下个月的用量会对不上;下个月已确认出账的不能悄悄改,直接拦下。
+     */
+    private void cascadeNext(Meter meter, FeePeriod p, BigDecimal curr) {
+        Reading next = readingMapper.selectOne(new LambdaQueryWrapper<Reading>()
+                .eq(Reading::getMeterId, meter.getId()).isNotNull(Reading::getPeriod).gt(Reading::getPeriod, p.getPeriod())
+                .orderByAsc(Reading::getPeriod).orderByDesc(Reading::getId).last("LIMIT 1"));
+        if (next == null) {
+            return;
+        }
+        FeePeriod np = periodMapper.selectOne(new LambdaQueryWrapper<FeePeriod>()
+                .eq(FeePeriod::getPeriod, next.getPeriod()).last("LIMIT 1"));
+        if (np != null && FeePeriod.ST_CONFIRMED.equals(np.getStatus())) {
+            throw new BizException("「" + np.getPeriod() + "」已确认出账,改「" + p.getPeriod()
+                    + "」的读数会牵动它的上期读数;请先撤销「" + np.getPeriod() + "」的确认");
+        }
+        BigDecimal ratio = meter.getRatio() == null || meter.getRatio().signum() <= 0 ? BigDecimal.ONE : meter.getRatio();
+        BigDecimal usage = nz(next.getCurrReading()).subtract(curr).max(BigDecimal.ZERO)
+                .multiply(ratio).setScale(2, RoundingMode.HALF_UP);
+        next.setPrevReading(curr);
+        next.setUsageAmount(usage);
+        if (np != null) {
+            BigDecimal price = FeeNoticeCalculator.TYPE_WATER.equals(meter.getEnergyType())
+                    ? nz(np.getWaterPrice()) : nz(np.getElectricPrice());
+            next.setFee(usage.multiply(price).setScale(2, RoundingMode.HALF_UP));
+        }
+        readingMapper.updateById(next);
+        if (np != null) {
+            touch(np.getId());
+        }
+    }
+
+    // ------------------------------------------------------------------ 年月表
+
+    /** 年月表上每个月一个按钮:总用电量与电费、总用水量与水费、垃圾费、应收合计与已留存的单据数 */
+    public record MonthOverview(String period, Long periodId, String status, Boolean noticeStale,
+                                BigDecimal electricUsage, BigDecimal electricFee,
+                                BigDecimal waterUsage, BigDecimal waterFee,
+                                BigDecimal garbageTotal, BigDecimal garbageFee,
+                                BigDecimal totalDue, int noticeCount,
+                                int electricFiles, int waterFiles, int garbageFiles) {}
+
+    public List<MonthOverview> overview(int year) {
+        if (year < 2000 || year > 2100) {
+            throw new BizException("年份不合法");
+        }
+        List<FeePeriod> periods = decorate(periodMapper.selectList(new LambdaQueryWrapper<FeePeriod>()
+                .ge(FeePeriod::getPeriod, year + "-01").le(FeePeriod::getPeriod, year + "-12")
+                .orderByAsc(FeePeriod::getPeriod)));
+        if (periods.isEmpty()) {
+            return List.of();
+        }
+        String ids = periods.stream().map(x -> String.valueOf(x.getId())).collect(Collectors.joining(","));
+        Map<Long, BigDecimal> dueByPeriod = new LinkedHashMap<>();
+        Map<Long, Integer> countByPeriod = new LinkedHashMap<>();
+        for (Map<String, Object> r : jdbc.queryForList(
+                "SELECT fee_period_id, COUNT(*) AS c, COALESCE(SUM(total_due), 0) AS s FROM eng_fee_notice"
+                        + " WHERE deleted = 0 AND fee_period_id IN (" + ids + ") GROUP BY fee_period_id")) {
+            Long id = ((Number) r.get("fee_period_id")).longValue();
+            countByPeriod.put(id, ((Number) r.get("c")).intValue());
+            dueByPeriod.put(id, (BigDecimal) r.get("s"));
+        }
+        Map<String, Integer> files = new LinkedHashMap<>();
+        for (Map<String, Object> r : jdbc.queryForList(
+                "SELECT biz_type, biz_id, COUNT(*) AS c FROM sys_file WHERE deleted = 0"
+                        + " AND biz_type IN ('energy_fee_electric','energy_fee_water','energy_fee_garbage')"
+                        + " AND biz_id IN (" + ids + ") GROUP BY biz_type, biz_id")) {
+            files.put(r.get("biz_type") + ":" + r.get("biz_id"), ((Number) r.get("c")).intValue());
+        }
+        List<MonthOverview> out = new ArrayList<>();
+        for (FeePeriod p : periods) {
+            Sheet e = sheetOf(p, FeeNoticeCalculator.TYPE_ELECTRIC);
+            Sheet w = sheetOf(p, FeeNoticeCalculator.TYPE_WATER);
+            GarbageSheet g = garbageOf(p);
+            BigDecimal garbageFee = BigDecimal.ZERO;
+            for (GarbageRow row : g.rows()) {
+                garbageFee = garbageFee.add(nz(row.domesticFee())).add(nz(row.industrialFee()));
+            }
+            int count = countByPeriod.getOrDefault(p.getId(), 0);
+            out.add(new MonthOverview(p.getPeriod(), p.getId(), p.getStatus(), p.getNoticeStale(),
+                    nz(e.total()), e.totalFee(), nz(w.total()), w.totalFee(),
+                    nz(p.getDomesticGarbageAmount()).add(nz(p.getIndustrialGarbageAmount())), garbageFee,
+                    count == 0 ? null : dueByPeriod.get(p.getId()), count,
+                    files.getOrDefault("energy_fee_electric:" + p.getId(), 0),
+                    files.getOrDefault("energy_fee_water:" + p.getId(), 0),
+                    files.getOrDefault("energy_fee_garbage:" + p.getId(), 0)));
+        }
+        return out;
+    }
+
+    // ------------------------------------------------------------------ 删除通知单
+
+    /**
+     * 删除通知单:指定若干张,或 all=true 一键删除本期全部。
+     * 已确认出账的通知单连同它生成的账单一起删,但账单收过款的不能删(要先红冲)。
+     * 删掉的户在重新生成通知单时会按读数重新出现;想永久去掉某个区域/用户,请在电费、水费页删除对应表计。
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public Map<String, Object> deleteNotices(Long periodId, List<Long> ids, boolean all) {
+        FeePeriod p = require(periodId);
+        LambdaQueryWrapper<FeeNotice> qw = new LambdaQueryWrapper<FeeNotice>().eq(FeeNotice::getFeePeriodId, periodId);
+        if (!all) {
+            if (ids == null || ids.isEmpty()) {
+                throw new BizException("请先选择要删除的通知单");
+            }
+            qw.in(FeeNotice::getId, ids);
+        }
+        List<FeeNotice> targets = noticeMapper.selectList(qw);
+        Map<String, Object> m = new LinkedHashMap<>();
+        if (targets.isEmpty()) {
+            m.put("deleted", 0);
+            m.put("bills", 0);
+            return m;
+        }
+        int paid = 0;
+        for (FeeNotice n : targets) {
+            Bill b = n.getBillId() == null ? null : billMapper.selectById(n.getBillId());
+            if (b != null && b.getPaidAmount() != null && b.getPaidAmount().signum() > 0) {
+                paid++;
+            }
+        }
+        if (paid > 0) {
+            throw new BizException("有 " + paid + " 张通知单对应的账单已收款,不能删除;请先在收款记录里红冲后重试");
+        }
+        int bills = 0;
+        List<Long> noticeIds = new ArrayList<>();
+        for (FeeNotice n : targets) {
+            noticeIds.add(n.getId());
+            if (n.getBillId() != null && billMapper.selectById(n.getBillId()) != null) {
+                billMapper.deleteById(n.getBillId());
+                bills++;
+            }
+        }
+        itemMapper.delete(new LambdaQueryWrapper<FeeNoticeItem>().in(FeeNoticeItem::getNoticeId, noticeIds));
+        noticeMapper.deleteBatchIds(noticeIds);
+
+        List<FeeNotice> left = noticeMapper.selectList(new LambdaQueryWrapper<FeeNotice>().eq(FeeNotice::getFeePeriodId, periodId));
+        BigDecimal due = BigDecimal.ZERO;
+        for (FeeNotice n : left) {
+            due = due.add(nz(n.getTotalDue()));
+        }
+        periodMapper.update(null, new LambdaUpdateWrapper<FeePeriod>().eq(FeePeriod::getId, periodId)
+                .set(FeePeriod::getNoticeCount, left.size()).set(FeePeriod::getTotalAmount, due));
+        if (left.isEmpty() && FeePeriod.ST_CONFIRMED.equals(p.getStatus())) {
+            snapshotMapper.delete(new LambdaQueryWrapper<FeeSnapshot>().eq(FeeSnapshot::getFeePeriodId, periodId));
+            periodMapper.update(null, new LambdaUpdateWrapper<FeePeriod>().eq(FeePeriod::getId, periodId)
+                    .set(FeePeriod::getStatus, FeePeriod.ST_DRAFT));
+        }
+        m.put("deleted", noticeIds.size());
+        m.put("bills", bills);
+        return m;
+    }
+
+    // ------------------------------------------------------------------ 增减区域 / 用户(表计)
+
+    public record MeterInput(Long id, String energyType, String area, String customerName, String code,
+                             BigDecimal ratio, Integer sharePublic, BigDecimal leaseArea, BigDecimal lastReading,
+                             Long roomId) {}
+
+    /**
+     * 新增或修改一块租户分表(= 一个区域下的一个用户)。新增时表计编号可不填,自动按「电/水 + 区域」生成。
+     * 计租面积没填且同区域已有表计填过时沿用,免得同一单元要重复填。
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public Meter saveMeter(MeterInput in) {
+        String type = in.energyType() == null ? null : in.energyType().trim();
+        String area = in.area() == null ? "" : in.area().trim();
+        if (in.id() == null) {
+            if (!FeeNoticeCalculator.TYPE_ELECTRIC.equals(type) && !FeeNoticeCalculator.TYPE_WATER.equals(type)) {
+                throw new BizException("表计类型只能是「电」或「水」");
+            }
+            if (area.isEmpty()) {
+                throw new BizException("请填写区域,如 2层D区");
+            }
+            validateMeter(in);
+            Meter m = new Meter();
+            m.setEnergyType(type);
+            m.setArea(area);
+            m.setCustomerName(trimToNull(in.customerName()));
+            m.setName(area + (StringUtils.hasText(in.customerName()) ? " " + in.customerName().trim() : ""));
+            m.setCode(StringUtils.hasText(in.code()) ? in.code().trim() : nextMeterCode(type, area));
+            if (meterMapper.selectCount(new LambdaQueryWrapper<Meter>().eq(Meter::getCode, m.getCode())) > 0) {
+                throw new BizException("表计编号「" + m.getCode() + "」已存在");
+            }
+            m.setMeterRole("TENANT");
+            m.setSharePublic(in.sharePublic() != null && in.sharePublic() == 0 ? 0 : 1);
+            m.setRatio(in.ratio() == null || in.ratio().signum() <= 0 ? BigDecimal.ONE : in.ratio());
+            m.setLastReading(in.lastReading() == null ? BigDecimal.ZERO : in.lastReading());
+            m.setRoomId(in.roomId());
+            m.setStatus(1);
+            m.setLeaseArea(in.leaseArea() != null ? in.leaseArea() : sameAreaLeaseArea(area));
+            try {
+                meterMapper.insert(m);
+            } catch (DuplicateKeyException e) {
+                throw new BizException("表计编号「" + m.getCode() + "」已存在");
+            }
+            touchDrafts();
+            return m;
+        }
+        Meter m = meterMapper.selectById(in.id());
+        if (m == null) {
+            throw new BizException("表计不存在: " + in.id());
+        }
+        validateMeter(in);
+        LambdaUpdateWrapper<Meter> uw = new LambdaUpdateWrapper<Meter>().eq(Meter::getId, m.getId());
+        if (!area.isEmpty()) {
+            uw.set(Meter::getArea, area);
+        }
+        if (in.customerName() != null) {
+            uw.set(Meter::getCustomerName, trimToNull(in.customerName()));
+        }
+        if (in.ratio() != null && in.ratio().signum() > 0) {
+            uw.set(Meter::getRatio, in.ratio());
+        }
+        if (in.sharePublic() != null) {
+            uw.set(Meter::getSharePublic, in.sharePublic() == 0 ? 0 : 1);
+        }
+        if (in.roomId() != null) {
+            uw.set(Meter::getRoomId, in.roomId());
+        }
+        meterMapper.update(null, uw);
+        if (in.leaseArea() != null) {
+            String targetArea = area.isEmpty() ? m.getArea() : area;
+            LambdaUpdateWrapper<Meter> area_uw = new LambdaUpdateWrapper<Meter>().set(Meter::getLeaseArea, in.leaseArea());
+            if (StringUtils.hasText(targetArea)) {
+                area_uw.eq(Meter::getArea, targetArea);
+            } else {
+                area_uw.eq(Meter::getId, m.getId());
+            }
+            meterMapper.update(null, area_uw);
+        }
+        touchDrafts();
+        return meterMapper.selectById(m.getId());
+    }
+
+    /** 删除区域/用户:把这些表计逻辑删除。历史已出账月份读冻结快照,不受影响 */
+    @Transactional(rollbackFor = Exception.class)
+    public int deleteMeters(List<Long> ids) {
+        if (ids == null || ids.isEmpty()) {
+            throw new BizException("请选择要删除的区域/用户");
+        }
+        int n = meterMapper.deleteBatchIds(ids);
+        touchDrafts();
+        return n;
+    }
+
+    private static void validateMeter(MeterInput in) {
+        for (BigDecimal v : new BigDecimal[]{in.leaseArea(), in.lastReading()}) {
+            if (v != null && v.signum() < 0) {
+                throw new BizException("面积与读数不能为负");
+            }
+        }
+    }
+
+    private String nextMeterCode(String type, String area) {
+        String base = (FeeNoticeCalculator.TYPE_ELECTRIC.equals(type) ? "DB-" : "SB-") + area;
+        String code = base;
+        int i = 2;
+        while (meterMapper.selectCount(new LambdaQueryWrapper<Meter>().eq(Meter::getCode, code)) > 0) {
+            code = base + "-" + i++;
+        }
+        return code;
+    }
+
+    private BigDecimal sameAreaLeaseArea(String area) {
+        return meterMapper.selectList(new LambdaQueryWrapper<Meter>().eq(Meter::getArea, area).isNotNull(Meter::getLeaseArea))
+                .stream().map(Meter::getLeaseArea).filter(a -> a.signum() > 0).max(BigDecimal::compareTo).orElse(null);
+    }
+
+    private static String trimToNull(String v) {
+        return v == null || v.isBlank() ? null : v.trim();
     }
 
     // ------------------------------------------------------------------ 工具

@@ -1,14 +1,14 @@
-import { onMounted, reactive, ref, watch } from 'vue'
+import { reactive, ref, watch } from 'vue'
 import { feePeriodApi } from '@/api/energy'
 
 export const money = (v) => Number(v || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 export const num = (v, digits = 2) => (v == null || v === '' ? '-' : Number(v).toLocaleString('zh-CN', { maximumFractionDigits: digits }))
 
-export function currentMonth() {
-  const d = new Date()
-  const m = d.getMonth() === 0 ? 12 : d.getMonth()
-  const y = d.getMonth() === 0 ? d.getFullYear() - 1 : d.getFullYear()
-  return `${y}-${String(m).padStart(2, '0')}`
+/** 供应商账单(单据留存)的三种类型,与后端 sys_file.biz_type = energy_fee_{key} 对应 */
+export const BILL_KINDS = {
+  electric: { key: 'electric', label: '南网电费账单' },
+  water: { key: 'water', label: '自来水公司账单' },
+  garbage: { key: 'garbage', label: '垃圾清理供应商账单' }
 }
 
 export function periodRange(p) {
@@ -17,20 +17,24 @@ export function periodRange(p) {
   return `${f(p.periodStart)}~${f(p.periodEnd)}`
 }
 
-/** 四个页面共用:按月份打开账期,月份记在 localStorage 里,切页面不丢 */
+/**
+ * 四个页面共用:先看年月表,点某个月才打开那个月的账期。
+ * month 为空 = 显示年月表;有值 = 显示该月明细。
+ */
 export function useFeePeriod(onOpened) {
-  const KEY = 'zhyq_fee_period_month'
-  const month = ref(localStorage.getItem(KEY) || currentMonth())
+  const month = ref(null)
   const period = ref(null)
   const loading = ref(false)
   const state = reactive({ saving: false })
 
   async function open() {
-    if (!month.value) return
+    if (!month.value) {
+      period.value = null
+      return
+    }
     loading.value = true
     try {
       period.value = await feePeriodApi.open(month.value)
-      localStorage.setItem(KEY, month.value)
       if (onOpened) await onOpened(period.value)
     } finally {
       loading.value = false
@@ -49,9 +53,11 @@ export function useFeePeriod(onOpened) {
       state.saving = false
     }
   }
+  function back() {
+    month.value = null
+  }
   watch(month, open)
-  onMounted(open)
-  return { month, period, loading, state, open, reload, save }
+  return { month, period, loading, state, open, reload, save, back }
 }
 
 export function downloadBlob(response, filename) {

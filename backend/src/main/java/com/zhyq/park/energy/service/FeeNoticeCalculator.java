@@ -114,7 +114,7 @@ public final class FeeNoticeCalculator {
         if (total == null || total.signum() <= 0) {
             warnings.add(energyType + ":没有总度数,本期公摊按 0 计");
         } else {
-            pool = total.subtract(submeter);
+            pool = total.subtract(submeter).setScale(MONEY_SCALE, RoundingMode.HALF_UP);
             if (pool.signum() < 0) {
                 warnings.add(energyType + ":分表用量合计 " + plain(submeter) + " 超过总度数 " + plain(total)
                         + ",公摊按 0 计,请核对读数");
@@ -124,14 +124,20 @@ public final class FeeNoticeCalculator {
         if (pool.signum() > 0 && shareBase.signum() <= 0) {
             warnings.add(energyType + ":没有参与公摊的租户用量,公摊度数 " + plain(pool) + " 无法分摊");
         }
+        // 所有数都保留 2 位小数;公摊度数用最大余数法摊,保证各户公摊之和恰好等于公摊池,页面与通知单才对得上
+        List<BigDecimal> shares = apportion(pool, rows.stream().filter(SheetRow::isSharing)
+                .map(r -> nz(r.getUsage())).toList());
+        int shareIdx = 0;
         BigDecimal totalFee = BigDecimal.ZERO;
         for (SheetRow r : rows) {
             BigDecimal usage = nz(r.getUsage());
             BigDecimal coef = BigDecimal.ZERO;
             BigDecimal pub = BigDecimal.ZERO;
-            if (r.isSharing() && shareBase.signum() > 0) {
-                coef = usage.divide(shareBase, COEF_SCALE, RoundingMode.HALF_UP);
-                pub = pool.multiply(usage).divide(shareBase, USAGE_SCALE, RoundingMode.HALF_UP);
+            if (r.isSharing()) {
+                pub = shares.get(shareIdx++);
+                if (shareBase.signum() > 0) {
+                    coef = usage.divide(shareBase, COEF_SCALE, RoundingMode.HALF_UP);
+                }
             }
             r.setCoefficient(coef);
             r.setPublicUsage(pub);
@@ -165,27 +171,9 @@ public final class FeeNoticeCalculator {
             groups.computeIfAbsent(tenantKey(r) + "|" + floorKey(r.getArea()), k -> new ArrayList<>()).add(r);
         }
 
-        // 2. 各单元计租面积(同区域多块表取最大值),只有参与分摊的单元进垃圾分母
-        Map<String, BigDecimal> unitArea = new LinkedHashMap<>();
-        Map<String, Boolean> unitShare = new LinkedHashMap<>();
-        for (SheetRow r : tenantRows) {
-            String unit = unitKey(r);
-            unitShare.merge(unit, r.isSharePublic(), Boolean::logicalOr);
-            if (r.getLeaseArea() != null && r.getLeaseArea().signum() > 0) {
-                unitArea.merge(unit, r.getLeaseArea(), BigDecimal::max);
-            }
-        }
-        BigDecimal totalArea = BigDecimal.ZERO;
-        for (Map.Entry<String, BigDecimal> e : unitArea.entrySet()) {
-            if (Boolean.TRUE.equals(unitShare.get(e.getKey()))) {
-                totalArea = totalArea.add(e.getValue());
-            }
-        }
-        for (Map.Entry<String, Boolean> e : unitShare.entrySet()) {
-            if (e.getValue() && !unitArea.containsKey(e.getKey())) {
-                warnings.add("单元「" + e.getKey() + "」没有填计租面积,垃圾费分摊时按 0 计");
-            }
-        }
+        // 2. 垃圾费按单元计租面积分摊(最大余数法,各单元之和恰好等于总额),只有参与分摊的单元进分母
+        GarbageSplit split = splitGarbage(period, tenantRows);
+        BigDecimal totalArea = split.totalArea();
 
         // 3. 逐户生成通知单与明细行
         List<FeeNotice> notices = new ArrayList<>();
@@ -199,8 +187,20 @@ public final class FeeNoticeCalculator {
             rows.forEach(r -> units.add(unitKey(r)));
             boolean share = rows.stream().anyMatch(SheetRow::isSharePublic);
             BigDecimal area = BigDecimal.ZERO;
+            BigDecimal domestic = BigDecimal.ZERO;
+            BigDecimal industrial = BigDecimal.ZERO;
             for (String u : units) {
-                area = area.add(unitArea.getOrDefault(u, BigDecimal.ZERO));
+                UnitShare us = split.units().get(u);
+                if (us == null) {
+                    continue;
+                }
+                area = area.add(us.area());
+                domestic = domestic.add(us.domestic());
+                industrial = industrial.add(us.industrial());
+            }
+            if (share && area.signum() <= 0) {
+                warnings.add("「" + unitName(floorKey, units) + " " + firstNonBlank(first.getTenantName(),
+                        first.getCustomerName(), "未知租户") + "」没有填计租面积,垃圾费分摊时按 0 计");
             }
 
             FeeNotice n = new FeeNotice();
@@ -241,14 +241,6 @@ public final class FeeNoticeCalculator {
                 zeroElectric(n);
             }
 
-            BigDecimal domestic = BigDecimal.ZERO;
-            BigDecimal industrial = BigDecimal.ZERO;
-            if (share && totalArea.signum() > 0 && area.signum() > 0) {
-                domestic = money(nz(period.getDomesticGarbageAmount()).multiply(area)
-                        .divide(totalArea, 10, RoundingMode.HALF_UP));
-                industrial = money(nz(period.getIndustrialGarbageAmount()).multiply(area)
-                        .divide(totalArea, 10, RoundingMode.HALF_UP));
-            }
             if (share) {
                 items.add(garbageItem(++no[0], FeeNoticeItem.T_GARBAGE_DOMESTIC, "生活垃圾清运费", domestic,
                         "生活垃圾", period.getDomesticGarbageNote(), period.getDomesticGarbageAmount()));
@@ -296,6 +288,103 @@ public final class FeeNoticeCalculator {
     public static String noticeKey(FeeNotice n) {
         return (n.getTenantRefId() != null ? "T" + n.getTenantRefId() : "N" + n.getTenantName())
                 + "|" + n.getFloorKey() + "|" + n.getUnitName();
+    }
+
+    // ---------------------------------------------------------------- 取整与垃圾分摊
+
+    /**
+     * 把 total 按权重分成若干份,每份保留 2 位小数,各份之和恰好等于 total(最大余数法)。
+     * 权重全为 0 或 total ≤ 0 时每份都是 0。
+     */
+    public static List<BigDecimal> apportion(BigDecimal total, List<BigDecimal> weights) {
+        int n = weights.size();
+        List<BigDecimal> out = new ArrayList<>(n);
+        BigDecimal weightSum = BigDecimal.ZERO;
+        for (BigDecimal w : weights) {
+            weightSum = weightSum.add(nz(w));
+        }
+        long totalCents = nz(total).setScale(MONEY_SCALE, RoundingMode.HALF_UP).movePointRight(2).longValue();
+        if (n == 0 || weightSum.signum() <= 0 || totalCents <= 0) {
+            for (int i = 0; i < n; i++) {
+                out.add(money(BigDecimal.ZERO));
+            }
+            return out;
+        }
+        long[] cents = new long[n];
+        BigDecimal[] remainder = new BigDecimal[n];
+        long allocated = 0;
+        for (int i = 0; i < n; i++) {
+            BigDecimal exact = BigDecimal.valueOf(totalCents).multiply(nz(weights.get(i)))
+                    .divide(weightSum, 12, RoundingMode.HALF_UP);
+            long floor = exact.setScale(0, RoundingMode.FLOOR).longValue();
+            cents[i] = floor;
+            remainder[i] = exact.subtract(BigDecimal.valueOf(floor));
+            allocated += floor;
+        }
+        long left = Math.min(totalCents - allocated, n);
+        List<Integer> order = new ArrayList<>();
+        for (int i = 0; i < n; i++) {
+            order.add(i);
+        }
+        order.sort(Comparator.comparing((Integer i) -> remainder[i]).reversed().thenComparing(i -> i));
+        for (int k = 0; k < left; k++) {
+            cents[order.get(k)]++;
+        }
+        for (int i = 0; i < n; i++) {
+            out.add(BigDecimal.valueOf(cents[i], 2));
+        }
+        return out;
+    }
+
+    /** 一个单元的垃圾费分摊结果 */
+    public record UnitShare(String unit, BigDecimal area, boolean share, BigDecimal ratio,
+                            BigDecimal domestic, BigDecimal industrial) {}
+
+    public record GarbageSplit(Map<String, UnitShare> units, BigDecimal totalArea) {}
+
+    /**
+     * 垃圾费分摊:生活 / 工业两笔总额按各单元计租面积占比摊,只有参与分摊(share_public=1)且填了面积的单元参与。
+     * 单元 = 表计「区域」;同一区域多块表(水表、30倍/80倍电表)面积取其中最大值。
+     * 通知单与垃圾处理费页面都调用这里,保证两边金额逐分一致。
+     */
+    public static GarbageSplit splitGarbage(FeePeriod period, List<SheetRow> tenantRows) {
+        Map<String, BigDecimal> area = new LinkedHashMap<>();
+        Map<String, Boolean> share = new LinkedHashMap<>();
+        for (SheetRow r : tenantRows) {
+            if (!r.isTenant()) {
+                continue;
+            }
+            String unit = unitKey(r);
+            share.merge(unit, r.isSharePublic(), Boolean::logicalOr);
+            BigDecimal a = r.getLeaseArea() != null && r.getLeaseArea().signum() > 0 ? r.getLeaseArea() : BigDecimal.ZERO;
+            area.merge(unit, a, BigDecimal::max);
+        }
+        // 顺序固定(楼层 → 区域名),最大余数法的并列才不会随查询顺序漂移
+        List<String> units = new ArrayList<>(area.keySet());
+        units.sort(Comparator.comparing((String u) -> floorOrder(floorKey(u))).thenComparing(u -> u, String.CASE_INSENSITIVE_ORDER));
+        List<String> sharing = new ArrayList<>();
+        List<BigDecimal> weights = new ArrayList<>();
+        BigDecimal totalArea = BigDecimal.ZERO;
+        for (String u : units) {
+            if (Boolean.TRUE.equals(share.get(u)) && area.get(u).signum() > 0) {
+                sharing.add(u);
+                weights.add(area.get(u));
+                totalArea = totalArea.add(area.get(u));
+            }
+        }
+        List<BigDecimal> domestic = apportion(period.getDomesticGarbageAmount(), weights);
+        List<BigDecimal> industrial = apportion(period.getIndustrialGarbageAmount(), weights);
+        Map<String, UnitShare> out = new LinkedHashMap<>();
+        for (String u : units) {
+            int idx = sharing.indexOf(u);
+            boolean sharesGarbage = idx >= 0;
+            BigDecimal ratio = sharesGarbage && totalArea.signum() > 0
+                    ? area.get(u).divide(totalArea, COEF_SCALE, RoundingMode.HALF_UP) : BigDecimal.ZERO;
+            out.put(u, new UnitShare(u, area.get(u), Boolean.TRUE.equals(share.get(u)), ratio,
+                    sharesGarbage ? domestic.get(idx) : money(BigDecimal.ZERO),
+                    sharesGarbage ? industrial.get(idx) : money(BigDecimal.ZERO)));
+        }
+        return new GarbageSplit(out, totalArea);
     }
 
     // ---------------------------------------------------------------- 明细行

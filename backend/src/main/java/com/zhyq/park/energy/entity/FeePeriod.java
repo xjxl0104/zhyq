@@ -66,6 +66,12 @@ public class FeePeriod extends BaseEntity {
     private Integer noticeCount;
     private BigDecimal totalAmount;
     private LocalDateTime generatedTime;
+    /** 最近一次改动读数/总量/表计的时间;晚于 generatedTime 说明通知单已过期 */
+    private LocalDateTime inputsChangedTime;
+
+    /** 通知单是否已过期(派生,不落库) */
+    @TableField(exist = false)
+    private Boolean noticeStale;
 
     /** 生成列,只读 */
     @TableField(exist = false)
