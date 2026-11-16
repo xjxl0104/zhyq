@@ -28,9 +28,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.HashSet;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import java.util.function.Function;
 
@@ -467,9 +465,4 @@ public class FeeNoticeExportService {
         return v == null ? "" : v;
     }
 
-    /** 保留给后续按费用项目做横向汇总时复用 */
-    @SuppressWarnings("unused")
-    private static Map<String, BigDecimal> emptyTotals() {
-        return new LinkedHashMap<>();
-    }
 }
