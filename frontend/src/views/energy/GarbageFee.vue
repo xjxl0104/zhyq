@@ -196,6 +196,8 @@ function summary({ columns, data }) {
     if (i === 0) { sums[i] = '合计'; return }
     switch (col.label) {
       case '计租面积(㎡)': sums[i] = num(sum(r => r.sharePublic ? r.leaseArea : 0)); break
+      // 参与分摊单元的面积占比之和,正常就是 100.00%
+      case '计租/总计租面积': sums[i] = (sum(r => (r.sharePublic && Number(r.leaseArea) > 0 ? r.ratio : 0)) * 100).toFixed(2) + '%'; break
       case '生活垃圾清运费': sums[i] = '¥' + money(sum(r => r.domesticFee)); break
       case '工业垃圾清运费': sums[i] = '¥' + money(sum(r => r.industrialFee)); break
       case '合计/元': sums[i] = '¥' + money(sum(r => Number(r.domesticFee || 0) + Number(r.industrialFee || 0))); break

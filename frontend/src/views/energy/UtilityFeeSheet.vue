@@ -297,6 +297,8 @@ function summary({ columns, data }) {
     if (i === 0) { sums[i] = '合计'; return }
     switch (col.label) {
       case '本期用量': sums[i] = num(sum(liveUsage)); break
+      // 参与公摊户的比例之和,正常就是 100.00%
+      case '公摊比例': sums[i] = ratioText(sum(r => (r.sharePublic && r.meterRole === 'TENANT' ? r.coefficient : 0))); break
       case '公摊度数': sums[i] = num(sum(r => r.publicUsage)); break
       case '度数+公摊': sums[i] = num(sum(r => r.totalUsage)); break
       case '电费': case '水费': sums[i] = '¥' + money(sum(r => r.fee)); break
