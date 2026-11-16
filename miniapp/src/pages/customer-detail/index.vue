@@ -9,7 +9,7 @@
         <view class="row"><text class="muted">评级</text><text>{{ c.grade || '未评级' }}</text></view>
         <view class="row"><text class="muted">状态</text><text>{{ STATUS[c.status] || '待确认' }}</text></view>
         <view class="row"><text class="muted">客户归属</text><text>{{ lockText }}</text></view>
-        <view class="row"><text class="muted">意向云仓</text><text>{{ c.intendedWarehouseName || '不限' }}</text></view>
+        <view v-if="c.intendedWarehouseName" class="row"><text class="muted">意向云仓</text><text>{{ c.intendedWarehouseName }}</text></view>
         <view class="row"><text class="muted">分派云仓</text><text>{{ c.assignedWarehouseName || '待园区分派' }}</text></view>
         <view class="row"><text class="muted">承接状态</text><text>{{ ASSIGN[c.warehouseAssignmentStatus || 0] }}</text></view>
         <view class="row"><text class="muted">推荐时间</text><text>{{ c.createTime?.slice(0, 16) }}</text></view>

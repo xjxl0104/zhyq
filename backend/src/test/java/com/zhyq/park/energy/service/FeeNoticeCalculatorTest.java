@@ -92,8 +92,9 @@ class FeeNoticeCalculatorTest {
         BigDecimal total = new BigDecimal("50103.4");
         UtilityResult r = FeeNoticeCalculator.allocate("电", total, new BigDecimal("1.03"), rows);
 
-        assertThat(r.submeterUsage()).isEqualByComparingTo("42103.4");
-        assertThat(r.publicUsage()).isEqualByComparingTo("8000");
+        // 公摊池 = 总度数 − 参与公摊租户用量;充电桩、未租单元既不参与也不扣
+        assertThat(r.submeterUsage()).isEqualByComparingTo("41685");
+        assertThat(r.publicUsage()).isEqualByComparingTo("8418.40");
         assertThat(r.shareBase()).isEqualByComparingTo("41685");
         SheetRow pile = r.rows().get(3);
         assertThat(pile.getPublicUsage()).isEqualByComparingTo("0");
@@ -101,7 +102,28 @@ class FeeNoticeCalculatorTest {
         assertThat(pile.getTotalFee()).isEqualByComparingTo("374.92");
         BigDecimal shared = r.rows().stream().filter(SheetRow::isSharing)
                 .map(SheetRow::getPublicUsage).reduce(BigDecimal.ZERO, BigDecimal::add);
-        assertThat(shared).isEqualByComparingTo("8000");
+        assertThat(shared).isEqualByComparingTo("8418.40");
+    }
+
+    @Test
+    @DisplayName("手工填公摊度数:直接用它,仍按各户实际用量占比摊;留空才自动算")
+    void manualPublicUsageOverridesPool() {
+        List<SheetRow> rows = List.of(
+                row(1, "1层A区", "云帕", 1L, "电", "8003.4", true, null),
+                row(2, "1层A区", "云帕", 1L, "电", "19200", true, null),
+                row(3, "2层A区", "云山快仓", 2L, "电", "14481.6", true, null),
+                row(4, "室外", "充电柱", null, "电", "364", false, null));
+        UtilityResult r = FeeNoticeCalculator.allocate("电", new BigDecimal("176300"), new BigDecimal("1.03"), rows,
+                new BigDecimal("33762.8"));
+
+        assertThat(r.publicUsage()).isEqualByComparingTo("33762.80");
+        BigDecimal shared = r.rows().stream().map(SheetRow::getPublicUsage).reduce(BigDecimal.ZERO, BigDecimal::add);
+        assertThat(shared).isEqualByComparingTo("33762.80");
+        // 云帕两块表合计用量 27203.4,占参与公摊用量 41685 的份额 × 手工公摊度数
+        BigDecimal expected = new BigDecimal("27203.4").multiply(new BigDecimal("33762.8"))
+                .divide(new BigDecimal("41685"), 4, java.math.RoundingMode.HALF_UP);
+        BigDecimal yunpa = r.rows().get(0).getPublicUsage().add(r.rows().get(1).getPublicUsage());
+        assertThat(yunpa.subtract(expected).abs()).isLessThan(new BigDecimal("0.02"));
     }
 
     @Test

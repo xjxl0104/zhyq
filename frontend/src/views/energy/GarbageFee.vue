@@ -54,19 +54,21 @@
           <el-table-column type="index" label="序号" width="55" />
           <el-table-column prop="unit" label="区域 / 单元" width="120" />
           <el-table-column prop="tenantName" label="用户名 / 租户" min-width="160" show-overflow-tooltip />
-          <el-table-column label="参与分摊" width="90" align="center">
-            <template #default="{ row }">
-              <el-tag size="small" :type="row.sharePublic ? 'success' : 'info'" effect="plain">{{ row.sharePublic ? '是' : '否' }}</el-tag>
-            </template>
-          </el-table-column>
           <el-table-column label="计租面积(㎡)" width="150" align="right">
             <template #default="{ row }">
               <el-input-number :model-value="row.leaseArea" :min="0" :precision="2" :controls="false" size="small"
                                :disabled="locked" style="width: 120px" @change="(v) => saveArea(row, v)" />
             </template>
           </el-table-column>
-          <el-table-column label="计租/总计租面积" width="130" align="right">
-            <template #default="{ row }">{{ row.sharePublic ? (Number(row.ratio || 0) * 100).toFixed(2) + '%' : '-' }}</template>
+          <!-- 计租/总计租面积 = 本单元面积 ÷ 参与分摊的面积合计 -->
+          <el-table-column label="计租/总计租面积" width="140" align="right">
+            <template #default="{ row, $index }">
+              <span v-if="row.sharePublic && Number(row.leaseArea) > 0" class="ratio"
+                    :title="`${row.leaseArea} ÷ ${sheet?.totalLeaseArea} = ${Number(row.ratio || 0).toFixed(6)}`">{{ (Number(row.ratio || 0) * 100).toFixed(2) }}%</span>
+              <span v-else-if="row.sharePublic && mergedIntoPrev(row, $index)" class="muted">并入上一区域</span>
+              <span v-else-if="row.sharePublic" class="warn">未填面积</span>
+              <span v-else class="muted">不参与</span>
+            </template>
           </el-table-column>
           <el-table-column label="生活垃圾清运费" width="130" align="right">
             <template #default="{ row }">¥{{ money(row.domesticFee) }}</template>
@@ -76,6 +78,11 @@
           </el-table-column>
           <el-table-column label="合计/元" width="120" align="right">
             <template #default="{ row }"><strong>¥{{ money(Number(row.domesticFee || 0) + Number(row.industrialFee || 0)) }}</strong></template>
+          </el-table-column>
+          <el-table-column label="参与分摊" width="90" align="center">
+            <template #default="{ row }">
+              <el-tag size="small" :type="row.sharePublic ? 'success' : 'info'" effect="plain">{{ row.sharePublic ? '是' : '否' }}</el-tag>
+            </template>
           </el-table-column>
           <el-table-column label="操作" width="80" fixed="right">
             <template #default="{ row }">
@@ -121,6 +128,12 @@ const locked = computed(() => period.value?.status === 'CONFIRMED')
 const monthLabel = computed(() => (month.value ? `${month.value.slice(0, 4)}年${Number(month.value.slice(5))}月` : ''))
 const allocatedTotal = computed(() => (sheet.value?.rows || [])
   .reduce((s, r) => s + Number(r.domesticFee || 0) + Number(r.industrialFee || 0), 0))
+
+// 同一租户同一楼层的相邻区域(如 2层A~C区)面积只填在第一个区域上,后面的区域并入它,不算漏填
+function mergedIntoPrev(row, idx) {
+  const prev = (sheet.value?.rows || [])[idx - 1]
+  return !!prev && prev.tenantName === row.tenantName && prev.floorKey === row.floorKey && Number(prev.leaseArea) > 0
+}
 
 async function loadSheet() {
   if (!period.value) return
@@ -204,5 +217,8 @@ function summary({ columns, data }) {
 .summary-item strong { font-size: 17px; font-variant-numeric: tabular-nums; }
 .summary-item.hl strong { color: var(--el-color-primary); }
 .summary-item.total strong { color: var(--el-color-danger); }
+.ratio { font-weight: 600; color: var(--el-color-primary); font-variant-numeric: tabular-nums; }
+.warn { color: var(--el-color-warning); font-size: 12px; }
+.muted { color: var(--el-text-color-placeholder); font-size: 12px; }
 .empty-tip { text-align: center; color: var(--el-text-color-secondary); padding: 20px 0; font-size: 13px; }
 </style>
