@@ -43,6 +43,10 @@ public class FeePeriod extends BaseEntity {
     /** 水总表度数;为空时按发票总表(MAIN)当月抄表取 */
     private BigDecimal waterTotalUsage;
     private BigDecimal waterPrice;
+    /** 电公摊度数手工填写;为空按「总度数 − 参与公摊租户用量」自动算 */
+    private BigDecimal electricPublicManual;
+    /** 水公摊度数手工填写;为空自动算 */
+    private BigDecimal waterPublicManual;
 
     private BigDecimal domesticGarbageAmount;
     private String domesticGarbageNote;

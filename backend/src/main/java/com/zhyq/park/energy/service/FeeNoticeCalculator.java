@@ -99,19 +99,35 @@ public final class FeeNoticeCalculator {
      * total 为空或 ≤0 时不摊(公摊为 0)并给出警告。
      */
     public static UtilityResult allocate(String energyType, BigDecimal total, BigDecimal price, List<SheetRow> rows) {
+        return allocate(energyType, total, price, rows, null);
+    }
+
+    /**
+     * 公摊池 = 总度数 − 参与公摊租户用量 − 物业公司表用量(与线下对账表一致:
+     * 室外充电桩、未租单元不参与公摊,也不从公摊池里扣,它们自己的用量另收)。
+     * 各参与公摊租户按各自实际用量占比分摊公摊池。
+     * publicOverride 不为空时直接用它当公摊度数(线下表里公摊度数是手填的,留空才自动算)。
+     * 返回里的 submeterUsage 就是上面扣掉的那部分用量。
+     */
+    public static UtilityResult allocate(String energyType, BigDecimal total, BigDecimal price, List<SheetRow> rows,
+                                         BigDecimal publicOverride) {
         List<String> warnings = new ArrayList<>();
         BigDecimal unitPrice = nz(price);
         BigDecimal submeter = BigDecimal.ZERO;
         BigDecimal shareBase = BigDecimal.ZERO;
         for (SheetRow r : rows) {
             BigDecimal usage = nz(r.getUsage());
-            submeter = submeter.add(usage);
+            if (r.isSharing() || "PROPERTY".equals(r.getMeterRole())) {
+                submeter = submeter.add(usage);
+            }
             if (r.isSharing()) {
                 shareBase = shareBase.add(usage);
             }
         }
         BigDecimal pool = BigDecimal.ZERO;
-        if (total == null || total.signum() <= 0) {
+        if (publicOverride != null) {
+            pool = publicOverride.max(BigDecimal.ZERO).setScale(MONEY_SCALE, RoundingMode.HALF_UP);
+        } else if (total == null || total.signum() <= 0) {
             warnings.add(energyType + ":没有总度数,本期公摊按 0 计");
         } else {
             pool = total.subtract(submeter).setScale(MONEY_SCALE, RoundingMode.HALF_UP);
@@ -243,9 +259,9 @@ public final class FeeNoticeCalculator {
 
             if (share) {
                 items.add(garbageItem(++no[0], FeeNoticeItem.T_GARBAGE_DOMESTIC, "生活垃圾清运费", domestic,
-                        "生活垃圾", period.getDomesticGarbageNote(), period.getDomesticGarbageAmount()));
+                        "生活垃圾", period.getDomesticGarbageNote(), period.getDomesticGarbageAmount(), area, totalArea));
                 items.add(garbageItem(++no[0], FeeNoticeItem.T_GARBAGE_INDUSTRIAL, "工业垃圾清运费", industrial,
-                        "工业垃圾", period.getIndustrialGarbageNote(), period.getIndustrialGarbageAmount()));
+                        "工业垃圾", period.getIndustrialGarbageNote(), period.getIndustrialGarbageAmount(), area, totalArea));
             }
             n.setDomesticGarbageFee(domestic);
             n.setIndustrialGarbageFee(industrial);
@@ -446,12 +462,14 @@ public final class FeeNoticeCalculator {
         pub.setUnit(unit);
         pub.setUnitPrice(price);
         pub.setAmount(sum(rows, SheetRow::getPublicFee));
-        pub.setRemark("本期" + publicLabel + plain(pubQty.setScale(2, RoundingMode.HALF_UP)) + unit);
+        pub.setRemark("本期" + publicLabel + plain(pubQty.setScale(2, RoundingMode.HALF_UP)) + unit
+                + ",按实际用量占比" + percent(sum(rows, SheetRow::getCoefficient)) + "分摊");
         items.add(pub);
     }
 
     private static FeeNoticeItem garbageItem(int no, String type, String label, BigDecimal amount,
-                                             String kind, String note, BigDecimal total) {
+                                             String kind, String note, BigDecimal total,
+                                             BigDecimal area, BigDecimal totalArea) {
         FeeNoticeItem item = new FeeNoticeItem();
         item.setSeq(String.valueOf(no));
         item.setItemType(type);
@@ -462,8 +480,12 @@ public final class FeeNoticeCalculator {
         if (note != null && !note.isBlank()) {
             remark.append(note.trim());
         }
-        remark.append("总支出").append(plain(money(nz(total)))).append("元,按计租/已出租面积分摊")
-                .append(plain(amount)).append("元");
+        remark.append("总支出").append(plain(money(nz(total)))).append("元,按计租面积分摊(")
+                .append(plain(nz(area).stripTrailingZeros())).append("㎡/")
+                .append(plain(nz(totalArea).stripTrailingZeros())).append("㎡=")
+                .append(percent(totalArea.signum() > 0 ? nz(area).divide(totalArea, COEF_SCALE, RoundingMode.HALF_UP)
+                        : BigDecimal.ZERO))
+                .append(")").append(plain(amount)).append("元");
         item.setRemark(remark.toString());
         return item;
     }
@@ -597,6 +619,11 @@ public final class FeeNoticeCalculator {
             }
         }
         return "";
+    }
+
+    /** 0.0561445 → "5.61%" */
+    static String percent(BigDecimal ratio) {
+        return nz(ratio).multiply(new BigDecimal("100")).setScale(2, RoundingMode.HALF_UP).toPlainString() + "%";
     }
 
     static BigDecimal money(BigDecimal v) {

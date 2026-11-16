@@ -29,6 +29,10 @@
               <el-input-number v-model="form.electricPrice" :min="0" :precision="4" :controls="false"
                                :disabled="locked" style="width: 110px" />
             </el-form-item>
+            <el-form-item label="公摊度数">
+              <el-input-number v-model="form.electricPublicManual" :min="0" :precision="2" :controls="false"
+                               :disabled="locked" placeholder="空=自动算" style="width: 130px" />
+            </el-form-item>
           </template>
           <template v-else>
             <el-form-item label="总表度数(m³)">
@@ -39,6 +43,10 @@
               <el-input-number v-model="form.waterPrice" :min="0" :precision="4" :controls="false"
                                :disabled="locked" style="width: 110px" />
             </el-form-item>
+            <el-form-item label="公摊度数">
+              <el-input-number v-model="form.waterPublicManual" :min="0" :precision="2" :controls="false"
+                               :disabled="locked" placeholder="空=自动算" style="width: 130px" />
+            </el-form-item>
           </template>
           <el-form-item>
             <el-button type="primary" :disabled="locked" :loading="state.saving" @click="saveHeader">保存总量</el-button>
@@ -48,7 +56,7 @@
 
       <div v-if="sheet" class="summary-grid">
         <div class="summary-item"><span>{{ isElectric ? '总度数(南网+光伏)' : `总表度数(${sheet.totalSource})` }}</span><strong>{{ num(sheet.total) }}</strong></div>
-        <div class="summary-item"><span>全部分表用量</span><strong>{{ num(sheet.submeterUsage) }}</strong></div>
+        <div class="summary-item"><span>扣除用量(参与公摊租户+物业表)</span><strong>{{ num(sheet.submeterUsage) }}</strong></div>
         <div class="summary-item hl"><span>公摊度数</span><strong>{{ num(sheet.publicUsage) }}</strong></div>
         <div class="summary-item"><span>参与公摊租户用量</span><strong>{{ num(sheet.shareBase) }}</strong></div>
         <div class="summary-item"><span>单价</span><strong>¥{{ num(sheet.price, 4) }}</strong></div>
@@ -67,70 +75,72 @@
           <el-button link type="primary" @click="$router.push('/energy/summary')">去缴费汇总 →</el-button>
           <span class="toolbar-tip">
             {{ isElectric
-              ? '公摊度数 = 南网 + 光伏 − 全部分表用量；按各参与公摊租户的用量占比摊回。本月读数自动成为下个月的上期读数；所有数保留两位小数，各户之和与合计逐分一致。'
-              : '公摊度数 = 总表度数 − 分表用量合计；按各租户用量占比摊回。总表度数不填时按发票总表当月抄表自动取。本月读数自动成为下个月的上期读数；所有数保留两位小数。' }}
+              ? '公摊度数 = 南网 + 光伏 − 参与公摊的租户用量(室外充电桩、未租单元不参与也不扣，各自另收)；按各户实际用量占比摊回；线下表里的公摊度数是手填的，也可直接在上面填。本月读数自动成为下个月的上期读数；所有数保留两位小数，各户之和与合计逐分一致。'
+              : '公摊度数 = 总表度数 − 参与公摊的租户用量；按各户实际用量占比摊回；也可直接手填公摊度数。总表度数不填时按发票总表当月抄表自动取。本月读数自动成为下个月的上期读数；所有数保留两位小数。' }}
           </span>
         </div>
         <el-table :data="rows" v-loading="loading || sheetLoading" border stripe size="small"
                   :row-class-name="rowClass" show-summary :summary-method="summary">
-          <el-table-column type="index" label="序号" width="55" />
-          <el-table-column prop="area" label="区域" width="100" />
-          <el-table-column prop="code" label="表计编号" min-width="110" show-overflow-tooltip />
-          <el-table-column label="用户名 / 租户" min-width="150" show-overflow-tooltip>
+          <el-table-column type="index" label="序号" width="50" />
+          <el-table-column prop="area" label="区域" width="85" />
+          <el-table-column label="用户名 / 租户" min-width="140" show-overflow-tooltip>
             <template #default="{ row }">
               <div class="cell-main">{{ row.customerName || row.tenantName || '-' }}</div>
               <div v-if="row.tenantName && row.tenantName !== row.customerName" class="cell-sub">{{ row.tenantName }}</div>
               <div v-else-if="!row.tenantRefId && row.meterRole === 'TENANT'" class="cell-sub warn">未关联在租合同</div>
             </template>
           </el-table-column>
-          <el-table-column label="角色" width="90">
+          <el-table-column prop="ratio" label="倍率" width="55" align="right" />
+          <el-table-column label="上期读数" width="105" align="right">
             <template #default="{ row }">
-              <el-tag size="small" :type="row.meterRole === 'PROPERTY' ? 'warning' : 'success'" effect="plain">
-                {{ row.meterRole === 'PROPERTY' ? '物业表' : '租户表' }}
-              </el-tag>
+              <el-input-number v-model="row.prevReading" :precision="2" :controls="false" size="small" :disabled="locked"
+                               style="width: 95px" @change="() => markDirty(row)" />
             </template>
           </el-table-column>
-          <el-table-column label="参与公摊" width="90" align="center">
+          <el-table-column label="本期读数" width="110" align="right">
+            <template #default="{ row }">
+              <el-input-number v-model="row.currReading" :precision="2" :controls="false" size="small" :disabled="locked"
+                               placeholder="填读数" style="width: 100px" @change="() => markDirty(row)" />
+            </template>
+          </el-table-column>
+          <el-table-column label="本期用量" width="95" align="right">
+            <template #default="{ row }"><strong>{{ num(liveUsage(row)) }}</strong></template>
+          </el-table-column>
+          <!-- 公摊比例 = 本户用量 ÷ 参与公摊租户用量合计;不参与公摊的写「不参与」 -->
+          <el-table-column label="公摊比例" width="95" align="right">
+            <template #default="{ row }">
+              <span v-if="row.sharePublic && row.meterRole === 'TENANT'" class="ratio" :title="`本户用量 ÷ 参与公摊租户用量 = ${Number(row.coefficient || 0).toFixed(6)}`">{{ ratioText(row.coefficient) }}</span>
+              <span v-else class="muted">不参与</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="公摊度数" width="95" align="right">
+            <template #default="{ row }">{{ num(row.publicUsage) }}</template>
+          </el-table-column>
+          <el-table-column label="度数+公摊" width="100" align="right">
+            <template #default="{ row }">{{ num(row.totalUsage) }}</template>
+          </el-table-column>
+          <el-table-column :label="isElectric ? '电费' : '水费'" width="100" align="right">
+            <template #default="{ row }">¥{{ money(row.fee) }}</template>
+          </el-table-column>
+          <el-table-column label="公摊费" width="100" align="right">
+            <template #default="{ row }">¥{{ money(row.publicFee) }}</template>
+          </el-table-column>
+          <el-table-column label="合计/元" width="110" align="right">
+            <template #default="{ row }"><strong>¥{{ money(row.totalFee) }}</strong></template>
+          </el-table-column>
+          <el-table-column label="参与公摊" width="85" align="center">
             <template #default="{ row }">
               <el-switch :model-value="row.sharePublic" size="small" :disabled="locked || row.meterRole !== 'TENANT'"
                          @change="(v) => toggleShare(row, v)" />
             </template>
           </el-table-column>
-          <el-table-column prop="ratio" label="倍率" width="60" align="right" />
-          <el-table-column label="上期读数" width="110" align="right">
+          <el-table-column label="表计编号" min-width="105" show-overflow-tooltip>
             <template #default="{ row }">
-              <el-input-number v-model="row.prevReading" :precision="2" :controls="false" size="small" :disabled="locked"
-                               style="width: 100px" @change="() => markDirty(row)" />
+              <div>{{ row.code }}</div>
+              <div v-if="row.meterRole === 'PROPERTY'" class="cell-sub">物业公司表</div>
             </template>
           </el-table-column>
-          <el-table-column label="本期读数" width="120" align="right">
-            <template #default="{ row }">
-              <el-input-number v-model="row.currReading" :precision="2" :controls="false" size="small" :disabled="locked"
-                               placeholder="填读数" style="width: 110px" @change="() => markDirty(row)" />
-            </template>
-          </el-table-column>
-          <el-table-column label="本期用量" width="105" align="right">
-            <template #default="{ row }"><strong>{{ num(liveUsage(row)) }}</strong></template>
-          </el-table-column>
-          <el-table-column label="公摊比例" width="95" align="right">
-            <template #default="{ row }">{{ row.sharePublic && row.meterRole === 'TENANT' ? (Number(row.coefficient || 0) * 100).toFixed(2) + '%' : '-' }}</template>
-          </el-table-column>
-          <el-table-column label="公摊度数" width="100" align="right">
-            <template #default="{ row }">{{ num(row.publicUsage) }}</template>
-          </el-table-column>
-          <el-table-column label="度数+公摊" width="105" align="right">
-            <template #default="{ row }">{{ num(row.totalUsage) }}</template>
-          </el-table-column>
-          <el-table-column :label="isElectric ? '电费' : '水费'" width="105" align="right">
-            <template #default="{ row }">¥{{ money(row.fee) }}</template>
-          </el-table-column>
-          <el-table-column label="公摊费" width="105" align="right">
-            <template #default="{ row }">¥{{ money(row.publicFee) }}</template>
-          </el-table-column>
-          <el-table-column label="合计/元" width="115" align="right">
-            <template #default="{ row }"><strong>¥{{ money(row.totalFee) }}</strong></template>
-          </el-table-column>
-          <el-table-column label="操作" width="110" fixed="right">
+          <el-table-column label="操作" width="100" fixed="right">
             <template #default="{ row }">
               <el-button link type="primary" :disabled="locked" @click="openMeter(row)">修改</el-button>
               <el-button link type="danger" :disabled="locked" @click="removeRow(row)">删除</el-button>
@@ -175,10 +185,11 @@ const picker = ref(null)
 const dirty = reactive(new Set())
 const dirtyCount = computed(() => dirty.size)
 
-const form = reactive({ electricGridUsage: 0, electricSolarUsage: 0, electricPrice: 0, waterTotalUsage: null, waterPrice: 0 })
+const form = reactive({ electricGridUsage: 0, electricSolarUsage: 0, electricPrice: 0, electricPublicManual: null, waterTotalUsage: null, waterPrice: 0, waterPublicManual: null })
 const { month, period, loading, state, save, reload, back } = useFeePeriod(async (p) => {
   Object.assign(form, {
     electricGridUsage: p.electricGridUsage, electricSolarUsage: p.electricSolarUsage, electricPrice: p.electricPrice,
+    electricPublicManual: p.electricPublicManual, waterPublicManual: p.waterPublicManual,
     waterTotalUsage: p.waterTotalUsage, waterPrice: p.waterPrice
   })
   await loadSheet()
@@ -207,6 +218,9 @@ onActivated(async () => {
   if (!month.value) picker.value?.refresh()
   else { await reload(); await loadSheet() }
 })
+
+// 比例用百分比显示,保留两位;鼠标放上去看 6 位小数
+const ratioText = (v) => `${(Number(v || 0) * 100).toFixed(2)}%`
 
 function liveUsage(row) {
   if (row.currReading == null || row.prevReading == null) return row.usage
@@ -310,6 +324,8 @@ function summary({ columns, data }) {
 .cell-sub { margin-top: 2px; font-size: 12px; line-height: 1.3; color: var(--el-text-color-secondary); }
 .cell-sub.warn { color: var(--el-color-warning); }
 .empty-tip { text-align: center; color: var(--el-text-color-secondary); padding: 20px 0; font-size: 13px; }
+.ratio { font-weight: 600; color: var(--el-color-primary); font-variant-numeric: tabular-nums; }
+.muted { color: var(--el-text-color-placeholder); font-size: 12px; }
 .dirty-tip { margin-top: 8px; font-size: 12px; color: var(--el-color-warning); }
 :deep(.row-dirty) td { background: var(--el-color-warning-light-9) !important; }
 :deep(.row-nonshare) td { color: var(--el-text-color-secondary); }

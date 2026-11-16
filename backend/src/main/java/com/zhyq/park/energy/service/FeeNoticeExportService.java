@@ -49,7 +49,7 @@ public class FeeNoticeExportService {
             "3. 本明细表为费用核对及收款依据之一；税务发票或收据的开具方式，以双方合同约定及适用税务规定为准。"};
 
     private record Styles(CellStyle title, CellStyle header, CellStyle text, CellStyle textWrap, CellStyle money,
-                          CellStyle number, CellStyle bold, CellStyle label) {}
+                          CellStyle number, CellStyle percent, CellStyle bold, CellStyle label) {}
 
     public byte[] export(FeePeriod period, List<FeeNotice> notices, FeeNoticeService.Sheet electric,
                          FeeNoticeService.Sheet water, GarbageSheet garbage) {
@@ -190,7 +190,7 @@ public class FeeNoticeExportService {
             number(x, 8, row.getPrevReading(), st.number());
             number(x, 9, row.getCurrReading(), st.number());
             number(x, 10, row.getUsage(), st.number());
-            number(x, 11, row.getCoefficient(), st.number());
+            number(x, 11, row.getCoefficient(), st.percent());
             number(x, 12, row.getPublicUsage(), st.number());
             number(x, 13, row.getTotalUsage(), st.number());
             number(x, 14, data.price(), st.number());
@@ -247,7 +247,7 @@ public class FeeNoticeExportService {
             cell(x, 2, nz(row.tenantName()), st.text());
             cell(x, 3, row.sharePublic() ? "是" : "否", st.text());
             number(x, 4, row.leaseArea(), st.number());
-            number(x, 5, row.ratio(), st.number());
+            number(x, 5, row.ratio(), st.percent());
             money(x, 6, row.domesticFee(), st.money());
             money(x, 7, row.industrialFee(), st.money());
             money(x, 8, nz(row.domesticFee()).add(nz(row.industrialFee())), st.money());
@@ -424,7 +424,10 @@ public class FeeNoticeExportService {
         CellStyle number = bordered(wb);
         number.setDataFormat(wb.createDataFormat().getFormat("0.##"));
         number.setAlignment(HorizontalAlignment.RIGHT);
-        return new Styles(title, header, text, textWrap, money, number, boldCell, label);
+        CellStyle percent = bordered(wb);
+        percent.setDataFormat(wb.createDataFormat().getFormat("0.00%"));
+        percent.setAlignment(HorizontalAlignment.RIGHT);
+        return new Styles(title, header, text, textWrap, money, number, percent, boldCell, label);
     }
 
     private static CellStyle bordered(Workbook wb) {
