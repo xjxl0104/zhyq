@@ -199,6 +199,14 @@ public class FeeNoticeExportService {
         Row total = sheet.createRow(r);
         cell(total, 1, "合计", st.bold());
         number(total, 10, data.submeterUsage(), st.number());
+        // 参与公摊户的比例之和,正常是 100.00%
+        BigDecimal ratioSum = BigDecimal.ZERO;
+        for (SheetRow row : data.rows()) {
+            if (row.isSharePublic() && !"PROPERTY".equals(row.getMeterRole())) {
+                ratioSum = ratioSum.add(nz(row.getCoefficient()));
+            }
+        }
+        number(total, 11, ratioSum, st.percent());
         number(total, 12, data.publicUsage(), st.number());
         number(total, 13, data.submeterUsage().add(data.publicUsage()), st.number());
         money(total, 15, data.totalFee(), st.money());
@@ -257,6 +265,12 @@ public class FeeNoticeExportService {
         Row total = sheet.createRow(r);
         cell(total, 1, "合计", st.bold());
         number(total, 4, g.totalLeaseArea(), st.number());
+        // 参与分摊单元的面积占比之和,正常是 100.00%
+        BigDecimal ratioSum = BigDecimal.ZERO;
+        for (GarbageRow row : g.rows()) {
+            ratioSum = ratioSum.add(nz(row.ratio()));
+        }
+        number(total, 5, ratioSum, st.percent());
         money(total, 6, d, st.money());
         money(total, 7, ind, st.money());
         money(total, 8, d.add(ind), st.money());
