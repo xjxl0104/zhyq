@@ -26,3 +26,16 @@ metadata:
 **上线核对**:新增迁移编号 V105(仓库最大 V104);本机无法 ssh 生产库核对 `flyway_schema_history`,合并前请确认生产没有占用 V105。
 
 **How to apply**:改分摊口径只动 `FeeNoticeCalculator`(纯函数,先改测试);页面上的数全部来自后端 `sheet`/`garbage-sheet`,前端不自算金额。
+
+## 第二版(2026-11-16,feat/energy-fee-calendar,V106)
+
+负责人要求:年月表入口、本月读数自动衔接下月、保留两位小数且全部对得上、每月上传三张供应商账单、缴费汇总可删除、区域/用户可随时增减。
+
+- **年月表**:电费/水费/垃圾处理费/缴费汇总四页先显示 `FeeMonthPicker`(左右各一年、当前年居中、箭头翻年),每月一个按钮带当月合计(总用电+电费 / 总用水+水费 / 垃圾总额+已分摊 / 通知单数+应收),点月份进明细,「返回年月表」回来。数据来自 `GET /energy/fee-period/overview?year=`(`FeeNoticeService.overview`):已确认月份读冻结快照,草稿月份实时算。
+- **两位小数对账**:读数用量、公摊度数、各项费用全部 2 位小数。公摊度数与垃圾费用最大余数法(`FeeNoticeCalculator.apportion`)分,各户之和恰好等于公摊池/总额,所以电费页、垃圾页、通知单、汇总、年月表逐分一致。垃圾费分摊抽成 `splitGarbage`,通知单与垃圾页共用。
+- **本月→下月**:新读数的上期读数默认取上个月本期读数;改本月读数时 `cascadeNext` 把下个月同表读数的上期读数/用量/费用一起改(下个月已确认出账则拦下,要先撤销)。
+- **确认出账冻结**:`eng_fee_snapshot` 存电/水/垃圾三张工作表 JSON,已确认月份只读快照,之后增删区域/用户不改历史;撤销确认删快照。`eng_fee_period.inputs_changed_time` 晚于 `generated_time` 即「通知单已过期」,过期不能确认出账。
+- **单据留存**:南网/自来水公司/垃圾清理供应商账单走统一附件表,biz_type=`energy_fee_electric|water|garbage`,biz_id=账期id;权限登记在 `MktDocumentAccessService.RESOURCES`(前缀 `energy:feebill`),V106 建 `energy:feebill:query/edit` 并授予已有这四个页面的角色/用户。不登记会 403。
+- **删除通知单**:`POST /{id}/notices/delete`(单张/多选)、`/notices/delete-all`;已确认的连账单一起删,账单已收款则拦下。删掉的户重新生成会按读数再出现,永久去掉要删对应区域/用户。
+- **增减区域/用户**:`POST /meter`(新增/改,表计编号自动生成,计租面积沿用同区域)、`POST /meter/delete`;表单组件 `FeeMeterDialog`。表计改动会让所有草稿月份的通知单标记过期。
+- **验证方式**:本机 `D:\本地运行环境配置\tools\mysql-8.0.44` 可起临时库(路径含中文须 `subst` 成盘符,否则插件目录找不到),Flyway 能一路迁移到 V106;脚本化接口场景 54 项全过。

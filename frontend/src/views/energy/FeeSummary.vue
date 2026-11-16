@@ -1,95 +1,107 @@
 <template>
   <div class="page-container">
-    <div class="search-bar">
-      <el-form :inline="true">
-        <el-form-item label="账期">
-          <el-date-picker v-model="month" type="month" format="YYYY年M月" value-format="YYYY-MM"
-                          :clearable="false" style="width: 150px" />
-        </el-form-item>
-        <el-form-item v-if="period">
-          <el-tag :type="locked ? 'success' : 'info'">{{ locked ? '已确认出账' : '草稿' }}</el-tag>
-          <span v-if="period.generatedTime" class="gen-time">通知单生成于 {{ period.generatedTime }}</span>
-        </el-form-item>
-      </el-form>
-    </div>
+    <FeeMonthPicker v-if="!month" ref="picker" kind="summary" @select="(m) => (month = m)" />
 
-    <div v-if="period" class="summary-grid">
-      <div class="summary-item"><span>电:南网 + 光伏</span><strong>{{ num(Number(period.electricGridUsage || 0) + Number(period.electricSolarUsage || 0)) }} 度</strong></div>
-      <div class="summary-item"><span>电:公摊度数</span><strong>{{ num(period.electricPublicUsage) }}</strong></div>
-      <div class="summary-item"><span>水:总表 / 公摊</span><strong>{{ num(period.waterUsedTotal) }} / {{ num(period.waterPublicUsage) }}</strong></div>
-      <div class="summary-item"><span>垃圾:生活 / 工业</span><strong>¥{{ money(period.domesticGarbageAmount) }} / ¥{{ money(period.industrialGarbageAmount) }}</strong></div>
-      <div class="summary-item"><span>通知单</span><strong>{{ notices.length }} 张</strong></div>
-      <div class="summary-item total"><span>本期应收合计</span><strong>¥{{ money(totals.totalDue) }}</strong></div>
-    </div>
-
-    <div class="table-card">
-      <div class="toolbar">
-        <el-button type="primary" :disabled="locked" :loading="generating" @click="generate">
-          {{ notices.length ? '重新生成通知单' : '生成通知单' }}
-        </el-button>
-        <el-button @click="openHeader">通知单抬头</el-button>
-        <el-button :disabled="!notices.length" @click="exportExcel"><el-icon><Download /></el-icon>导出 Excel</el-button>
-        <el-button :disabled="!notices.length" @click="printAll"><el-icon><Printer /></el-icon>打印全部</el-button>
-        <el-button v-if="!locked" type="success" :disabled="!notices.length" @click="confirm">确认出账</el-button>
-        <el-button v-else type="warning" @click="revoke">撤销确认</el-button>
-        <span class="toolbar-tip">先在「电费 / 水费 / 垃圾处理费」填好总量与读数，这里生成通知单、核对、打印；确认出账后每户生成一张能源费账单，可在财务收款。</span>
+    <template v-else>
+      <div class="detail-head">
+        <el-button @click="back"><el-icon><ArrowLeft /></el-icon>返回年月表</el-button>
+        <h3>{{ monthLabel }} · 缴费汇总</h3>
+        <el-tag v-if="period" :type="locked ? 'success' : 'info'">{{ locked ? '已确认出账' : '草稿' }}</el-tag>
+        <span v-if="period?.generatedTime" class="gen-time">通知单生成于 {{ period.generatedTime }}</span>
       </div>
-      <el-alert v-for="(w, i) in warnings" :key="i" :title="w" type="warning" :closable="false" show-icon style="margin-bottom: 8px" />
 
-      <!-- 应收收费明细表:行 = 费用项目,列 = 每户 -->
-      <el-table :data="matrix" v-loading="loading || listLoading" border size="small" class="matrix">
-        <el-table-column prop="seq" label="序号" width="60" fixed />
-        <el-table-column prop="label" label="费用项目" width="130" fixed>
-          <template #default="{ row }"><span :class="{ strong: row.strong }">{{ row.label }}</span></template>
-        </el-table-column>
-        <el-table-column v-for="n in notices" :key="n.id" :min-width="150" align="right">
-          <template #header>
-            <div class="col-head" :title="n.tenantName">
-              <div class="col-main">{{ shortName(n.tenantName) }}</div>
-              <div class="col-sub">{{ n.unitName }}</div>
-            </div>
-          </template>
-          <template #default="{ row }">
-            <span :class="{ strong: row.strong }">{{ money(n[row.key]) }}</span>
-          </template>
-        </el-table-column>
-        <el-table-column label="合计金额/元" width="140" align="right" fixed="right">
-          <template #default="{ row }"><strong>{{ money(totals[row.key]) }}</strong></template>
-        </el-table-column>
-      </el-table>
-      <div v-if="!loading && !listLoading && !notices.length" class="empty-tip">本月还没有生成通知单。</div>
+      <el-alert v-if="period?.noticeStale && !locked" type="warning" show-icon :closable="false" style="margin-bottom: 10px"
+                title="生成通知单之后，读数、总量、垃圾总额或区域/用户又有改动，下面的通知单是旧的。请重新生成后再核对、确认出账。">
+        <el-button type="warning" size="small" :loading="generating" @click="generate">立即重新生成</el-button>
+      </el-alert>
 
-      <!-- 各户通知单 -->
-      <h4 class="section-title">缴费通知单（{{ notices.length }} 张）</h4>
-      <el-table :data="notices" border stripe size="small">
-        <el-table-column type="index" label="序号" width="55" />
-        <el-table-column prop="noticeNo" label="单据编号" width="190" />
-        <el-table-column prop="unitName" label="厂房/单元" width="120" />
-        <el-table-column prop="tenantName" label="租户/公司名称" min-width="200" show-overflow-tooltip>
-          <template #default="{ row }">
-            {{ row.tenantName }}
-            <el-tag v-if="!row.tenantRefId" size="small" type="warning" effect="plain" style="margin-left: 4px">未关联合同</el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column label="参与公摊" width="85" align="center">
-          <template #default="{ row }">{{ row.sharePublic ? '是' : '否' }}</template>
-        </el-table-column>
-        <el-table-column label="费用小计" width="120" align="right"><template #default="{ row }">¥{{ money(row.subtotal) }}</template></el-table-column>
-        <el-table-column label="已付" width="100" align="right"><template #default="{ row }">{{ money(row.paidAmount) }}</template></el-table-column>
-        <el-table-column label="前期欠费" width="100" align="right"><template #default="{ row }">{{ money(row.priorArrears) }}</template></el-table-column>
-        <el-table-column label="本期应收合计" width="130" align="right"><template #default="{ row }"><strong>¥{{ money(row.totalDue) }}</strong></template></el-table-column>
-        <el-table-column label="账单" width="80" align="center">
-          <template #default="{ row }"><el-tag v-if="row.billId" size="small" type="success" effect="plain">已出账</el-tag><span v-else>-</span></template>
-        </el-table-column>
-        <el-table-column label="操作" width="200" fixed="right">
-          <template #default="{ row }">
-            <el-button link type="primary" @click="preview(row)">预览</el-button>
-            <el-button link type="primary" @click="printOne(row)">打印</el-button>
-            <el-button link type="primary" :disabled="locked" @click="edit(row)">调整</el-button>
-          </template>
-        </el-table-column>
-      </el-table>
-    </div>
+      <FeeBillFiles v-if="period" :period-id="period.id" :kinds="[BILL_KINDS.electric, BILL_KINDS.water, BILL_KINDS.garbage]" />
+
+      <div v-if="period" class="summary-grid">
+        <div class="summary-item"><span>电:南网 + 光伏</span><strong>{{ num(Number(period.electricGridUsage || 0) + Number(period.electricSolarUsage || 0)) }} 度</strong></div>
+        <div class="summary-item"><span>电:公摊度数</span><strong>{{ num(period.electricPublicUsage) }}</strong></div>
+        <div class="summary-item"><span>水:总表 / 公摊</span><strong>{{ num(period.waterUsedTotal) }} / {{ num(period.waterPublicUsage) }}</strong></div>
+        <div class="summary-item"><span>垃圾:生活 / 工业</span><strong>¥{{ money(period.domesticGarbageAmount) }} / ¥{{ money(period.industrialGarbageAmount) }}</strong></div>
+        <div class="summary-item"><span>通知单</span><strong>{{ notices.length }} 张</strong></div>
+        <div class="summary-item total"><span>本期应收合计</span><strong>¥{{ money(totals.totalDue) }}</strong></div>
+      </div>
+
+      <div class="table-card">
+        <div class="toolbar">
+          <el-button type="primary" :disabled="locked" :loading="generating" @click="generate">
+            {{ notices.length ? '重新生成通知单' : '生成通知单' }}
+          </el-button>
+          <el-button @click="openHeader">通知单抬头</el-button>
+          <el-button :disabled="!notices.length" @click="exportExcel"><el-icon><Download /></el-icon>导出 Excel</el-button>
+          <el-button :disabled="!notices.length" @click="printAll"><el-icon><Printer /></el-icon>打印全部</el-button>
+          <el-button :disabled="!selected.length" @click="printSelected">打印选中</el-button>
+          <el-button type="danger" plain :disabled="!selected.length" @click="deleteSelected">
+            <el-icon><Delete /></el-icon>删除选中<span v-if="selected.length">（{{ selected.length }}）</span>
+          </el-button>
+          <el-button type="danger" plain :disabled="!notices.length" @click="deleteAll">一键删除全部</el-button>
+          <el-button v-if="!locked" type="success" :disabled="!notices.length || period?.noticeStale" @click="confirm">确认出账</el-button>
+          <el-button v-else type="warning" @click="revoke">撤销确认</el-button>
+        </div>
+        <div class="toolbar-tip">先在「电费 / 水费 / 垃圾处理费」填好总量与读数，这里生成通知单、核对、打印；确认出账后每户生成一张能源费账单，可在财务收款。删掉的通知单重新生成时会按读数重新出现，要永久去掉某个区域/用户请到电费、水费页删除对应区域。</div>
+        <el-alert v-for="(w, i) in warnings" :key="i" :title="w" type="warning" :closable="false" show-icon style="margin-bottom: 8px" />
+
+        <!-- 应收收费明细表:行 = 费用项目,列 = 每户 -->
+        <el-table :data="matrix" v-loading="loading || listLoading" border size="small" class="matrix">
+          <el-table-column prop="seq" label="序号" width="60" fixed />
+          <el-table-column prop="label" label="费用项目" width="130" fixed>
+            <template #default="{ row }"><span :class="{ strong: row.strong }">{{ row.label }}</span></template>
+          </el-table-column>
+          <el-table-column v-for="n in notices" :key="n.id" :min-width="150" align="right">
+            <template #header>
+              <div class="col-head" :title="n.tenantName">
+                <div class="col-main">{{ shortName(n.tenantName) }}</div>
+                <div class="col-sub">{{ n.unitName }}</div>
+              </div>
+            </template>
+            <template #default="{ row }">
+              <span :class="{ strong: row.strong }">{{ money(n[row.key]) }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="合计金额/元" width="140" align="right" fixed="right">
+            <template #default="{ row }"><strong>{{ money(totals[row.key]) }}</strong></template>
+          </el-table-column>
+        </el-table>
+        <div v-if="!loading && !listLoading && !notices.length" class="empty-tip">本月还没有生成通知单（或已全部删除）。</div>
+
+        <!-- 各户通知单 -->
+        <h4 class="section-title">缴费通知单（{{ notices.length }} 张）</h4>
+        <el-table ref="noticeTable" :data="notices" border stripe size="small" row-key="id" @selection-change="(rows) => (selected = rows)">
+          <el-table-column type="selection" width="45" />
+          <el-table-column type="index" label="序号" width="55" />
+          <el-table-column prop="noticeNo" label="单据编号" width="190" />
+          <el-table-column prop="unitName" label="厂房/单元" width="120" />
+          <el-table-column prop="tenantName" label="租户/公司名称" min-width="200" show-overflow-tooltip>
+            <template #default="{ row }">
+              {{ row.tenantName }}
+              <el-tag v-if="!row.tenantRefId" size="small" type="warning" effect="plain" style="margin-left: 4px">未关联合同</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="参与公摊" width="85" align="center">
+            <template #default="{ row }">{{ row.sharePublic ? '是' : '否' }}</template>
+          </el-table-column>
+          <el-table-column label="费用小计" width="120" align="right"><template #default="{ row }">¥{{ money(row.subtotal) }}</template></el-table-column>
+          <el-table-column label="已付" width="100" align="right"><template #default="{ row }">{{ money(row.paidAmount) }}</template></el-table-column>
+          <el-table-column label="前期欠费" width="100" align="right"><template #default="{ row }">{{ money(row.priorArrears) }}</template></el-table-column>
+          <el-table-column label="本期应收合计" width="130" align="right"><template #default="{ row }"><strong>¥{{ money(row.totalDue) }}</strong></template></el-table-column>
+          <el-table-column label="账单" width="80" align="center">
+            <template #default="{ row }"><el-tag v-if="row.billId" size="small" type="success" effect="plain">已出账</el-tag><span v-else>-</span></template>
+          </el-table-column>
+          <el-table-column label="操作" width="240" fixed="right">
+            <template #default="{ row }">
+              <el-button link type="primary" @click="preview(row)">预览</el-button>
+              <el-button link type="primary" @click="printOne(row)">打印</el-button>
+              <el-button link type="primary" :disabled="locked" @click="edit(row)">调整</el-button>
+              <el-button link type="danger" @click="deleteOne(row)">删除</el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+      </div>
+    </template>
 
     <!-- 通知单抬头 -->
     <el-dialog v-model="headerDialog.visible" title="通知单抬头与计费期间" width="620px">
@@ -135,7 +147,7 @@
 
     <!-- 预览 -->
     <el-dialog v-model="previewDialog.visible" width="1100px" top="4vh" :title="previewDialog.title" destroy-on-close>
-      <iframe ref="previewFrame" class="preview-frame" :srcdoc="previewDialog.html" />
+      <iframe class="preview-frame" :srcdoc="previewDialog.html" />
       <template #footer>
         <el-button @click="previewDialog.visible = false">关闭</el-button>
         <el-button type="primary" @click="printOne(previewDialog.notice)">打印</el-button>
@@ -145,29 +157,44 @@
 </template>
 
 <script setup>
-import { computed, reactive, ref } from 'vue'
+import { computed, onActivated, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Download, Printer } from '@element-plus/icons-vue'
+import { ArrowLeft, Delete, Download, Printer } from '@element-plus/icons-vue'
 import { feePeriodApi } from '@/api/energy'
-import { useFeePeriod, money, num, downloadBlob } from './feePeriod'
+import { useFeePeriod, money, num, downloadBlob, BILL_KINDS } from './feePeriod'
 import { noticeHtml, NOTICE_CSS, printNotices } from './noticePrint'
+import FeeMonthPicker from './components/FeeMonthPicker.vue'
+import FeeBillFiles from './components/FeeBillFiles.vue'
 
 const notices = ref([])
+const selected = ref([])
 const warnings = ref([])
 const listLoading = ref(false)
 const generating = ref(false)
-const { month, period, loading, state, save, reload } = useFeePeriod(loadNotices)
+const picker = ref(null)
+const noticeTable = ref(null)
+const { month, period, loading, state, save, reload, back } = useFeePeriod(loadNotices)
 const locked = computed(() => period.value?.status === 'CONFIRMED')
+const monthLabel = computed(() => (month.value ? `${month.value.slice(0, 4)}年${Number(month.value.slice(5))}月` : ''))
 
 async function loadNotices() {
   if (!period.value) return
   listLoading.value = true
   try {
     notices.value = await feePeriodApi.notices(period.value.id) || []
+    selected.value = []
   } finally {
     listLoading.value = false
   }
 }
+watch(month, (v) => { if (!v) { notices.value = []; warnings.value = [] } })
+
+let firstActivation = true
+onActivated(async () => {
+  if (firstActivation) { firstActivation = false; return }
+  if (!month.value) picker.value?.refresh()
+  else { await reload(); await loadNotices() }
+})
 
 const MATRIX_ROWS = [
   { seq: '1', key: 'waterFee', label: '水费' },
@@ -183,9 +210,12 @@ const MATRIX_ROWS = [
   { seq: '四', key: 'totalDue', label: '本期应收合计', strong: true }
 ]
 const matrix = computed(() => (notices.value.length ? MATRIX_ROWS : []))
+// 合计列 = 各户金额逐个相加(分为单位取整,避免浮点尾数),与通知单列表、导出 Excel 同源
 const totals = computed(() => {
   const t = {}
-  for (const r of MATRIX_ROWS) t[r.key] = notices.value.reduce((s, n) => s + Number(n[r.key] || 0), 0)
+  for (const r of MATRIX_ROWS) {
+    t[r.key] = notices.value.reduce((s, n) => s + Math.round(Number(n[r.key] || 0) * 100), 0) / 100
+  }
   return t
 })
 // 公司全称太长,列头用简称(与导出的 Excel 同一规则)
@@ -248,20 +278,48 @@ function preview(row) {
   previewDialog.html = `<!doctype html><html><head><meta charset="utf-8"><style>${NOTICE_CSS}</style></head><body>${noticeHtml(period.value, row)}</body></html>`
   previewDialog.visible = true
 }
-function printOne(row) {
-  if (!printNotices(period.value, [row])) ElMessage.warning('浏览器拦截了打印窗口，请允许弹出窗口后重试')
+function doPrint(list) {
+  if (!printNotices(period.value, list)) ElMessage.warning('浏览器拦截了打印窗口，请允许弹出窗口后重试')
 }
-function printAll() {
-  if (!printNotices(period.value, notices.value)) ElMessage.warning('浏览器拦截了打印窗口，请允许弹出窗口后重试')
-}
+const printOne = (row) => doPrint([row])
+const printAll = () => doPrint(notices.value)
+const printSelected = () => doPrint(selected.value)
 async function exportExcel() {
   const res = await feePeriodApi.export(period.value.id)
   downloadBlob(res, `${period.value.period}应收收费明细表.xlsx`)
 }
 
+// ---- 删除通知单:单张 / 多选 / 一键全部
+function deleteHint() {
+  return locked.value
+    ? '本期已确认出账：删除通知单会同时删除它生成的账单（已收过款的会被拦下，需先红冲）。'
+    : '删掉的通知单重新生成时会按读数重新出现；要永久去掉某个区域/用户请到电费、水费页删除对应区域。'
+}
+async function afterDelete(r) {
+  ElMessage.success(`已删除 ${r.deleted} 张通知单${r.bills ? `，并删除 ${r.bills} 张账单` : ''}`)
+  await reload()
+  await loadNotices()
+  noticeTable.value?.clearSelection()
+}
+async function deleteOne(row) {
+  await ElMessageBox.confirm(`确定删除「${row.unitName} ${row.tenantName}」的通知单 ${row.noticeNo}？\n${deleteHint()}`,
+    '删除通知单', { type: 'warning', confirmButtonText: '确认删除', cancelButtonText: '取消' })
+  await afterDelete(await feePeriodApi.deleteNotices(period.value.id, [row.id]))
+}
+async function deleteSelected() {
+  await ElMessageBox.confirm(`确定删除选中的 ${selected.value.length} 张通知单？\n${deleteHint()}`,
+    '删除选中的通知单', { type: 'warning', confirmButtonText: '确认删除', cancelButtonText: '取消' })
+  await afterDelete(await feePeriodApi.deleteNotices(period.value.id, selected.value.map((n) => n.id)))
+}
+async function deleteAll() {
+  await ElMessageBox.prompt(`将删除 ${monthLabel.value} 的全部 ${notices.value.length} 张通知单，无法恢复。\n${deleteHint()}\n请输入“删除”二字确认：`,
+    '一键删除全部通知单', { type: 'error', confirmButtonText: '全部删除', cancelButtonText: '取消', inputPattern: /^删除$/, inputErrorMessage: '请输入“删除”二字' })
+  await afterDelete(await feePeriodApi.deleteAllNotices(period.value.id))
+}
+
 async function confirm() {
   await ElMessageBox.confirm(
-    `将按本期 ${notices.value.length} 张通知单给每个租户各生成一张能源费账单（金额 = 费用小计；没有关联在租合同的户会跳过），账期随后锁定。确定出账？`,
+    `将按本期 ${notices.value.length} 张通知单给每个租户各生成一张能源费账单（金额 = 费用小计；没有关联在租合同的户会跳过），账期随后冻结。确定出账？`,
     '确认出账', { type: 'warning', confirmButtonText: '确认出账', cancelButtonText: '取消' })
   const r = await feePeriodApi.confirm(period.value.id)
   ElMessage.success(`已出账 ${r.inserted} 张，跳过 ${r.skipped} 张`)
@@ -278,9 +336,11 @@ async function revoke() {
 </script>
 
 <style scoped>
-.toolbar { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
-.toolbar-tip { font-size: 12px; color: var(--el-text-color-secondary); }
-.gen-time { margin-left: 10px; font-size: 12px; color: var(--el-text-color-secondary); }
+.detail-head { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
+.detail-head h3 { margin: 0; font-size: 16px; }
+.toolbar { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+.toolbar-tip { font-size: 12px; color: var(--el-text-color-secondary); margin-bottom: 12px; line-height: 1.6; }
+.gen-time { font-size: 12px; color: var(--el-text-color-secondary); }
 .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; margin-bottom: 12px; }
 .summary-item { padding: 10px 14px; border: 1px solid var(--el-border-color-lighter); border-radius: 8px; display: flex; flex-direction: column; gap: 4px; background: var(--el-fill-color-blank); }
 .summary-item span { font-size: 12px; color: var(--el-text-color-secondary); }

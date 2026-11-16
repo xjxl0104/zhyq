@@ -1,12 +1,19 @@
 <template>
   <div class="page-container">
-    <div class="search-bar">
-      <el-form :inline="true">
-        <el-form-item label="账期">
-          <el-date-picker v-model="month" type="month" format="YYYY年M月" value-format="YYYY-MM"
-                          :clearable="false" style="width: 150px" />
-        </el-form-item>
-        <template v-if="period">
+    <FeeMonthPicker v-if="!month" ref="picker" kind="garbage" @select="(m) => (month = m)" />
+
+    <template v-else>
+      <div class="detail-head">
+        <el-button @click="back"><el-icon><ArrowLeft /></el-icon>返回年月表</el-button>
+        <h3>{{ monthLabel }} · 垃圾处理费明细</h3>
+        <el-tag v-if="locked" type="success">已确认出账（冻结，只读）</el-tag>
+        <el-tag v-else-if="period?.noticeStale" type="warning">总额或区域有改动，通知单需重新生成</el-tag>
+      </div>
+
+      <FeeBillFiles v-if="period" :period-id="period.id" :kinds="[BILL_KINDS.garbage]" />
+
+      <div v-if="period" class="search-bar">
+        <el-form :inline="true">
           <el-form-item label="生活垃圾总额(元)">
             <el-input-number v-model="form.domesticGarbageAmount" :min="0" :precision="2" :controls="false"
                              :disabled="locked" style="width: 130px" />
@@ -23,72 +30,87 @@
           </el-form-item>
           <el-form-item>
             <el-button type="primary" :disabled="locked" :loading="state.saving" @click="saveHeader">保存</el-button>
-            <el-tag v-if="locked" type="success" style="margin-left: 8px">已确认出账</el-tag>
           </el-form-item>
-        </template>
-      </el-form>
-    </div>
-
-    <div v-if="sheet" class="summary-grid">
-      <div class="summary-item"><span>生活垃圾总额</span><strong>¥{{ money(period?.domesticGarbageAmount) }}</strong></div>
-      <div class="summary-item"><span>工业垃圾总额</span><strong>¥{{ money(period?.industrialGarbageAmount) }}</strong></div>
-      <div class="summary-item hl"><span>参与分摊计租面积</span><strong>{{ num(sheet.totalLeaseArea) }} ㎡</strong></div>
-      <div class="summary-item"><span>参与分摊单元</span><strong>{{ sheet.rows.filter(r => r.sharePublic).length }} / {{ sheet.rows.length }}</strong></div>
-    </div>
-
-    <div class="table-card">
-      <div class="toolbar">
-        <el-button :disabled="locked" :loading="generating" @click="generate">重新生成通知单</el-button>
-        <el-button link type="primary" @click="$router.push('/energy/summary')">去缴费汇总 →</el-button>
-        <span class="toolbar-tip">两笔总额按各单元「计租面积 ÷ 参与分摊的计租面积合计」分摊，只有园区租户（参与公摊的单元）分摊；充电桩、未租单元不摊。计租面积在此处直接改，同区域所有表计一起生效。</span>
+        </el-form>
       </div>
-      <el-table :data="sheet?.rows || []" v-loading="loading || sheetLoading" border stripe size="small"
-                show-summary :summary-method="summary">
-        <el-table-column type="index" label="序号" width="55" />
-        <el-table-column prop="unit" label="区域 / 单元" width="120" />
-        <el-table-column prop="tenantName" label="用户名 / 租户" min-width="160" show-overflow-tooltip />
-        <el-table-column label="参与分摊" width="90" align="center">
-          <template #default="{ row }">
-            <el-tag size="small" :type="row.sharePublic ? 'success' : 'info'" effect="plain">{{ row.sharePublic ? '是' : '否' }}</el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column label="计租面积(㎡)" width="150" align="right">
-          <template #default="{ row }">
-            <el-input-number :model-value="row.leaseArea" :min="0" :precision="2" :controls="false" size="small"
-                             :disabled="locked" style="width: 120px" @change="(v) => saveArea(row, v)" />
-          </template>
-        </el-table-column>
-        <el-table-column label="计租/总计租面积" width="130" align="right">
-          <template #default="{ row }">{{ row.sharePublic ? (Number(row.ratio || 0) * 100).toFixed(2) + '%' : '-' }}</template>
-        </el-table-column>
-        <el-table-column label="生活垃圾清运费" width="130" align="right">
-          <template #default="{ row }">¥{{ money(row.domesticFee) }}</template>
-        </el-table-column>
-        <el-table-column label="工业垃圾清运费" width="130" align="right">
-          <template #default="{ row }">¥{{ money(row.industrialFee) }}</template>
-        </el-table-column>
-        <el-table-column label="合计/元" width="120" align="right">
-          <template #default="{ row }"><strong>¥{{ money(Number(row.domesticFee || 0) + Number(row.industrialFee || 0)) }}</strong></template>
-        </el-table-column>
-      </el-table>
-      <div v-if="!loading && !sheetLoading && !(sheet?.rows || []).length" class="empty-tip">
-        没有在用的租户表计。单元来自表计的「区域」字段，请先到「智能表计」登记。
+
+      <div v-if="sheet" class="summary-grid">
+        <div class="summary-item"><span>生活垃圾总额</span><strong>¥{{ money(period?.domesticGarbageAmount) }}</strong></div>
+        <div class="summary-item"><span>工业垃圾总额</span><strong>¥{{ money(period?.industrialGarbageAmount) }}</strong></div>
+        <div class="summary-item hl"><span>参与分摊计租面积</span><strong>{{ num(sheet.totalLeaseArea) }} ㎡</strong></div>
+        <div class="summary-item"><span>参与分摊单元</span><strong>{{ sheet.rows.filter(r => r.sharePublic).length }} / {{ sheet.rows.length }}</strong></div>
+        <div class="summary-item total"><span>已分摊合计</span><strong>¥{{ money(allocatedTotal) }}</strong></div>
       </div>
-    </div>
+
+      <div class="table-card">
+        <div class="toolbar">
+          <el-button type="primary" :disabled="locked" @click="meterDialog.visible = true"><el-icon><Plus /></el-icon>新增区域/用户</el-button>
+          <el-button :disabled="locked" :loading="generating" @click="generate">重新生成通知单</el-button>
+          <el-button link type="primary" @click="$router.push('/energy/summary')">去缴费汇总 →</el-button>
+          <span class="toolbar-tip">两笔总额按各单元「计租面积 ÷ 参与分摊的计租面积合计」分摊到分，各单元之和恰好等于总额；只有园区租户（参与公摊的单元）分摊，充电桩、未租单元不摊。计租面积在此直接改，同区域所有表计一起生效。</span>
+        </div>
+        <el-table :data="sheet?.rows || []" v-loading="loading || sheetLoading" border stripe size="small"
+                  show-summary :summary-method="summary">
+          <el-table-column type="index" label="序号" width="55" />
+          <el-table-column prop="unit" label="区域 / 单元" width="120" />
+          <el-table-column prop="tenantName" label="用户名 / 租户" min-width="160" show-overflow-tooltip />
+          <el-table-column label="参与分摊" width="90" align="center">
+            <template #default="{ row }">
+              <el-tag size="small" :type="row.sharePublic ? 'success' : 'info'" effect="plain">{{ row.sharePublic ? '是' : '否' }}</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="计租面积(㎡)" width="150" align="right">
+            <template #default="{ row }">
+              <el-input-number :model-value="row.leaseArea" :min="0" :precision="2" :controls="false" size="small"
+                               :disabled="locked" style="width: 120px" @change="(v) => saveArea(row, v)" />
+            </template>
+          </el-table-column>
+          <el-table-column label="计租/总计租面积" width="130" align="right">
+            <template #default="{ row }">{{ row.sharePublic ? (Number(row.ratio || 0) * 100).toFixed(2) + '%' : '-' }}</template>
+          </el-table-column>
+          <el-table-column label="生活垃圾清运费" width="130" align="right">
+            <template #default="{ row }">¥{{ money(row.domesticFee) }}</template>
+          </el-table-column>
+          <el-table-column label="工业垃圾清运费" width="130" align="right">
+            <template #default="{ row }">¥{{ money(row.industrialFee) }}</template>
+          </el-table-column>
+          <el-table-column label="合计/元" width="120" align="right">
+            <template #default="{ row }"><strong>¥{{ money(Number(row.domesticFee || 0) + Number(row.industrialFee || 0)) }}</strong></template>
+          </el-table-column>
+          <el-table-column label="操作" width="80" fixed="right">
+            <template #default="{ row }">
+              <el-button link type="danger" :disabled="locked" @click="removeRow(row)">删除</el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+        <div v-if="!loading && !sheetLoading && !(sheet?.rows || []).length" class="empty-tip">
+          这个月还没有区域。点「新增区域/用户」添加。
+        </div>
+      </div>
+    </template>
+
+    <FeeMeterDialog v-model="meterDialog.visible" :default-types="['电', '水']" :areas="(sheet?.rows || []).map(r => r.unit)"
+                    @saved="afterMeterChange" />
   </div>
 </template>
 
 <script setup>
-import { computed, reactive, ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import { computed, onActivated, reactive, ref, watch } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { ArrowLeft, Plus } from '@element-plus/icons-vue'
 import { feePeriodApi } from '@/api/energy'
-import { useFeePeriod, money, num } from './feePeriod'
+import { useFeePeriod, money, num, BILL_KINDS } from './feePeriod'
+import FeeMonthPicker from './components/FeeMonthPicker.vue'
+import FeeBillFiles from './components/FeeBillFiles.vue'
+import FeeMeterDialog from './components/FeeMeterDialog.vue'
 
 const sheet = ref(null)
 const sheetLoading = ref(false)
 const generating = ref(false)
+const picker = ref(null)
+const meterDialog = reactive({ visible: false })
 const form = reactive({ domesticGarbageAmount: 0, domesticGarbageNote: '', industrialGarbageAmount: 0, industrialGarbageNote: '' })
-const { month, period, loading, state, save } = useFeePeriod(async (p) => {
+const { month, period, loading, state, save, reload, back } = useFeePeriod(async (p) => {
   Object.assign(form, {
     domesticGarbageAmount: p.domesticGarbageAmount, domesticGarbageNote: p.domesticGarbageNote,
     industrialGarbageAmount: p.industrialGarbageAmount, industrialGarbageNote: p.industrialGarbageNote
@@ -96,6 +118,9 @@ const { month, period, loading, state, save } = useFeePeriod(async (p) => {
   await loadSheet()
 })
 const locked = computed(() => period.value?.status === 'CONFIRMED')
+const monthLabel = computed(() => (month.value ? `${month.value.slice(0, 4)}年${Number(month.value.slice(5))}月` : ''))
+const allocatedTotal = computed(() => (sheet.value?.rows || [])
+  .reduce((s, r) => s + Number(r.domesticFee || 0) + Number(r.industrialFee || 0), 0))
 
 async function loadSheet() {
   if (!period.value) return
@@ -106,6 +131,15 @@ async function loadSheet() {
     sheetLoading.value = false
   }
 }
+
+let firstActivation = true
+onActivated(async () => {
+  if (firstActivation) { firstActivation = false; return }
+  if (!month.value) picker.value?.refresh()
+  else { await reload(); await loadSheet() }
+})
+watch(month, (v) => { if (!v) sheet.value = null })
+
 async function saveHeader() {
   await save(form)
   ElMessage.success('已保存，分摊已重算')
@@ -113,10 +147,23 @@ async function saveHeader() {
 }
 async function saveArea(row, value) {
   if (value == null) return
-  // 一个单元可能有几块表(30倍/80倍电表、水表),面积挂在同区域全部表上,后端按区域一起改
+  // 一个单元可能有几块表(水表、30倍/80倍电表),面积挂在同区域全部表上,后端按区域一起改
   await feePeriodApi.meterFlags({ meterId: row.meterIds[0], leaseArea: value, applyAreaToUnit: true })
   ElMessage.success(`「${row.unit}」计租面积已更新`)
+  await reload()
   await loadSheet()
+}
+async function afterMeterChange() {
+  await reload()
+  await loadSheet()
+}
+async function removeRow(row) {
+  await ElMessageBox.confirm(
+    `确定删除区域「${row.unit}」${row.tenantName && row.tenantName !== '-' ? `（${row.tenantName}）` : ''}？该区域下的 ${row.meterIds.length} 块表都会被移除，不再出现在未出账的月份和以后各月；已确认出账的月份不受影响。`,
+    '删除区域/用户', { type: 'warning', confirmButtonText: '确认删除', cancelButtonText: '取消' })
+  await feePeriodApi.deleteMeters(row.meterIds)
+  ElMessage.success('已删除，本月的通知单需要重新生成')
+  await afterMeterChange()
 }
 async function generate() {
   generating.value = true
@@ -124,6 +171,7 @@ async function generate() {
     const r = await feePeriodApi.generate(period.value.id)
     ElMessage.success(`已生成 ${r.notices?.length || 0} 张通知单`)
     if (r.warnings?.length) ElMessage.warning({ message: r.warnings.join('；'), duration: 8000 })
+    await reload()
   } finally {
     generating.value = false
   }
@@ -146,6 +194,8 @@ function summary({ columns, data }) {
 </script>
 
 <style scoped>
+.detail-head { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
+.detail-head h3 { margin: 0; font-size: 16px; }
 .toolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
 .toolbar-tip { font-size: 12px; color: var(--el-text-color-secondary); }
 .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; margin-bottom: 12px; }
@@ -153,5 +203,6 @@ function summary({ columns, data }) {
 .summary-item span { font-size: 12px; color: var(--el-text-color-secondary); }
 .summary-item strong { font-size: 17px; font-variant-numeric: tabular-nums; }
 .summary-item.hl strong { color: var(--el-color-primary); }
+.summary-item.total strong { color: var(--el-color-danger); }
 .empty-tip { text-align: center; color: var(--el-text-color-secondary); padding: 20px 0; font-size: 13px; }
 </style>

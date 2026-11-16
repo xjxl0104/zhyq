@@ -8,6 +8,7 @@ import com.zhyq.park.common.result.PageResult;
 import com.zhyq.park.common.result.Result;
 import com.zhyq.park.energy.entity.FeeNotice;
 import com.zhyq.park.energy.entity.FeePeriod;
+import com.zhyq.park.energy.entity.Meter;
 import com.zhyq.park.energy.mapper.FeePeriodMapper;
 import com.zhyq.park.energy.service.FeeNoticeExportService;
 import com.zhyq.park.energy.service.FeeNoticeService;
@@ -67,7 +68,13 @@ public class FeePeriodController {
                 .eq(StringUtils.hasText(period), FeePeriod::getPeriod, period)
                 .eq(StringUtils.hasText(status), FeePeriod::getStatus, status)
                 .orderByDesc(FeePeriod::getPeriod));
-        return Result.ok(PageResult.of(p.getTotal(), p.getRecords()));
+        return Result.ok(PageResult.of(p.getTotal(), service.decorate(p.getRecords())));
+    }
+
+    @Operation(summary = "年月表:某一年每个月的总用电量/电费、总用水量/水费、垃圾费、应收合计与已留存单据数")
+    @GetMapping("/overview")
+    public Result<List<FeeNoticeService.MonthOverview>> overview(@RequestParam int year) {
+        return Result.ok(service.overview(year));
     }
 
     @Operation(summary = "打开某月账期(没有就新建,单价与抬头沿用上月)")
@@ -118,6 +125,39 @@ public class FeePeriodController {
     public Result<Void> meterFlags(@RequestBody MeterFlagRequest req) {
         service.updateMeterFlags(req.getMeterId(), req.getSharePublic(), req.getLeaseArea(), req.isApplyAreaToUnit());
         return Result.ok();
+    }
+
+    @Data
+    public static class IdsRequest {
+        private List<Long> ids;
+    }
+
+    @Operation(summary = "新增区域/用户(一块租户分表);带 id 即修改")
+    @OperationLog(module = "缴费账期", action = "保存区域用户")
+    @PostMapping("/meter")
+    public Result<Meter> saveMeter(@RequestBody FeeNoticeService.MeterInput input) {
+        return Result.ok(service.saveMeter(input));
+    }
+
+    @Operation(summary = "删除区域/用户(批量,按表计 id)")
+    @OperationLog(module = "缴费账期", action = "删除区域用户")
+    @PostMapping("/meter/delete")
+    public Result<Map<String, Object>> deleteMeters(@RequestBody IdsRequest req) {
+        return Result.ok(Map.of("deleted", service.deleteMeters(req.getIds())));
+    }
+
+    @Operation(summary = "删除通知单(单张 / 多选)")
+    @OperationLog(module = "缴费账期", action = "删除通知单")
+    @PostMapping("/{id}/notices/delete")
+    public Result<Map<String, Object>> deleteNotices(@PathVariable Long id, @RequestBody IdsRequest req) {
+        return Result.ok(service.deleteNotices(id, req.getIds(), false));
+    }
+
+    @Operation(summary = "一键删除本期全部通知单")
+    @OperationLog(module = "缴费账期", action = "删除全部通知单")
+    @PostMapping("/{id}/notices/delete-all")
+    public Result<Map<String, Object>> deleteAllNotices(@PathVariable Long id) {
+        return Result.ok(service.deleteNotices(id, null, true));
     }
 
     @Operation(summary = "垃圾费工作表:各单元计租面积占比与分摊金额")

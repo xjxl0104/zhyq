@@ -33,7 +33,10 @@ public class MktDocumentAccessService {
             Map.entry("activity", "property:activity"), Map.entry("pm_check", "property:check"),
             Map.entry("oa_notice", "oa:notice"), Map.entry("article", "oa:article"),
             Map.entry("recruit", "oa:recruit"), Map.entry("oa_task", "oa:task"),
-            Map.entry("oa_document", "oa:document"), Map.entry("energy_reading", "energy:reading"));
+            Map.entry("oa_document", "oa:document"), Map.entry("energy_reading", "energy:reading"),
+            // 缴费账期的三种供应商账单(南网/自来水公司/垃圾清理供应商),单据留存
+            Map.entry("energy_fee_electric", "energy:feebill"), Map.entry("energy_fee_water", "energy:feebill"),
+            Map.entry("energy_fee_garbage", "energy:feebill"));
 
     public void read(SysFile file) {
         if (file == null) throw denied();
