@@ -134,8 +134,10 @@ export const menuTree = [
         title: '能耗', icon: 'Lightning', children: [
           { title: '能耗统计', path: '/energy/stats' },
           { title: '智能表计', path: '/energy/meter' },
-          { title: '水电公摊', path: '/energy/allocation' },
-          { title: '水电结算', path: '/energy/settlement' }
+          { title: '电费', path: '/energy/electric' },
+          { title: '水费', path: '/energy/water' },
+          { title: '垃圾处理费', path: '/energy/garbage' },
+          { title: '缴费汇总', path: '/energy/summary' }
         ]
       },
       {

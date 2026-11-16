@@ -146,8 +146,11 @@ const routes = [
 
       // 能耗
       { path: 'energy/meter', meta: { title: '智能表计' }, component: () => import('@/views/energy/Meter.vue') },
-      { path: 'energy/allocation', meta: { title: '水电公摊' }, component: () => import('@/views/energy/UtilityAllocation.vue') },
-      { path: 'energy/settlement', meta: { title: '水电结算' }, component: () => import('@/views/energy/UtilitySettlement.vue') },
+      // 电费 / 水费 一组件两路由,靠 meta.energyType 区分
+      { path: 'energy/electric', meta: { title: '电费', energyType: '电' }, component: () => import('@/views/energy/UtilityFeeSheet.vue') },
+      { path: 'energy/water', meta: { title: '水费', energyType: '水' }, component: () => import('@/views/energy/UtilityFeeSheet.vue') },
+      { path: 'energy/garbage', meta: { title: '垃圾处理费' }, component: () => import('@/views/energy/GarbageFee.vue') },
+      { path: 'energy/summary', meta: { title: '缴费汇总' }, component: () => import('@/views/energy/FeeSummary.vue') },
       { path: 'energy/stats', meta: { title: '能耗统计' }, component: () => import('@/views/energy/Stats.vue') },
 
       // 智慧物联

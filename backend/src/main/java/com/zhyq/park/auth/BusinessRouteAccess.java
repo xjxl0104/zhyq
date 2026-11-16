@@ -67,6 +67,8 @@ public final class BusinessRouteAccess {
                     || hasPrefix(grants, "property:feedback:");
             case "energy/stats-api" -> hasMenu(grants, "/energy/stats");
             case "energy/reading" -> hasMenu(grants, "/energy/meter");
+            case "energy/fee-period" -> anyMenu(grants, "/energy/electric", "/energy/water",
+                    "/energy/garbage", "/energy/summary");
             case "service/product" -> hasMenu(grants, "/service/mall");
             case "space/", "space/room" -> hasMenu(grants, "/building/room") || hasPrefix(grants, "building:room:");
             case "app/", "app/vending", "vending/", "vending/machine" -> hasMenu(grants, "/app/center") || hasPrefix(grants, "vending:");
