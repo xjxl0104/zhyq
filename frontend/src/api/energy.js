@@ -47,6 +47,7 @@ export const feePeriodApi = {
   generate: (id) => request.post(`/energy/fee-period/${id}/generate`),
   notices: (id) => request.get(`/energy/fee-period/${id}/notices`),
   updateNotice: (data) => request.put('/energy/fee-period/notice', data),
+  editNotice: (data) => request.post('/energy/fee-period/notice/edit', data),
   confirm: (id) => request.post(`/energy/fee-period/${id}/confirm`),
   revoke: (id) => request.post(`/energy/fee-period/${id}/revoke`),
   export: (id) => request.get(`/energy/fee-period/${id}/export`, { responseType: 'blob' })

@@ -522,10 +522,20 @@ public class FeeNoticeService {
                 electric.publicUsage(), electric.shareBase(), electric.price(), electric.totalFee(), electric.rows(),
                 electric.warnings());
 
+        // 上一版通知单连同明细行一起带上:手工新增的收费行、手工改过的备注要按户找回
         Map<String, FeeNotice> previous = new LinkedHashMap<>();
+        Map<Long, FeeNotice> oldById = new LinkedHashMap<>();
         for (FeeNotice old : noticeMapper.selectList(new LambdaQueryWrapper<FeeNotice>()
                 .eq(FeeNotice::getFeePeriodId, periodId))) {
+            oldById.put(old.getId(), old);
             previous.putIfAbsent(FeeNoticeCalculator.noticeKey(old), old);
+        }
+        for (FeeNoticeItem it : itemMapper.selectList(new LambdaQueryWrapper<FeeNoticeItem>()
+                .eq(FeeNoticeItem::getFeePeriodId, periodId).orderByAsc(FeeNoticeItem::getSort))) {
+            FeeNotice owner = oldById.get(it.getNoticeId());
+            if (owner != null) {
+                owner.getItems().add(it);
+            }
         }
         NoticeBatch batch = FeeNoticeCalculator.buildNotices(p, wr, er, previous);
 
@@ -575,70 +585,127 @@ public class FeeNoticeService {
         return list;
     }
 
-    /** 通知单上允许手工改的几项:已付 / 前期欠费 / 其他费用 / 租户名 / 单元名 / 备注 */
+    /**
+     * 旧接口:只改 已付 / 前期欠费 / 其他费用(单个金额) / 租户名 / 单元名 / 备注。
+     * 其他费用折成一行手工收费项,统一走 {@link #editNotice};页面上的调整弹窗用的是 editNotice。
+     */
     @Transactional(rollbackFor = Exception.class)
     public FeeNotice updateNotice(FeeNotice input) {
-        FeeNotice n = noticeMapper.selectById(input.getId());
-        if (n == null) {
-            throw new BizException("通知单不存在: " + input.getId());
-        }
-        requireDraft(n.getFeePeriodId());
-        if (input.getPaidAmount() != null) {
-            n.setPaidAmount(input.getPaidAmount());
-        }
-        if (input.getPriorArrears() != null) {
-            n.setPriorArrears(input.getPriorArrears());
-        }
+        List<ManualItemInput> manual = null;
         if (input.getOtherFee() != null) {
-            n.setOtherFee(input.getOtherFee());
+            manual = input.getOtherFee().signum() == 0 ? List.of()
+                    : List.of(new ManualItemInput(StringUtils.hasText(input.getOtherFeeNote()) ? input.getOtherFeeNote() : "其他费用",
+                    "元", null, null, input.getOtherFee(), null));
         }
-        if (input.getOtherFeeNote() != null) {
-            n.setOtherFeeNote(input.getOtherFeeNote());
-        }
-        if (StringUtils.hasText(input.getTenantName())) {
-            n.setTenantName(input.getTenantName().trim());
-        }
-        if (StringUtils.hasText(input.getUnitName())) {
-            n.setUnitName(input.getUnitName().trim());
-        }
-        if (input.getRemark() != null) {
-            n.setRemark(input.getRemark());
-        }
-        FeeNoticeCalculator.recalcTotals(n);
-        noticeMapper.updateById(n);
-        syncOtherItem(n);
-        return n;
+        return editNotice(new NoticeEdit(input.getId(), input.getTenantName(), input.getUnitName(), input.getPaidAmount(),
+                input.getPriorArrears(), input.getRemark(), null, manual));
     }
 
-    /** 「其他费用」行跟着金额走:有就改/插,为 0 就删 */
-    private void syncOtherItem(FeeNotice n) {
-        FeeNoticeItem other = itemMapper.selectOne(new LambdaQueryWrapper<FeeNoticeItem>()
-                .eq(FeeNoticeItem::getNoticeId, n.getId()).eq(FeeNoticeItem::getItemType, FeeNoticeItem.T_OTHER)
-                .last("LIMIT 1"));
-        if (nz(n.getOtherFee()).signum() == 0) {
-            if (other != null) {
-                itemMapper.deleteById(other.getId());
+    /** 调整通知单时手工新增的一行收费项:金额可直接填,也可填数量 × 单价自动算 */
+    public record ManualItemInput(String feeItem, String unit, BigDecimal quantity, BigDecimal unitPrice,
+                                  BigDecimal amount, String remark) {}
+
+    /**
+     * 通知单整单调整:基本信息、各行备注、手工收费行一次保存。
+     * itemRemarks = 自动行(水费/电费/垃圾费…)id → 新备注;manualItems = 手工收费行的完整清单(整体替换)。
+     */
+    public record NoticeEdit(Long id, String tenantName, String unitName, BigDecimal paidAmount,
+                             BigDecimal priorArrears, String remark, Map<Long, String> itemRemarks,
+                             List<ManualItemInput> manualItems) {}
+
+    private static final int MAX_MANUAL_ITEMS = 30;
+
+    @Transactional(rollbackFor = Exception.class)
+    public FeeNotice editNotice(NoticeEdit in) {
+        FeeNotice n = noticeMapper.selectById(in.id());
+        if (n == null) {
+            throw new BizException("通知单不存在: " + in.id());
+        }
+        requireDraft(n.getFeePeriodId());
+        if (StringUtils.hasText(in.tenantName())) {
+            n.setTenantName(in.tenantName().trim());
+        }
+        if (StringUtils.hasText(in.unitName())) {
+            n.setUnitName(in.unitName().trim());
+        }
+        if (in.paidAmount() != null) {
+            n.setPaidAmount(in.paidAmount());
+        }
+        if (in.priorArrears() != null) {
+            n.setPriorArrears(in.priorArrears());
+        }
+        if (in.remark() != null) {
+            n.setRemark(in.remark());
+        }
+
+        List<FeeNoticeItem> current = itemMapper.selectList(new LambdaQueryWrapper<FeeNoticeItem>()
+                .eq(FeeNoticeItem::getNoticeId, n.getId()).orderByAsc(FeeNoticeItem::getSort));
+        // 1) 自动行的备注(改了才记为手工备注,重新生成时才会保留)
+        if (in.itemRemarks() != null) {
+            for (FeeNoticeItem it : current) {
+                if (it.isManualItem() || !in.itemRemarks().containsKey(it.getId())) {
+                    continue;
+                }
+                String next = in.itemRemarks().get(it.getId());
+                next = next == null ? "" : next.trim();
+                if (!next.equals(it.getRemark() == null ? "" : it.getRemark())) {
+                    it.setRemark(next);
+                    it.setRemarkEdited(1);
+                    itemMapper.updateById(it);
+                }
             }
-            return;
         }
-        if (other == null) {
-            Long count = itemMapper.selectCount(new LambdaQueryWrapper<FeeNoticeItem>()
-                    .eq(FeeNoticeItem::getNoticeId, n.getId()).notLike(FeeNoticeItem::getItemType, "_DETAIL"));
-            other = new FeeNoticeItem();
-            other.setNoticeId(n.getId());
-            other.setFeePeriodId(n.getFeePeriodId());
-            other.setItemType(FeeNoticeItem.T_OTHER);
-            other.setSeq(String.valueOf(count + 1));
-            other.setUnit("元");
-            other.setSort(999);
+        // 2) 手工收费行:整体替换
+        if (in.manualItems() != null) {
+            if (in.manualItems().size() > MAX_MANUAL_ITEMS) {
+                throw new BizException("手工收费项最多 " + MAX_MANUAL_ITEMS + " 行");
+            }
+            for (FeeNoticeItem it : current) {
+                if (it.isManualItem()) {
+                    itemMapper.deleteById(it.getId());
+                }
+            }
+            long top = current.stream().filter(i -> !i.isManualItem() && !i.isDetail()).count();
+            int idx = 0;
+            for (ManualItemInput m : in.manualItems()) {
+                idx++;
+                if (!StringUtils.hasText(m.feeItem())) {
+                    throw new BizException("第 " + idx + " 行手工收费项没有填费用项目名称");
+                }
+                if (m.feeItem().trim().length() > 64) {
+                    throw new BizException("第 " + idx + " 行费用项目名称太长(最多 64 字)");
+                }
+                BigDecimal amount = m.amount();
+                if (amount == null && m.quantity() != null && m.unitPrice() != null) {
+                    amount = m.quantity().multiply(m.unitPrice());
+                }
+                if (amount == null) {
+                    throw new BizException("第 " + idx + " 行「" + m.feeItem().trim() + "」没有金额,请填金额或数量 × 单价");
+                }
+                FeeNoticeItem it = new FeeNoticeItem();
+                it.setNoticeId(n.getId());
+                it.setFeePeriodId(n.getFeePeriodId());
+                it.setItemType(FeeNoticeItem.T_CUSTOM);
+                it.setManual(1);
+                it.setSeq(String.valueOf(top + idx));
+                it.setFeeItem(m.feeItem().trim());
+                it.setUnit(StringUtils.hasText(m.unit()) ? m.unit().trim() : "元");
+                it.setQuantity(m.quantity());
+                it.setUnitPrice(m.unitPrice());
+                it.setAmount(FeeNoticeCalculator.money(amount));
+                it.setRemark(StringUtils.hasText(m.remark()) ? m.remark().trim() : null);
+                it.setSort(900 + idx);
+                itemMapper.insert(it);
+            }
         }
-        other.setFeeItem(StringUtils.hasText(n.getOtherFeeNote()) ? n.getOtherFeeNote().trim() : "其他费用");
-        other.setAmount(FeeNoticeCalculator.money(n.getOtherFee()));
-        if (other.getId() == null) {
-            itemMapper.insert(other);
-        } else {
-            itemMapper.updateById(other);
-        }
+        // 3) 其他费用 = 手工收费行之和,小计/应收跟着重算
+        List<FeeNoticeItem> after = itemMapper.selectList(new LambdaQueryWrapper<FeeNoticeItem>()
+                .eq(FeeNoticeItem::getNoticeId, n.getId()).orderByAsc(FeeNoticeItem::getSort));
+        FeeNoticeCalculator.applyOtherFee(n, after);
+        FeeNoticeCalculator.recalcTotals(n);
+        noticeMapper.updateById(n);
+        n.setItems(after);
+        return n;
     }
 
     // ------------------------------------------------------------------ 出账

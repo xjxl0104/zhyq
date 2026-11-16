@@ -23,7 +23,8 @@
         <div class="summary-item"><span>水:总表 / 公摊</span><strong>{{ num(period.waterUsedTotal) }} / {{ num(period.waterPublicUsage) }}</strong></div>
         <div class="summary-item"><span>垃圾:生活 / 工业</span><strong>¥{{ money(period.domesticGarbageAmount) }} / ¥{{ money(period.industrialGarbageAmount) }}</strong></div>
         <div class="summary-item"><span>通知单</span><strong>{{ notices.length }} 张</strong></div>
-        <div class="summary-item total"><span>本期应收合计</span><strong>¥{{ money(totals.totalDue) }}</strong></div>
+        <div class="summary-item total"><span>本期应收合计</span><strong>¥{{ money(allTotals.totalDue) }}</strong></div>
+        <div v-if="filterActive" class="summary-item hl"><span>当前检索合计（{{ viewNotices.length }} 张）</span><strong>¥{{ money(totals.totalDue) }}</strong></div>
       </div>
 
       <div class="table-card">
@@ -33,7 +34,7 @@
           </el-button>
           <el-button @click="openHeader">通知单抬头</el-button>
           <el-button :disabled="!notices.length" @click="exportExcel"><el-icon><Download /></el-icon>导出 Excel</el-button>
-          <el-button :disabled="!notices.length" @click="printAll"><el-icon><Printer /></el-icon>打印全部</el-button>
+          <el-button :disabled="!notices.length" @click="printAll"><el-icon><Printer /></el-icon>{{ filterActive ? "打印检索结果" : "打印全部" }}</el-button>
           <el-button :disabled="!selected.length" @click="printSelected">打印选中</el-button>
           <el-button type="danger" plain :disabled="!selected.length" @click="deleteSelected">
             <el-icon><Delete /></el-icon>删除选中<span v-if="selected.length">（{{ selected.length }}）</span>
@@ -45,13 +46,18 @@
         <div class="toolbar-tip">先在「电费 / 水费 / 垃圾处理费」填好总量与读数，这里生成通知单、核对、打印；确认出账后每户生成一张能源费账单，可在财务收款。删掉的通知单重新生成时会按读数重新出现，要永久去掉某个区域/用户请到电费、水费页删除对应区域。</div>
         <el-alert v-for="(w, i) in warnings" :key="i" :title="w" type="warning" :closable="false" show-icon style="margin-bottom: 8px" />
 
+        <!-- 检索:按公司、楼层;下面的明细表、通知单列表和各合计都跟着检索结果走 -->
+        <FeeFilterBar :model="filter" :companies="opts.companies" :floors="opts.floors">
+          检索结果 {{ viewNotices.length }} / {{ notices.length }} 张通知单 · 应收合计 ¥{{ money(totals.totalDue) }}
+        </FeeFilterBar>
+
         <!-- 应收收费明细表:行 = 费用项目,列 = 每户 -->
         <el-table :data="matrix" v-loading="loading || listLoading" border size="small" class="matrix">
           <el-table-column prop="seq" label="序号" width="60" fixed />
           <el-table-column prop="label" label="费用项目" width="130" fixed>
             <template #default="{ row }"><span :class="{ strong: row.strong }">{{ row.label }}</span></template>
           </el-table-column>
-          <el-table-column v-for="n in notices" :key="n.id" :min-width="150" align="right">
+          <el-table-column v-for="n in viewNotices" :key="n.id" :min-width="150" align="right">
             <template #header>
               <div class="col-head" :title="n.tenantName">
                 <div class="col-main">{{ shortName(n.tenantName) }}</div>
@@ -69,8 +75,9 @@
         <div v-if="!loading && !listLoading && !notices.length" class="empty-tip">本月还没有生成通知单（或已全部删除）。</div>
 
         <!-- 各户通知单 -->
-        <h4 class="section-title">缴费通知单（{{ notices.length }} 张）</h4>
-        <el-table ref="noticeTable" :data="notices" border stripe size="small" row-key="id" @selection-change="(rows) => (selected = rows)">
+        <h4 class="section-title">缴费通知单（{{ viewNotices.length }}{{ filterActive ? ` / ${notices.length}` : '' }} 张）</h4>
+        <el-table ref="noticeTable" :data="viewNotices" border size="small" row-key="id" :row-class-name="({ row }) => bandClass(row)"
+                  show-summary :summary-method="noticeSummary" @selection-change="(rows) => (selected = rows)">
           <el-table-column type="selection" width="45" />
           <el-table-column type="index" label="序号" width="55" />
           <el-table-column prop="noticeNo" label="单据编号" width="190" />
@@ -125,23 +132,80 @@
       </template>
     </el-dialog>
 
-    <!-- 单张调整:已付/前期欠费/其他费用 -->
-    <el-dialog v-model="editDialog.visible" :title="`调整通知单 - ${editForm.unitName || ''}`" width="520px">
-      <el-form :model="editForm" label-width="110px">
-        <el-form-item label="租户/公司名称"><el-input v-model="editForm.tenantName" /></el-form-item>
-        <el-form-item label="厂房/单元"><el-input v-model="editForm.unitName" /></el-form-item>
-        <el-form-item label="已付金额"><el-input-number v-model="editForm.paidAmount" :min="0" :precision="2" :controls="false" /></el-form-item>
-        <el-form-item label="前期欠费"><el-input-number v-model="editForm.priorArrears" :min="0" :precision="2" :controls="false" /></el-form-item>
-        <el-form-item label="其他费用">
-          <el-input-number v-model="editForm.otherFee" :precision="2" :controls="false" />
-          <el-input v-model="editForm.otherFeeNote" placeholder="名目，如 税金" style="width: 160px; margin-left: 8px" />
-          <div class="form-tip">如充电桩的 1% 税金等线下表里额外的一行；计入费用小计。</div>
-        </el-form-item>
-        <el-form-item label="备注"><el-input v-model="editForm.remark" type="textarea" :rows="2" /></el-form-item>
+    <!-- 调整通知单:基本信息 + 各行备注 + 新增收费项,一个弹窗改完 -->
+    <el-dialog v-model="editDialog.visible" :title="`调整通知单 - ${editForm.unitName || ''}`" width="1040px" top="4vh" destroy-on-close>
+      <el-form :model="editForm" label-width="110px" class="edit-form">
+        <el-row :gutter="16">
+          <el-col :span="12"><el-form-item label="租户/公司名称"><el-input v-model="editForm.tenantName" /></el-form-item></el-col>
+          <el-col :span="12"><el-form-item label="厂房/单元"><el-input v-model="editForm.unitName" /></el-form-item></el-col>
+          <el-col :span="12"><el-form-item label="已付金额"><el-input-number v-model="editForm.paidAmount" :min="0" :precision="2" :controls="false" /></el-form-item></el-col>
+          <el-col :span="12"><el-form-item label="前期欠费"><el-input-number v-model="editForm.priorArrears" :min="0" :precision="2" :controls="false" /></el-form-item></el-col>
+          <el-col :span="24"><el-form-item label="备注"><el-input v-model="editForm.remark" type="textarea" :rows="2" placeholder="印在通知单表头「备注」一栏" /></el-form-item></el-col>
+        </el-row>
       </el-form>
+
+      <div class="items-head">
+        <strong>收费明细</strong>
+        <span class="form-tip">水费、电费、垃圾费由读数自动算出，金额不能改，备注可改；下面可以随时新增收费项（维修费、违约金、减免等），金额可为负数。</span>
+        <el-button type="primary" size="small" @click="addManual"><el-icon><Plus /></el-icon>新增收费项</el-button>
+      </div>
+      <el-table :data="editItems" border size="small" class="items-table" :row-class-name="({ row }) => (row.auto ? 'item-auto' : 'item-manual')">
+        <el-table-column label="序号" width="58" align="center">
+          <template #default="{ row }">{{ row.seq }}</template>
+        </el-table-column>
+        <el-table-column label="费用项目" min-width="170">
+          <template #default="{ row }">
+            <span v-if="row.auto" :class="{ 'sub-line': row.detail }">{{ row.detail ? '　' : '' }}{{ row.feeItem }}</span>
+            <el-input v-else v-model="row.feeItem" size="small" placeholder="如 设备维修费" maxlength="64" />
+          </template>
+        </el-table-column>
+        <el-table-column label="数量" width="110" align="right">
+          <template #default="{ row }">
+            <span v-if="row.auto">{{ row.quantity == null ? '' : num(row.quantity, 4) }}</span>
+            <el-input-number v-else v-model="row.quantity" size="small" :precision="2" :controls="false" style="width: 96px" @change="calcAmount(row)" />
+          </template>
+        </el-table-column>
+        <el-table-column label="单位" width="80" align="center">
+          <template #default="{ row }">
+            <span v-if="row.auto">{{ row.unit }}</span>
+            <el-input v-else v-model="row.unit" size="small" placeholder="元" maxlength="16" />
+          </template>
+        </el-table-column>
+        <el-table-column label="单价(元)" width="110" align="right">
+          <template #default="{ row }">
+            <span v-if="row.auto">{{ row.unitPrice == null ? '' : num(row.unitPrice, 4) }}</span>
+            <el-input-number v-else v-model="row.unitPrice" size="small" :precision="4" :controls="false" style="width: 96px" @change="calcAmount(row)" />
+          </template>
+        </el-table-column>
+        <el-table-column label="金额(元)" width="125" align="right">
+          <template #default="{ row }">
+            <span v-if="row.auto">{{ row.detail || row.amount == null ? '' : money(row.amount) }}</span>
+            <el-input-number v-else v-model="row.amount" size="small" :precision="2" :controls="false" style="width: 110px" />
+          </template>
+        </el-table-column>
+        <el-table-column label="备注" min-width="240">
+          <template #default="{ row }">
+            <span v-if="row.detail" class="sub-line">{{ row.remark }}</span>
+            <el-input v-else v-model="row.remark" size="small" maxlength="255" placeholder="备注" />
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="70" align="center">
+          <template #default="{ row, $index }">
+            <el-button v-if="!row.auto" link type="danger" size="small" @click="editItems.splice($index, 1)">删除</el-button>
+            <span v-else class="muted">自动</span>
+          </template>
+        </el-table-column>
+      </el-table>
+
+      <div class="edit-total">
+        <span>费用小计 <strong>¥{{ money(editSubtotal) }}</strong></span>
+        <span>已付 − ¥{{ money(editForm.paidAmount) }}</span>
+        <span>前期欠费 + ¥{{ money(editForm.priorArrears) }}</span>
+        <span class="due">本期应收合计 <strong>¥{{ money(editDue) }}</strong></span>
+      </div>
       <template #footer>
         <el-button @click="editDialog.visible = false">取消</el-button>
-        <el-button type="primary" @click="saveEdit">保存</el-button>
+        <el-button type="primary" :loading="editDialog.saving" @click="saveEdit">保存</el-button>
       </template>
     </el-dialog>
 
@@ -159,9 +223,10 @@
 <script setup>
 import { computed, onActivated, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowLeft, Delete, Download, Printer } from '@element-plus/icons-vue'
+import { ArrowLeft, Delete, Download, Plus, Printer } from '@element-plus/icons-vue'
 import { feePeriodApi } from '@/api/energy'
-import { useFeePeriod, money, num, downloadBlob, BILL_KINDS } from './feePeriod'
+import { useFeePeriod, money, num, downloadBlob, BILL_KINDS, applyFilter, filterOptions, floorBandClass } from './feePeriod'
+import FeeFilterBar from './components/FeeFilterBar.vue'
 import { noticeHtml, NOTICE_CSS, printNotices } from './noticePrint'
 import FeeMonthPicker from './components/FeeMonthPicker.vue'
 import FeeBillFiles from './components/FeeBillFiles.vue'
@@ -187,7 +252,7 @@ async function loadNotices() {
     listLoading.value = false
   }
 }
-watch(month, (v) => { if (!v) { notices.value = []; warnings.value = [] } })
+watch(month, (v) => { filter.company = ''; filter.floor = ''; if (!v) { notices.value = []; warnings.value = [] } })
 
 let firstActivation = true
 onActivated(async () => {
@@ -209,15 +274,39 @@ const MATRIX_ROWS = [
   { seq: '三', key: 'priorArrears', label: '前期欠费' },
   { seq: '四', key: 'totalDue', label: '本期应收合计', strong: true }
 ]
-const matrix = computed(() => (notices.value.length ? MATRIX_ROWS : []))
+// 检索:按公司、楼层筛通知单;每一层交替深浅色。明细表、合计、通知单列表都用筛出来的这批
+const filter = reactive({ company: '', floor: '' })
+const companyOf = (n) => n.tenantName
+const unitOf = (n) => n.unitName
+const opts = computed(() => filterOptions(notices.value, companyOf, unitOf))
+const filterActive = computed(() => !!(filter.company || filter.floor))
+const viewNotices = computed(() => applyFilter(notices.value, filter, companyOf, unitOf))
+const bandClass = computed(() => floorBandClass(notices.value, unitOf))
+const matrix = computed(() => (viewNotices.value.length ? MATRIX_ROWS : []))
 // 合计列 = 各户金额逐个相加(分为单位取整,避免浮点尾数),与通知单列表、导出 Excel 同源
-const totals = computed(() => {
+const sumOf = (list) => {
   const t = {}
   for (const r of MATRIX_ROWS) {
-    t[r.key] = notices.value.reduce((s, n) => s + Math.round(Number(n[r.key] || 0) * 100), 0) / 100
+    t[r.key] = list.reduce((s, n) => s + Math.round(Number(n[r.key] || 0) * 100), 0) / 100
   }
   return t
-})
+}
+const totals = computed(() => sumOf(viewNotices.value))
+const allTotals = computed(() => sumOf(notices.value))
+// 通知单列表底部合计行(跟着检索走)
+function noticeSummary({ columns, data }) {
+  const t = sumOf(data)
+  return columns.map((col, i) => {
+    if (i === 1) return '合计'
+    switch (col.label) {
+      case '费用小计': return '¥' + money(t.subtotal)
+      case '已付': return money(t.paidAmount)
+      case '前期欠费': return money(t.priorArrears)
+      case '本期应收合计': return '¥' + money(t.totalDue)
+      default: return ''
+    }
+  })
+}
 // 公司全称太长,列头用简称(与导出的 Excel 同一规则)
 function shortName(name) {
   const s = String(name || '').replace(/(有限公司|股份有限公司|有限责任公司|公司)$/, '').replace(/^(广州|广东|深圳|佛山|中国)/, '').replace(/[（(].*?[)）]/g, '')
@@ -254,21 +343,65 @@ async function saveHeader() {
   ElMessage.success(notices.value.length ? '已保存；单据编号前缀与计费期间要点「重新生成通知单」才会更新到各户' : '已保存')
 }
 
-const editDialog = reactive({ visible: false })
+const editDialog = reactive({ visible: false, saving: false })
 const editForm = reactive({})
+// 弹窗里的明细行:自动行(只读金额,可改备注)+ 手工行(整行可改);detail = 分表子行,只读
+const editItems = ref([])
+let originalRemarks = {}
 function edit(row) {
   Object.assign(editForm, {
     id: row.id, tenantName: row.tenantName, unitName: row.unitName, paidAmount: Number(row.paidAmount || 0),
-    priorArrears: Number(row.priorArrears || 0), otherFee: Number(row.otherFee || 0), otherFeeNote: row.otherFeeNote || '',
-    remark: row.remark || ''
+    priorArrears: Number(row.priorArrears || 0), remark: row.remark || ''
+  })
+  originalRemarks = {}
+  editItems.value = (row.items || []).map((it) => {
+    const manual = it.manualItem || it.itemType === 'OTHER' || it.itemType === 'CUSTOM'
+    if (!manual) originalRemarks[it.id] = it.remark || ''
+    return {
+      id: it.id, auto: !manual, detail: /_DETAIL$/.test(it.itemType), seq: it.seq, feeItem: it.feeItem,
+      quantity: it.quantity ?? null, unit: it.unit || '', unitPrice: it.unitPrice ?? null,
+      amount: it.amount == null ? null : Number(it.amount), remark: it.remark || ''
+    }
   })
   editDialog.visible = true
 }
+function addManual() {
+  editItems.value.push({ id: null, auto: false, detail: false, seq: '', feeItem: '', quantity: null, unit: '元', unitPrice: null, amount: null, remark: '' })
+}
+// 填了数量和单价就自动算金额;之后仍可直接改金额
+function calcAmount(row) {
+  if (row.quantity != null && row.unitPrice != null) row.amount = Math.round(Number(row.quantity) * Number(row.unitPrice) * 100) / 100
+}
+const cents = (v) => Math.round(Number(v || 0) * 100)
+const editSubtotal = computed(() => editItems.value.reduce((s, r) => (r.detail ? s : s + cents(r.amount)), 0) / 100)
+const editDue = computed(() => (cents(editSubtotal.value) - cents(editForm.paidAmount) + cents(editForm.priorArrears)) / 100)
+// 序号:手工行接在自动行后面顺延
+watch(() => editItems.value.length, () => {
+  const top = editItems.value.filter((r) => r.auto && !r.detail).length
+  editItems.value.filter((r) => !r.auto).forEach((r, i) => { r.seq = String(top + i + 1) })
+})
 async function saveEdit() {
-  await feePeriodApi.updateNotice({ ...editForm })
-  editDialog.visible = false
-  ElMessage.success('已保存')
-  await loadNotices()
+  const manual = editItems.value.filter((r) => !r.auto)
+  for (const [i, r] of manual.entries()) {
+    if (!String(r.feeItem || '').trim()) return ElMessage.warning(`第 ${i + 1} 个新增收费项还没填费用项目`)
+    if (r.amount == null && !(r.quantity != null && r.unitPrice != null)) return ElMessage.warning(`新增收费项「${r.feeItem}」还没填金额（或数量 × 单价）`)
+  }
+  const itemRemarks = {}
+  editItems.value.filter((r) => r.auto && !r.detail && (r.remark || '') !== originalRemarks[r.id]).forEach((r) => { itemRemarks[r.id] = r.remark || '' })
+  editDialog.saving = true
+  try {
+    await feePeriodApi.editNotice({
+      id: editForm.id, tenantName: editForm.tenantName, unitName: editForm.unitName, paidAmount: editForm.paidAmount,
+      priorArrears: editForm.priorArrears, remark: editForm.remark, itemRemarks,
+      manualItems: manual.map((r) => ({ feeItem: r.feeItem, unit: r.unit, quantity: r.quantity, unitPrice: r.unitPrice, amount: r.amount, remark: r.remark }))
+    })
+    editDialog.visible = false
+    ElMessage.success('已保存')
+    await reload()
+    await loadNotices()
+  } finally {
+    editDialog.saving = false
+  }
 }
 
 const previewDialog = reactive({ visible: false, title: '', html: '', notice: null })
@@ -282,7 +415,7 @@ function doPrint(list) {
   if (!printNotices(period.value, list)) ElMessage.warning('浏览器拦截了打印窗口，请允许弹出窗口后重试')
 }
 const printOne = (row) => doPrint([row])
-const printAll = () => doPrint(notices.value)
+const printAll = () => doPrint(viewNotices.value)
 const printSelected = () => doPrint(selected.value)
 async function exportExcel() {
   const res = await feePeriodApi.export(period.value.id)
@@ -354,5 +487,13 @@ async function revoke() {
 .section-title { margin: 18px 0 8px; font-size: 14px; }
 .empty-tip { text-align: center; color: var(--el-text-color-secondary); padding: 20px 0; font-size: 13px; }
 .form-tip { margin-top: 4px; font-size: 12px; line-height: 1.5; color: var(--el-text-color-secondary); }
+.edit-form { margin-bottom: 4px; }
+.items-head { display: flex; align-items: center; gap: 12px; margin: 6px 0 10px; flex-wrap: wrap; }
+.items-head .form-tip { flex: 1; margin: 0; min-width: 260px; }
+.items-table :deep(tr.item-manual) { background-color: var(--el-color-warning-light-9); }
+.sub-line { color: var(--el-text-color-secondary); font-size: 12px; }
+.muted { color: var(--el-text-color-placeholder); font-size: 12px; }
+.edit-total { display: flex; justify-content: flex-end; align-items: baseline; gap: 22px; margin-top: 12px; font-size: 13px; font-variant-numeric: tabular-nums; }
+.edit-total .due strong { font-size: 18px; color: var(--el-color-danger); }
 .preview-frame { width: 100%; height: 70vh; border: 1px solid var(--el-border-color-lighter); background: #fff; }
 </style>

@@ -49,8 +49,11 @@
           <el-button link type="primary" @click="$router.push('/energy/summary')">去缴费汇总 →</el-button>
           <span class="toolbar-tip">两笔总额按各单元「计租面积 ÷ 参与分摊的计租面积合计」分摊到分，各单元之和恰好等于总额；只有园区租户（参与公摊的单元）分摊，充电桩、未租单元不摊。计租面积在此直接改，同区域所有表计一起生效。</span>
         </div>
-        <el-table :data="sheet?.rows || []" v-loading="loading || sheetLoading" border stripe size="small"
-                  show-summary :summary-method="summary">
+        <FeeFilterBar :model="filter" :companies="opts.companies" :floors="opts.floors">
+          检索结果 {{ viewRows.length }} / {{ allRows.length }} 个区域 · 垃圾费合计 ¥{{ money(viewRows.reduce((s, r) => s + Number(r.domesticFee || 0) + Number(r.industrialFee || 0), 0)) }}（表格底部合计行同步汇总）
+        </FeeFilterBar>
+        <el-table :data="viewRows" v-loading="loading || sheetLoading" border size="small"
+                  :row-class-name="({ row }) => bandClass(row)" show-summary :summary-method="summary">
           <el-table-column type="index" label="序号" width="55" />
           <el-table-column prop="unit" label="区域 / 单元" width="120" />
           <el-table-column prop="tenantName" label="用户名 / 租户" min-width="160" show-overflow-tooltip />
@@ -62,10 +65,9 @@
           </el-table-column>
           <!-- 计租/总计租面积 = 本单元面积 ÷ 参与分摊的面积合计 -->
           <el-table-column label="计租/总计租面积" width="140" align="right">
-            <template #default="{ row, $index }">
+            <template #default="{ row }">
               <span v-if="row.sharePublic && Number(row.leaseArea) > 0" class="ratio"
                     :title="`${row.leaseArea} ÷ ${sheet?.totalLeaseArea} = ${Number(row.ratio || 0).toFixed(6)}`">{{ (Number(row.ratio || 0) * 100).toFixed(2) }}%</span>
-              <span v-else-if="row.sharePublic && mergedIntoPrev(row, $index)" class="muted">并入上一区域</span>
               <span v-else-if="row.sharePublic" class="warn">未填面积</span>
               <span v-else class="muted">不参与</span>
             </template>
@@ -106,7 +108,8 @@ import { computed, onActivated, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft, Plus } from '@element-plus/icons-vue'
 import { feePeriodApi } from '@/api/energy'
-import { useFeePeriod, money, num, BILL_KINDS } from './feePeriod'
+import { useFeePeriod, money, num, BILL_KINDS, applyFilter, filterOptions, floorBandClass } from './feePeriod'
+import FeeFilterBar from './components/FeeFilterBar.vue'
 import FeeMonthPicker from './components/FeeMonthPicker.vue'
 import FeeBillFiles from './components/FeeBillFiles.vue'
 import FeeMeterDialog from './components/FeeMeterDialog.vue'
@@ -129,11 +132,14 @@ const monthLabel = computed(() => (month.value ? `${month.value.slice(0, 4)}年$
 const allocatedTotal = computed(() => (sheet.value?.rows || [])
   .reduce((s, r) => s + Number(r.domesticFee || 0) + Number(r.industrialFee || 0), 0))
 
-// 同一租户同一楼层的相邻区域(如 2层A~C区)面积只填在第一个区域上,后面的区域并入它,不算漏填
-function mergedIntoPrev(row, idx) {
-  const prev = (sheet.value?.rows || [])[idx - 1]
-  return !!prev && prev.tenantName === row.tenantName && prev.floorKey === row.floorKey && Number(prev.leaseArea) > 0
-}
+// 检索:按公司、楼层筛表格;每一层交替深浅色。A、B、C 区各自按自己的计租面积分摊,不合并
+const filter = reactive({ company: '', floor: '' })
+const companyOf = (r) => r.tenantName
+const unitOf = (r) => r.unit
+const allRows = computed(() => sheet.value?.rows || [])
+const opts = computed(() => filterOptions(allRows.value, companyOf, unitOf))
+const viewRows = computed(() => applyFilter(allRows.value, filter, companyOf, unitOf))
+const bandClass = computed(() => floorBandClass(allRows.value, unitOf))
 
 async function loadSheet() {
   if (!period.value) return

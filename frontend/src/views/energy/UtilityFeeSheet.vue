@@ -79,7 +79,10 @@
               : '公摊度数 = 总表度数 − 参与公摊的租户用量；按各户实际用量占比摊回；也可直接手填公摊度数。总表度数不填时按发票总表当月抄表自动取。本月读数自动成为下个月的上期读数；所有数保留两位小数。' }}
           </span>
         </div>
-        <el-table :data="rows" v-loading="loading || sheetLoading" border stripe size="small"
+        <FeeFilterBar :model="filter" :companies="opts.companies" :floors="opts.floors">
+          检索结果 {{ viewRows.length }} / {{ rows.length }} 块表 · 合计 ¥{{ money(viewRows.reduce((s, r) => s + Number(r.totalFee || 0), 0)) }}（表格底部合计行同步汇总）
+        </FeeFilterBar>
+        <el-table :data="viewRows" v-loading="loading || sheetLoading" border size="small"
                   :row-class-name="rowClass" show-summary :summary-method="summary">
           <el-table-column type="index" label="序号" width="50" />
           <el-table-column prop="area" label="区域" width="85" />
@@ -165,7 +168,8 @@ import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft, Plus } from '@element-plus/icons-vue'
 import { feePeriodApi } from '@/api/energy'
-import { useFeePeriod, money, num, BILL_KINDS } from './feePeriod'
+import { useFeePeriod, money, num, BILL_KINDS, applyFilter, filterOptions, floorBandClass } from './feePeriod'
+import FeeFilterBar from './components/FeeFilterBar.vue'
 import FeeMonthPicker from './components/FeeMonthPicker.vue'
 import FeeBillFiles from './components/FeeBillFiles.vue'
 import FeeMeterDialog from './components/FeeMeterDialog.vue'
@@ -228,7 +232,17 @@ function liveUsage(row) {
   return diff < 0 ? 0 : Math.round(diff * Number(row.ratio || 1) * 100) / 100
 }
 function markDirty(row) { dirty.add(row.meterId) }
-function rowClass({ row }) { return dirty.has(row.meterId) ? 'row-dirty' : (row.sharePublic ? '' : 'row-nonshare') }
+// 检索:按公司、楼层筛表格;每一层交替深浅色,一眼分清楼层
+const filter = reactive({ company: '', floor: '' })
+const companyOf = (r) => r.customerName || r.tenantName
+const unitOf = (r) => r.area
+const opts = computed(() => filterOptions(rows.value, companyOf, unitOf))
+const viewRows = computed(() => applyFilter(rows.value, filter, companyOf, unitOf))
+const bandClass = computed(() => floorBandClass(rows.value, unitOf))
+function rowClass({ row }) {
+  const state = dirty.has(row.meterId) ? 'row-dirty' : (row.sharePublic ? '' : 'row-nonshare')
+  return `${bandClass.value(row)} ${state}`.trim()
+}
 
 async function saveHeader() {
   await save(form)

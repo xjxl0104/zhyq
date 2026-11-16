@@ -136,8 +136,8 @@ class FeeNoticeCalculatorTest {
     }
 
     @Test
-    @DisplayName("通知单按 租户×楼层 合并单元,垃圾费按计租面积分摊,不参与公摊的户不摊垃圾")
-    void noticesGroupByTenantAndFloor() {
+    @DisplayName("通知单按 租户×区域 出,2层A/B/C区各一张不合并;垃圾费按各区计租面积分摊,不参与公摊的户不摊垃圾")
+    void noticesGroupByTenantAndUnit() {
         FeePeriod p = new FeePeriod();
         p.setId(9L);
         p.setPeriod("2026-10");
@@ -147,12 +147,12 @@ class FeeNoticeCalculatorTest {
         p.setIndustrialGarbageAmount(new BigDecimal("1854"));
 
         List<SheetRow> water = new ArrayList<>(List.of(
-                row(10, "2层A区", "云山快仓", 2L, "水", "140", true, "13500"),
-                row(11, "2层B区", "云山快仓", 2L, "水", "15", true, null),
-                row(12, "2层C区", "云山快仓", 2L, "水", "18", true, null),
+                row(10, "2层A区", "云山快仓", 2L, "水", "140", true, "4700"),
+                row(11, "2层B区", "云山快仓", 2L, "水", "15", true, "4100"),
+                row(12, "2层C区", "云山快仓", 2L, "水", "18", true, "4700"),
                 row(13, "1层A区", "云帕", 1L, "水", "19", true, "3300")));
         List<SheetRow> electric = new ArrayList<>(List.of(
-                row(20, "2层A区", "云山快仓", 2L, "电", "14481.6", true, "13500"),
+                row(20, "2层A区", "云山快仓", 2L, "电", "14481.6", true, "4700"),
                 row(21, "1层A区", "云帕", 1L, "电", "8003.4", true, "3300"),
                 row(22, "1层A区", "云帕", 1L, "电", "19200", true, "3300"),
                 row(23, "室外", "充电柱", null, "电", "364", false, null)));
@@ -161,10 +161,10 @@ class FeeNoticeCalculatorTest {
 
         NoticeBatch batch = FeeNoticeCalculator.buildNotices(p, wr, er, Map.of());
 
-        assertThat(batch.notices()).hasSize(3);
+        assertThat(batch.notices()).extracting(FeeNotice::getUnitName)
+                .containsExactly("1层A区", "2层A区", "2层B区", "2层C区", "室外");
         assertThat(batch.totalLeaseArea()).isEqualByComparingTo("16800");
         FeeNotice yunpa = batch.notices().get(0);
-        assertThat(yunpa.getUnitName()).isEqualTo("1层A区");
         assertThat(yunpa.getNoticeNo()).isEqualTo("DIPARK-202610-1F-01");
         assertThat(yunpa.getElectricUsage()).isEqualByComparingTo("27203.4");
         // 两块电表 → 电费主行 + 两条子行,子行不计金额
@@ -177,29 +177,81 @@ class FeeNoticeCalculatorTest {
         assertThat(yunpa.getDomesticGarbageFee()).isEqualByComparingTo("471.97");
         assertThat(yunpa.getIndustrialGarbageFee()).isEqualByComparingTo("364.18");
 
-        FeeNotice yunshan = batch.notices().get(1);
-        assertThat(yunshan.getUnitName()).isEqualTo("2层A~C区");
-        assertThat(yunshan.getWaterUsage()).isEqualByComparingTo("173");
-        assertThat(yunshan.getDomesticGarbageFee()).isEqualByComparingTo("1930.81");
-        assertThat(yunshan.getSubtotal()).isEqualByComparingTo(
-                yunshan.getWaterFee().add(yunshan.getWaterPublicFee()).add(yunshan.getElectricFee())
-                        .add(yunshan.getElectricPublicFee()).add(yunshan.getDomesticGarbageFee())
-                        .add(yunshan.getIndustrialGarbageFee()));
+        // 2层三个区各自一张通知单,各自用量、各自面积分摊
+        FeeNotice a = batch.notices().get(1);
+        FeeNotice b = batch.notices().get(2);
+        FeeNotice c = batch.notices().get(3);
+        assertThat(a.getNoticeNo()).isEqualTo("DIPARK-202610-2F-01");
+        assertThat(b.getNoticeNo()).isEqualTo("DIPARK-202610-2F-02");
+        assertThat(c.getNoticeNo()).isEqualTo("DIPARK-202610-2F-03");
+        assertThat(a.getWaterUsage()).isEqualByComparingTo("140");
+        assertThat(b.getWaterUsage()).isEqualByComparingTo("15");
+        assertThat(c.getWaterUsage()).isEqualByComparingTo("18");
+        assertThat(a.getLeaseArea()).isEqualByComparingTo("4700");
+        assertThat(b.getLeaseArea()).isEqualByComparingTo("4100");
+        // 生活垃圾 2402.78 × 4100 / 16800 = 586.3866 → 586.39
+        assertThat(b.getDomesticGarbageFee()).isEqualByComparingTo("586.39");
+        assertThat(a.getSubtotal()).isEqualByComparingTo(
+                a.getWaterFee().add(a.getWaterPublicFee()).add(a.getElectricFee())
+                        .add(a.getElectricPublicFee()).add(a.getDomesticGarbageFee())
+                        .add(a.getIndustrialGarbageFee()));
 
-        FeeNotice pile = batch.notices().get(2);
+        FeeNotice pile = batch.notices().get(4);
         assertThat(pile.getUnitName()).isEqualTo("室外");
         assertThat(pile.getSharePublic()).isZero();
         assertThat(pile.getDomesticGarbageFee()).isEqualByComparingTo("0");
         assertThat(pile.getItems()).noneMatch(i -> i.getItemType().startsWith("GARBAGE"));
         assertThat(pile.getNoticeNo()).isEqualTo("DIPARK-202610-室外-01");
         assertThat(batch.warnings()).anyMatch(w -> w.contains("没有关联到在租合同"));
-        // 云山 2层B/C 没填面积不该报警:面积挂在 2层A 上,按整户算
         assertThat(batch.warnings()).noneMatch(w -> w.contains("没有填计租面积"));
         // 通知单上的垃圾费之和恰好等于两笔总额
         assertThat(batch.notices().stream().map(FeeNotice::getDomesticGarbageFee).reduce(BigDecimal.ZERO, BigDecimal::add))
                 .isEqualByComparingTo("2402.78");
         assertThat(batch.notices().stream().map(FeeNotice::getIndustrialGarbageFee).reduce(BigDecimal.ZERO, BigDecimal::add))
                 .isEqualByComparingTo("1854");
+    }
+
+    @Test
+    @DisplayName("重新生成时找回手工新增的收费行和手改的备注,其他费用 = 手工行金额之和")
+    void regenerateKeepsManualItemsAndRemarks() {
+        FeePeriod p = new FeePeriod();
+        p.setId(1L);
+        p.setPeriod("2026-10");
+        List<SheetRow> electric = new ArrayList<>(List.of(row(1, "1层A区", "云帕", 1L, "电", "100", true, "3300")));
+        UtilityResult er = FeeNoticeCalculator.allocate("电", new BigDecimal("120"), BigDecimal.ONE, electric);
+        UtilityResult wr = UtilityResult.empty("水", BigDecimal.ONE);
+
+        FeeNotice first = FeeNoticeCalculator.buildNotices(p, wr, er, Map.of()).notices().get(0);
+        // 用户在调整弹窗里:电费行改备注 + 新增两行(一行数量×单价,一行减免)
+        FeeNoticeItem electricRow = first.getItems().stream().filter(i -> "ELECTRIC".equals(i.getItemType())).findFirst().orElseThrow();
+        electricRow.setRemark("手工备注:含上月补抄");
+        electricRow.setRemarkEdited(1);
+        FeeNoticeItem fee = new FeeNoticeItem();
+        fee.setItemType(FeeNoticeItem.T_CUSTOM);
+        fee.setManual(1);
+        fee.setFeeItem("设备维修费");
+        fee.setAmount(new BigDecimal("200.00"));
+        FeeNoticeItem discount = new FeeNoticeItem();
+        discount.setItemType(FeeNoticeItem.T_CUSTOM);
+        discount.setManual(1);
+        discount.setFeeItem("减免");
+        discount.setAmount(new BigDecimal("-50.00"));
+        first.getItems().add(fee);
+        first.getItems().add(discount);
+
+        FeeNotice second = FeeNoticeCalculator.buildNotices(p, wr, er,
+                Map.of(FeeNoticeCalculator.noticeKey(first), first)).notices().get(0);
+        assertThat(second.getItems()).filteredOn(FeeNoticeItem::isManualItem).extracting(FeeNoticeItem::getFeeItem)
+                .containsExactly("设备维修费", "减免");
+        assertThat(second.getOtherFee()).isEqualByComparingTo("150.00");
+        assertThat(second.getOtherFeeNote()).isEqualTo("设备维修费、减免");
+        assertThat(second.getItems()).filteredOn(i -> "ELECTRIC".equals(i.getItemType()))
+                .extracting(FeeNoticeItem::getRemark).containsExactly("手工备注:含上月补抄");
+        // 小计 = 电费 100 + 公摊 20 + 其他 150
+        assertThat(second.getSubtotal()).isEqualByComparingTo("270.00");
+        // 没手改过备注的行(公摊电费)仍是自动备注,不被旧文本覆盖
+        assertThat(second.getItems()).filteredOn(i -> "ELECTRIC_PUBLIC".equals(i.getItemType()))
+                .allMatch(i -> i.getRemarkEdited() == null);
     }
 
     @Test
