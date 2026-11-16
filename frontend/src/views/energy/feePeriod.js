@@ -69,27 +69,32 @@ export function downloadBlob(response, filename) {
   URL.revokeObjectURL(url)
 }
 
-/** 「2层A区」→「2层」,「室外」→「室外」;用来按楼层检索、给每层上深浅色 */
+/** 「2层A区」→「2层」,「室外」→「室外」;用来给每层上深浅色 */
 export function floorOf(text) {
   const m = /(\d+)\s*层/.exec(text || '')
   return m ? `${Number(m[1])}层` : (String(text || '').trim() || '其他')
+}
+/** 一张通知单可能跨好几层(「1层B区、2层A~C区、3层A~C区」),返回它涉及的所有楼层 */
+export function floorsOf(text) {
+  const all = [...String(text || '').matchAll(/(\d+)\s*层/g)].map((m) => `${Number(m[1])}层`)
+  return all.length ? [...new Set(all)] : [String(text || '').trim() || '其他']
 }
 const floorOrder = (f) => { const m = /^(\d+)层$/.exec(f); return m ? Number(m[1]) : 1000 }
 
 /** 去重后的公司名 / 楼层(楼层按数字从小到大),给检索下拉用 */
 export function filterOptions(rows, companyOf, unitOf) {
   const companies = [...new Set(rows.map(companyOf).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'zh-CN'))
-  const floors = [...new Set(rows.map((r) => floorOf(unitOf(r))))].sort((a, b) => floorOrder(a) - floorOrder(b) || a.localeCompare(b, 'zh-CN'))
+  const floors = [...new Set(rows.flatMap((r) => floorsOf(unitOf(r))))].sort((a, b) => floorOrder(a) - floorOrder(b) || a.localeCompare(b, 'zh-CN'))
   return { companies, floors }
 }
 
-/** 按公司、楼层筛选;两个条件都为空就原样返回(保持同一个数组,不打断行内编辑状态) */
+/** 按公司、楼层筛选(通知单跨多层时,涉及该层就算命中);两个条件都为空就原样返回,保持同一个数组 */
 export function applyFilter(rows, filter, companyOf, unitOf) {
   if (!filter.company && !filter.floor) return rows
-  return rows.filter((r) => (!filter.company || companyOf(r) === filter.company) && (!filter.floor || floorOf(unitOf(r)) === filter.floor))
+  return rows.filter((r) => (!filter.company || companyOf(r) === filter.company) && (!filter.floor || floorsOf(unitOf(r)).includes(filter.floor)))
 }
 
-/** 每一层交替深浅色:返回 el-table 的 row-class-name 用的函数,rows 按楼层排好序 */
+/** 交替深浅色:返回 el-table 的 row-class-name 用的函数。unitOf 取得相同的行算同一组,按出现顺序一组深一组浅 */
 export function floorBandClass(rows, unitOf) {
   const bands = new Map()
   rows.forEach((r) => { const f = floorOf(unitOf(r)); if (!bands.has(f)) bands.set(f, bands.size % 2) })
