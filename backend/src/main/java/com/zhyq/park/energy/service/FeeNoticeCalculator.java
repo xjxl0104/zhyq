@@ -13,6 +13,7 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -168,14 +169,14 @@ public final class FeeNoticeCalculator {
         return new UtilityResult(energyType, nz(total), submeter, pool, shareBase, unitPrice, totalFee, rows, warnings);
     }
 
-    /** 把两种能源的分摊结果按「租户 × 楼层」合成通知单,并摊垃圾费 */
+    /** 把两种能源的分摊结果按「租户 × 区域」合成通知单(2层A区、2层B区各出一张),并摊垃圾费 */
     public static NoticeBatch buildNotices(FeePeriod period, UtilityResult water, UtilityResult electric,
                                            Map<String, FeeNotice> previous) {
         List<String> warnings = new ArrayList<>();
         warnings.addAll(water.warnings());
         warnings.addAll(electric.warnings());
 
-        // 1. 按户分组:一户 = 同一租户在同一楼层的所有单元
+        // 1. 按户分组:一户 = 同一租户在同一区域(单元)的所有表计;A、B、C 区各出一张,不自动合并
         Map<String, List<SheetRow>> groups = new LinkedHashMap<>();
         List<SheetRow> tenantRows = new ArrayList<>();
         water.rows().stream().filter(SheetRow::isTenant).forEach(tenantRows::add);
@@ -184,7 +185,7 @@ public final class FeeNoticeCalculator {
                 .thenComparing(r -> unitKey(r), String.CASE_INSENSITIVE_ORDER)
                 .thenComparing(r -> r.getMeterId() == null ? 0L : r.getMeterId()));
         for (SheetRow r : tenantRows) {
-            groups.computeIfAbsent(tenantKey(r) + "|" + floorKey(r.getArea()), k -> new ArrayList<>()).add(r);
+            groups.computeIfAbsent(tenantKey(r) + "|" + unitKey(r), k -> new ArrayList<>()).add(r);
         }
 
         // 2. 垃圾费按单元计租面积分摊(最大余数法,各单元之和恰好等于总额),只有参与分摊的单元进分母
@@ -270,12 +271,18 @@ public final class FeeNoticeCalculator {
             FeeNotice prev = previous == null ? null : previous.get(noticeKey(n));
             n.setPaidAmount(prev == null ? BigDecimal.ZERO : nz(prev.getPaidAmount()));
             n.setPriorArrears(prev == null ? BigDecimal.ZERO : nz(prev.getPriorArrears()));
-            n.setOtherFee(prev == null ? BigDecimal.ZERO : nz(prev.getOtherFee()));
-            n.setOtherFeeNote(prev == null ? null : prev.getOtherFeeNote());
             n.setRemark(prev == null ? null : prev.getRemark());
-            if (n.getOtherFee().signum() != 0) {
-                items.add(otherItem(++no[0], n.getOtherFee(), n.getOtherFeeNote()));
+            keepRemarkEdits(items, prev);
+            // 手工新增的收费行逐行找回;老数据只有「其他费用」一个金额、没有明细行时,还原成一行
+            List<FeeNoticeItem> manual = prev == null ? List.of()
+                    : prev.getItems().stream().filter(FeeNoticeItem::isManualItem).toList();
+            if (manual.isEmpty() && prev != null && nz(prev.getOtherFee()).signum() != 0) {
+                items.add(otherItem(++no[0], prev.getOtherFee(), prev.getOtherFeeNote()));
             }
+            for (FeeNoticeItem m : manual) {
+                items.add(copyManual(++no[0], m));
+            }
+            applyOtherFee(n, items);
             int itemSort = 0;
             for (FeeNoticeItem it : items) {
                 it.setSort(++itemSort);
@@ -497,7 +504,60 @@ public final class FeeNoticeCalculator {
         item.setFeeItem(note == null || note.isBlank() ? "其他费用" : note.trim());
         item.setUnit("元");
         item.setAmount(money(amount));
+        item.setManual(1);
         return item;
+    }
+
+    /** 重新生成时把上一版里手工新增的收费行原样搬过来(序号按新位置重排) */
+    private static FeeNoticeItem copyManual(int no, FeeNoticeItem src) {
+        FeeNoticeItem item = new FeeNoticeItem();
+        item.setSeq(String.valueOf(no));
+        item.setItemType(FeeNoticeItem.T_OTHER.equals(src.getItemType()) ? FeeNoticeItem.T_OTHER : FeeNoticeItem.T_CUSTOM);
+        item.setFeeItem(src.getFeeItem());
+        item.setQuantity(src.getQuantity());
+        item.setUnit(src.getUnit());
+        item.setUnitPrice(src.getUnitPrice());
+        item.setAmount(src.getAmount());
+        item.setRemark(src.getRemark());
+        item.setManual(1);
+        return item;
+    }
+
+    /** 手工改过备注的自动行(水费/电费/垃圾费等),重新生成后沿用手工备注;分表子行按表计对应 */
+    private static void keepRemarkEdits(List<FeeNoticeItem> items, FeeNotice prev) {
+        if (prev == null) {
+            return;
+        }
+        for (FeeNoticeItem old : prev.getItems()) {
+            if (old.isManualItem() || old.getRemarkEdited() == null || old.getRemarkEdited() != 1) {
+                continue;
+            }
+            for (FeeNoticeItem cur : items) {
+                boolean sameType = old.getItemType() != null && old.getItemType().equals(cur.getItemType());
+                boolean sameMeter = old.isDetail() ? Objects.equals(old.getMeterId(), cur.getMeterId()) : true;
+                if (sameType && sameMeter) {
+                    cur.setRemark(old.getRemark());
+                    cur.setRemarkEdited(1);
+                    break;
+                }
+            }
+        }
+    }
+
+    /** 其他费用 = 手工收费行金额之和;名目 = 各行名称。通知单的小计、账单金额都从这里来 */
+    public static void applyOtherFee(FeeNotice n, List<FeeNoticeItem> items) {
+        BigDecimal sum = BigDecimal.ZERO;
+        List<String> names = new ArrayList<>();
+        for (FeeNoticeItem it : items) {
+            if (it.isManualItem()) {
+                sum = sum.add(nz(it.getAmount()));
+                if (it.getFeeItem() != null && !it.getFeeItem().isBlank()) {
+                    names.add(it.getFeeItem().trim());
+                }
+            }
+        }
+        n.setOtherFee(money(sum));
+        n.setOtherFeeNote(names.isEmpty() ? null : String.join("、", names));
     }
 
     private static void zeroWater(FeeNotice n) {

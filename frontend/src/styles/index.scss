@@ -470,6 +470,12 @@ body {
     }
   }
 }
+/* 能耗费用页:每一层交替深浅色(页面给行加 floor-band-0 / floor-band-1)。
+   盖过上面「偶数行条纹」;悬停、选中行仍走上面的反馈,业务 warning(!important)不受影响。 */
+.el-table .el-table__body > tbody > tr.el-table__row {
+  &.floor-band-0:not(.hover-row):not(:hover):not(.current-row) > td.el-table__cell { background-color: var(--list-surface); }
+  &.floor-band-1:not(.hover-row):not(:hover):not(.current-row) > td.el-table__cell { background-color: var(--el-color-primary-light-8); }
+}
 .el-table .el-table__footer-wrapper td.el-table__cell {
   background: var(--list-header);
   color: var(--text-body);

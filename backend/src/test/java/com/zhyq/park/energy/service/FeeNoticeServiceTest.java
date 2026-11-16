@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.zhyq.park.common.exception.BizException;
 import com.zhyq.park.energy.entity.FeeNotice;
+import com.zhyq.park.energy.entity.FeeNoticeItem;
 import com.zhyq.park.energy.entity.FeePeriod;
 import com.zhyq.park.energy.entity.FeeSnapshot;
 import com.zhyq.park.energy.entity.Meter;
@@ -39,6 +40,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -213,5 +215,79 @@ class FeeNoticeServiceTest {
         assertThatThrownBy(() -> service.saveReadings(1L,
                 List.of(new FeeNoticeService.ReadingInput(7L, new BigDecimal("100"), new BigDecimal("125")))))
                 .isInstanceOf(BizException.class).hasMessageContaining("已确认出账");
+    }
+
+    private static FeeNoticeItem item(long id, String type, String name, String amount, String remark, int manual) {
+        FeeNoticeItem it = new FeeNoticeItem();
+        it.setId(id);
+        it.setNoticeId(3L);
+        it.setItemType(type);
+        it.setFeeItem(name);
+        it.setAmount(amount == null ? null : new BigDecimal(amount));
+        it.setRemark(remark);
+        it.setManual(manual);
+        it.setSort((int) id);
+        return it;
+    }
+
+    @Test
+    @DisplayName("整单调整:改自动行备注 + 整体替换手工收费行,其他费用与应收合计跟着重算")
+    void editNoticeReplacesManualItemsAndRecalculates() {
+        when(periodMapper.selectById(1L)).thenReturn(period(FeePeriod.ST_DRAFT));
+        FeeNotice n = notice(3L, null);
+        n.setElectricFee(new BigDecimal("100.00"));
+        n.setElectricPublicFee(new BigDecimal("20.00"));
+        when(noticeMapper.selectById(3L)).thenReturn(n);
+        FeeNoticeItem electric = item(5, FeeNoticeItem.T_ELECTRIC, "电费", "100.00", "自动备注", 0);
+        FeeNoticeItem oldOther = item(6, FeeNoticeItem.T_OTHER, "税金", "3.75", null, 1);
+        FeeNoticeItem fix = item(901, FeeNoticeItem.T_CUSTOM, "设备维修费", "201.00", null, 1);
+        FeeNoticeItem discount = item(902, FeeNoticeItem.T_CUSTOM, "减免", "-50.00", null, 1);
+        when(itemMapper.selectList(any())).thenReturn(List.of(electric, oldOther), List.of(electric, fix, discount));
+
+        FeeNotice out = service.editNotice(new FeeNoticeService.NoticeEdit(3L, null, null, new BigDecimal("10"), null,
+                "本月含补抄", java.util.Map.of(5L, "手工备注"),
+                List.of(new FeeNoticeService.ManualItemInput("设备维修费", null, new BigDecimal("2"), new BigDecimal("100.5"), null, null),
+                        new FeeNoticeService.ManualItemInput("减免", null, null, null, new BigDecimal("-50"), "老客户"))));
+
+        assertThat(electric.getRemark()).isEqualTo("手工备注");
+        assertThat(electric.getRemarkEdited()).isEqualTo(1);
+        verify(itemMapper).deleteById(6L);               // 旧的手工行被整体替换
+        verify(itemMapper, times(2)).insert(any(FeeNoticeItem.class));
+        assertThat(out.getOtherFee()).isEqualByComparingTo("151.00");   // 201 - 50
+        assertThat(out.getOtherFeeNote()).isEqualTo("设备维修费、减免");
+        // 小计 100 + 20 + 151 = 271;应收 = 271 - 已付 10
+        assertThat(out.getSubtotal()).isEqualByComparingTo("271.00");
+        assertThat(out.getTotalDue()).isEqualByComparingTo("261.00");
+        assertThat(out.getRemark()).isEqualTo("本月含补抄");
+    }
+
+    @Test
+    @DisplayName("整单调整:手工行没填名称或金额会被拦下,已出账的月份不能调整")
+    void editNoticeValidatesInput() {
+        when(noticeMapper.selectById(3L)).thenReturn(notice(3L, null));
+        when(itemMapper.selectList(any())).thenReturn(List.of());
+        when(periodMapper.selectById(1L)).thenReturn(period(FeePeriod.ST_DRAFT));
+
+        assertThatThrownBy(() -> service.editNotice(new FeeNoticeService.NoticeEdit(3L, null, null, null, null, null, null,
+                List.of(new FeeNoticeService.ManualItemInput(" ", null, null, null, new BigDecimal("1"), null)))))
+                .isInstanceOf(BizException.class).hasMessageContaining("费用项目");
+        assertThatThrownBy(() -> service.editNotice(new FeeNoticeService.NoticeEdit(3L, null, null, null, null, null, null,
+                List.of(new FeeNoticeService.ManualItemInput("维修费", null, null, null, null, null)))))
+                .isInstanceOf(BizException.class).hasMessageContaining("金额");
+
+        when(periodMapper.selectById(1L)).thenReturn(period(FeePeriod.ST_CONFIRMED));
+        assertThatThrownBy(() -> service.editNotice(new FeeNoticeService.NoticeEdit(3L, null, null, null, null, "x", null, null)))
+                .isInstanceOf(BizException.class);
+    }
+
+    @Test
+    @DisplayName("整单调整的请求体能从 JSON 反序列化(备注 map 的 key 是明细行 id)")
+    void noticeEditDeserializes() throws Exception {
+        FeeNoticeService.NoticeEdit e = objectMapper.readValue("""
+                {"id":3,"paidAmount":0,"remark":"r","itemRemarks":{"5":"手工备注"},
+                 "manualItems":[{"feeItem":"维修费","quantity":2,"unitPrice":100.5,"remark":"x"}]}""",
+                FeeNoticeService.NoticeEdit.class);
+        assertThat(e.itemRemarks()).containsEntry(5L, "手工备注");
+        assertThat(e.manualItems().get(0).unitPrice()).isEqualByComparingTo("100.5");
     }
 }
