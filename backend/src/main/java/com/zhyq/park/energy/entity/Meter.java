@@ -29,6 +29,10 @@ public class Meter extends BaseEntity {
      * 列是 VARCHAR(16),最长取值 REFERENCE(9),够放。
      */
     private String meterRole;
+    /** 1=参与公摊与垃圾费分摊(园区租户) 0=只付自身用量(室外充电桩/未租单元) */
+    private Integer sharePublic;
+    /** 所在单元(区域)计租面积㎡,垃圾费按此分摊;同一区域多块表取最大值 */
+    private BigDecimal leaseArea;
     private Long projectId;
     private Long buildingId;
     private Long roomId;

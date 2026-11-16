@@ -96,6 +96,17 @@
           <template #default="{ row }">{{ row.lastReadTime || '未抄表' }}</template>
         </el-table-column>
         <el-table-column prop="ratio" label="倍率" width="80" />
+        <el-table-column label="参与公摊" width="90" align="center">
+          <template #default="{ row }">
+            <el-tag v-if="row.meterRole === 'TENANT'" size="small" :type="row.sharePublic === 0 ? 'info' : 'success'" effect="plain">
+              {{ row.sharePublic === 0 ? '否' : '是' }}
+            </el-tag>
+            <span v-else>-</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="leaseArea" label="计租面积(㎡)" width="115" align="right">
+          <template #default="{ row }">{{ row.leaseArea ?? '-' }}</template>
+        </el-table-column>
         <el-table-column prop="lastReading" label="上次读数" width="110" align="right" />
         <el-table-column label="状态" width="90">
           <template #default="{ row }">
@@ -158,10 +169,19 @@
         <el-form-item label="租户">
           <el-input :model-value="currentTenantName" disabled placeholder="选了房间后自动带出" />
           <div class="form-tip">
-            按房间当前「执行中」的合同实时带出；房间没挂合同时这里是空的，公摊出账会跳过该表。
+            按房间当前「执行中」的合同实时带出；房间没挂合同时这里是空的，通知单按「用户名」出、确认出账时会跳过该户。
           </div>
         </el-form-item>
         <el-form-item label="倍率"><el-input-number v-model="form.ratio" :min="0" :precision="2" /></el-form-item>
+        <!-- 缴费通知单口径:租户表默认参与公摊与垃圾分摊;室外充电桩、未租单元关掉只付自身用量 -->
+        <el-form-item v-if="form.meterRole === 'TENANT'" label="参与公摊">
+          <el-switch v-model="form.sharePublic" :active-value="1" :inactive-value="0" />
+          <div class="form-tip">关掉后只付自身用量，不摊公摊电/水、不摊垃圾费（如室外充电桩、未租单元）。</div>
+        </el-form-item>
+        <el-form-item v-if="form.meterRole === 'TENANT'" label="计租面积">
+          <el-input-number v-model="form.leaseArea" :min="0" :precision="2" placeholder="㎡" />
+          <div class="form-tip">该区域(单元)的计租面积，垃圾费按面积分摊；同一区域多块表填一块即可。</div>
+        </el-form-item>
         <el-form-item label="上次读数"><el-input-number v-model="form.lastReading" :min="0" :precision="2" /></el-form-item>
         <el-form-item label="状态">
           <el-radio-group v-model="form.status">
@@ -321,11 +341,11 @@ const readSources = ['自动采集', '人工', '估算', '补录', '换表']
 const loading = ref(false)
 const list = ref([])
 const total = ref(0)
-// 表计角色:决定它在公摊里的位置(见 V51 迁移与 AllocationService 的公式注释)
+// 表计角色:决定它在缴费通知单与公摊里的位置(见 V105 迁移与 FeeNoticeCalculator 的公式注释)
 const METER_ROLES = [
-  { value: 'TENANT', label: '租户分表', tip: '计入分摊分母，并按分摊结果给该租户出账' },
-  { value: 'MAIN', label: '发票总表', tip: '对应对外发票口径的那一块总表，是公共区域用量的被减数，本身不出账；一种能源只能有一块在用' },
-  { value: 'PROPERTY', label: '物业公司表', tip: '计入分摊分母，但不出账（属园区内部成本）' },
+  { value: 'TENANT', label: '租户分表', tip: '出现在缴费通知单上；参与公摊时按用量占比分摊公摊电/水与垃圾费' },
+  { value: 'MAIN', label: '发票总表', tip: '对应对外发票口径的那一块总表（水费的总表度数默认从这里取），本身不出账；一种能源只能有一块在用' },
+  { value: 'PROPERTY', label: '物业公司表', tip: '用量从公摊池里扣除，但不出账、不摊公摊（属园区内部成本）' },
   // 参考表:总表之下的分总表/对照表,只记读数;能耗统计与公摊都不看它(否则同一方水会被算两遍)
   { value: 'REFERENCE', label: '参考表', tip: '只记录读数，不参与用量统计与公摊（如总表之下的分总表、对照表）' }
 ]
@@ -505,7 +525,7 @@ const formRef = ref()
 const dialog = reactive({ visible: false, title: '' })
 const EMPTY_FORM = {
   id: null, code: '', name: '', area: '', customerName: '', energyType: '电', meterRole: 'TENANT',
-  roomId: null, ratio: 1, lastReading: 0, status: 1
+  roomId: null, ratio: 1, lastReading: 0, status: 1, sharePublic: 1, leaseArea: null
 }
 const form = reactive({ ...EMPTY_FORM })
 // 租户不存在表计上,由所选房间的执行中合同实时反查;列表接口已按同一口径填好 tenantName

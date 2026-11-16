@@ -1,0 +1,209 @@
+package com.zhyq.park.energy.service;
+
+import com.zhyq.park.energy.entity.FeeNotice;
+import com.zhyq.park.energy.entity.FeeNoticeItem;
+import com.zhyq.park.energy.entity.FeePeriod;
+import com.zhyq.park.energy.service.FeeNoticeCalculator.NoticeBatch;
+import com.zhyq.park.energy.service.FeeNoticeCalculator.SheetRow;
+import com.zhyq.park.energy.service.FeeNoticeCalculator.UtilityResult;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+
+import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+/**
+ * 用 2026-10 线下《租户对账版 应收收费明细表》的数字钉死分摊口径。
+ */
+class FeeNoticeCalculatorTest {
+
+    private static SheetRow row(long id, String area, String customer, Long tenantId, String type,
+                                String usage, boolean share, String area2) {
+        SheetRow r = new SheetRow();
+        r.setMeterId(id);
+        r.setCode("M" + id);
+        r.setArea(area);
+        r.setCustomerName(customer);
+        r.setTenantRefId(tenantId);
+        r.setTenantName(tenantId == null ? null : customer + "有限公司");
+        r.setEnergyType(type);
+        r.setMeterRole("TENANT");
+        r.setSharePublic(share);
+        r.setUsage(new BigDecimal(usage));
+        r.setPrevReading(BigDecimal.ZERO);
+        r.setCurrReading(new BigDecimal(usage));
+        r.setLeaseArea(area2 == null ? null : new BigDecimal(area2));
+        return r;
+    }
+
+    /** 10 月水表汇总:总表 1126,租户合计 675,公摊 451 */
+    private static List<SheetRow> octoberWater() {
+        String[][] data = {
+                {"1层A区", "云帕", "19", "3300"}, {"1层B区", "云山快仓", "32", "3600"}, {"1层C区", "中印物流", "113", "3500"},
+                {"2层A区", "云山快仓", "140", "13500"}, {"2层B区", "云山快仓", "15", null}, {"2层C区", "云山快仓", "18", null},
+                {"3层A区", "云山快仓", "59", "13500"}, {"3层B区", "云山快仓", "27", null}, {"3层C区", "云山快仓", "8", null},
+                {"4层A区", "微新云仓", "13", "13500"}, {"4层B区", "微新云仓", "11", null}, {"4层C区", "微新云仓", "8", null},
+                {"5层A区", "昌泰云仓", "9", "4700"}, {"5层B区", "鑫晨云仓", "6", "9000"}, {"5层C区", "鑫晨云仓", "6", null},
+                {"6层A区", "万能云仓", "5", "4700"}, {"6层B区", "云山快仓", "4", "8800"}, {"6层C区", "云山快仓", "102", null},
+                {"7层A区", "云山快仓", "49", "13500"}, {"7层B区", "云山快仓", "17", null}, {"7层C区", "云山快仓", "14", null}};
+        List<SheetRow> rows = new ArrayList<>();
+        long id = 100;
+        for (String[] d : data) {
+            rows.add(row(id++, d[0], d[1], (long) d[1].hashCode(), "水", d[2], true, d[3]));
+        }
+        return rows;
+    }
+
+    @Test
+    @DisplayName("水:公摊度数 = 总表 − 分表合计,按用量占比摊回,金额与线下表一致")
+    void waterAllocationMatchesSheet() {
+        UtilityResult r = FeeNoticeCalculator.allocate("水", new BigDecimal("1126"), new BigDecimal("5.51"), octoberWater());
+
+        assertThat(r.submeterUsage()).isEqualByComparingTo("675");
+        assertThat(r.publicUsage()).isEqualByComparingTo("451");
+        SheetRow yunpa = r.rows().get(0);
+        assertThat(yunpa.getPublicUsage()).isEqualByComparingTo("12.6948");
+        assertThat(yunpa.getFee()).isEqualByComparingTo("104.69");
+        assertThat(yunpa.getPublicFee()).isEqualByComparingTo("69.95");
+        // 全部公摊度数都摊出去了(允许 4 位小数的尾差)
+        BigDecimal allocated = r.rows().stream().map(SheetRow::getPublicUsage).reduce(BigDecimal.ZERO, BigDecimal::add);
+        assertThat(allocated.subtract(new BigDecimal("451")).abs()).isLessThan(new BigDecimal("0.01"));
+        assertThat(r.warnings()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("电:南网+光伏 − 全部分表 = 公摊;充电桩与未租单元不参与公摊、只付自身用量")
+    void electricExcludesNonSharingMeters() {
+        List<SheetRow> rows = List.of(
+                row(1, "1层A区", "云帕", 1L, "电", "8003.4", true, null),
+                row(2, "1层A区", "云帕", 1L, "电", "19200", true, null),
+                row(3, "2层A区", "云山快仓", 2L, "电", "14481.6", true, null),
+                row(4, "室外", "充电柱", null, "电", "364", false, null),
+                row(5, "8层A区", "未租", null, "电", "54.4", false, null));
+        // 总度数 = 南网 + 光伏;公摊 = 42103.4 − 41703.4 ... 这里构造一个整数好核的场景
+        BigDecimal total = new BigDecimal("50103.4");
+        UtilityResult r = FeeNoticeCalculator.allocate("电", total, new BigDecimal("1.03"), rows);
+
+        assertThat(r.submeterUsage()).isEqualByComparingTo("42103.4");
+        assertThat(r.publicUsage()).isEqualByComparingTo("8000");
+        assertThat(r.shareBase()).isEqualByComparingTo("41685");
+        SheetRow pile = r.rows().get(3);
+        assertThat(pile.getPublicUsage()).isEqualByComparingTo("0");
+        assertThat(pile.getFee()).isEqualByComparingTo("374.92");
+        assertThat(pile.getTotalFee()).isEqualByComparingTo("374.92");
+        BigDecimal shared = r.rows().stream().filter(SheetRow::isSharing)
+                .map(SheetRow::getPublicUsage).reduce(BigDecimal.ZERO, BigDecimal::add);
+        assertThat(shared.subtract(new BigDecimal("8000")).abs()).isLessThan(new BigDecimal("0.01"));
+    }
+
+    @Test
+    @DisplayName("分表合计超过总度数时公摊按 0 并给出警告")
+    void negativePoolIsClampedWithWarning() {
+        UtilityResult r = FeeNoticeCalculator.allocate("电", new BigDecimal("100"), BigDecimal.ONE,
+                new ArrayList<>(List.of(row(1, "1层A区", "甲", 1L, "电", "150", true, null))));
+        assertThat(r.publicUsage()).isEqualByComparingTo("0");
+        assertThat(r.warnings()).anyMatch(w -> w.contains("超过总度数"));
+    }
+
+    @Test
+    @DisplayName("通知单按 租户×楼层 合并单元,垃圾费按计租面积分摊,不参与公摊的户不摊垃圾")
+    void noticesGroupByTenantAndFloor() {
+        FeePeriod p = new FeePeriod();
+        p.setId(9L);
+        p.setPeriod("2026-10");
+        p.setNoticePrefix("DIPARK");
+        p.setDomesticGarbageAmount(new BigDecimal("2402.78"));
+        p.setDomesticGarbageNote("6桶*单价13.35元/桶");
+        p.setIndustrialGarbageAmount(new BigDecimal("1854"));
+
+        List<SheetRow> water = new ArrayList<>(List.of(
+                row(10, "2层A区", "云山快仓", 2L, "水", "140", true, "13500"),
+                row(11, "2层B区", "云山快仓", 2L, "水", "15", true, null),
+                row(12, "2层C区", "云山快仓", 2L, "水", "18", true, null),
+                row(13, "1层A区", "云帕", 1L, "水", "19", true, "3300")));
+        List<SheetRow> electric = new ArrayList<>(List.of(
+                row(20, "2层A区", "云山快仓", 2L, "电", "14481.6", true, "13500"),
+                row(21, "1层A区", "云帕", 1L, "电", "8003.4", true, "3300"),
+                row(22, "1层A区", "云帕", 1L, "电", "19200", true, "3300"),
+                row(23, "室外", "充电柱", null, "电", "364", false, null)));
+        UtilityResult wr = FeeNoticeCalculator.allocate("水", new BigDecimal("300"), new BigDecimal("5.51"), water);
+        UtilityResult er = FeeNoticeCalculator.allocate("电", new BigDecimal("50000"), new BigDecimal("1.03"), electric);
+
+        NoticeBatch batch = FeeNoticeCalculator.buildNotices(p, wr, er, Map.of());
+
+        assertThat(batch.notices()).hasSize(3);
+        assertThat(batch.totalLeaseArea()).isEqualByComparingTo("16800");
+        FeeNotice yunpa = batch.notices().get(0);
+        assertThat(yunpa.getUnitName()).isEqualTo("1层A区");
+        assertThat(yunpa.getNoticeNo()).isEqualTo("DIPARK-202610-1F-01");
+        assertThat(yunpa.getElectricUsage()).isEqualByComparingTo("27203.4");
+        // 两块电表 → 电费主行 + 两条子行,子行不计金额
+        List<FeeNoticeItem> electricItems = yunpa.getItems().stream()
+                .filter(i -> i.getItemType().startsWith("ELECTRIC") && !i.getItemType().endsWith("PUBLIC")).toList();
+        assertThat(electricItems).hasSize(3);
+        assertThat(electricItems.get(1).getSeq()).isEqualTo("3.1");
+        assertThat(electricItems.get(1).getAmount()).isNull();
+        // 生活垃圾 = 2402.78 × 3300 / 16800
+        assertThat(yunpa.getDomesticGarbageFee()).isEqualByComparingTo("471.97");
+        assertThat(yunpa.getIndustrialGarbageFee()).isEqualByComparingTo("364.18");
+
+        FeeNotice yunshan = batch.notices().get(1);
+        assertThat(yunshan.getUnitName()).isEqualTo("2层A~C区");
+        assertThat(yunshan.getWaterUsage()).isEqualByComparingTo("173");
+        assertThat(yunshan.getDomesticGarbageFee()).isEqualByComparingTo("1930.81");
+        assertThat(yunshan.getSubtotal()).isEqualByComparingTo(
+                yunshan.getWaterFee().add(yunshan.getWaterPublicFee()).add(yunshan.getElectricFee())
+                        .add(yunshan.getElectricPublicFee()).add(yunshan.getDomesticGarbageFee())
+                        .add(yunshan.getIndustrialGarbageFee()));
+
+        FeeNotice pile = batch.notices().get(2);
+        assertThat(pile.getUnitName()).isEqualTo("室外");
+        assertThat(pile.getSharePublic()).isZero();
+        assertThat(pile.getDomesticGarbageFee()).isEqualByComparingTo("0");
+        assertThat(pile.getItems()).noneMatch(i -> i.getItemType().startsWith("GARBAGE"));
+        assertThat(pile.getNoticeNo()).isEqualTo("DIPARK-202610-室外-01");
+        assertThat(batch.warnings()).anyMatch(w -> w.contains("没有关联到在租合同"));
+    }
+
+    @Test
+    @DisplayName("重新生成时按户找回手工填写的已付/前期欠费/其他费用")
+    void regenerateKeepsManualFields() {
+        FeePeriod p = new FeePeriod();
+        p.setId(1L);
+        p.setPeriod("2026-10");
+        List<SheetRow> electric = new ArrayList<>(List.of(row(1, "1层A区", "云帕", 1L, "电", "100", true, "3300")));
+        UtilityResult er = FeeNoticeCalculator.allocate("电", new BigDecimal("120"), BigDecimal.ONE, electric);
+        UtilityResult wr = UtilityResult.empty("水", BigDecimal.ONE);
+
+        FeeNotice first = FeeNoticeCalculator.buildNotices(p, wr, er, Map.of()).notices().get(0);
+        first.setPaidAmount(new BigDecimal("50"));
+        first.setOtherFee(new BigDecimal("3.75"));
+        first.setOtherFeeNote("税金");
+        FeeNoticeCalculator.recalcTotals(first);
+
+        FeeNotice second = FeeNoticeCalculator.buildNotices(p, wr, er,
+                Map.of(FeeNoticeCalculator.noticeKey(first), first)).notices().get(0);
+        assertThat(second.getPaidAmount()).isEqualByComparingTo("50");
+        assertThat(second.getOtherFee()).isEqualByComparingTo("3.75");
+        assertThat(second.getItems()).anyMatch(i -> "OTHER".equals(i.getItemType()) && "税金".equals(i.getFeeItem()));
+        // 小计 100 + 20 公摊 + 3.75 = 123.75;应收 = 123.75 − 50
+        assertThat(second.getSubtotal()).isEqualByComparingTo("123.75");
+        assertThat(second.getTotalDue()).isEqualByComparingTo("73.75");
+    }
+
+    @Test
+    @DisplayName("楼层与单元名解析:数字/中文楼层、连续与不连续分区")
+    void floorAndUnitNaming() {
+        assertThat(FeeNoticeCalculator.floorKey("2层A区")).isEqualTo("2");
+        assertThat(FeeNoticeCalculator.floorKey("八楼B区")).isEqualTo("8");
+        assertThat(FeeNoticeCalculator.floorKey("室外")).isEqualTo("室外");
+        assertThat(FeeNoticeCalculator.unitName("2", new java.util.LinkedHashSet<>(List.of("2层A区", "2层B区", "2层C区"))))
+                .isEqualTo("2层A~C区");
+        assertThat(FeeNoticeCalculator.unitName("5", new java.util.LinkedHashSet<>(List.of("5层A区", "5层C区"))))
+                .isEqualTo("5层A、C区");
+    }
+}

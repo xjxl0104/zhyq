@@ -176,7 +176,7 @@ const related = [
   { label: '收支流水', path: '/finance/flow', icon: Wallet },
   { label: '发票记录', path: '/finance/invoice', icon: Tickets },
   { label: '财务报表', path: '/finance/report', icon: TrendCharts },
-  { label: '水电结算', path: '/energy/settlement', icon: Document },
+  { label: '缴费汇总', path: '/energy/summary', icon: Document },
   { label: '云仓服务费', path: '/crm/marketing/bill', icon: OfficeBuilding },
   { label: '佣金与提现', path: '/crm/marketing/withdrawal', icon: Money }
 ]
