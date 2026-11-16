@@ -28,6 +28,8 @@ public class FeeNoticeItem extends BaseEntity {
     public static final String T_GARBAGE_DOMESTIC = "GARBAGE_DOMESTIC";
     public static final String T_GARBAGE_INDUSTRIAL = "GARBAGE_INDUSTRIAL";
     public static final String T_OTHER = "OTHER";
+    /** 调整通知单时手工新增的收费行 */
+    public static final String T_CUSTOM = "CUSTOM";
 
     private Long noticeId;
     private Long feePeriodId;
@@ -44,7 +46,16 @@ public class FeeNoticeItem extends BaseEntity {
     private BigDecimal unitPrice;
     private BigDecimal amount;
     private String remark;
+    /** 1=手工新增的收费行(含早期的「其他费用」行) */
+    private Integer manual;
+    /** 1=备注是手工改过的,重新生成通知单时保留 */
+    private Integer remarkEdited;
     private Integer sort;
+
+    /** 手工收费行:新增的 CUSTOM,以及早期的 OTHER */
+    public boolean isManualItem() {
+        return (manual != null && manual == 1) || T_OTHER.equals(itemType) || T_CUSTOM.equals(itemType);
+    }
 
     public boolean isDetail() {
         return itemType != null && itemType.endsWith("_DETAIL");

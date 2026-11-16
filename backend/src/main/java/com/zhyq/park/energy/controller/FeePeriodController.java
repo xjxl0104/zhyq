@@ -186,6 +186,13 @@ public class FeePeriodController {
         return Result.ok(service.updateNotice(notice));
     }
 
+    @Operation(summary = "整单调整通知单:基本信息、各行备注、手工新增的收费项一次保存")
+    @OperationLog(module = "缴费账期", action = "调整通知单")
+    @PostMapping("/notice/edit")
+    public Result<FeeNotice> editNotice(@RequestBody FeeNoticeService.NoticeEdit edit) {
+        return Result.ok(service.editNotice(edit));
+    }
+
     @Operation(summary = "确认出账:每张通知单生成一张能源费账单,账期锁定")
     @OperationLog(module = "缴费账期", action = "确认出账")
     @PostMapping("/{id}/confirm")
