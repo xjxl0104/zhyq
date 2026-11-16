@@ -24,19 +24,24 @@ export const readingApi = {
   remove: (id) => request.delete(`/energy/reading/${id}`)
 }
 
-// 月度公用事业账单与公摊(《附件二》口径:总表 - 各分表 = 公区+损耗,按用量占比摊回)
-export const utilityBillApi = {
-  page: (params) => request.get('/energy/utility-bill/page', { params }),
-  add: (data) => request.post('/energy/utility-bill', data),
-  update: (data) => request.put('/energy/utility-bill', data),
-  remove: (id) => request.delete(`/energy/utility-bill/${id}`),
-  // 测算可反复重跑(幂等),确认出账后锁定
-  calculate: (id) => request.post(`/energy/utility-bill/${id}/calculate`),
-  allocations: (id) => request.get(`/energy/utility-bill/${id}/allocations`),
-  confirm: (id) => request.post(`/energy/utility-bill/${id}/confirm`),
-  revoke: (id) => request.post(`/energy/utility-bill/${id}/revoke`),
-  settlementPage: (params) => request.get('/energy/utility-bill/settlement/page', { params }),
-  settlementSummary: (params) => request.get('/energy/utility-bill/settlement/summary', { params })
+// 月度缴费账期:电费 / 水费 / 垃圾处理费 / 缴费汇总 四个页面共用
+// 流程:open 选月 → update 填总度数/单价/垃圾总额 → saveReadings 填各表读数 → generate 出通知单 → confirm 出账
+export const feePeriodApi = {
+  page: (params) => request.get('/energy/fee-period/page', { params }),
+  open: (period) => request.post('/energy/fee-period/open', { period }),
+  get: (id) => request.get(`/energy/fee-period/${id}`),
+  update: (data) => request.put('/energy/fee-period', data),
+  remove: (id) => request.delete(`/energy/fee-period/${id}`),
+  sheet: (id, energyType) => request.get(`/energy/fee-period/${id}/sheet`, { params: { energyType } }),
+  saveReadings: (id, rows) => request.post(`/energy/fee-period/${id}/readings`, rows),
+  meterFlags: (data) => request.put('/energy/fee-period/meter-flags', data),
+  garbageSheet: (id) => request.get(`/energy/fee-period/${id}/garbage-sheet`),
+  generate: (id) => request.post(`/energy/fee-period/${id}/generate`),
+  notices: (id) => request.get(`/energy/fee-period/${id}/notices`),
+  updateNotice: (data) => request.put('/energy/fee-period/notice', data),
+  confirm: (id) => request.post(`/energy/fee-period/${id}/confirm`),
+  revoke: (id) => request.post(`/energy/fee-period/${id}/revoke`),
+  export: (id) => request.get(`/energy/fee-period/${id}/export`, { responseType: 'blob' })
 }
 
 // 能耗统计(§14 概览/趋势/表计排行)
