@@ -176,7 +176,7 @@ public final class FeeNoticeCalculator {
         warnings.addAll(water.warnings());
         warnings.addAll(electric.warnings());
 
-        // 1. 按户分组:一户 = 同一租户在同一区域(单元)的所有表计;A、B、C 区各出一张,不自动合并
+        // 1. 按租户分组:一个租户一张通知单,名下所有区域(单元)的水电垃圾费都在这张单上,明细按区域分行
         Map<String, List<SheetRow>> groups = new LinkedHashMap<>();
         List<SheetRow> tenantRows = new ArrayList<>();
         water.rows().stream().filter(SheetRow::isTenant).forEach(tenantRows::add);
@@ -185,85 +185,83 @@ public final class FeeNoticeCalculator {
                 .thenComparing(r -> unitKey(r), String.CASE_INSENSITIVE_ORDER)
                 .thenComparing(r -> r.getMeterId() == null ? 0L : r.getMeterId()));
         for (SheetRow r : tenantRows) {
-            groups.computeIfAbsent(tenantKey(r) + "|" + unitKey(r), k -> new ArrayList<>()).add(r);
+            groups.computeIfAbsent(tenantKey(r), k -> new ArrayList<>()).add(r);
         }
 
         // 2. 垃圾费按单元计租面积分摊(最大余数法,各单元之和恰好等于总额),只有参与分摊的单元进分母
         GarbageSplit split = splitGarbage(period, tenantRows);
         BigDecimal totalArea = split.totalArea();
 
-        // 3. 逐户生成通知单与明细行
+        // 3. 逐租户生成通知单与明细行
         List<FeeNotice> notices = new ArrayList<>();
-        Map<String, Integer> seqByFloor = new LinkedHashMap<>();
         int sort = 0;
-        for (Map.Entry<String, List<SheetRow>> g : groups.entrySet()) {
-            List<SheetRow> rows = g.getValue();
+        for (List<SheetRow> rows : groups.values()) {
             SheetRow first = rows.get(0);
-            String floorKey = floorKey(first.getArea());
-            Set<String> units = new LinkedHashSet<>();
-            rows.forEach(r -> units.add(unitKey(r)));
+            Map<String, List<SheetRow>> byUnit = new LinkedHashMap<>();
+            rows.forEach(r -> byUnit.computeIfAbsent(unitKey(r), k -> new ArrayList<>()).add(r));
+            boolean multi = byUnit.size() > 1;
             boolean share = rows.stream().anyMatch(SheetRow::isSharePublic);
-            BigDecimal area = BigDecimal.ZERO;
-            BigDecimal domestic = BigDecimal.ZERO;
-            BigDecimal industrial = BigDecimal.ZERO;
-            for (String u : units) {
-                UnitShare us = split.units().get(u);
-                if (us == null) {
-                    continue;
-                }
-                area = area.add(us.area());
-                domestic = domestic.add(us.domestic());
-                industrial = industrial.add(us.industrial());
-            }
-            if (share && area.signum() <= 0) {
-                warnings.add("「" + unitName(floorKey, units) + " " + firstNonBlank(first.getTenantName(),
-                        first.getCustomerName(), "未知租户") + "」没有填计租面积,垃圾费分摊时按 0 计");
-            }
 
             FeeNotice n = new FeeNotice();
             n.setFeePeriodId(period.getId());
             n.setPeriod(period.getPeriod());
             n.setTenantRefId(first.getTenantRefId());
             n.setTenantName(firstNonBlank(first.getTenantName(), first.getCustomerName(), "未知租户"));
-            n.setUnitName(unitName(floorKey, units));
-            n.setFloorKey(floorKey);
-            n.setLeaseArea(area);
+            n.setUnitName(unitNames(byUnit.keySet()));
+            n.setFloorKey(floorKeys(byUnit.keySet()));
             n.setSharePublic(share ? 1 : 0);
             n.setSort(++sort);
-            int seq = seqByFloor.merge(floorKey, 1, Integer::sum);
-            n.setNoticeNo(noticeNo(period, floorKey, seq));
+            n.setNoticeNo(noticeNo(period, sort));
+            zeroWater(n);
+            zeroElectric(n);
 
             List<FeeNoticeItem> items = new ArrayList<>();
-            List<SheetRow> waterRows = rows.stream().filter(r -> TYPE_WATER.equals(r.getEnergyType())).toList();
-            List<SheetRow> electricRows = rows.stream().filter(r -> TYPE_ELECTRIC.equals(r.getEnergyType())).toList();
             int[] no = {0};
-            if (!waterRows.isEmpty()) {
-                addUtilityItems(items, no, waterRows, water.price(), "m³", "水费", "公摊水费",
-                        FeeNoticeItem.T_WATER, FeeNoticeItem.T_WATER_DETAIL, FeeNoticeItem.T_WATER_PUBLIC, "水表");
-                n.setWaterUsage(sum(waterRows, SheetRow::getUsage));
-                n.setWaterPublicUsage(sum(waterRows, SheetRow::getPublicUsage));
-                n.setWaterFee(sum(waterRows, SheetRow::getFee));
-                n.setWaterPublicFee(sum(waterRows, SheetRow::getPublicFee));
-            } else {
-                zeroWater(n);
+            BigDecimal area = BigDecimal.ZERO;
+            BigDecimal domestic = BigDecimal.ZERO;
+            BigDecimal industrial = BigDecimal.ZERO;
+            for (Map.Entry<String, List<SheetRow>> ue : byUnit.entrySet()) {
+                String unit = ue.getKey();
+                List<SheetRow> urows = ue.getValue();
+                // 租户有多个区域时,每行费用项目前面带上区域名;只有一个区域就保持原样
+                String pre = multi ? unit + " " : "";
+                List<SheetRow> waterRows = urows.stream().filter(r -> TYPE_WATER.equals(r.getEnergyType())).toList();
+                List<SheetRow> electricRows = urows.stream().filter(r -> TYPE_ELECTRIC.equals(r.getEnergyType())).toList();
+                if (!waterRows.isEmpty()) {
+                    addUtilityItems(items, no, waterRows, water.price(), "m³", pre + "水费", pre + "公摊水费",
+                            FeeNoticeItem.T_WATER, FeeNoticeItem.T_WATER_DETAIL, FeeNoticeItem.T_WATER_PUBLIC, "水表");
+                    n.setWaterUsage(n.getWaterUsage().add(sum(waterRows, SheetRow::getUsage)));
+                    n.setWaterPublicUsage(n.getWaterPublicUsage().add(sum(waterRows, SheetRow::getPublicUsage)));
+                    n.setWaterFee(n.getWaterFee().add(sum(waterRows, SheetRow::getFee)));
+                    n.setWaterPublicFee(n.getWaterPublicFee().add(sum(waterRows, SheetRow::getPublicFee)));
+                }
+                if (!electricRows.isEmpty()) {
+                    addUtilityItems(items, no, electricRows, electric.price(), "度", pre + "电费", pre + "公摊电费",
+                            FeeNoticeItem.T_ELECTRIC, FeeNoticeItem.T_ELECTRIC_DETAIL, FeeNoticeItem.T_ELECTRIC_PUBLIC, "电表");
+                    n.setElectricUsage(n.getElectricUsage().add(sum(electricRows, SheetRow::getUsage)));
+                    n.setElectricPublicUsage(n.getElectricPublicUsage().add(sum(electricRows, SheetRow::getPublicUsage)));
+                    n.setElectricFee(n.getElectricFee().add(sum(electricRows, SheetRow::getFee)));
+                    n.setElectricPublicFee(n.getElectricPublicFee().add(sum(electricRows, SheetRow::getPublicFee)));
+                }
+                // 垃圾费:这个区域参与分摊才有,按它自己的计租面积
+                UnitShare us = split.units().get(unit);
+                BigDecimal unitArea = us == null ? BigDecimal.ZERO : us.area();
+                BigDecimal unitDomestic = us == null ? money(BigDecimal.ZERO) : us.domestic();
+                BigDecimal unitIndustrial = us == null ? money(BigDecimal.ZERO) : us.industrial();
+                area = area.add(unitArea);
+                domestic = domestic.add(unitDomestic);
+                industrial = industrial.add(unitIndustrial);
+                if (urows.stream().anyMatch(SheetRow::isSharePublic)) {
+                    if (unitArea.signum() <= 0) {
+                        warnings.add("「" + unit + " " + n.getTenantName() + "」没有填计租面积,垃圾费分摊时按 0 计");
+                    }
+                    items.add(garbageItem(++no[0], FeeNoticeItem.T_GARBAGE_DOMESTIC, pre + "生活垃圾清运费", unitDomestic,
+                            "生活垃圾", period.getDomesticGarbageNote(), period.getDomesticGarbageAmount(), unitArea, totalArea));
+                    items.add(garbageItem(++no[0], FeeNoticeItem.T_GARBAGE_INDUSTRIAL, pre + "工业垃圾清运费", unitIndustrial,
+                            "工业垃圾", period.getIndustrialGarbageNote(), period.getIndustrialGarbageAmount(), unitArea, totalArea));
+                }
             }
-            if (!electricRows.isEmpty()) {
-                addUtilityItems(items, no, electricRows, electric.price(), "度", "电费", "公摊电费",
-                        FeeNoticeItem.T_ELECTRIC, FeeNoticeItem.T_ELECTRIC_DETAIL, FeeNoticeItem.T_ELECTRIC_PUBLIC, "电表");
-                n.setElectricUsage(sum(electricRows, SheetRow::getUsage));
-                n.setElectricPublicUsage(sum(electricRows, SheetRow::getPublicUsage));
-                n.setElectricFee(sum(electricRows, SheetRow::getFee));
-                n.setElectricPublicFee(sum(electricRows, SheetRow::getPublicFee));
-            } else {
-                zeroElectric(n);
-            }
-
-            if (share) {
-                items.add(garbageItem(++no[0], FeeNoticeItem.T_GARBAGE_DOMESTIC, "生活垃圾清运费", domestic,
-                        "生活垃圾", period.getDomesticGarbageNote(), period.getDomesticGarbageAmount(), area, totalArea));
-                items.add(garbageItem(++no[0], FeeNoticeItem.T_GARBAGE_INDUSTRIAL, "工业垃圾清运费", industrial,
-                        "工业垃圾", period.getIndustrialGarbageNote(), period.getIndustrialGarbageAmount(), area, totalArea));
-            }
+            n.setLeaseArea(area);
             n.setDomesticGarbageFee(domestic);
             n.setIndustrialGarbageFee(industrial);
 
@@ -309,8 +307,59 @@ public final class FeeNoticeCalculator {
 
     /** 重新生成时用来找回上一版手工字段的键 */
     public static String noticeKey(FeeNotice n) {
-        return (n.getTenantRefId() != null ? "T" + n.getTenantRefId() : "N" + n.getTenantName())
-                + "|" + n.getFloorKey() + "|" + n.getUnitName();
+        return n.getTenantRefId() != null ? "T" + n.getTenantRefId() : "N" + n.getTenantName();
+    }
+
+    /**
+     * 上一版通知单按租户归并成「找回手工内容」用的底稿:一个租户以前若出过多张(按楼层或区域分开的旧版),
+     * 已付/前期欠费相加,备注取第一个有的,手工收费行与手改备注的明细行全部带上。
+     */
+    public static Map<String, FeeNotice> mergePrevious(List<FeeNotice> olds) {
+        Map<String, FeeNotice> out = new LinkedHashMap<>();
+        for (FeeNotice old : olds) {
+            String key = noticeKey(old);
+            FeeNotice head = out.get(key);
+            if (head == null) {
+                head = new FeeNotice();
+                head.setTenantRefId(old.getTenantRefId());
+                head.setTenantName(old.getTenantName());
+                head.setPaidAmount(nz(old.getPaidAmount()));
+                head.setPriorArrears(nz(old.getPriorArrears()));
+                head.setOtherFee(nz(old.getOtherFee()));
+                head.setOtherFeeNote(old.getOtherFeeNote());
+                head.setRemark(old.getRemark());
+                head.setItems(new ArrayList<>(old.getItems()));
+                out.put(key, head);
+                continue;
+            }
+            head.setPaidAmount(nz(head.getPaidAmount()).add(nz(old.getPaidAmount())));
+            head.setPriorArrears(nz(head.getPriorArrears()).add(nz(old.getPriorArrears())));
+            head.setOtherFee(nz(head.getOtherFee()).add(nz(old.getOtherFee())));
+            if (head.getRemark() == null || head.getRemark().isBlank()) {
+                head.setRemark(old.getRemark());
+            }
+            head.getItems().addAll(old.getItems());
+        }
+        return out;
+    }
+
+    /** 一张通知单上的所有区域:同一层合并成 2层A~C区,层与层之间用「、」隔开 */
+    static String unitNames(java.util.Collection<String> units) {
+        Map<String, Set<String>> byFloor = new LinkedHashMap<>();
+        for (String u : units) {
+            byFloor.computeIfAbsent(floorKey(u), k -> new LinkedHashSet<>()).add(u);
+        }
+        List<String> parts = new ArrayList<>();
+        byFloor.forEach((f, us) -> parts.add(unitName(f, us)));
+        return String.join("、", parts);
+    }
+
+    /** 通知单涉及的楼层键,逗号隔开(字段只有 32 个字符,放不下就截断) */
+    static String floorKeys(java.util.Collection<String> units) {
+        Set<String> floors = new LinkedHashSet<>();
+        units.forEach(u -> floors.add(floorKey(u)));
+        String joined = String.join(",", floors);
+        return joined.length() > 32 ? joined.substring(0, 32) : joined;
     }
 
     // ---------------------------------------------------------------- 取整与垃圾分摊
@@ -436,7 +485,7 @@ public final class FeeNoticeCalculator {
         BigDecimal qty = sum(rows, SheetRow::getUsage);
         item.setQuantity(qty);
         item.setAmount(sum(rows, SheetRow::getFee));
-        item.setRemark("本期" + label + plain(qty.setScale(2, RoundingMode.HALF_UP)) + unit);
+        item.setRemark("本期" + bare(label) + plain(qty.setScale(2, RoundingMode.HALF_UP)) + unit);
         items.add(item);
         if (rows.size() > 1) {
             int sub = 0;
@@ -469,9 +518,14 @@ public final class FeeNoticeCalculator {
         pub.setUnit(unit);
         pub.setUnitPrice(price);
         pub.setAmount(sum(rows, SheetRow::getPublicFee));
-        pub.setRemark("本期" + publicLabel + plain(pubQty.setScale(2, RoundingMode.HALF_UP)) + unit
+        pub.setRemark("本期" + bare(publicLabel) + plain(pubQty.setScale(2, RoundingMode.HALF_UP)) + unit
                 + ",按实际用量占比" + percent(sum(rows, SheetRow::getCoefficient)) + "分摊");
         items.add(pub);
+    }
+
+    /** 「2层A区 水费」→「水费」:备注里只写项目名,区域已经在项目名前面了 */
+    private static String bare(String label) {
+        return label == null ? "" : label.substring(label.lastIndexOf(' ') + 1);
     }
 
     private static FeeNoticeItem garbageItem(int no, String type, String label, BigDecimal amount,
@@ -534,8 +588,10 @@ public final class FeeNoticeCalculator {
             }
             for (FeeNoticeItem cur : items) {
                 boolean sameType = old.getItemType() != null && old.getItemType().equals(cur.getItemType());
-                boolean sameMeter = old.isDetail() ? Objects.equals(old.getMeterId(), cur.getMeterId()) : true;
-                if (sameType && sameMeter) {
+                // 分表子行按表计对应;主行按费用项目名对应(多区域租户的项目名带区域前缀,不会串行)
+                boolean same = old.isDetail() ? Objects.equals(old.getMeterId(), cur.getMeterId())
+                        : Objects.equals(old.getFeeItem(), cur.getFeeItem());
+                if (sameType && same) {
                     cur.setRemark(old.getRemark());
                     cur.setRemarkEdited(1);
                     break;
@@ -655,11 +711,11 @@ public final class FeeNoticeCalculator {
         return sb.append("区").toString();
     }
 
-    static String noticeNo(FeePeriod period, String floorKey, int seq) {
+    /** 单据编号:前缀-年月-租户序号,如 DIPARK-202610-03 */
+    static String noticeNo(FeePeriod period, int seq) {
         String prefix = firstNonBlank(period.getNoticePrefix(), "DIPARK");
         String ym = period.getPeriod() == null ? "" : period.getPeriod().replace("-", "");
-        String floor = floorKey.chars().allMatch(Character::isDigit) ? floorKey + "F" : floorKey;
-        return prefix + "-" + ym + "-" + floor + "-" + String.format("%02d", seq);
+        return prefix + "-" + ym + "-" + String.format("%02d", seq);
     }
 
     // ---------------------------------------------------------------- 小工具

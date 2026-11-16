@@ -136,8 +136,8 @@ class FeeNoticeCalculatorTest {
     }
 
     @Test
-    @DisplayName("通知单按 租户×区域 出,2层A/B/C区各一张不合并;垃圾费按各区计租面积分摊,不参与公摊的户不摊垃圾")
-    void noticesGroupByTenantAndUnit() {
+    @DisplayName("通知单按租户出:同一租户的多个区域在一张单上,明细按区域分行;垃圾费按各区计租面积分摊,不参与公摊的户不摊垃圾")
+    void noticesGroupByTenant() {
         FeePeriod p = new FeePeriod();
         p.setId(9L);
         p.setPeriod("2026-10");
@@ -161,47 +161,53 @@ class FeeNoticeCalculatorTest {
 
         NoticeBatch batch = FeeNoticeCalculator.buildNotices(p, wr, er, Map.of());
 
-        assertThat(batch.notices()).extracting(FeeNotice::getUnitName)
-                .containsExactly("1层A区", "2层A区", "2层B区", "2层C区", "室外");
+        // 3 个租户 → 3 张通知单,编号按租户顺延
+        assertThat(batch.notices()).extracting(FeeNotice::getUnitName).containsExactly("1层A区", "2层A~C区", "室外");
+        assertThat(batch.notices()).extracting(FeeNotice::getNoticeNo)
+                .containsExactly("DIPARK-202610-01", "DIPARK-202610-02", "DIPARK-202610-03");
         assertThat(batch.totalLeaseArea()).isEqualByComparingTo("16800");
+
+        // 只有一个区域的租户:费用项目不带区域前缀
         FeeNotice yunpa = batch.notices().get(0);
-        assertThat(yunpa.getNoticeNo()).isEqualTo("DIPARK-202610-1F-01");
         assertThat(yunpa.getElectricUsage()).isEqualByComparingTo("27203.4");
-        // 两块电表 → 电费主行 + 两条子行,子行不计金额
         List<FeeNoticeItem> electricItems = yunpa.getItems().stream()
                 .filter(i -> i.getItemType().startsWith("ELECTRIC") && !i.getItemType().endsWith("PUBLIC")).toList();
         assertThat(electricItems).hasSize(3);
+        assertThat(electricItems.get(0).getFeeItem()).isEqualTo("电费");
         assertThat(electricItems.get(1).getSeq()).isEqualTo("3.1");
         assertThat(electricItems.get(1).getAmount()).isNull();
-        // 生活垃圾 = 2402.78 × 3300 / 16800
         assertThat(yunpa.getDomesticGarbageFee()).isEqualByComparingTo("471.97");
         assertThat(yunpa.getIndustrialGarbageFee()).isEqualByComparingTo("364.18");
 
-        // 2层三个区各自一张通知单,各自用量、各自面积分摊
-        FeeNotice a = batch.notices().get(1);
-        FeeNotice b = batch.notices().get(2);
-        FeeNotice c = batch.notices().get(3);
-        assertThat(a.getNoticeNo()).isEqualTo("DIPARK-202610-2F-01");
-        assertThat(b.getNoticeNo()).isEqualTo("DIPARK-202610-2F-02");
-        assertThat(c.getNoticeNo()).isEqualTo("DIPARK-202610-2F-03");
-        assertThat(a.getWaterUsage()).isEqualByComparingTo("140");
-        assertThat(b.getWaterUsage()).isEqualByComparingTo("15");
-        assertThat(c.getWaterUsage()).isEqualByComparingTo("18");
-        assertThat(a.getLeaseArea()).isEqualByComparingTo("4700");
-        assertThat(b.getLeaseArea()).isEqualByComparingTo("4100");
-        // 生活垃圾 2402.78 × 4100 / 16800 = 586.3866 → 586.39
-        assertThat(b.getDomesticGarbageFee()).isEqualByComparingTo("586.39");
-        assertThat(a.getSubtotal()).isEqualByComparingTo(
-                a.getWaterFee().add(a.getWaterPublicFee()).add(a.getElectricFee())
-                        .add(a.getElectricPublicFee()).add(a.getDomesticGarbageFee())
-                        .add(a.getIndustrialGarbageFee()));
+        // 云山 2层 A/B/C:一张单,用量、垃圾费是三个区之和,明细按区域分行
+        FeeNotice yunshan = batch.notices().get(1);
+        assertThat(yunshan.getWaterUsage()).isEqualByComparingTo("173");
+        assertThat(yunshan.getLeaseArea()).isEqualByComparingTo("13500");
+        assertThat(yunshan.getDomesticGarbageFee()).isEqualByComparingTo("1930.81");
+        List<FeeNoticeItem> domesticRows = yunshan.getItems().stream()
+                .filter(i -> "GARBAGE_DOMESTIC".equals(i.getItemType())).toList();
+        assertThat(domesticRows).extracting(FeeNoticeItem::getFeeItem)
+                .containsExactly("2层A区 生活垃圾清运费", "2层B区 生活垃圾清运费", "2层C区 生活垃圾清运费");
+        assertThat(domesticRows).extracting(FeeNoticeItem::getAmount)
+                .usingComparatorForType(BigDecimal::compareTo, BigDecimal.class)
+                .containsExactly(new BigDecimal("672.21"), new BigDecimal("586.39"), new BigDecimal("672.21"));
+        assertThat(yunshan.getItems()).extracting(FeeNoticeItem::getFeeItem)
+                .contains("2层A区 水费", "2层B区 水费", "2层C区 水费", "2层A区 电费");
+        // 序号连续,不重号
+        List<String> seqs = yunshan.getItems().stream().filter(i -> !i.isDetail()).map(FeeNoticeItem::getSeq).toList();
+        assertThat(seqs).doesNotHaveDuplicates();
+        // 备注里只写项目名,区域已经在项目名前面
+        assertThat(yunshan.getItems().stream().filter(i -> "2层B区 水费".equals(i.getFeeItem())).findFirst().orElseThrow().getRemark())
+                .startsWith("本期水费");
+        assertThat(yunshan.getSubtotal()).isEqualByComparingTo(
+                yunshan.getWaterFee().add(yunshan.getWaterPublicFee()).add(yunshan.getElectricFee())
+                        .add(yunshan.getElectricPublicFee()).add(yunshan.getDomesticGarbageFee())
+                        .add(yunshan.getIndustrialGarbageFee()));
 
-        FeeNotice pile = batch.notices().get(4);
-        assertThat(pile.getUnitName()).isEqualTo("室外");
+        FeeNotice pile = batch.notices().get(2);
         assertThat(pile.getSharePublic()).isZero();
         assertThat(pile.getDomesticGarbageFee()).isEqualByComparingTo("0");
         assertThat(pile.getItems()).noneMatch(i -> i.getItemType().startsWith("GARBAGE"));
-        assertThat(pile.getNoticeNo()).isEqualTo("DIPARK-202610-室外-01");
         assertThat(batch.warnings()).anyMatch(w -> w.contains("没有关联到在租合同"));
         assertThat(batch.warnings()).noneMatch(w -> w.contains("没有填计租面积"));
         // 通知单上的垃圾费之和恰好等于两笔总额
@@ -210,6 +216,47 @@ class FeeNoticeCalculatorTest {
         assertThat(batch.notices().stream().map(FeeNotice::getIndustrialGarbageFee).reduce(BigDecimal.ZERO, BigDecimal::add))
                 .isEqualByComparingTo("1854");
     }
+
+    @Test
+    @DisplayName("旧版按楼层/区域分开出的多张通知单,按租户归并:已付/前期欠费相加,手工收费行全部带上")
+    void mergePreviousByTenant() {
+        FeeNotice a = new FeeNotice();
+        a.setTenantRefId(2L);
+        a.setTenantName("云山");
+        a.setPaidAmount(new BigDecimal("10"));
+        a.setPriorArrears(new BigDecimal("1"));
+        FeeNoticeItem tax = new FeeNoticeItem();
+        tax.setItemType(FeeNoticeItem.T_OTHER);
+        tax.setFeeItem("税金");
+        tax.setAmount(new BigDecimal("3.75"));
+        a.getItems().add(tax);
+        FeeNotice b = new FeeNotice();
+        b.setTenantRefId(2L);
+        b.setTenantName("云山");
+        b.setPaidAmount(new BigDecimal("20"));
+        b.setRemark("第二张的备注");
+        FeeNoticeItem fix = new FeeNoticeItem();
+        fix.setItemType(FeeNoticeItem.T_CUSTOM);
+        fix.setManual(1);
+        fix.setFeeItem("维修费");
+        fix.setAmount(new BigDecimal("100"));
+        b.getItems().add(fix);
+        FeeNotice other = new FeeNotice();
+        other.setTenantName("充电柱");
+
+        Map<String, FeeNotice> merged = FeeNoticeCalculator.mergePrevious(List.of(a, b, other));
+
+        assertThat(merged).hasSize(2);
+        FeeNotice yunshan = merged.get(FeeNoticeCalculator.noticeKey(a));
+        assertThat(yunshan.getPaidAmount()).isEqualByComparingTo("30");
+        assertThat(yunshan.getPriorArrears()).isEqualByComparingTo("1");
+        assertThat(yunshan.getRemark()).isEqualTo("第二张的备注");
+        assertThat(yunshan.getItems()).extracting(FeeNoticeItem::getFeeItem).containsExactly("税金", "维修费");
+        // 原来的对象不被改动
+        assertThat(a.getPaidAmount()).isEqualByComparingTo("10");
+        assertThat(a.getItems()).hasSize(1);
+    }
+
 
     @Test
     @DisplayName("重新生成时找回手工新增的收费行和手改的备注,其他费用 = 手工行金额之和")

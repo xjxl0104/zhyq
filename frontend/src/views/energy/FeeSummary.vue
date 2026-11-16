@@ -43,7 +43,7 @@
           <el-button v-if="!locked" type="success" :disabled="!notices.length || period?.noticeStale" @click="confirm">确认出账</el-button>
           <el-button v-else type="warning" @click="revoke">撤销确认</el-button>
         </div>
-        <div class="toolbar-tip">先在「电费 / 水费 / 垃圾处理费」填好总量与读数，这里生成通知单、核对、打印；确认出账后每户生成一张能源费账单，可在财务收款。删掉的通知单重新生成时会按读数重新出现，要永久去掉某个区域/用户请到电费、水费页删除对应区域。</div>
+        <div class="toolbar-tip">先在「电费 / 水费 / 垃圾处理费」填好总量与读数，这里按租户生成通知单（一个租户一张，名下各区域的水电垃圾费按区域分行列在同一张单上）、核对、打印；确认出账后每个租户生成一张能源费账单，可在财务收款。删掉的通知单重新生成时会按读数重新出现，要永久去掉某个区域/用户请到电费、水费页删除对应区域。</div>
         <el-alert v-for="(w, i) in warnings" :key="i" :title="w" type="warning" :closable="false" show-icon style="margin-bottom: 8px" />
 
         <!-- 检索:按公司、楼层;下面的明细表、通知单列表和各合计都跟着检索结果走 -->
@@ -81,7 +81,7 @@
           <el-table-column type="selection" width="45" />
           <el-table-column type="index" label="序号" width="55" />
           <el-table-column prop="noticeNo" label="单据编号" width="190" />
-          <el-table-column prop="unitName" label="厂房/单元" width="120" />
+          <el-table-column prop="unitName" label="厂房/单元" min-width="170" show-overflow-tooltip />
           <el-table-column prop="tenantName" label="租户/公司名称" min-width="200" show-overflow-tooltip>
             <template #default="{ row }">
               {{ row.tenantName }}
@@ -281,7 +281,7 @@ const unitOf = (n) => n.unitName
 const opts = computed(() => filterOptions(notices.value, companyOf, unitOf))
 const filterActive = computed(() => !!(filter.company || filter.floor))
 const viewNotices = computed(() => applyFilter(notices.value, filter, companyOf, unitOf))
-const bandClass = computed(() => floorBandClass(notices.value, unitOf))
+const bandClass = computed(() => floorBandClass(notices.value, (n) => n.noticeNo))
 const matrix = computed(() => (viewNotices.value.length ? MATRIX_ROWS : []))
 // 合计列 = 各户金额逐个相加(分为单位取整,避免浮点尾数),与通知单列表、导出 Excel 同源
 const sumOf = (list) => {
@@ -482,7 +482,7 @@ async function revoke() {
 .matrix :deep(td) { font-variant-numeric: tabular-nums; }
 .col-head { line-height: 1.3; text-align: center; }
 .col-main { font-weight: 600; }
-.col-sub { font-size: 11px; font-weight: 400; color: var(--el-text-color-secondary); }
+.col-sub { font-size: 11px; font-weight: 400; color: var(--el-text-color-secondary); white-space: normal; word-break: break-all; max-width: 150px; margin: 0 auto; }
 .strong { font-weight: 700; }
 .section-title { margin: 18px 0 8px; font-size: 14px; }
 .empty-tip { text-align: center; color: var(--el-text-color-secondary); padding: 20px 0; font-size: 13px; }
