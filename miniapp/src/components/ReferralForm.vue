@@ -1,19 +1,27 @@
 <template>
   <view>
-    <input class="input" v-model="form.name" maxlength="100" placeholder="公司 / 品牌名称 *" />
-    <input class="input" v-model="form.contact" maxlength="50" placeholder="对接人（选填）" />
-    <input class="input" v-model="form.requirements.contactPosition" maxlength="50" placeholder="对接人职位（选填）" />
-    <input class="input" v-model="form.phone" type="number" maxlength="11" placeholder="联系手机（选填）" />
-    <view class="section">
-      <view class="field-title">销售平台 <text class="muted">可多选，选填</text></view>
-      <checkbox-group class="choices" @change="e => form.requirements.salesPlatforms = e.detail.value">
-        <label v-for="item in SALES_PLATFORMS" :key="item" class="choice"><checkbox :value="item" :checked="form.requirements.salesPlatforms.includes(item)" color="#3857f5" /><text>{{ item }}</text></label>
-      </checkbox-group>
-      <input v-if="form.requirements.salesPlatforms.includes('其他')" class="input" v-model="form.requirements.salesPlatformOther" maxlength="100" placeholder="请填写其他销售平台" />
+    <!-- 1 客户信息 -->
+    <view class="group first">
+      <view class="group-title"><text class="bar" />客户信息</view>
+      <input class="input" v-model="form.name" maxlength="100" placeholder="公司 / 品牌名称 *" />
+      <view class="pair">
+        <input class="input" v-model="form.contact" maxlength="50" placeholder="对接人（选填）" />
+        <input class="input" v-model="form.requirements.contactPosition" maxlength="50" placeholder="对接人职位（选填）" />
+      </view>
+      <input class="input" v-model="form.phone" type="number" maxlength="11" placeholder="联系手机（选填）" />
     </view>
-    <view class="section">
-      <view class="field-title">产品重量 <text class="muted">可多选，选填</text></view>
-      <view class="muted hint">可补充各重量段的订单占比；填写时合计需为 100%。</view>
+
+    <!-- 2 业务规模 -->
+    <view class="group">
+      <view class="group-title"><text class="bar" />业务规模 <text class="muted">选填</text></view>
+      <picker v-for="field in rangeFields" :key="field.key" :range="field.options" :value="selectedIndex(field.options, form.requirements[field.key])" range-key="label" @change="e => form.requirements[field.key] = field.options[e.detail.value].value">
+        <view class="input select">
+          <text class="sel-label">{{ field.label }}</text>
+          <text :class="['sel-value', { empty: !form.requirements[field.key] }]">{{ form.requirements[field.key] ? rangeLabel(form.requirements[field.key], field.unit) : '请选择' }}</text>
+        </view>
+      </picker>
+      <input class="input" v-model="form.requirements.itemsPerParcel" type="digit" maxlength="7" placeholder="平均包裹产品数量（件，选填）" />
+      <view class="sub-title">产品重量 <text class="muted">可多选；填写占比时合计需为 100%</text></view>
       <checkbox-group @change="changeWeights">
         <view v-for="range in WEIGHT_RANGES" :key="range" class="weight-row">
           <label class="choice"><checkbox :value="range" :checked="selectedWeight(range)" color="#3857f5" /><text>{{ rangeLabel(range, 'kg') }}</text></label>
@@ -21,21 +29,30 @@
         </view>
       </checkbox-group>
     </view>
-    <picker v-for="field in rangeFields" :key="field.key" :range="field.options" :value="selectedIndex(field.options, form.requirements[field.key])" range-key="label" @change="e => form.requirements[field.key] = field.options[e.detail.value].value">
-      <view class="input">{{ field.label }}：{{ form.requirements[field.key] ? rangeLabel(form.requirements[field.key], field.unit) : '请选择（选填）' }}</view>
-    </picker>
-    <input class="input" v-model="form.requirements.itemsPerParcel" type="digit" maxlength="7" placeholder="平均包裹产品数量（件，选填）" />
-    <view class="section">
-      <view class="field-title">指定快递承运商 <text class="muted">可多选，选填</text></view>
+
+    <!-- 3 销售与发货 -->
+    <view class="group">
+      <view class="group-title"><text class="bar" />销售与发货</view>
+      <view class="sub-title first-sub">销售平台 <text class="muted">可多选，选填</text></view>
+      <checkbox-group class="choices" @change="e => form.requirements.salesPlatforms = e.detail.value">
+        <label v-for="item in SALES_PLATFORMS" :key="item" class="choice"><checkbox :value="item" :checked="form.requirements.salesPlatforms.includes(item)" color="#3857f5" /><text>{{ item }}</text></label>
+      </checkbox-group>
+      <input v-if="form.requirements.salesPlatforms.includes('其他')" class="input" v-model="form.requirements.salesPlatformOther" maxlength="100" placeholder="请填写其他销售平台" />
+      <view class="sub-title">指定快递承运商 <text class="muted">可多选，选填</text></view>
       <checkbox-group class="choices" @change="e => form.requirements.couriers = exclusiveNone(form.requirements.couriers, e.detail.value)">
         <label v-for="item in COURIERS" :key="item" class="choice"><checkbox :value="item" :checked="form.requirements.couriers.includes(item)" color="#3857f5" /><text>{{ item }}</text></label>
       </checkbox-group>
       <input v-if="form.requirements.couriers.includes('其他')" class="input" v-model="form.requirements.courierOther" maxlength="100" placeholder="请填写其他快递承运商" />
     </view>
-    <view class="section">
-      <view class="field-title">现有仓配现状 <text class="muted">选填</text></view>
+
+    <!-- 4 现有仓配现状 -->
+    <view class="group">
+      <view class="group-title"><text class="bar" />现有仓配现状 <text class="muted">选填</text></view>
       <picker :range="warehouseModeOptions" :value="selectedIndex(warehouseModeOptions, form.requirements.warehouseMode)" range-key="label" @change="e => form.requirements.warehouseMode = warehouseModeOptions[e.detail.value].value">
-        <view class="input">目前是自建仓还是外包云仓：{{ form.requirements.warehouseMode || '请选择' }}</view>
+        <view class="input select">
+          <text class="sel-label">自建仓 / 外包云仓</text>
+          <text :class="['sel-value', { empty: !form.requirements.warehouseMode }]">{{ form.requirements.warehouseMode || '请选择' }}</text>
+        </view>
       </picker>
       <view class="sub-title">目前合作的快递公司 <text class="muted">可多选</text></view>
       <checkbox-group class="choices" @change="e => form.requirements.currentCouriers = exclusiveNone(form.requirements.currentCouriers, e.detail.value)">
@@ -48,17 +65,21 @@
       </checkbox-group>
       <input v-if="form.requirements.painPoints.includes('其他')" class="input" v-model="form.requirements.painPointOther" maxlength="100" placeholder="请填写其他头疼的问题" />
     </view>
-    <textarea class="input" v-model="form.remark" maxlength="1000" placeholder="备注（选填）" style="height:160rpx" />
+
+    <!-- 5 备注 + 提交 -->
+    <view class="group">
+      <view class="group-title"><text class="bar" />备注 <text class="muted">选填</text></view>
+      <textarea class="input" v-model="form.remark" maxlength="1000" placeholder="还有什么需要补充的" style="height:160rpx" />
+    </view>
     <slot />
     <button class="btn" :loading="loading" :disabled="loading || disabled" @click="submit">{{ submitLabel }}</button>
   </view>
 </template>
 <script setup>
-import { SALES_PLATFORMS, COURIERS, WEIGHT_RANGES, AREA_RANGES, COUNT_RANGES, ORDER_RANGES, WAREHOUSE_MODES, PAIN_POINTS, rangeLabel, referralPayload, exclusiveNone } from '@/utils/referral-intake.mjs'
+import { SALES_PLATFORMS, COURIERS, WEIGHT_RANGES, COUNT_RANGES, ORDER_RANGES, WAREHOUSE_MODES, PAIN_POINTS, rangeLabel, referralPayload, exclusiveNone } from '@/utils/referral-intake.mjs'
 const props = defineProps({ form: { type: Object, required: true }, warehouses: { type: Array, default: () => [] }, loading: Boolean, disabled: Boolean, submitLabel: { type: String, default: '提交推荐' } })
 const emit = defineEmits(['submit'])
 const rangeFields = [
-  { key: 'storageArea', label: '仓储面积', unit: '㎡', ranges: AREA_RANGES },
   { key: 'productCount', label: '销售产品种类数', unit: '种', ranges: COUNT_RANGES },
   { key: 'skuCount', label: 'SKU 数量', unit: '个', ranges: COUNT_RANGES },
   { key: 'dailyOrders', label: '日均单量', unit: '单', ranges: ORDER_RANGES }
@@ -77,5 +98,12 @@ function submit() {
 }
 </script>
 <style scoped>
-.section{margin:24rpx 0;padding:20rpx 0;border-bottom:1rpx solid var(--park-line)}.field-title{font-weight:600;margin-bottom:16rpx}.field-title .muted,.sub-title .muted{font-weight:400;font-size:22rpx;margin-left:12rpx}.sub-title{font-size:26rpx;margin:24rpx 0 12rpx}.choices{display:flex;flex-wrap:wrap;gap:20rpx 28rpx}.choice{display:flex;align-items:center;gap:8rpx;min-height:60rpx}.choice checkbox{transform:scale(.82);transform-origin:left center;width:42rpx}.hint{font-size:23rpx;margin-bottom:12rpx;line-height:1.6}.weight-row{display:flex;align-items:center;justify-content:space-between;gap:12rpx;min-height:72rpx}.percentage{display:flex;align-items:center;gap:8rpx;width:180rpx}.percentage input{width:145rpx;padding:10rpx;border:1rpx solid var(--park-line);border-radius:10rpx;background:var(--park-bg);font-size:24rpx}
+.group{margin-top:36rpx;padding-top:32rpx;border-top:1rpx solid var(--park-line)}.group.first{margin-top:24rpx;padding-top:0;border-top:0}
+.group-title{display:flex;align-items:center;font-size:30rpx;font-weight:700;margin-bottom:8rpx}.group-title .muted{font-weight:400;font-size:22rpx;margin-left:12rpx}
+.bar{width:8rpx;height:30rpx;margin-right:14rpx;border-radius:4rpx;background:var(--park-blue)}
+.pair{display:flex;gap:16rpx}.pair .input{flex:1;min-width:0}
+.select{display:flex;align-items:center;justify-content:space-between;gap:16rpx}.sel-label{flex-shrink:0}.sel-value{color:var(--park-text);text-align:right;font-weight:600}.sel-value.empty{color:var(--park-muted);font-weight:400}
+.sub-title{font-size:26rpx;font-weight:600;margin:28rpx 0 12rpx}.sub-title .muted{font-weight:400;font-size:22rpx;margin-left:12rpx}.sub-title.first-sub{margin-top:12rpx}
+.choices{display:flex;flex-wrap:wrap;gap:20rpx 28rpx}.choice{display:flex;align-items:center;gap:8rpx;min-height:60rpx}.choice checkbox{transform:scale(.82);transform-origin:left center;width:42rpx}
+.weight-row{display:flex;align-items:center;justify-content:space-between;gap:12rpx;min-height:72rpx}.percentage{display:flex;align-items:center;gap:8rpx;width:180rpx}.percentage input{width:145rpx;padding:10rpx;border:1rpx solid var(--park-line);border-radius:10rpx;background:var(--park-bg);font-size:24rpx}
 </style>
