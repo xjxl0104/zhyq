@@ -77,6 +77,10 @@ public class AssetController {
         if (asset.getStatus() == null) {
             asset.setStatus(ST_IN_USE);
         }
+        if (asset.getQuantity() == null) {
+            asset.setQuantity(1);
+        }
+        checkQuantity(asset);
         assetMapper.insert(asset);
         return Result.ok(asset.getId());
     }
@@ -84,6 +88,7 @@ public class AssetController {
     @Operation(summary = "修改资产")
     @PutMapping
     public Result<Void> update(@RequestBody Asset asset) {
+        checkQuantity(asset);
         assetMapper.updateById(asset);
         return Result.ok();
     }
@@ -111,14 +116,27 @@ public class AssetController {
                 new QueryWrapper<Asset>().select("IFNULL(SUM(price), 0)"));
         BigDecimal totalValue = (sums == null || sums.isEmpty() || sums.get(0) == null)
                 ? BigDecimal.ZERO : new BigDecimal(String.valueOf(sums.get(0)));
+        List<Object> qtys = assetMapper.selectObjs(
+                new QueryWrapper<Asset>().select("IFNULL(SUM(quantity), 0)"));
+        long totalQuantity = (qtys == null || qtys.isEmpty() || qtys.get(0) == null)
+                ? 0 : new BigDecimal(String.valueOf(qtys.get(0))).longValue();
         Map<String, Object> m = new HashMap<>();
         m.put("total", total);
+        m.put("totalQuantity", totalQuantity);
         m.put("inUse", inUse);
         m.put("idle", idle);
         m.put("repairing", repairing);
         m.put("scrapped", scrapped);
         m.put("totalValue", totalValue);
         return Result.ok(m);
+    }
+
+    /** 数量必须是 1~99999 的整数;修改时没传数量表示不改 */
+    private static void checkQuantity(Asset asset) {
+        Integer q = asset.getQuantity();
+        if (q != null && (q < 1 || q > 99999)) {
+            throw new BizException("数量请填写 1~99999 的整数");
+        }
     }
 
     @Operation(summary = "资产报废")

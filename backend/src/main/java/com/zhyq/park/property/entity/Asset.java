@@ -23,6 +23,10 @@ public class Asset extends BaseEntity {
     private String name;
     /** 分类:办公设备/机电/安防/家具/IT */
     private String category;
+    /** 数量(件),默认 1 */
+    private Integer quantity;
+    /** 单位:台/套/个/架… */
+    private String unit;
     private Long projectId;
     private Long buildingId;
     /** 存放位置 */
