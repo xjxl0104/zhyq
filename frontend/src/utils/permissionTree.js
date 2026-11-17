@@ -15,7 +15,7 @@ export function isRetiredPermission(menu) {
 const RESOURCE_PATHS = {
   contract: '/contract/list', tenant: '/tenant/list', receivable: '/finance/receivable-register',
   'finance:receivable': '/finance/receivable-register', 'finance:payment': '/finance/cashier',
-  'building:floorPlan': '/building/building', 'energy:reading': '/energy/meter',
+  'building:floorPlan': '/building/building',
   'property:unit': '/property/responsible-unit', 'pur:supplier': '/property/responsible-unit',
   'pur:supplierContract': '/property/responsible-unit', 'bi:admin': '/bi/admin',
   'bi:product': '/bi/product', suggestion: '/suggestion/manage',

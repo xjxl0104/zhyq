@@ -225,7 +225,7 @@ import { computed, onActivated, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft, Delete, Download, Plus, Printer } from '@element-plus/icons-vue'
 import { feePeriodApi } from '@/api/energy'
-import { useFeePeriod, money, num, downloadBlob, BILL_KINDS, applyFilter, filterOptions, floorBandClass } from './feePeriod'
+import { useFeePeriod, money, num, downloadBlob, BILL_KINDS, applyFilter, filterOptions, floorBandClass, shortName } from './feePeriod'
 import FeeFilterBar from './components/FeeFilterBar.vue'
 import { noticeHtml, NOTICE_CSS, printNotices } from './noticePrint'
 import FeeMonthPicker from './components/FeeMonthPicker.vue'
@@ -307,12 +307,6 @@ function noticeSummary({ columns, data }) {
     }
   })
 }
-// 公司全称太长,列头用简称(与导出的 Excel 同一规则)
-function shortName(name) {
-  const s = String(name || '').replace(/(有限公司|股份有限公司|有限责任公司|公司)$/, '').replace(/^(广州|广东|深圳|佛山|中国)/, '').replace(/[（(].*?[)）]/g, '')
-  return (s.length > 6 ? s.slice(0, 6) : s) || name
-}
-
 async function generate() {
   generating.value = true
   try {

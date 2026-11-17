@@ -45,7 +45,7 @@ import { money, num } from '../feePeriod'
 
 // kind: electric 电费 | water 水费 | garbage 垃圾处理费 | summary 缴费汇总
 const props = defineProps({ kind: { type: String, required: true } })
-defineEmits(['select'])
+const emit = defineEmits(['select', 'year'])
 
 const now = new Date()
 const thisYear = now.getFullYear()
@@ -90,6 +90,7 @@ async function load() {
   }
 }
 watch(center, load, { immediate: true })
+watch(center, (y) => emit('year', y), { immediate: true })
 defineExpose({ refresh: load })
 </script>
 

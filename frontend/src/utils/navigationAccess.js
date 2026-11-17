@@ -13,7 +13,6 @@ const SHARED_PATHS = {
   'finance:payment': ['/finance/cashier'],
   'finance:report': ['/finance/overview', '/finance/report'],
   'building:floorPlan': ['/building/building'],
-  'energy:reading': ['/energy/meter'],
   'property:unit': ['/property/responsible-unit'],
   'pur:supplier': ['/property/responsible-unit'],
   'pur:supplierContract': ['/property/responsible-unit'],

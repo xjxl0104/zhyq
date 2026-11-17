@@ -100,3 +100,9 @@ export function floorBandClass(rows, unitOf) {
   rows.forEach((r) => { const f = floorOf(unitOf(r)); if (!bands.has(f)) bands.set(f, bands.size % 2) })
   return (row) => `floor-band-${bands.get(floorOf(unitOf(row))) ?? 0}`
 }
+
+/** 公司全称太长,列头/图表用简称(与导出的 Excel 同一规则):去掉「有限公司」和开头的地名 */
+export function shortName(name) {
+  const s = String(name || '').replace(/(有限公司|股份有限公司|有限责任公司|公司)$/, '').replace(/^(广州|广东|深圳|佛山|中国)/, '').replace(/[（(].*?[)）]/g, '')
+  return (s.length > 6 ? s.slice(0, 6) : s) || name
+}
