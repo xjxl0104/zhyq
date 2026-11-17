@@ -20,7 +20,7 @@ export function rangeLabel(value, unit = '') {
 }
 export function newReferralForm() {
   return { name: '', brandName: '', contact: '', phone: '', serviceType: 2, warehouseId: null, demand: '', remark: '',
-    requirements: { contactPosition: '', salesPlatforms: [], salesPlatformOther: '', productWeights: [], storageArea: '', productCount: '', skuCount: '', dailyOrders: '', itemsPerParcel: '',
+    requirements: { contactPosition: '', salesPlatforms: [], salesPlatformOther: '', productWeights: [], productCount: '', skuCount: '', dailyOrders: '', itemsPerParcel: '',
       packaging: '', couriers: [], courierOther: '', invoiceRequired: null,
       warehouseMode: '', currentCouriers: [], currentCourierOther: '', painPoints: [], painPointOther: '' } }
 }
@@ -44,7 +44,7 @@ export function referralPayload(form) {
     if (productWeights.some(x => x.percentage === null || !Number.isFinite(x.percentage) || x.percentage < 0 || x.percentage > 100)) throw new Error('请为每个已选重量段填写 0–100 的占比')
     if (Math.abs(productWeights.reduce((sum, x) => sum + x.percentage, 0) - 100) > 0.000001) throw new Error('重量段占比合计应为 100%')
   }
-  for (const [key, ranges] of Object.entries({ storageArea: AREA_RANGES, productCount: COUNT_RANGES, skuCount: COUNT_RANGES, dailyOrders: ORDER_RANGES })) {
+  for (const [key, ranges] of Object.entries({ productCount: COUNT_RANGES, skuCount: COUNT_RANGES, dailyOrders: ORDER_RANGES })) {
     if (r[key] && !ranges.includes(r[key])) throw new Error('请选择有效的需求范围')
   }
   if (![null, undefined, true, false].includes(r.invoiceRequired)) throw new Error('请选择是否开发票')
@@ -89,6 +89,7 @@ export function requirementRows(r = {}) {
     ['对接人职位', r.contactPosition],
     ['销售平台', multi(r.salesPlatforms, r.salesPlatformOther)],
     ['产品重量', (r.productWeights || []).map(x => `${rangeLabel(x.range, 'kg')}${x.percentage == null ? '' : `（${x.percentage}%）`}`).join('；')],
+    // 表单已不再收集仓储面积，只在历史数据有值时显示
     ['仓储面积', r.storageArea && rangeLabel(r.storageArea, '㎡')],
     ['销售产品种类数', r.productCount && rangeLabel(r.productCount, '种')],
     ['SKU 数量', r.skuCount && rangeLabel(r.skuCount, '个')],

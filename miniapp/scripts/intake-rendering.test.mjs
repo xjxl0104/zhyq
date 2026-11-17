@@ -78,7 +78,7 @@ test('anonymous QR scene loads form, submit records consent, and optional phone 
 test('all picker types reopen at selected value and can return to first option', () => {
   const form = intake.newReferralForm()
   form.warehouseId = 12
-  form.requirements.storageArea = intake.AREA_RANGES[1]
+  form.requirements.productCount = intake.COUNT_RANGES[1]
   form.requirements.warehouseMode = '外包云仓'
   // Vue templates unwrap computed refs before evaluating picker bindings.
   const context = vm.createContext({ ...intake, form, computed: get => get(),
