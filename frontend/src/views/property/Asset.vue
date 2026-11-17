@@ -3,8 +3,12 @@
     <!-- 统计卡片 -->
     <div class="stat-row">
       <div class="stat-card">
-        <div class="stat-label">总资产</div>
+        <div class="stat-label">总资产（项）</div>
         <div class="stat-value">{{ stats.total || 0 }}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">总件数</div>
+        <div class="stat-value">{{ stats.totalQuantity || 0 }}</div>
       </div>
       <div class="stat-card">
         <div class="stat-label">在用</div>
@@ -60,6 +64,9 @@
         <el-table-column prop="code" label="编码" min-width="130" />
         <el-table-column prop="name" label="名称" min-width="150" show-overflow-tooltip />
         <el-table-column prop="category" label="分类" width="100" />
+        <el-table-column label="数量" width="80" align="right">
+          <template #default="{ row }">{{ row.quantity ?? 1 }}{{ row.unit || '' }}</template>
+        </el-table-column>
         <el-table-column prop="location" label="位置" min-width="130" show-overflow-tooltip />
         <el-table-column label="采购价" width="120" align="right">
           <template #default="{ row }">
@@ -103,6 +110,10 @@
           <el-select v-model="form.category" style="width: 100%">
             <el-option v-for="c in categories" :key="c" :label="c" :value="c" />
           </el-select>
+        </el-form-item>
+        <el-form-item label="数量">
+          <el-input-number v-model="form.quantity" :min="1" :max="99999" :precision="0" style="width: 140px" />
+          <el-input v-model="form.unit" maxlength="16" placeholder="单位，如 台" style="width: 110px; margin-left: 10px" />
         </el-form-item>
         <el-form-item label="存放位置"><el-input v-model="form.location" /></el-form-item>
         <el-form-item label="采购价">
@@ -152,7 +163,7 @@ const statusMap = {
 const loading = ref(false)
 const list = ref([])
 const total = ref(0)
-const stats = reactive({ total: 0, inUse: 0, idle: 0, repairing: 0, scrapped: 0, totalValue: 0 })
+const stats = reactive({ total: 0, totalQuantity: 0, inUse: 0, idle: 0, repairing: 0, scrapped: 0, totalValue: 0 })
 const query = reactive({ pageNo: 1, pageSize: 10, code: '', name: '', category: null, status: null })
 
 async function load() {
@@ -178,7 +189,7 @@ function reset() {
 
 const formRef = ref()
 const dialog = reactive({ visible: false, title: '' })
-const defaultForm = () => ({ id: null, code: '', name: '', category: '办公设备', location: '', price: 0, purchaseDate: null, warrantyEnd: null, owner: '', status: 1, remark: '' })
+const defaultForm = () => ({ id: null, code: '', name: '', category: '办公设备', quantity: 1, unit: '', location: '', price: 0, purchaseDate: null, warrantyEnd: null, owner: '', status: 1, remark: '' })
 const form = reactive(defaultForm())
 const attachFiles = ref([])
 const rules = {
