@@ -1,29 +1,5 @@
 import request from '@/utils/request'
 
-// 表计
-export const meterApi = {
-  page: (params) => request.get('/energy/meter/page', { params }),
-  list: () => request.get('/energy/meter/list'),
-  stats: () => request.get('/energy/meter/stats'),
-  add: (data) => request.post('/energy/meter', data),
-  update: (data) => request.put('/energy/meter', data),
-  remove: (id) => request.delete(`/energy/meter/${id}`),
-  // 按最近一次抄表出能源费账单;一次抄表只出一张(后端幂等键挡重复)
-  createBill: (id) => request.post(`/energy/meter/${id}/bill`),
-  operLogs: (id) => request.get(`/energy/meter/${id}/oper-logs`)
-}
-
-// 抄表读数
-export const readingApi = {
-  page: (params) => request.get('/energy/reading/page', { params }),
-  add: (data) => request.post('/energy/reading', data),
-  importFile: (data) => request.post('/energy/reading/import', data, {
-    headers: { 'Content-Type': 'multipart/form-data' }
-  }),
-  update: (data) => request.put('/energy/reading', data),
-  remove: (id) => request.delete(`/energy/reading/${id}`)
-}
-
 // 月度缴费账期:电费 / 水费 / 垃圾处理费 / 缴费汇总 四个页面共用
 // 流程:open 选月 → update 填总度数/单价/垃圾总额 → saveReadings 填各表读数 → generate 出通知单 → confirm 出账
 export const feePeriodApi = {
@@ -51,11 +27,4 @@ export const feePeriodApi = {
   confirm: (id) => request.post(`/energy/fee-period/${id}/confirm`),
   revoke: (id) => request.post(`/energy/fee-period/${id}/revoke`),
   export: (id) => request.get(`/energy/fee-period/${id}/export`, { responseType: 'blob' })
-}
-
-// 能耗统计(§14 概览/趋势/表计排行)
-export const energyStatsApi = {
-  overview: () => request.get('/energy/stats-api/overview'),
-  trend: (months = 6) => request.get('/energy/stats-api/trend', { params: { months } }),
-  meterRank: () => request.get('/energy/stats-api/meter-rank')
 }

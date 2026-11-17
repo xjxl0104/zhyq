@@ -1,6 +1,7 @@
 <template>
   <div class="page-container">
-    <FeeMonthPicker v-if="!month" ref="picker" kind="garbage" @select="(m) => (month = m)" />
+    <FeeMonthPicker v-if="!month" ref="picker" kind="garbage" @select="(m) => (month = m)" @year="(y) => (chartYear = y)" />
+    <FeeCharts v-if="!month" ref="charts" kind="garbage" :year="chartYear" />
 
     <template v-else>
       <div class="detail-head">
@@ -111,6 +112,7 @@ import { feePeriodApi } from '@/api/energy'
 import { useFeePeriod, money, num, BILL_KINDS, applyFilter, filterOptions, floorBandClass } from './feePeriod'
 import FeeFilterBar from './components/FeeFilterBar.vue'
 import FeeMonthPicker from './components/FeeMonthPicker.vue'
+import FeeCharts from './components/FeeCharts.vue'
 import FeeBillFiles from './components/FeeBillFiles.vue'
 import FeeMeterDialog from './components/FeeMeterDialog.vue'
 
@@ -118,6 +120,8 @@ const sheet = ref(null)
 const sheetLoading = ref(false)
 const generating = ref(false)
 const picker = ref(null)
+const charts = ref(null)
+const chartYear = ref(new Date().getFullYear())
 const meterDialog = reactive({ visible: false })
 const form = reactive({ domesticGarbageAmount: 0, domesticGarbageNote: '', industrialGarbageAmount: 0, industrialGarbageNote: '' })
 const { month, period, loading, state, save, reload, back } = useFeePeriod(async (p) => {
@@ -154,7 +158,7 @@ async function loadSheet() {
 let firstActivation = true
 onActivated(async () => {
   if (firstActivation) { firstActivation = false; return }
-  if (!month.value) picker.value?.refresh()
+  if (!month.value) { picker.value?.refresh(); charts.value?.refresh() }
   else { await reload(); await loadSheet() }
 })
 watch(month, (v) => { if (!v) sheet.value = null })

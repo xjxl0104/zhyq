@@ -1,7 +1,9 @@
 <template>
   <div class="page-container">
     <!-- 先看年月表,点某个月才进入当月明细 -->
-    <FeeMonthPicker v-if="!month" ref="picker" :kind="isElectric ? 'electric' : 'water'" @select="(m) => (month = m)" />
+    <FeeMonthPicker v-if="!month" ref="picker" :kind="isElectric ? 'electric' : 'water'" @select="(m) => (month = m)" @year="(y) => (chartYear = y)" />
+    <!-- 年月表下面:全园区月度曲线 + 各租户当月柱状图 -->
+    <FeeCharts v-if="!month" ref="charts" :kind="isElectric ? 'electric' : 'water'" :year="chartYear" />
 
     <template v-else>
       <div class="detail-head">
@@ -171,6 +173,7 @@ import { feePeriodApi } from '@/api/energy'
 import { useFeePeriod, money, num, BILL_KINDS, applyFilter, filterOptions, floorBandClass } from './feePeriod'
 import FeeFilterBar from './components/FeeFilterBar.vue'
 import FeeMonthPicker from './components/FeeMonthPicker.vue'
+import FeeCharts from './components/FeeCharts.vue'
 import FeeBillFiles from './components/FeeBillFiles.vue'
 import FeeMeterDialog from './components/FeeMeterDialog.vue'
 
@@ -186,6 +189,8 @@ const sheetLoading = ref(false)
 const savingReadings = ref(false)
 const generating = ref(false)
 const picker = ref(null)
+const charts = ref(null)
+const chartYear = ref(new Date().getFullYear())
 const dirty = reactive(new Set())
 const dirtyCount = computed(() => dirty.size)
 
@@ -219,7 +224,7 @@ watch(energyType, () => { month.value = null })
 let firstActivation = true
 onActivated(async () => {
   if (firstActivation) { firstActivation = false; return }
-  if (!month.value) picker.value?.refresh()
+  if (!month.value) { picker.value?.refresh(); charts.value?.refresh() }
   else { await reload(); await loadSheet() }
 })
 
