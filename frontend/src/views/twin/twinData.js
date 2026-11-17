@@ -16,7 +16,7 @@ export const MODULES = [
   { id: 'contract', name: '租赁合同', short: '合同', icon: 'document', color: '#9a77cc', route: '/contract/list', metric: '36', unit: '份在执行', description: '让每一份合同，对应到真实的仓储空间。' },
   { id: 'camera', name: '视频监控', short: '监控', icon: 'camera', color: '#168ca5', route: '/iot/camera', metric: '48', unit: '个监控点', description: '按楼层定位摄像头，查看通道与设备信息。' },
   { id: 'fire', name: '智慧消防', short: '消防', icon: 'fire', color: '#dd705a', route: '/iot/fire', metric: '128', unit: '个消防点', description: '从消防管网到消火栓，关联巡检和安消设备。' },
-  { id: 'energy', name: '能源管理', short: '能源', icon: 'bolt', color: '#c49b41', route: '/energy/meter', metric: '24', unit: '台智能表计', description: '将用能设备落到空间，连接表计与抄表记录。' },
+  { id: 'energy', name: '能源管理', short: '能源', icon: 'bolt', color: '#c49b41', route: '/energy/electric', metric: '24', unit: '台智能表计', description: '将用能设备落到空间，连接表计与抄表记录。' },
 ]
 export const POINTS = [
   { id: 'park-01', module: 'park', name: 'DIPARK · 数智云仓', floor: 7, position: [-25, 57, 0], detail: '7 层空间模型 · 参照实景与招商资料', code: 'BLD-01', status: '空间档案', location: '数智云仓产业园 / 云仓 01', values: [['资料来源', '用户提供的招商资料'], ['层高', '12 / 9.5 / 6.6 m'], ['园区总面积', '8.2 万 m²（资料）'], ['货梯配置', '19 台（资料）']] },

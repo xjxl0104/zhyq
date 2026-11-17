@@ -32,7 +32,6 @@ const reports = [
   { name: '财务报表', desc: '账单收支、应收实收统计汇总', icon: 'Money', color: '#4f46e5', bg: '#eef2ff', path: '/finance/report' },
   { name: '退房报表', desc: '退租房源与退款结算明细', icon: 'DocumentDelete', color: '#e5484d', bg: '#fdecec', path: '/finance/checkout-report' },
   { name: '招商分析', desc: '线索转化与招商漏斗分析', icon: 'DataAnalysis', color: '#f59e0b', bg: '#fef6e7', path: '/crm/analysis' },
-  { name: '能耗统计', desc: '水电用量与费用趋势分析', icon: 'Lightning', color: '#06b6d4', bg: '#e7f8fb', path: '/energy/stats' },
   { name: '数据看板', desc: '经营数据与实时监控，支持全屏展示', icon: 'DataBoard', color: '#4f46e5', bg: '#eef2ff', path: '/data/center' }
 ]
 
