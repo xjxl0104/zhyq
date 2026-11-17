@@ -9,13 +9,12 @@ export const warehouseModeOptions = ['自建仓', '外包云仓', '两者都有'
 export const painPointOptions = ['时效慢', '错发漏发多', '大促爆仓', '成本太高', '系统对接难', '其他']
 export const weightRanges = ['0-0.3', '0.3-0.5', '0.5-1', '1-2', '2-3', '>=3']
 export const rangeFields = [
-  { key: 'storageArea', label: '仓储面积', unit: '㎡', ranges: ['0-50', '50-200', '200-1000', '1000-3000', '3000-5000', '>=5000'] },
   { key: 'productCount', label: '销售产品种类数', unit: '种', ranges: ['0-10', '10-20', '20-50', '50-100', '100-500', '>=500'] },
   { key: 'skuCount', label: 'SKU 数量', unit: '个', ranges: ['0-10', '10-20', '20-50', '50-100', '100-500', '>=500'] },
   { key: 'dailyOrders', label: '日均单量', unit: '单', ranges: ['0-200', '200-1000', '1000-3000', '3000-5000', '5000-10000', '>=10000'] }
 ]
 export const rangeLabel = (range, unit = '') => range?.startsWith('>=') ? `≥${range.slice(2)} ${unit}` : `${range?.replace('-', '–小于 ')} ${unit}`
-export const emptyRequirements = () => ({ contactPosition: '', salesPlatforms: [], salesPlatformOther: '', productWeights: [], storageArea: '', productCount: '', skuCount: '', dailyOrders: '', itemsPerParcel: null,
+export const emptyRequirements = () => ({ contactPosition: '', salesPlatforms: [], salesPlatformOther: '', productWeights: [], productCount: '', skuCount: '', dailyOrders: '', itemsPerParcel: null,
   packaging: '', couriers: [], courierOther: '', invoiceRequired: null, warehouseMode: '', currentCouriers: [], currentCourierOther: '', painPoints: [], painPointOther: '' })
 export function validateRequirements(value) {
   if (value.salesPlatforms.includes('其他') && !value.salesPlatformOther.trim()) return '请填写其他销售平台'
@@ -43,7 +42,8 @@ export function requirementsRows(value = {}) {
     ['目前合作快递', multi(value.currentCouriers, value.currentCourierOther)],
     ['最头疼的问题', multi(value.painPoints, value.painPointOther)]
   ]
-  // 表单已不再收集打包方式和开票，只在历史数据有值时显示
+  // 表单已不再收集仓储面积、打包方式和开票，只在历史数据有值时显示
+  if (value.storageArea) rows.push(['仓储面积', rangeLabel(value.storageArea, '㎡')])
   if (value.packaging) rows.push(['打包方式', value.packaging])
   if (value.invoiceRequired === true || value.invoiceRequired === false) rows.push(['是否开发票', value.invoiceRequired ? '是' : '否'])
   return rows
