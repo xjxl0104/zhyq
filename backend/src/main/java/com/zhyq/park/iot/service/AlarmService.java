@@ -51,7 +51,7 @@ public class AlarmService {
     }
 
     /**
-     * 上报告警:同设备+同类型已有活动告警(active=1)则累加次数+更新最后时间,不发事件(防重复建单);
+     * 上报告警:同设备+同类型已有活动告警(active=1)则更新次数及最后时间，旧告警缺少建单记录时按本次重报重试;
      * 否则新建活动告警并发 {@link DomainEvent.AlarmRaised}(供 #8 规则引擎消费建单)。
      * 唯一键 uk_active(device_id, alarm_type, active) 兜并发:insert 撞键则退化为累加路径。
      */
@@ -98,10 +98,14 @@ public class AlarmService {
 
     private boolean increment(Alarm existed, LocalDateTime now) {
         // 原地 read-modify-write 在并发重复上报下会丢更新,改为原子 SQL 自增(occur_count = occur_count + 1)
-        return alarmMapper.update(null, new LambdaUpdateWrapper<Alarm>()
+        boolean active = alarmMapper.update(null, new LambdaUpdateWrapper<Alarm>()
                 .eq(Alarm::getId, existed.getId()).eq(Alarm::getActive, ACTIVE)
                 .setSql("occur_count = occur_count + 1")
                 .set(Alarm::getLastTime, now)) == 1;
+        if (active && alarmMapper.missingWorkOrderAction(existed.getId())) {
+            publishAlarmRaised(existed, now);
+        }
+        return active;
     }
 
     private void publishAlarmRaised(Alarm alarm, LocalDateTime now) {

@@ -11,12 +11,7 @@ import org.springframework.stereotype.Component;
 import java.time.LocalDateTime;
 import java.util.List;
 
-/**
- * SLA 超时升级扫描(#10)。每 10 分钟扫一次活动工单(status in 1..4、escalated=0、sla_state IS NULL):
- * 响应超时(status 1/2,超 slaRespondMin)打 sla_state=1;解决超时(status 3/4,超 slaResolveMin)打 sla_state=2。
- * 只标记 sla_state/escalated,不动主 status——工单继续正常流转(design §5 D1)。
- * 条件 UPDATE(eq escalated=0)防并发定时重复触发;通知失败不得中断扫描。
- */
+/** 每十分钟扫描在办工单，首次升级或补送旧版尚未投递的同类超时通知。 */
 @Slf4j
 @Component
 @RequiredArgsConstructor
@@ -43,8 +38,11 @@ public class SlaEscalationJob {
                         .in(WorkOrder::getStatus,
                                 WorkOrderService.ST_PENDING_DISPATCH, WorkOrderService.ST_PENDING_ACCEPT,
                                 WorkOrderService.ST_PROCESSING, WorkOrderService.ST_PENDING_VERIFY)
-                        .eq(WorkOrder::getEscalated, 0)
-                        .isNull(WorkOrder::getSlaState));
+                        .isNull(WorkOrder::getSlaDeliveryConfirmedAt)
+                        .and(w -> w.eq(WorkOrder::getEscalated, 0).isNull(WorkOrder::getSlaState)
+                                .or(legacy -> legacy.eq(WorkOrder::getEscalated, 1)
+                                        .in(WorkOrder::getSlaState, WorkOrderService.SLA_RESP_TIMEOUT,
+                                                WorkOrderService.SLA_RESOLVE_TIMEOUT))));
 
         for (WorkOrder wo : actives) {
             try {
@@ -53,9 +51,11 @@ public class SlaEscalationJob {
                     continue;
                 }
                 if ((status == WorkOrderService.ST_PENDING_DISPATCH || status == WorkOrderService.ST_PENDING_ACCEPT)
+                        && (wo.getSlaState() == null || wo.getSlaState() == WorkOrderService.SLA_RESP_TIMEOUT)
                         && SlaCalculator.isTimedOut(wo.getCreateTime(), now, wo.getSlaRespondMin())) {
                     writer.escalate(wo, WorkOrderService.SLA_RESP_TIMEOUT, "响应超时");
                 } else if ((status == WorkOrderService.ST_PROCESSING || status == WorkOrderService.ST_PENDING_VERIFY)
+                        && (wo.getSlaState() == null || wo.getSlaState() == WorkOrderService.SLA_RESOLVE_TIMEOUT)
                         && SlaCalculator.isTimedOut(wo.getCreateTime(), now, wo.getSlaResolveMin())) {
                     writer.escalate(wo, WorkOrderService.SLA_RESOLVE_TIMEOUT, "解决超时");
                 }

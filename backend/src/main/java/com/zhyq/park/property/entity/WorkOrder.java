@@ -1,5 +1,6 @@
 package com.zhyq.park.property.entity;
 
+import com.baomidou.mybatisplus.annotation.FieldStrategy;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.fasterxml.jackson.annotation.JsonProperty;
@@ -94,8 +95,12 @@ public class WorkOrder extends BaseEntity {
     private String resolutionCode;
     /** SLA状态:NULL正常 1响应超时 2解决超时 */
     private Integer slaState;
-    /** 是否已升级通知 */
+    /** 是否已标记 SLA 升级 */
     private Integer escalated;
+    /** 由调度事务确认的站内送达凭证，普通工单编辑不能覆盖。 */
+    @JsonProperty(access = JsonProperty.Access.READ_ONLY)
+    @TableField(insertStrategy = FieldStrategy.NEVER, updateStrategy = FieldStrategy.NEVER)
+    private LocalDateTime slaDeliveryConfirmedAt;
     /** 回访时间 */
     private LocalDateTime revisitTime;
     /** 回访备注 */
