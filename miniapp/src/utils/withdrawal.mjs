@@ -62,6 +62,8 @@ export function withdrawalRuleRows(data) {
     { label: '可提现额度', value: amountRule },
     { label: '每日提现次数', value: Number(policy.dailyLimit || 0) > 0 ? `每日最多 ${policy.dailyLimit} 次。` : '不限制每日申请次数；已申请的金额在处理期间暂不可重复申请。' },
     { label: '提现时间', value: policy.applicationTime || '全天 24 小时可提交申请。' },
+    ...(policy.settleRule ? [{ label: '自动结算', value: policy.settleRule }] : []),
+    ...(policy.autoWithdraw ? [{ label: '自动提现', value: policy.autoWithdraw + '；提现申请由数智云仓财务审批。' }] : []),
     { label: '到账时间', value: policy.arrivalTime || '人工审核后安排转账，实际到账以收款渠道处理为准。' },
     { label: '收款方式', value: policy.payoutMethod || '人工审核后转账至已审核的收款账户。' },
     { label: '费用与代扣', value: Number(data?.taxMode) === 1 && Number.isFinite(Number(data?.taxRate))

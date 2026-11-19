@@ -29,7 +29,7 @@ import java.util.stream.Collectors;
 /**
  * 提现(PARK-MKT-001 §2.9):
  * 可提现余额 = 已结算(3)正向流水 − 可结算(2)负向扣回;余额为负禁止提现。
- * 申请 → 锁定对应流水(写 withdrawal_id)→ 运营审核 → 财务标记打款(pay_no 幂等,条件更新 2→3)→ 流水 → 已提现。
+ * 申请 → 锁定对应流水(写 withdrawal_id)→ 审批流(wf biz_type=withdrawal,默认「数智云仓财务审批」)→ 财务标记打款(pay_no 幂等,条件更新 2→3)→ 流水 → 已提现。
  * 税:tax_mode=1 个税代扣时 tax = amount × tax_rate(简化口径,预扣率由规则参数给),net = amount − tax。
  */
 @Service
@@ -43,10 +43,13 @@ public class MktWithdrawalService {
 
     /** Cash precision, not an accumulated-earnings threshold; legacy min_withdraw settings are retired. */
     public static final BigDecimal MIN_WITHDRAWAL = new BigDecimal("0.01");
-    public static final String DEFAULT_ARRIVAL_TIME = "提交后财务 24 小时内打款，实际到账以收款渠道处理为准";
-    /** 每月开放提现申请的起止日(含);财务集中在这一段处理打款。 */
-    public static final int DEFAULT_WINDOW_START_DAY = 25;
+    public static final String DEFAULT_ARRIVAL_TIME = "财务审批通过后 3 个工作日内打款，实际到账以收款渠道处理为准";
+    /** 提现申请开放日(含)。默认 0 = 全月随时可申请;设置了起止日才限制。 */
+    public static final int DEFAULT_WINDOW_START_DAY = 0;
     public static final int DEFAULT_WINDOW_END_DAY = 31;
+    /** 每月自动提现日:系统把伙伴的全部可提现余额自动提交提现申请。0 = 关闭。 */
+    public static final int DEFAULT_AUTO_WITHDRAW_DAY = 10;
+    public static final String WORKFLOW_BIZ_TYPE = "withdrawal";
 
     private static final String MODULE = "marketing";
     private static final String BIZ_TYPE = "withdrawal";
@@ -59,6 +62,9 @@ public class MktWithdrawalService {
     private final MktAuditService auditService;
     private final com.zhyq.park.marketing.mapper.MktPromoterAccountMapper accountMapper;
     private final MktPaymentProofService proofService;
+    /** 审批流引擎;单元测试里不注入时按旧的单节点审核运行。 */
+    @org.springframework.beans.factory.annotation.Autowired(required = false) @lombok.Setter
+    private com.zhyq.park.workflow.service.WorkflowService workflowService;
 
     /** These rules describe the actual application flow; submitting an application does not transfer money. */
     public Map<String, Object> withdrawalRules() {
@@ -67,9 +73,11 @@ public class MktWithdrawalService {
                 "applicationOpen", inWindow(start, end, LocalDate.now()),
                 "minimumAmount", MIN_WITHDRAWAL,
                 "dailyLimit", 0, // No daily application-count gate exists. Reserved funds cannot be claimed twice.
-                "applicationTime", start <= 0 ? "全天 24 小时可提交申请" : "每月 " + start + "–" + Math.max(start, end) + " 日开放提现申请",
-                "applicationNotice", "收款资料审核通过且可提现余额达到 0.01 元即可提交申请，提交后进入人工审核。",
-                "payoutMethod", "人工审核后转账至已审核的收款账户",
+                "applicationTime", start <= 0 ? "随时可提交申请" : "每月 " + start + "–" + Math.max(start, end) + " 日开放提现申请",
+                "applicationNotice", "收款资料审核通过且可提现余额达到 0.01 元即可提交申请，提交后由数智云仓财务审批。",
+                "autoWithdraw", autoWithdrawDay() <= 0 ? "未开启自动提现" : "每月 " + autoWithdrawDay() + " 日 10:00 自动把全部可提现余额提交提现申请",
+                "settleRule", "发货满 7 天解冻；每天凌晨 2 点自动结算已结束月份的已解冻佣金，结算后即计入可提现余额",
+                "payoutMethod", "财务审批通过后转账至已审核的收款账户",
                 "arrivalTime", bizSettings.getString(MODULE, "withdraw_arrival_time", DEFAULT_ARRIVAL_TIME),
                 "feeAmount", BigDecimal.ZERO); // No withdrawal fee is deducted; configured tax remains separate.
     }
@@ -77,6 +85,8 @@ public class MktWithdrawalService {
     private int windowStartDay() { return bizSettings.getInt(MODULE, "withdraw_window_start_day", DEFAULT_WINDOW_START_DAY); }
 
     private int windowEndDay() { return bizSettings.getInt(MODULE, "withdraw_window_end_day", DEFAULT_WINDOW_END_DAY); }
+
+    public int autoWithdrawDay() { return bizSettings.getInt(MODULE, "auto_withdraw_day", DEFAULT_AUTO_WITHDRAW_DAY); }
 
     /** 起始日 ≤ 0 表示不限制日期;止日大于当月天数时自然截到月末。 */
     static boolean inWindow(int startDay, int endDay, LocalDate day) {
@@ -96,12 +106,18 @@ public class MktWithdrawalService {
     /** 申请提现:校验伙伴正常、按分提交、余额;锁定流水(按时间先后凑够金额);算税。 */
     @Transactional
     public MktWithdrawal apply(Long promoterId, BigDecimal amount) {
+        return apply(promoterId, amount, false);
+    }
+
+    /** automatic=true 为每月自动提现:不受开放日限制,审计记为系统提交。 */
+    @Transactional
+    public MktWithdrawal apply(Long promoterId, BigDecimal amount, boolean automatic) {
         MktPromoter p = promoterMapper.selectForUpdate(promoterId);
         if (p == null || p.getStatus() == null || p.getStatus() != MktPromoterService.ST_NORMAL) {
             throw new BizException("伙伴状态异常,不能提现");
         }
         int startDay = windowStartDay(), endDay = windowEndDay();
-        if (!inWindow(startDay, endDay, LocalDate.now())) {
+        if (!automatic && !inWindow(startDay, endDay, LocalDate.now())) {
             throw new BizException("每月 " + startDay + "–" + Math.max(startDay, endDay) + " 日开放提现申请,请在开放期内提交");
         }
         if (!Integer.valueOf(1).equals(p.getIdVerified())) throw new BizException("收款资料尚未通过人工审核,暂不能提现");
@@ -182,8 +198,48 @@ public class MktWithdrawalService {
             c.setWithdrawalId(w.getId()); c.setWithdrawalAmount(allocations.get(c.getId()));
         }
         withdrawalMapper.updateById(w);
-        auditService.log("withdrawal.apply", BIZ_TYPE, w.getId(), "税前 " + amount + " 税 " + tax);
+        auditService.log(automatic ? "withdrawal.auto-apply" : "withdrawal.apply", BIZ_TYPE, w.getId(), "税前 " + amount + " 税 " + tax);
+        // 进入审批流:未配置启用的「伙伴提现审批流」时降级为提现审核页直接审核。
+        if (workflowService != null) workflowService.startBySystem(WORKFLOW_BIZ_TYPE, w.getId());
         return w;
+    }
+
+    /** 可自动提现的金额:可提现余额按分向下取整;不足 1 分返回 0。 */
+    public BigDecimal autoWithdrawAmount(Long promoterId) {
+        return balance(promoterId).max(BigDecimal.ZERO).setScale(2, RoundingMode.DOWN);
+    }
+
+    /** 本伙伴是否还有处理中的提现单(待审批/已审批待打款)。 */
+    public boolean hasOpenWithdrawal(Long promoterId) {
+        return withdrawalMapper.selectCount(new LambdaQueryWrapper<MktWithdrawal>()
+                .eq(MktWithdrawal::getPromoterId, promoterId).in(MktWithdrawal::getStatus, WS_PENDING, WS_APPROVED)) > 0;
+    }
+
+    /** 后台「提现审核」页审核通过:有审批流时按当前节点办理(校验审批人),没有时按旧的单节点审核。 */
+    @Transactional
+    public void approveFromConsole(Long id, String opinion, String operator) {
+        var task = workflowService == null ? null : workflowService.currentPendingTask(WORKFLOW_BIZ_TYPE, id);
+        if (task != null) { workflowService.approve(task.getId(), StringUtils.hasText(opinion) ? opinion : "同意"); return; }
+        approve(id, operator);
+    }
+
+    /** 后台「提现审核」页驳回:审批中走审批流驳回,已审批待打款的直接驳回。 */
+    @Transactional
+    public void rejectFromConsole(Long id, String reason, String operator) {
+        if (!StringUtils.hasText(reason)) throw new BizException("驳回必须填写原因");
+        var task = workflowService == null ? null : workflowService.currentPendingTask(WORKFLOW_BIZ_TYPE, id);
+        if (task != null) { workflowService.reject(task.getId(), reason); return; }
+        reject(id, reason, operator);
+    }
+
+    /** 审批流最后一个节点通过(同一事务回调)。 */
+    @Transactional
+    public void onWorkflowApproved(Long id) { approve(id, MktAuditService.currentOperator()); }
+
+    /** 审批流任一节点驳回(同一事务回调):释放锁定的佣金。 */
+    @Transactional
+    public void onWorkflowRejected(Long id, String opinion) {
+        reject(id, StringUtils.hasText(opinion) ? opinion : "审批驳回", MktAuditService.currentOperator());
     }
 
     @Transactional

@@ -27,7 +27,8 @@ public class WorkflowAccessService {
     private final com.zhyq.park.workflow.mapper.WfDefinitionMapper definitions;
     private final com.zhyq.park.workflow.mapper.WfInstanceMapper instances;
     private static final Map<String, String> RESOURCES = Map.of(
-            "contract", "contract", "budget", "budget", "procurement", "pur:request");
+            "contract", "contract", "budget", "budget", "procurement", "pur:request",
+            "withdrawal", "crm:marketing:withdrawal");
 
     public void requireStart(String type, Long id, Long approvalId) {
         Authentication auth = current();

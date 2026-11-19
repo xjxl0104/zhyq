@@ -15,25 +15,62 @@
       <div class="toolbar">
         <el-button type="primary" plain @click="openMonthly()">按合同月结</el-button>
         <el-button @click="batches.visible = true; loadBatches()">结算批次</el-button>
-        <span class="hint">一个月一个合同一行。冻结的佣金发货日加冻结期（默认 7 天）后自动转为可结算；每月 8 日 10:00 自动把上月及更早已解冻的佣金按“合同 × 月份”结算，也可以在这里手动结算。</span>
+        <span class="hint">一个合同一行，点击合同查看每月结算情况。佣金发货满冻结期（默认 7 天）解冻；每天 02:00 自动结算已结束月份的已解冻佣金（结算后计入伙伴可提现余额），也可以在合同里按月手动结算。</span>
       </div>
-      <el-table :data="months" v-loading="loading" border stripe>
-        <el-table-column prop="month" label="月份" width="100" />
-        <el-table-column label="合同" min-width="200"><template #default="{ row }"><div>{{ row.customerName || '—' }}</div><div class="sub">{{ row.contractNo || '#' + row.contractId }}</div></template></el-table-column>
+      <div class="summary">
+        <div class="sum-card"><div class="sum-label">佣金合计(元)</div><div class="sum-value">{{ amt(totals.total) }}</div><div class="sub">{{ contracts.length }} 个合同</div></div>
+        <div class="sum-card frozen"><div class="sum-label">冻结中</div><div class="sum-value">{{ amt(totals.frozen) }}</div><div class="sub">发货未满冻结期</div></div>
+        <div class="sum-card settleable"><div class="sum-label">可结算</div><div class="sum-value">{{ amt(totals.settleable) }}</div><div class="sub">已结束月份次日 02:00 自动结算</div></div>
+        <div class="sum-card settled"><div class="sum-label">已结算/已提现</div><div class="sum-value">{{ amt(totals.settled) }}</div><div class="sub">已计入伙伴余额</div></div>
+      </div>
+      <el-table :data="contracts" v-loading="loading" border stripe row-class-name="clickable" @row-click="openContract">
+        <el-table-column label="合同" min-width="220"><template #default="{ row }"><div>{{ row.customerName || '—' }}</div><div class="sub">{{ row.contractNo || '#' + row.contractId }}</div></template></el-table-column>
         <el-table-column label="伙伴" min-width="120"><template #default="{ row }">{{ row.promoters || '—' }}</template></el-table-column>
+        <el-table-column label="结算月份" width="170"><template #default="{ row }">{{ row.firstMonth === row.latestMonth ? row.latestMonth : row.firstMonth + ' ~ ' + row.latestMonth }}<div class="sub">共 {{ row.months.length }} 个月</div></template></el-table-column>
         <el-table-column prop="tickets" label="发货票数" width="100" align="right" />
-        <el-table-column label="佣金合计(元)" width="130" align="right"><template #default="{ row }">{{ amt(row.total) }}</template></el-table-column>
-        <el-table-column label="冻结中" width="110" align="right"><template #default="{ row }">{{ amt(row.frozen) }}</template></el-table-column>
-        <el-table-column label="可结算" width="110" align="right"><template #default="{ row }"><span :class="{ ok: Number(row.settleable) > 0 }">{{ amt(row.settleable) }}</span></template></el-table-column>
-        <el-table-column label="已结算/已提现" width="130" align="right"><template #default="{ row }">{{ amt(row.settled) }}</template></el-table-column>
-        <el-table-column label="操作" width="150" fixed="right">
-          <template #default="{ row }">
-            <el-button v-if="Number(row.settleable) > 0" link type="primary" :disabled="isFiltered" :title="isFiltered ? '筛选伙伴时只显示该伙伴的金额，请取消筛选后再结算整个合同月份' : ''" @click="settleRow(row)">结算</el-button>
-            <el-button link @click="openDetail(row)">明细</el-button>
-          </template>
+        <el-table-column label="佣金合计(元)" width="120" align="right"><template #default="{ row }">{{ amt(row.total) }}</template></el-table-column>
+        <el-table-column label="冻结中" width="100" align="right"><template #default="{ row }">{{ amt(row.frozen) }}</template></el-table-column>
+        <el-table-column label="可结算" width="100" align="right"><template #default="{ row }"><span :class="{ ok: Number(row.settleable) > 0 }">{{ amt(row.settleable) }}</span></template></el-table-column>
+        <el-table-column label="已结算/已提现" width="120" align="right"><template #default="{ row }">{{ amt(row.settled) }}</template></el-table-column>
+        <el-table-column label="结算进度" width="170"><template #default="{ row }"><SettleBar :row="row" /></template></el-table-column>
+        <el-table-column label="操作" width="110" fixed="right">
+          <template #default="{ row }"><el-button link type="primary" @click.stop="openContract(row)">每月结算</el-button></template>
         </el-table-column>
       </el-table>
     </div>
+
+    <el-drawer v-model="contractView.visible" :title="drawerTitle" size="min(980px, 96vw)">
+      <template v-if="currentContract">
+        <div class="sub drawer-sub">{{ currentContract.contractNo }} · 伙伴：{{ currentContract.promoters || '—' }}</div>
+        <div class="month-chart">
+          <div v-for="m in chartMonths" :key="m.month" class="month-col" :title="m.month + '：合计 ' + amt(m.total) + ' 元'">
+            <div class="month-amt">{{ Number(m.total || 0).toFixed(2) }}</div>
+            <div class="month-bar" :style="{ height: barHeight(m) + 'px' }">
+              <span class="seg settled" :style="{ flexGrow: Number(m.settled) || 0 }" />
+              <span class="seg settleable" :style="{ flexGrow: Number(m.settleable) || 0 }" />
+              <span class="seg frozen" :style="{ flexGrow: Number(m.frozen) || 0 }" />
+            </div>
+            <div class="month-label">{{ String(m.month).slice(2) }}</div>
+          </div>
+        </div>
+        <div class="legend"><span><i class="dot settled" />已结算/已提现</span><span><i class="dot settleable" />可结算</span><span><i class="dot frozen" />冻结中</span></div>
+        <el-table :data="currentContract.months" border stripe size="small">
+          <el-table-column prop="month" label="月份" width="100" />
+          <el-table-column prop="tickets" label="发货票数" width="100" align="right" />
+          <el-table-column label="佣金合计(元)" width="120" align="right"><template #default="{ row }">{{ amt(row.total) }}</template></el-table-column>
+          <el-table-column label="冻结中" width="100" align="right"><template #default="{ row }">{{ amt(row.frozen) }}</template></el-table-column>
+          <el-table-column label="可结算" width="100" align="right"><template #default="{ row }"><span :class="{ ok: Number(row.settleable) > 0 }">{{ amt(row.settleable) }}</span></template></el-table-column>
+          <el-table-column label="已结算/已提现" width="120" align="right"><template #default="{ row }">{{ amt(row.settled) }}</template></el-table-column>
+          <el-table-column label="状态" min-width="120"><template #default="{ row }"><SettleBar :row="row" /></template></el-table-column>
+          <el-table-column label="操作" width="130" fixed="right">
+            <template #default="{ row }">
+              <el-button v-if="Number(row.settleable) > 0" link type="primary" :disabled="isFiltered" :title="isFiltered ? '筛选伙伴时只显示该伙伴的金额，请取消筛选后再结算整个合同月份' : ''" @click="settleRow(row)">结算</el-button>
+              <el-button link @click="openDetail(row)">明细</el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+      </template>
+    </el-drawer>
 
     <el-drawer v-model="detail.visible" :title="`${detail.title} 佣金明细（按发货日）`" size="920px">
       <el-table :data="detail.list" v-loading="detail.loading" border stripe size="small">
@@ -82,7 +119,7 @@
         <el-descriptions-item label="仍在冻结期">{{ monthly.result.frozenCount }} 条,本次不结算</el-descriptions-item>
         <el-descriptions-item label="此前已结算/已提现">{{ monthly.result.alreadySettledCount }} 条</el-descriptions-item>
       </el-descriptions>
-      <p class="hint">可选择合同开始月份到上个月之间的任意月份,结算该月全部出库单中「可结算」状态的佣金;结算上个月仅限每月 3-10 号,更早月份可随时补结。冻结期未满的行留待解冻后结算,已结算/已提现的行不会重复结算。</p>
+      <p class="hint">可选择合同开始月份到上个月之间的任意月份,结算该月全部出库单中「可结算」状态的佣金,随时可结。冻结期未满的行留待解冻后结算(系统每天 02:00 也会自动结算),已结算/已提现的行不会重复结算。</p>
       <template #footer>
         <el-button @click="monthly.visible = false">关闭</el-button>
         <el-button v-if="monthly.result" @click="monthly.result = null">继续结算其他月份</el-button>
@@ -93,11 +130,12 @@
 </template>
 
 <script setup>
-import { reactive, ref, computed, onMounted } from 'vue'
+import { reactive, ref, computed, onMounted, h } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { mktCommissionApi, mktContractApi } from '@/api/marketing'
 import { money } from '@/utils/format'
 import CommissionBasis from './CommissionBasis.vue'
+import { groupByContract, settleShares } from './commissionGroups'
 
 const ST = { 1: '冻结', 2: '可结算', 3: '已结算', 4: '已提现', 5: '作废' }
 const SIGN = { 1: '园区签', 2: '直签' }
@@ -108,6 +146,31 @@ const months = ref([])
 const query = reactive({ promoterId: null, promoterName: '' })
 const isFiltered = computed(() => !!query.promoterId || !!String(query.promoterName || '').trim())
 const amt = (v) => Number(v || 0).toFixed(3)
+// 主列表一个合同一行;点进合同看每月(结算后数据刷新,抽屉跟着变)
+const contracts = computed(() => groupByContract(months.value))
+const totals = computed(() => contracts.value.reduce((s, c) => {
+  for (const k of ['total', 'frozen', 'settleable', 'settled']) s[k] += Number(c[k] || 0)
+  return s
+}, { total: 0, frozen: 0, settleable: 0, settled: 0 }))
+const contractView = reactive({ visible: false, contractId: null })
+const currentContract = computed(() => contracts.value.find(c => c.contractId === contractView.contractId) || null)
+const drawerTitle = computed(() => currentContract.value ? `${currentContract.value.customerName || currentContract.value.contractNo} · 每月结算` : '每月结算')
+function openContract(row) { contractView.contractId = row.contractId; contractView.visible = true }
+const chartMonths = computed(() => [...(currentContract.value?.months || [])].reverse())
+const maxMonth = computed(() => Math.max(1, ...chartMonths.value.map(m => Number(m.total || 0))))
+const barHeight = m => Math.max(2, Math.round(Number(m.total || 0) / maxMonth.value * 120))
+// 结算进度条:绿=已结算,蓝=可结算,橙=冻结
+const SettleBar = (props) => {
+  const s = settleShares(props.row)
+  const label = s.settled >= 100 ? '已全部结算' : s.settleable > 0 ? `可结算 ${s.settleable}%` : s.frozen > 0 ? `冻结中 ${s.frozen}%` : '—'
+  return h('div', { class: 'settle-bar-wrap' }, [
+    h('div', { class: 'settle-bar' }, [
+      h('span', { class: 'seg settled', style: { width: s.settled + '%' } }),
+      h('span', { class: 'seg settleable', style: { width: s.settleable + '%' } }),
+      h('span', { class: 'seg frozen', style: { width: s.frozen + '%' } })]),
+    h('div', { class: 'sub' }, label)])
+}
+SettleBar.props = ['row']
 
 async function load() {
   loading.value = true
@@ -145,7 +208,7 @@ async function voidOne(row) {
   const { value } = await ElMessageBox.prompt('作废原因', '作废佣金', { inputPattern: /\S+/, inputErrorMessage: '原因必填' })
   await mktCommissionApi.void(row.id, { reason: value }); ElMessage.success('已作废'); await loadDetail(); await load()
 }
-// 按合同月结:可选合同开始月到上个月之间的任意月份;上个月仅限每月 3-10 号,更早月份可随时补结
+// 按合同月结:可选合同开始月到上个月之间的任意月份,随时可结
 const monthly = reactive({ visible: false, contracts: [], loadingContracts: false, contractId: null, month: null, settling: false, result: null })
 const ym = (y, m) => `${y}-${String(m).padStart(2, '0')}`
 const lastMonth = () => { const d = new Date(); return d.getMonth() === 0 ? ym(d.getFullYear() - 1, 12) : ym(d.getFullYear(), d.getMonth()) }
@@ -208,4 +271,25 @@ onMounted(load)
 .pager { margin-top: 16px; justify-content: flex-end; }
 .mt { margin-top: 12px; }
 .full { width: 100%; }
+.summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin: 12px 0; }
+.sum-card { padding: 12px 14px; border: 1px solid var(--el-border-color-lighter); border-left: 4px solid var(--el-color-info); border-radius: 8px; background: var(--el-bg-color); }
+.sum-card.frozen { border-left-color: var(--el-color-warning); }
+.sum-card.settleable { border-left-color: var(--el-color-primary); }
+.sum-card.settled { border-left-color: var(--el-color-success); }
+.sum-label { font-size: 12px; color: var(--el-text-color-secondary); }
+.sum-value { margin: 4px 0; font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; }
+:deep(.clickable) { cursor: pointer; }
+.drawer-sub { margin: -8px 0 12px; }
+.month-chart { display: flex; align-items: flex-end; gap: 10px; min-height: 170px; padding: 8px 4px 0; overflow-x: auto; border-bottom: 1px solid var(--el-border-color-lighter); }
+.month-col { display: flex; flex-direction: column; align-items: center; min-width: 44px; }
+.month-amt { margin-bottom: 4px; font-size: 11px; color: var(--el-text-color-secondary); }
+.month-bar { display: flex; flex-direction: column-reverse; width: 26px; border-radius: 4px 4px 0 0; overflow: hidden; background: var(--el-fill-color); }
+.month-bar .seg { display: block; flex-basis: 0; }
+.month-label { margin: 6px 0; font-size: 12px; color: var(--el-text-color-regular); }
+.legend { display: flex; gap: 16px; margin: 10px 0 14px; font-size: 12px; color: var(--el-text-color-secondary); }
+.dot { display: inline-block; width: 10px; height: 10px; margin-right: 4px; border-radius: 2px; vertical-align: -1px; }
+:deep(.settle-bar) { display: flex; height: 8px; border-radius: 4px; overflow: hidden; background: var(--el-fill-color); }
+:deep(.seg.settled), .dot.settled { background: var(--el-color-success); }
+:deep(.seg.settleable), .dot.settleable { background: var(--el-color-primary); }
+:deep(.seg.frozen), .dot.frozen { background: var(--el-color-warning); }
 </style>

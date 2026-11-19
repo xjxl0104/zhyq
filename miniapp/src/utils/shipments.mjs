@@ -43,3 +43,28 @@ export function formatVolume(value) {
   const decimal = (match[3] || '').replace(/0+$/, '')
   return match[1] + whole + (decimal ? '.' + decimal : '')
 }
+
+/** 发货趋势柱状图数据：daily 用每日、monthly 用每月；高度按最大值缩放（rpx），非零至少 4。 */
+export function trendBarsOf(trend, mode = 'daily', maxHeight = 220) {
+  const rows = mode === 'monthly' ? (trend?.monthly || []) : (trend?.daily || [])
+  const values = rows.map(r => Number(r.volume) || 0)
+  const max = Math.max(0, ...values)
+  return rows.map((r, i) => {
+    const volume = values[i]
+    const key = mode === 'monthly' ? r.month : r.date
+    return {
+      key, volume,
+      hasData: mode === 'monthly' ? true : r.hasData !== false,
+      label: mode === 'monthly' ? String(r.month).slice(2) : String(r.date).slice(8),
+      full: mode === 'monthly' ? String(r.month) : String(r.date),
+      height: max <= 0 || volume <= 0 ? 0 : Math.max(4, Math.round(volume / max * maxHeight))
+    }
+  })
+}
+
+/** 合计、平均（保留一位）与峰值。 */
+export function trendSummary(bars) {
+  const total = bars.reduce((s, b) => s + b.volume, 0)
+  const peak = bars.reduce((p, b) => b.volume > p.volume ? b : p, { full: '—', volume: 0 })
+  return { total, average: bars.length ? (total / bars.length).toFixed(1) : '0', peak }
+}

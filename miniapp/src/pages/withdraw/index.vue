@@ -28,14 +28,14 @@
           <view>首次提现请先完善收款资料，确认款项转入本人账户。资料通过审核后可申请。</view>
           <button class="btn ghost" @click="openAccount">完善收款资料</button>
         </view>
-        <view v-if="closed" class="account-notice">当前不在提现开放期。{{ b.withdrawalRules?.applicationTime || '' }}，开放期内提交后财务会统一处理。</view>
+        <view v-if="closed" class="account-notice">当前不在提现开放期。{{ b.withdrawalRules?.applicationTime || '' }}。{{ b.withdrawalRules?.autoWithdraw || '' }}</view>
         <view class="field-label">提现金额（元）</view>
         <input class="input" v-model="amount" type="digit" :disabled="loading || Number(b.idVerified) !== 1 || !cashAvailable?.cents" placeholder="输入金额，最多两位小数" aria-label="提现金额，单位元，最多两位小数" />
         <button class="all-amount" :disabled="loading || Number(b.idVerified) !== 1 || !cashAvailable?.cents" @click="fillAll">全部可提现金额</button>
         <view v-if="inputHint" class="muted input-hint">{{ inputHint }}</view>
         <view class="row" v-if="validAmount"><text class="muted">预估代扣 / 到账（元）</text><text>{{ tax }} / {{ net }}</text></view>
         <button class="btn" :loading="loading" :disabled="loading || !validAmount" @click="submit">提交提现申请</button>
-        <view class="muted submit-note">提交后可在下方查看处理进度及付款流水。</view>
+        <view class="muted submit-note">提交后进入数智云仓财务审批，可在下方查看审批进度及付款流水。</view>
       </view>
     </template>
 
@@ -66,7 +66,7 @@ import { onShow, onReachBottom } from '@dcloudio/uni-app'
 import { bizApi } from '@/api'
 import { createPager } from '@/utils/pagination.mjs'
 import { withdrawalBalanceView, formatLedgerBalance, isValidWithdrawal, withdrawalRuleRows } from '@/utils/withdrawal.mjs'
-const STATUS = { 1: '待审核', 2: '已审核', 3: '已打款', 4: '已驳回' }
+const STATUS = { 1: '财务审批中', 2: '审批通过·待打款', 3: '已打款', 4: '已驳回' }
 const error=ref('')
 const b = ref(null); const amount = ref(''); const loading = ref(false)
 const history=reactive({}),pager=createPager(bizApi.withdrawals,history),list=computed(()=>history.records)
@@ -94,7 +94,7 @@ async function submit() {
   if(loading.value || !validAmount.value)return
   loading.value = true
   error.value = ''
-  try { await bizApi.withdraw(amount.value.trim()); uni.showToast({ title: '已提交,等待审核' }); amount.value = ''; await load() }
+  try { await bizApi.withdraw(amount.value.trim()); uni.showToast({ title: '已提交,等待财务审批' }); amount.value = ''; await load() }
   catch (failure) { error.value = failure.message || '提现申请失败，请重试' }
   finally { loading.value = false }
 }

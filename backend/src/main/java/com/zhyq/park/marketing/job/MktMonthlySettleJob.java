@@ -12,8 +12,8 @@ import java.time.LocalDate;
 import java.time.ZoneId;
 
 /**
- * 每月自动生成结算单：默认每月 8 日 10:00（上海时间）把当月之前、已解冻的出库佣金按“合同 × 月份”各生成一个结算批次。
- * 8 日执行是为了让上月最后一天发货的流水也过了默认 7 天冻结期。
+ * 每日自动结算：默认每天 02:00（上海时间）把当月之前、已解冻的出库佣金按“合同 × 月份”生成结算批次，结算后即计入伙伴可提现余额。
+ * 上月的佣金在 7 天冻结期满后陆续结算（最晚 9 日前结完），赶在每月 10 日自动提现之前；之前失败或补录的流水第二天自动补结。
  * 运行结束会推送一条完成通知；有失败的合同月份会推送告警。
  * 暂停：zhyq.marketing.auto-settle-enabled=false；调整时间：zhyq.marketing.auto-settle-cron。
  */
@@ -36,7 +36,7 @@ public class MktMonthlySettleJob {
         this(service, enabled, new MktAlertService("", ""));
     }
 
-    @Scheduled(cron = "${zhyq.marketing.auto-settle-cron:0 0 10 8 * ?}", zone = "Asia/Shanghai")
+    @Scheduled(cron = "${zhyq.marketing.auto-settle-cron:0 0 2 * * ?}", zone = "Asia/Shanghai")
     public void run() {
         if (!enabled) return;
         try {
@@ -46,7 +46,7 @@ public class MktMonthlySettleJob {
                         result.failed() + " 个合同月份结算失败，例如：" + (result.errors().isEmpty() ? "未知原因" : result.errors().get(0))
                                 + "。已成功 " + result.batches() + " 个批次，请到“佣金结算”处理失败的部分。");
             } else if (result.batches() > 0) {
-                alerts.notify("佣金自动月结完成", "生成 " + result.batches() + " 个结算批次，共 " + result.commissions() + " 条流水，合计 " + result.amount() + " 元。");
+                alerts.notify("佣金自动结算完成", "生成 " + result.batches() + " 个结算批次，共 " + result.commissions() + " 条流水，合计 " + result.amount() + " 元。");
             }
         } catch (RuntimeException failure) {
             log.error("[mkt] 自动月结失败", failure);
