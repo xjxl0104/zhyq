@@ -280,7 +280,10 @@ public class ArcDocController {
         } else {
             d.setCategoryCode(null);
         }
-        d.setDocType(ArcAnalyzeService.DOC_TYPES.contains(d.getDocType()) ? d.getDocType() : "其他");
+        // 文档类型可缺省:必须先用 hasText 挡掉 null,
+        // 直接 DOC_TYPES.contains(null) 会抛 NPE(DOC_TYPES 是 List.of 不可变集合,不接受 null)
+        String docType = trim(d.getDocType());
+        d.setDocType(StringUtils.hasText(docType) && ArcAnalyzeService.DOC_TYPES.contains(docType) ? docType : "其他");
         if (d.getSecretLevel() == null || d.getSecretLevel() < 1 || d.getSecretLevel() > 3) d.setSecretLevel(2);
         if (d.getStatus() == null || (d.getStatus() != ST_ACTIVE && d.getStatus() != ST_EXPIRED)) d.setStatus(ST_ACTIVE);
         d.setPeriod(limit(trim(d.getPeriod()), 32));
