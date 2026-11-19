@@ -52,7 +52,7 @@ function findNode(nodes, id) {
 }
 
 async function loadTree() {
-  folderTree.value = (await folderApi.tree(project.currentProjectId || undefined)) || []
+  folderTree.value = (await folderApi.tree()) || []
 }
 async function loadBreadcrumb() {
   breadcrumb.value = currentFolderId.value === null ? [] : (await folderApi.breadcrumb(currentFolderId.value)) || []

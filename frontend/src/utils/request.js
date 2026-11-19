@@ -7,8 +7,10 @@ const request = axios.create({
   timeout: 15000
 })
 
-// 这些前缀不注入 projectId:登录鉴权、项目列表接口自身(否则会被自己过滤)
-const NO_PROJECT_PREFIXES = ['/auth', '/building/project']
+// 这些前缀不注入 projectId:登录鉴权、项目列表接口自身(否则会被自己过滤)、资料管理
+// 资料库的文件树(arc_folder)是全局结构,没有 project_id 维度;若给查询注入 projectId,
+// 就会出现「文件夹在、点进去一份资料都没有」的错乱(文件夹不过滤,资料被过滤)
+const NO_PROJECT_PREFIXES = ['/auth', '/building/project', '/archive']
 
 // 请求带 token + 按当前项目自动注入 projectId
 request.interceptors.request.use((config) => {
