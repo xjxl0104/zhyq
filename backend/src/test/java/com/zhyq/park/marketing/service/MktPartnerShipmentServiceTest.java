@@ -167,6 +167,33 @@ class MktPartnerShipmentServiceTest {
                     .isInstanceOf(BizException.class);
     }
 
+    @Test void trendFillsEveryDayAndSumsTheLastTwelveMonthsWithTheSameScope() throws Exception {
+        doAnswer(i -> {
+            Map<String, ?> params = i.getArgument(1);
+            assertThat(params.get("startDate")).isEqualTo("2025-11-01");
+            assertThat(params.get("contractId")).isEqualTo(101L);
+            org.springframework.jdbc.core.RowCallbackHandler handler = i.getArgument(2);
+            for (Object[] r : new Object[][] {{"2026-10-02", 5}, {"2026-10-31", 7}, {"2026-09-15", 11}}) {
+                var rs = mock(java.sql.ResultSet.class);
+                when(rs.getDate("ship_day")).thenReturn(java.sql.Date.valueOf((String) r[0]));
+                when(rs.getBigDecimal("volume")).thenReturn(java.math.BigDecimal.valueOf((Integer) r[1]));
+                handler.processRow(rs);
+            }
+            return null;
+        }).when(jdbc).query(eq(MktPartnerShipmentService.TREND_SQL), org.mockito.ArgumentMatchers.<String, Object>anyMap(),
+                any(org.springframework.jdbc.core.RowCallbackHandler.class));
+        var trend = service.trend(4L, "own", "2026-10-01", "2026-10-31", null, 101L);
+        var daily = rows(trend, "daily");
+        assertThat(daily).hasSize(31);
+        assertThat(daily.get(1)).containsEntry("date", "2026-10-02").containsEntry("volume", 5L).containsEntry("hasData", true);
+        assertThat(daily.get(0)).containsEntry("volume", 0L).containsEntry("hasData", false);
+        var monthly = rows(trend, "monthly");
+        assertThat(monthly).hasSize(12);
+        assertThat(monthly.get(11)).containsEntry("month", "2026-10").containsEntry("volume", 12L);
+        assertThat(monthly.get(10)).containsEntry("month", "2026-09").containsEntry("volume", 11L);
+        assertThat(MktPartnerShipmentService.TREND_SQL).contains("GROUP BY ship_day").doesNotContain("ORDER BY volume DESC");
+    }
+
     private Map<String, Object> report(long actor, String scope, Long member) {
         return service.report(actor, scope, "2026-10-01", "2026-10-31", member);
     }

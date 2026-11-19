@@ -34,7 +34,7 @@ public class MktSettingController {
             "old_channel_exclusive", "internal_commission", "monthly_cap", "tax_mode", "tax_rate",
             "default_sign_mode", "lock_cooldown_days",
             "lease_clawback_days", "lease_renew_ratio", "invite_grace_days",
-            "withdraw_window_start_day", "withdraw_window_end_day", ARRIVAL_TIME);
+            "withdraw_window_start_day", "withdraw_window_end_day", "auto_withdraw_day", ARRIVAL_TIME);
 
     private final JdbcTemplate jdbc;
     private final MktAuditService auditService;
@@ -76,6 +76,9 @@ public class MktSettingController {
             if (ARRIVAL_TIME.equals(key)) {
                 saveArrivalTime(value);
                 continue;
+            }
+            if ("auto_withdraw_day".equals(key) && (value == null || !value.trim().matches("\\d{1,2}") || Integer.parseInt(value.trim()) > 28)) {
+                throw new BizException("自动提现日请填写 0–28（0 表示关闭自动提现）");
             }
             String before = jdbc.query("SELECT svalue FROM biz_setting WHERE module = ? AND skey = ? AND deleted = 0 LIMIT 1",
                     rs -> rs.next() ? rs.getString(1) : null, MODULE, key);

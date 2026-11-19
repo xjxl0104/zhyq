@@ -40,7 +40,7 @@
         <el-form-item label="业务类型">
           <el-select v-model="query.bizType" placeholder="全部" clearable style="width: 140px">
             <el-option label="合同" value="contract" />
-            <el-option label="预算" value="budget" /><el-option label="采购" value="procurement" />
+            <el-option label="预算" value="budget" /><el-option label="采购" value="procurement" /><el-option label="伙伴提现" value="withdrawal" />
             <el-option label="退款" value="refund" />
             <el-option label="调账" value="adjust" />
             <el-option label="退租" value="terminate" />
@@ -176,6 +176,7 @@ const bizTypeMap = {
   contract: { label: '合同', tag: 'primary' },
   budget: { label: '预算', tag: 'primary' },
   procurement: { label: '采购', tag: 'warning' },
+  withdrawal: { label: '伙伴提现', tag: 'success' },
   refund: { label: '退款', tag: 'warning' },
   adjust: { label: '调账', tag: 'info' },
   terminate: { label: '退租', tag: 'danger' }

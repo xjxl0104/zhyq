@@ -43,8 +43,8 @@
       <view class="quick-card pressable" @click="go('/pages/team/index')">
         <view class="quick-icon">团</view><view><view class="quick-title">我的团队</view><view class="quick-desc">查看直属成员</view></view>
       </view>
-      <view class="quick-card pressable" @click="go('/pages/withdraw/index')">
-        <view class="quick-icon">提</view><view><view class="quick-title">申请提现</view><view class="quick-desc">可提 {{ fmt(home?.withdrawable) }}</view></view>
+      <view class="quick-card pressable" @click="go('/pages/settlement/index')">
+        <view class="quick-icon">结</view><view><view class="quick-title">结算提现</view><view class="quick-desc">可提 {{ fmt(home?.withdrawable) }} · 自动结算</view></view>
       </view>
       <view v-if="me.positionCode === 'P4' && Number(me.status) === 1" class="quick-card pressable" @click="go('/pages/allocation/index')">
         <view class="quick-icon">价</view><view><view class="quick-title">客户定价与分佣</view><view class="quick-desc">按客户自定义每单金额</view></view>

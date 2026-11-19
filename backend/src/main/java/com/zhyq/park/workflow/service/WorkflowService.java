@@ -70,7 +70,33 @@ public class WorkflowService {
     @Transactional(rollbackFor = Exception.class)
     public Long start(String bizType, Long bizId, Long approvalId) {
         access.requireStart(bizType, bizId, approvalId);
+        return doStart(bizType, bizId, approvalId);
+    }
+
+    /** 允许系统发起审批链的业务类型(提交人不是后台用户,如伙伴在小程序提交提现、定时任务自动提现)。 */
+    public static final java.util.Set<String> SYSTEM_STARTED = java.util.Set.of("withdrawal");
+
+    /** 系统内部发起审批链;业务服务自己负责校验单据状态。未配置启用流程时同样降级返回 null。 */
+    @Transactional(rollbackFor = Exception.class)
+    public Long startBySystem(String bizType, Long bizId) {
+        if (!SYSTEM_STARTED.contains(bizType)) throw new BizException("该业务类型不能由系统发起审批");
+        if (bizId == null || bizId <= 0) throw new BizException("业务单据不存在");
+        return doStart(bizType, bizId, null);
+    }
+
+    /** 该业务单据当前待审的任务;没有审批中的流程时返回 null。 */
+    public WfTask currentPendingTask(String bizType, Long bizId) {
         WfInstance running = instanceMapper.selectOne(new LambdaQueryWrapper<WfInstance>()
+                .eq(WfInstance::getBizType, bizType).eq(WfInstance::getBizId, bizId)
+                .eq(WfInstance::getStatus, INST_RUNNING).last("limit 1"));
+        if (running == null) return null;
+        return taskMapper.selectOne(new LambdaQueryWrapper<WfTask>()
+                .eq(WfTask::getInstanceId, running.getId()).eq(WfTask::getSeq, running.getCurrentSeq())
+                .eq(WfTask::getStatus, TASK_PENDING).last("limit 1"));
+    }
+
+    private Long doStart(String bizType, Long bizId, Long approvalId) {
+        WfInstance running =instanceMapper.selectOne(new LambdaQueryWrapper<WfInstance>()
                 .eq(WfInstance::getBizType, bizType).eq(WfInstance::getBizId, bizId)
                 .eq(WfInstance::getStatus, INST_RUNNING).last("limit 1"));
         if (running != null) return running.getId();

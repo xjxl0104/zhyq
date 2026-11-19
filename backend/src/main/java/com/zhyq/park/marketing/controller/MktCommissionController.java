@@ -138,7 +138,7 @@ public class MktCommissionController {
         return Result.ok(commissionService.settle(body.get("ids"), MktAuditService.currentOperator()));
     }
 
-    @Operation(summary = "按合同月结:结算该合同指定月份(默认上个月)的出库单佣金;上个月仅限每月3-10号,更早月份可随时补结,不能早于合同开始月")
+    @Operation(summary = "按合同月结:结算该合同指定月份(默认上个月)的出库单佣金;已结束的月份随时可结,不能早于合同开始月")
     @PreAuthorize("hasAuthority('crm:marketing:commission:pay')") @PostMapping("/settle-contract")
     public Result<Map<String, Object>> settleContract(@RequestBody Map<String, Object> body) {
         Long contractId = longOf(body == null ? null : body.get("contractId"));
@@ -151,8 +151,6 @@ public class MktCommissionController {
         if (target.isAfter(lastMonth)) throw new BizException("只能结算当月之前已结束的月份");
         if (contract.getStartDate() != null && target.isBefore(YearMonth.from(contract.getStartDate())))
             throw new BizException("结算月份不能早于合同开始月份 " + YearMonth.from(contract.getStartDate()));
-        if (target.equals(lastMonth) && (today.getDayOfMonth() < 3 || today.getDayOfMonth() > 10))
-            throw new BizException("结算上个月佣金仅限每月 3-10 号操作；更早月份可随时补结");
         LocalDate periodStart = target.atDay(1);
         LocalDate nextStart = target.plusMonths(1).atDay(1);
         // 该合同上月出库单(含拆单后的全部佣金行),冻结期未到/已结算的行分开统计

@@ -67,12 +67,12 @@ public class MktPartnerShipmentService {
             AND v.stat_date>=:startDate AND v.stat_date<:endExclusive
         ), facts AS (
           SELECT contract_id,contract_no,customer_id,customer_name,warehouse_name,promoter_id,
-                 consign_num AS volume,data_at FROM snapshot_candidates WHERE chosen=1
+                 consign_num AS volume,data_at,stat_date AS ship_day FROM snapshot_candidates WHERE chosen=1
           UNION ALL
           SELECT c.id,c.contract_no,c.customer_id,cu.name,w.name,
                  COALESCE(o.promoter_id,c.partner_id,cu.referrer_id),
                  GREATEST(COALESCE(o.commission_order_count,1),0),
-                 COALESCE(o.update_time,o.confirm_time,o.event_time)
+                 COALESCE(o.update_time,o.confirm_time,o.event_time),DATE(o.event_time)
           FROM crm_referral_order o
           JOIN crm_service_contract c ON c.id=o.source_id AND c.customer_id=o.customer_id
             AND c.tenant_id=o.tenant_id AND c.deleted=0 AND c.status IN (4,5,6,7,8)
@@ -94,6 +94,67 @@ public class MktPartnerShipmentService {
         GROUP BY promoter_id,contract_id,contract_no,customer_id,customer_name,warehouse_name
         ORDER BY volume DESC,contract_id DESC,promoter_id
         """;
+
+    /** 与 FACT_SQL 同一口径,按发货日汇总(可按合同过滤),供小程序画每日/每月发货图。 */
+    static final String TREND_SQL = FACT_SQL.substring(0, FACT_SQL.lastIndexOf("SELECT promoter_id,contract_id"))
+            + "SELECT ship_day,SUM(volume) AS volume FROM facts WHERE promoter_id IN (:memberIds) "
+            + "AND (:contractId IS NULL OR contract_id=:contractId) GROUP BY ship_day ORDER BY ship_day";
+
+    /**
+     * 发货趋势:daily 为所选日期范围内每天的单量(没有数据的日期补 0,标记 hasData=false),
+     * monthly 为截至结束日期的最近 12 个月每月单量。contractId 为空时统计整个范围。
+     */
+    public Map<String,Object> trend(Long actorId, String scope, String start, String end, Long memberId, Long contractId) {
+        Map<String,Object> base = report(actorId, scope, start, end, memberId);
+        Set<Long> ids = selectedIds(actorId, scope, memberId);
+        LocalDate first = (LocalDate) base.get("startDate"), last = (LocalDate) base.get("endDate");
+        LocalDate monthStart = last.withDayOfMonth(1).minusMonths(11);
+        LocalDate queryStart = first.isBefore(monthStart) ? first : monthStart;
+        Map<LocalDate,Long> byDay = new TreeMap<>();
+        if (!ids.isEmpty()) {
+            Map<String,Object> params = new HashMap<>();
+            params.put("tenantId", tenant(promoters.selectById(actorId))); params.put("memberIds", ids);
+            params.put("startDate", queryStart.toString()); params.put("endExclusive", last.plusDays(1).toString());
+            params.put("contractId", contractId);
+            jdbc.query(TREND_SQL, params, rs -> {
+                java.sql.Date d = rs.getDate("ship_day");
+                if (d != null) byDay.merge(d.toLocalDate(), rs.getBigDecimal("volume").longValueExact(), Long::sum);
+            });
+        }
+        List<Map<String,Object>> daily = new ArrayList<>();
+        for (LocalDate d = first; !d.isAfter(last); d = d.plusDays(1)) {
+            Map<String,Object> row = new LinkedHashMap<>();
+            row.put("date", d.toString()); row.put("volume", byDay.getOrDefault(d, 0L)); row.put("hasData", byDay.containsKey(d));
+            daily.add(row);
+        }
+        List<Map<String,Object>> monthly = new ArrayList<>();
+        for (LocalDate m = monthStart; !m.isAfter(last); m = m.plusMonths(1)) {
+            LocalDate mEnd = m.plusMonths(1);
+            long sum = 0;
+            for (Map.Entry<LocalDate,Long> e : byDay.entrySet()) if (!e.getKey().isBefore(m) && e.getKey().isBefore(mEnd)) sum += e.getValue();
+            Map<String,Object> row = new LinkedHashMap<>();
+            row.put("month", m.toString().substring(0, 7)); row.put("volume", sum);
+            monthly.add(row);
+        }
+        Map<String,Object> out = new LinkedHashMap<>();
+        out.put("contractId", contractId); out.put("startDate", first); out.put("endDate", last);
+        out.put("daily", daily); out.put("monthly", monthly);
+        return out;
+    }
+
+    /** 与 report 相同的成员范围(本人 / 全部下级 / 指定下级),权限已由 report 校验。 */
+    private Set<Long> selectedIds(Long actorId, String scope, Long memberId) {
+        if ("own".equals(scope)) return Set.of(actorId);
+        if (memberId != null) return Set.of(memberId);
+        MktPromoter actor = promoters.selectById(actorId);
+        long tenantId = tenant(actor);
+        Map<Long,MktPromoter> all = new HashMap<>();
+        for (MktPromoter p : promoters.selectList(new LambdaQueryWrapper<MktPromoter>().eq(MktPromoter::getTenantId, tenantId)))
+            if (p.getId() != null && tenant(p) == tenantId && !Integer.valueOf(1).equals(p.getDeleted())) all.put(p.getId(), p);
+        Set<Long> ids = new LinkedHashSet<>();
+        for (MktPromoter p : all.values()) if (descendant(p, actorId, all)) ids.add(p.getId());
+        return ids;
+    }
 
     public Map<String,Object> report(Long actorId, String scope, String start, String end, Long memberId) {
         MktPromoter actor = promoters.selectById(actorId);

@@ -174,6 +174,7 @@ export const mktWithdrawalApi = {
   payAccount: (id) => request.get(`${BASE}/withdrawal/${id}/pay-account`),
   balance: (promoterId) => request.get(`${BASE}/withdrawal/balance/${promoterId}`),
   manual: (data) => request.post(`${BASE}/withdrawal/manual`, data),
+  get: (id) => request.get(`${BASE}/withdrawal/${id}`),
   approve: (id) => request.post(`${BASE}/withdrawal/${id}/approve`),
   reject: (id, data) => request.post(`${BASE}/withdrawal/${id}/reject`, data),
   pay: (id, data) => request.post(`${BASE}/withdrawal/${id}/pay`, data)

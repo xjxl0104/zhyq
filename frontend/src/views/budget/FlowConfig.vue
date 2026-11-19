@@ -182,6 +182,7 @@ import { wfDefinitionApi, wfTaskApi } from '@/api/workflow'
 import { userApi, roleApi } from '@/api/system'
 import { budgetApi } from '@/api/budget'
 import { purRequestApi } from '@/api/pur'
+import { mktWithdrawalApi } from '@/api/marketing'
 
 const activeTab = ref('config')
 
@@ -189,7 +190,8 @@ const activeTab = ref('config')
 const bizTypes = [
   { value: 'budget', label: '预算申请', tag: 'primary' },
   { value: 'procurement', label: '采购申请', tag: 'warning' },
-  { value: 'contract', label: '合同', tag: 'info' }
+  { value: 'contract', label: '合同', tag: 'info' },
+  { value: 'withdrawal', label: '伙伴提现', tag: 'success' }
 ]
 const bizTypeLabel = (v) => bizTypes.find((b) => b.value === v)?.label || v
 const bizTagType = (v) => bizTypes.find((b) => b.value === v)?.tag || 'info'
@@ -293,6 +295,8 @@ async function loadTodo() {
           t.bizTitle = (await budgetApi.get(t.bizId))?.title
         } else if (t.bizType === 'procurement') {
           t.bizTitle = (await purRequestApi.get(t.bizId))?.title
+        } else if (t.bizType === 'withdrawal') {
+          t.bizTitle = (await mktWithdrawalApi.get(t.bizId))?.title
         }
       } catch (e) { /* 单据取不到就只显示ID */ }
     }))

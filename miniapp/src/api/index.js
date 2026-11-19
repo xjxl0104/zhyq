@@ -1,6 +1,10 @@
 import { get, post, put, request } from '@/utils/request'
 export const shipmentApi = {
-  report: params => get('/shipments', params)
+  report: params => get('/shipments', params),
+  trend: params => get('/shipments/trend', params)
+}
+export const settlementApi = {
+  overview: () => get('/settlement')
 }
 
 export const authApi = {

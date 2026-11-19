@@ -28,7 +28,7 @@ class MktMonthlySettleJobTest {
     @Test void 完成后推送汇总通知() {
         when(settlement.settleBefore(any(LocalDate.class))).thenReturn(result(2, 0));
         new MktMonthlySettleJob(settlement, true, alerts).run();
-        verify(alerts).notify(eq("佣金自动月结完成"), contains("2 个结算批次"));
+        verify(alerts).notify(eq("佣金自动结算完成"), contains("2 个结算批次"));
     }
 
     @Test void 没有可结算的佣金时不打扰() {
@@ -52,9 +52,9 @@ class MktMonthlySettleJobTest {
         verifyNoInteractions(settlement);
     }
 
-    @Test void 每月8日上午10点在上海时区执行() throws Exception {
+    @Test void 每天凌晨2点在上海时区执行() throws Exception {
         Scheduled schedule = MktMonthlySettleJob.class.getMethod("run").getAnnotation(Scheduled.class);
         assertThat(schedule.zone()).isEqualTo("Asia/Shanghai");
-        assertThat(schedule.cron()).contains("0 0 10 8 * ?");
+        assertThat(schedule.cron()).contains("0 0 2 * * ?");
     }
 }

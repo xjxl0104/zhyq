@@ -80,16 +80,10 @@ class MktCommissionControllerSettleMonthTest {
     }
 
     @Test
-    void 缺省月份为上个月且仍受3到10号限制() {
+    void 缺省月份为上个月且任何日期都可结算() {
         contract(LocalDate.now().minusYears(2));
         when(commissions.selectList(any())).thenReturn(List.of());
-        int day = LocalDate.now().getDayOfMonth();
-        if (day >= 3 && day <= 10) {
-            var result = controller.settleContract(Map.of("contractId", 5L)).getData();
-            assertThat(result.get("month")).isEqualTo(YearMonth.now().minusMonths(1).toString());
-        } else {
-            assertThatThrownBy(() -> controller.settleContract(Map.of("contractId", 5L)))
-                    .isInstanceOf(BizException.class).hasMessageContaining("3-10");
-        }
+        var result = controller.settleContract(Map.of("contractId", 5L)).getData();
+        assertThat(result.get("month")).isEqualTo(YearMonth.now().minusMonths(1).toString());
     }
 }

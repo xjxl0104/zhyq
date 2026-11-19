@@ -18,7 +18,7 @@
     <div class="table-card">
       <div class="toolbar">
         <el-button type="primary" @click="openManual"><el-icon><Plus /></el-icon>代伙伴申请提现</el-button>
-        <span class="hint">收款资料须先审核通过。申请时固定收款账户，审核后由财务线下付款并上传真实凭证。</span>
+        <span class="hint">流程：伙伴随时可申请（每月 10 日系统自动把全部可提现余额提交申请）→ 伙伴提现审批流（默认「数智云仓财务审批」，可在审批流程页调整）→ 财务按申请时账户线下付款并上传凭证。</span>
       </div>
       <el-table :data="list" v-loading="loading" border stripe>
         <el-table-column prop="withdrawalNo" label="提现单号" width="170" />
@@ -27,7 +27,8 @@
         <el-table-column label="税额(元)" width="100" align="right"><template #default="{ row }">{{ money(row.taxAmount) }}</template></el-table-column>
         <el-table-column label="税后实付(元)" width="120" align="right"><template #default="{ row }">{{ money(row.netAmount) }}</template></el-table-column>
         <el-table-column label="税务" width="90"><template #default="{ row }">{{ TAX[row.taxMode] }}</template></el-table-column>
-        <el-table-column label="状态" width="90"><template #default="{ row }"><el-tag :type="stType(row.status)">{{ ST[row.status] }}</el-tag></template></el-table-column>
+        <el-table-column label="状态" width="110"><template #default="{ row }"><el-tag :type="stType(row.status)">{{ ST[row.status] }}</el-tag></template></el-table-column>
+        <el-table-column label="审批进度" min-width="160"><template #default="{ row }"><template v-if="row.approval"><div>{{ APPROVAL[row.approval.status] || '—' }}<template v-if="row.approval.status === 1"> · {{ row.approval.nodeName }}</template></div><div class="hint">{{ row.approval.status === 1 ? '待 ' + (row.approval.assignee || '—') + ' 办理' : (row.approval.opinion || '') }}</div></template><span v-else class="hint">未走审批流</span></template></el-table-column>
         <el-table-column label="申请时收款账户" min-width="190"><template #default="{ row }">{{ row.accountName || '待补资料' }} · 尾号 {{ row.accountTail || '—' }}<div class="hint">{{ row.bankName }}</div></template></el-table-column>
         <el-table-column prop="payNo" label="打款流水号" width="150" />
         <el-table-column prop="auditBy" label="审核人" width="90" />
@@ -36,7 +37,7 @@
         <el-table-column label="操作" width="200" fixed="right">
           <template #default="{ row }">
             <template v-if="row.status === 1">
-              <el-button link type="success" @click="approve(row)">审核通过</el-button>
+              <el-button link type="success" @click="approve(row)">审批通过</el-button>
               <el-button link type="danger" @click="reject(row)">驳回</el-button>
             </template>
             <template v-else-if="row.status === 2"><el-button link type="success" @click="pay(row)">登记线下打款</el-button><el-button link type="danger" @click="reject(row)">驳回</el-button></template>
@@ -76,7 +77,8 @@ import FileUpload from '@/components/FileUpload.vue'
 import { startFileDownload } from '@/utils/fileDownload'
 import { money } from '@/utils/format'
 
-const ST = { 1: '待审核', 2: '已审核', 3: '已打款', 4: '已驳回' }
+const ST = { 1: '审批中', 2: '已审批待打款', 3: '已打款', 4: '已驳回' }
+const APPROVAL = { 1: '审批中', 2: '审批通过', 3: '审批驳回' }
 const TAX = { 1: '个税代扣', 2: '灵工代征' }
 const stType = (s) => ({ 1: 'warning', 2: 'primary', 3: 'success', 4: 'danger' }[s] || 'info')
 
@@ -109,7 +111,10 @@ async function submitManual() {
   await mktWithdrawalApi.manual({ promoterId: manual.promoterId, amount: manual.amount })
   ElMessage.success('已提交'); manual.visible = false; load()
 }
-async function approve(row) { await mktWithdrawalApi.approve(row.id); ElMessage.success('已审核'); load() }
+async function approve(row) {
+  try { await ElMessageBox.confirm(`同意 ${row.promoterName || '伙伴'} 提现 ${money(row.amount)} 元(税后实付 ${money(row.netAmount)} 元)?通过后进入待打款。`, '提现审批', { type: 'warning' }) } catch { return }
+  await mktWithdrawalApi.approve(row.id); ElMessage.success('已审批通过'); load()
+}
 async function reject(row) {
   const { value } = await ElMessageBox.prompt('驳回原因(流水回到可提现)', '驳回提现', { inputPattern: /\S+/, inputErrorMessage: '原因必填' })
   await mktWithdrawalApi.reject(row.id, { reason: value }); ElMessage.success('已驳回'); load()
