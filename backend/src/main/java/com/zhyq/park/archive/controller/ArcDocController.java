@@ -219,19 +219,31 @@ public class ArcDocController {
 
     @Data
     public static class MoveReq {
+        /** 单个资料(兼容旧调用) */
         private Long id;
+        /** 批量移动的资料 id 列表 */
+        private List<Long> ids;
         /** 目标文件夹,0 或空表示移出到根目录 */
         private Long folderId;
     }
 
-    @Operation(summary = "把资料移动到另一个文件夹")
+    @Operation(summary = "把资料移动到另一个文件夹(支持批量)")
     @PutMapping("/move")
+    @Transactional(rollbackFor = Exception.class)
     public Result<Void> move(@RequestBody MoveReq req) {
-        if (req.getId() == null || docMapper.selectById(req.getId()) == null) throw new BizException("资料不存在");
+        List<Long> ids = new ArrayList<>();
+        if (req.getIds() != null) {
+            for (Long id : req.getIds()) if (id != null) ids.add(id);
+        }
+        if (ids.isEmpty() && req.getId() != null) ids.add(req.getId());
+        if (ids.isEmpty()) throw new BizException("请选择要移动的资料");
+        if (ids.size() > 500) throw new BizException("一次最多移动 500 份资料");
         Long target = req.getFolderId() == null || req.getFolderId() <= 0 ? null : req.getFolderId();
         if (target != null && folderMapper.selectById(target) == null) throw new BizException("目标文件夹不存在");
+        long exists = docMapper.selectCount(new LambdaQueryWrapper<ArcDoc>().in(ArcDoc::getId, ids));
+        if (exists == 0) throw new BizException("资料不存在");
         docMapper.update(null, new LambdaUpdateWrapper<ArcDoc>()
-            .eq(ArcDoc::getId, req.getId()).set(ArcDoc::getFolderId, target));
+            .in(ArcDoc::getId, ids).set(ArcDoc::getFolderId, target));
         return Result.ok();
     }
 

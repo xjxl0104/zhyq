@@ -45,6 +45,7 @@ async function loadBreadcrumb() {
 }
 async function loadFiles() {
   loading.value = true
+  selected.value = []
   try {
     const params = { pageNo: query.pageNo, pageSize: query.pageSize, keyword: keyword.value || undefined }
     if (currentFolderId.value !== null) params.folderId = currentFolderId.value
@@ -113,6 +114,98 @@ function onNodeCmd(cmd, node) {
   else if (cmd === 'delete') removeFolder(node)
 }
 
+// ---------- 文件夹拖动排序 / 拖动调整层级 ----------
+const cardDragId = ref(null)
+
+/** 拖的是不是电脑里的文件(而不是在拖文件夹节点) */
+function hasExternalFiles(e) {
+  const types = e.dataTransfer?.types
+  return !!types && Array.from(types).includes('Files')
+}
+function isDescendantOf(ancestorId, nodeId) {
+  const root = findNode(folderTree.value, ancestorId)
+  return !!findNode(root?.children, nodeId)
+}
+function allowDrop(draggingNode, dropNode, type) {
+  const from = draggingNode?.data
+  const to = dropNode?.data
+  if (!from || !to || from.id === to.id) return false
+  // 拖进文件夹里面 = 换个位置放;不能拖进自己的子孙
+  if (type === 'inner') return !isDescendantOf(from.id, to.id)
+  // 前后插入 = 排序,只在同一层级内允许,避免不小心改了上级
+  return from.parentId === to.parentId
+}
+async function onNodeDrop(draggingNode, dropNode, dropType) {
+  const dragId = draggingNode?.data?.id
+  if (!dragId) return
+  try {
+    if (dropType === 'inner') {
+      await folderApi.move({ id: dragId, parentId: dropNode.data.id })
+      ElMessage.success(`已移入「${dropNode.data.name}」`)
+    } else {
+      // el-tree 已把节点挪到新位置,直接取同级的最终顺序落库
+      const parent = dropNode.parent
+      const ids = (parent?.childNodes || []).map((n) => n.data?.id).filter((i) => i != null)
+      if (!ids.length) return
+      await folderApi.sort({ parentId: parent?.data?.id ?? null, ids })
+    }
+    await loadTree()
+    if (currentFolderId.value !== null) await loadBreadcrumb()
+  } catch (e) {
+    ElMessage.error(e?.message || '调整顺序失败')
+    await loadTree()
+  }
+}
+/** 树节点上的拖放:只接「从电脑拖文件进来上传」,文件夹排序交给 el-tree 自己处理 */
+function onNodeDragOver(e) {
+  if (hasExternalFiles(e)) {
+    e.preventDefault()
+    e.stopPropagation()
+  }
+}
+async function onNodeItemDrop(e, node) {
+  if (!hasExternalFiles(e)) return
+  e.preventDefault()
+  e.stopPropagation()
+  await onDrop(e, node.id)
+}
+
+// ---------- 文件夹卡片拖动排序 ----------
+function onCardDragStart(e, f) {
+  cardDragId.value = f.id
+  if (e.dataTransfer) {
+    e.dataTransfer.effectAllowed = 'move'
+    e.dataTransfer.setData('text/plain', String(f.id))
+  }
+}
+function onCardDragOver(e) {
+  if (hasExternalFiles(e) || !cardDragId.value) return
+  e.preventDefault()
+  e.stopPropagation()
+}
+async function onCardDrop(e, target) {
+  if (hasExternalFiles(e)) {
+    await onDrop(e, target.id)
+    return
+  }
+  e.preventDefault()
+  e.stopPropagation()
+  const fromId = cardDragId.value
+  cardDragId.value = null
+  if (!fromId || fromId === target.id) return
+  const ids = subFolders.value.map((f) => f.id)
+  const from = ids.indexOf(fromId)
+  const to = ids.indexOf(target.id)
+  if (from < 0 || to < 0) return
+  ids.splice(to, 0, ids.splice(from, 1)[0])
+  try {
+    await folderApi.sort({ parentId: currentFolderId.value, ids })
+    await loadTree()
+  } catch (err) {
+    ElMessage.error(err?.message || '排序失败')
+  }
+}
+
 // ---------- 上传(拖拽 / 选择) ----------
 function pickFiles() {
   fileInput.value?.click()
@@ -123,6 +216,12 @@ function onPickChange(e) {
 }
 function onMainLeave(e) {
   if (e.target === e.currentTarget) dragOver.value = false
+}
+/** 拖动文件夹卡片做排序时,不要亮起「上传到这里」的遮罩 */
+function onMainDragOver(e) {
+  if (cardDragId.value) return
+  e.preventDefault()
+  dragOver.value = true
 }
 async function onDrop(e, folderId) {
   dragOver.value = false
@@ -179,19 +278,42 @@ async function saveRenameDoc() {
     ElMessage.error(e?.message || '重命名失败')
   }
 }
-const moveDialog = reactive({ visible: false, row: null, folderId: 0 })
+// ---------- 批量选择 ----------
+const selected = ref([])
+const tableRef = ref()
+function onSelChange(rows) {
+  selected.value = rows || []
+}
+function clearSelection() {
+  tableRef.value?.clearSelection()
+  selected.value = []
+}
+
+// ---------- 移动到文件夹(单个 / 批量) ----------
+const moveDialog = reactive({ visible: false, rows: [], folderId: null })
 const moveTreeData = computed(() => [{ value: 0, label: '根目录（不放进任何文件夹）' }, ...toSelect(folderTree.value)])
+const moveTitle = computed(() => (moveDialog.rows.length > 1
+  ? `批量移动到文件夹（已选 ${moveDialog.rows.length} 份）`
+  : '移动到文件夹'))
 function toSelect(nodes) {
   return (nodes || []).map((n) => ({ value: n.id, label: n.name, children: toSelect(n.children) }))
 }
 function openMove(row) {
-  Object.assign(moveDialog, { visible: true, row, folderId: row.folderId || 0 })
+  Object.assign(moveDialog, { visible: true, rows: [row], folderId: row.folderId || 0 })
+}
+function openBulkMove() {
+  if (!selected.value.length) return ElMessage.warning('请先勾选资料')
+  Object.assign(moveDialog, { visible: true, rows: [...selected.value], folderId: null })
 }
 async function saveMove() {
+  if (moveDialog.folderId === null || moveDialog.folderId === undefined) {
+    return ElMessage.warning('请选择目标文件夹')
+  }
   try {
-    await archiveApi.move({ id: moveDialog.row.id, folderId: moveDialog.folderId })
-    ElMessage.success('已移动')
+    await archiveApi.move({ ids: moveDialog.rows.map((r) => r.id), folderId: moveDialog.folderId })
+    ElMessage.success(`已移动 ${moveDialog.rows.length} 份资料`)
     moveDialog.visible = false
+    clearSelection()
     await refresh()
   } catch (e) {
     ElMessage.error(e?.message || '移动失败')
@@ -238,10 +360,13 @@ onMounted(async () => {
         :expand-on-click-node="false"
         highlight-current
         :current-node-key="currentFolderId"
+        draggable
+        :allow-drop="allowDrop"
         @node-click="(n) => selectFolder(n.id)"
+        @node-drop="onNodeDrop"
       >
         <template #default="{ data }">
-          <span class="tnode" @dragover.prevent.stop @drop.prevent.stop="onDrop($event, data.id)">
+          <span class="tnode" @dragover="onNodeDragOver" @drop="onNodeItemDrop($event, data)">
             <el-icon class="tico"><Folder /></el-icon>
             <span class="tname">{{ data.name }}</span>
             <span v-if="data.count" class="cnt">{{ data.count }}</span>
@@ -260,7 +385,7 @@ onMounted(async () => {
       </el-tree>
     </aside>
 
-    <section class="main" @dragover.prevent="dragOver = true" @dragleave="onMainLeave" @drop.prevent="onDrop($event, currentFolderId)">
+    <section class="main" @dragover="onMainDragOver" @dragleave="onMainLeave" @drop.prevent="onDrop($event, currentFolderId)">
       <div class="crumb">
         <div class="crumb-path">
           <span class="cp" @click="selectFolder(null)">全部资料</span>
@@ -286,8 +411,13 @@ onMounted(async () => {
       </div>
 
       <div v-if="subFolders.length" class="folders">
-        <div v-for="f in subFolders" :key="f.id" class="fold-card" @click="selectFolder(f.id)"
-          @dragover.prevent.stop @drop.prevent.stop="onDrop($event, f.id)">
+        <div v-for="f in subFolders" :key="f.id" class="fold-card"
+          draggable="true"
+          @click="selectFolder(f.id)"
+          @dragstart="onCardDragStart($event, f)"
+          @dragend="cardDragId = null"
+          @dragover="onCardDragOver"
+          @drop="onCardDrop($event, f)">
           <el-icon class="fold-ico"><FolderFilled /></el-icon>
           <div class="fold-name" :title="f.name">{{ f.name }}</div>
           <div class="fold-cnt">{{ f.count || 0 }} 个文件</div>
@@ -310,7 +440,16 @@ onMounted(async () => {
           <span class="fh-count">共 {{ total }} 份资料</span>
           <span class="fh-hint">可直接把文件拖进来上传</span>
         </div>
-        <el-table :data="files" v-loading="loading" border stripe empty-text="这个文件夹还是空的，把文件拖进来试试">
+        <div v-if="selected.length" class="bulk">
+          <span class="bulk-txt">已勾选 {{ selected.length }} 份资料</span>
+          <el-button size="small" type="primary" @click="openBulkMove">
+            <el-icon><Sort /></el-icon>批量移动
+          </el-button>
+          <el-button size="small" text @click="clearSelection">取消选择</el-button>
+        </div>
+        <el-table ref="tableRef" :data="files" v-loading="loading" border stripe
+          empty-text="这个文件夹还是空的，把文件拖进来试试" @selection-change="onSelChange">
+          <el-table-column type="selection" width="46" />
           <el-table-column prop="archiveNo" label="编号" width="130" />
           <el-table-column label="名称" min-width="300" show-overflow-tooltip>
             <template #default="{ row }">
@@ -353,7 +492,10 @@ onMounted(async () => {
       </template>
     </el-dialog>
 
-    <el-dialog v-model="moveDialog.visible" title="移动到文件夹" width="440px">
+    <el-dialog v-model="moveDialog.visible" :title="moveTitle" width="460px">
+      <div v-if="moveDialog.rows.length > 1" class="move-tip">
+        将把 {{ moveDialog.rows.length }} 份资料一起移动，原有编号不变。
+      </div>
       <el-tree-select v-model="moveDialog.folderId" :data="moveTreeData" check-strictly :render-after-expand="false"
         placeholder="选择目标文件夹" style="width: 100%" />
       <template #footer>
@@ -388,7 +530,8 @@ onMounted(async () => {
 .drop-mask { position: absolute; inset: 0; z-index: 10; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; background: rgba(64, 158, 255, 0.08); border: 2px dashed var(--el-color-primary, #409eff); border-radius: 10px; color: var(--el-color-primary, #409eff); font-size: 15px; pointer-events: none; }
 .dm-ico { font-size: 40px; }
 .folders { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; margin-bottom: 16px; }
-.fold-card { position: relative; display: flex; flex-direction: column; gap: 4px; padding: 14px 14px 12px; border: 1px solid var(--el-border-color-lighter, #ebeef5); border-radius: 10px; background: var(--el-bg-color, #fff); cursor: pointer; transition: border-color .15s, box-shadow .15s; }
+.fold-card { position: relative; display: flex; flex-direction: column; gap: 4px; padding: 14px 14px 12px; border: 1px solid var(--el-border-color-lighter, #ebeef5); border-radius: 10px; background: var(--el-bg-color, #fff); cursor: grab; transition: border-color .15s, box-shadow .15s; }
+.fold-card:active { cursor: grabbing; }
 .fold-card:hover { border-color: var(--el-color-primary-light-5, #a0cfff); box-shadow: 0 2px 8px rgba(64, 158, 255, .12); }
 .fold-ico { font-size: 30px; color: #e6a23c; }
 .fold-name { font-size: 14px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -397,6 +540,9 @@ onMounted(async () => {
 .fold-card:hover .fold-more { opacity: 1; }
 .files { background: var(--el-bg-color, #fff); border: 1px solid var(--el-border-color-lighter, #ebeef5); border-radius: 10px; padding: 14px; }
 .files-head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 10px; }
+.bulk { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; padding: 8px 12px; border-radius: 6px; background: var(--el-color-primary-light-9, #ecf5ff); border: 1px solid var(--el-color-primary-light-7, #c6e2ff); }
+.bulk-txt { font-size: 13px; color: var(--el-color-primary, #409eff); }
+.move-tip { margin-bottom: 10px; font-size: 13px; color: var(--el-text-color-regular, #606266); }
 .fh-title { font-size: 15px; font-weight: 600; }
 .fh-count { font-size: 13px; color: var(--el-text-color-secondary, #909399); }
 .fh-hint { margin-left: auto; font-size: 12px; color: var(--el-text-color-placeholder, #a8abb2); }

@@ -17,9 +17,12 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 
 /**
  * 资料管理 · 文件夹。像电脑文件夹一样:随时新建、改名、删除、无限层级。
@@ -92,7 +95,8 @@ public class ArcFolderController {
         f.setParentId(parentId);
         f.setName(name);
         f.setLevel(parent == null ? 1 : (parent.getLevel() == null ? 1 : parent.getLevel()) + 1);
-        f.setSort(0);
+        // 新建的排在末尾,不打乱已有顺序
+        f.setSort(nextSort(parentId));
         f.setPath("/");
         folderMapper.insert(f);
         // 插入后才有 id,再回填物化路径
@@ -152,8 +156,103 @@ public class ArcFolderController {
         return Result.ok(out);
     }
 
-    /** 每个文件夹自身的文件数(不含子文件夹,汇总在 tree 里做) */
-    private Map<Long, Long> docCounts(Long projectId) {
+    @Data
+    public static class SortReq {
+        /** 所在父文件夹;空或 0 表示根目录 */
+        private Long parentId;
+        /** 该父文件夹下文件夹的完整新顺序 */
+        private List<Long> ids;
+    }
+
+    @Operation(summary = "同层级文件夹拖动排序")
+    @PutMapping("/sort")
+    public Result<Void> sort(@RequestBody SortReq req) {
+        List<Long> ids = req.getIds();
+        if (ids == null || ids.isEmpty()) return Result.ok();
+        Long parentId = req.getParentId() == null || req.getParentId() <= 0 ? null : req.getParentId();
+        if (parentId != null && folderMapper.selectById(parentId) == null) {
+            throw new BizException("上级文件夹不存在");
+        }
+        // 只接受同一父文件夹下的节点,防止前端误传导致跨目录顺序被打乱
+        LambdaQueryWrapper<ArcFolder> qw = new LambdaQueryWrapper<ArcFolder>().select(ArcFolder::getId);
+        if (parentId == null) qw.isNull(ArcFolder::getParentId);
+        else qw.eq(ArcFolder::getParentId, parentId);
+        Set<Long> allowed = new HashSet<>();
+        for (ArcFolder f : folderMapper.selectList(qw)) allowed.add(f.getId());
+        int seq = 0;
+        for (Long id : ids) {
+            if (id == null || !allowed.contains(id)) continue;
+            folderMapper.update(null, new LambdaUpdateWrapper<ArcFolder>()
+                .eq(ArcFolder::getId, id).set(ArcFolder::getSort, seq++));
+        }
+        return Result.ok();
+    }
+
+    @Data
+    public static class MoveReq {
+        private Long id;
+        /** 目标父文件夹;空或 0 表示移到根目录 */
+        private Long parentId;
+        /** 放到目标父文件夹下的第几位(从0起),空则不变 */
+        private Integer sort;
+    }
+
+    @Operation(summary = "把文件夹移动到另一个文件夹(改变层级,子孙一起带走)")
+    @PutMapping("/move")
+    public Result<Void> move(@RequestBody MoveReq req) {
+        if (req.getId() == null) throw new BizException("缺少文件夹");
+        ArcFolder self = folderMapper.selectById(req.getId());
+        if (self == null) throw new BizException("文件夹不存在");
+        Long target = req.getParentId() == null || req.getParentId() <= 0 ? null : req.getParentId();
+        if (Objects.equals(target, self.getId())) throw new BizException("不能把文件夹移动到它自己里面");
+        if (Objects.equals(target, self.getParentId())) {
+            // 目标父级没变,只当作调整顺序处理
+            if (req.getSort() != null) {
+                folderMapper.update(null, new LambdaUpdateWrapper<ArcFolder>()
+                    .eq(ArcFolder::getId, self.getId()).set(ArcFolder::getSort, req.getSort()));
+            }
+            return Result.ok();
+        }
+        ArcFolder parent = null;
+        if (target != null) {
+            parent = folderMapper.selectById(target);
+            if (parent == null) throw new BizException("目标文件夹不存在");
+            // 不能移进自己的子孙里,否则会形成环
+            String selfPath = self.getPath() == null ? "" : self.getPath();
+            String targetPath = parent.getPath() == null ? "" : parent.getPath();
+            if (!selfPath.isEmpty() && targetPath.startsWith(selfPath)) {
+                throw new BizException("不能把文件夹移动到它自己或它的子文件夹里");
+            }
+        }
+        assertSiblingNameFree(target, self.getName(), self.getId());
+
+        String oldPath = self.getPath() == null ? "/" + self.getId() + "/" : self.getPath();
+        String newPath = (parent == null ? "/" : parent.getPath()) + self.getId() + "/";
+        int oldLevel = self.getLevel() == null ? 1 : self.getLevel();
+        int newLevel = parent == null ? 1 : (parent.getLevel() == null ? 1 : parent.getLevel()) + 1;
+        int delta = newLevel - oldLevel;
+
+        folderMapper.update(null, new LambdaUpdateWrapper<ArcFolder>()
+            .eq(ArcFolder::getId, self.getId())
+            .set(ArcFolder::getParentId, target)
+            .set(ArcFolder::getPath, newPath)
+            .set(ArcFolder::getLevel, newLevel)
+            .set(ArcFolder::getSort, req.getSort() == null ? 0 : req.getSort()));
+
+        // 子孙的物化路径与层级一起平移
+        List<ArcFolder> descendants = folderMapper.selectList(new LambdaQueryWrapper<ArcFolder>()
+            .likeRight(ArcFolder::getPath, oldPath).ne(ArcFolder::getId, self.getId()));
+        for (ArcFolder d : descendants) {
+            String dp = d.getPath() == null ? "" : d.getPath();
+            folderMapper.update(null, new LambdaUpdateWrapper<ArcFolder>()
+                .eq(ArcFolder::getId, d.getId())
+                .set(ArcFolder::getPath, newPath + dp.substring(oldPath.length()))
+                .set(ArcFolder::getLevel, (d.getLevel() == null ? oldLevel : d.getLevel()) + delta));
+        }
+        return Result.ok();
+    }
+
+    /** 每个文件夹自身的文件数(不含子文件夹,汇总在 tree 里做) */    private Map<Long, Long> docCounts(Long projectId) {
         QueryWrapper<ArcDoc> qw = new QueryWrapper<ArcDoc>().select("folder_id AS fid", "COUNT(*) AS cnt")
             .isNotNull("folder_id").eq(projectId != null, "project_id", projectId).groupBy("folder_id");
         Map<Long, Long> out = new LinkedHashMap<>();
@@ -172,8 +271,19 @@ public class ArcFolderController {
         return sum;
     }
 
-    private void assertSiblingNameFree(Long parentId, String name, Long excludeId) {
+    /** 同级下一个排序号(追加到末尾) */
+    private int nextSort(Long parentId) {
         LambdaQueryWrapper<ArcFolder> qw = new LambdaQueryWrapper<ArcFolder>()
+            .select(ArcFolder::getSort)
+            .orderByDesc(ArcFolder::getSort)
+            .last("LIMIT 1");
+        if (parentId == null) qw.isNull(ArcFolder::getParentId);
+        else qw.eq(ArcFolder::getParentId, parentId);
+        ArcFolder last = folderMapper.selectOne(qw);
+        return last == null || last.getSort() == null ? 0 : last.getSort() + 1;
+    }
+
+    private void assertSiblingNameFree(Long parentId, String name, Long excludeId) {        LambdaQueryWrapper<ArcFolder> qw = new LambdaQueryWrapper<ArcFolder>()
             .eq(ArcFolder::getName, name)
             .last("LIMIT 1");
         if (parentId == null) qw.isNull(ArcFolder::getParentId);

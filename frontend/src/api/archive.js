@@ -28,6 +28,8 @@ export const folderApi = {
   tree: (projectId) => request.get('/archive/folder/tree', { params: { projectId } }),
   create: (data) => request.post('/archive/folder', data),
   rename: (data) => request.put('/archive/folder', data),
+  sort: (data) => request.put('/archive/folder/sort', data),
+  move: (data) => request.put('/archive/folder/move', data),
   remove: (id) => request.delete(`/archive/folder/${id}`),
   breadcrumb: (id) => request.get('/archive/folder/breadcrumb', { params: { id } })
 }
