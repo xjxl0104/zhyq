@@ -11,6 +11,7 @@ export const archiveApi = {
   get: (id) => request.get(`/archive/doc/${id}`),
   add: (data) => request.post('/archive/doc', data),
   update: (data) => request.put('/archive/doc', data),
+  move: (data) => request.put('/archive/doc/move', data),
   remove: (id) => request.delete(`/archive/doc/${id}`),
   // 先把文件传到附件体系(bizType=archive_doc),再让服务端读文件分析
   upload(file) {
@@ -22,7 +23,18 @@ export const archiveApi = {
   analyze: (data) => request.post('/archive/doc/analyze', data, { timeout: 2 * 60 * 1000 })
 }
 
-// 资料管理 · 分类与规则
+// 资料管理 · 文件夹(像电脑文件夹一样,无限层级)
+export const folderApi = {
+  tree: (projectId) => request.get('/archive/folder/tree', { params: { projectId } }),
+  create: (data) => request.post('/archive/folder', data),
+  rename: (data) => request.put('/archive/folder', data),
+  sort: (data) => request.put('/archive/folder/sort', data),
+  move: (data) => request.put('/archive/folder/move', data),
+  remove: (id) => request.delete(`/archive/folder/${id}`),
+  breadcrumb: (id) => request.get('/archive/folder/breadcrumb', { params: { id } })
+}
+
+// 资料管理 · 分类与规则(高级,可选用)
 export const archiveSettingApi = {
   categories: () => request.get('/archive/setting/category/list'),
   addCategory: (data) => request.post('/archive/setting/category', data),

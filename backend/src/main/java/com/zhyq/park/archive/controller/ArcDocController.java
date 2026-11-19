@@ -7,8 +7,10 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.zhyq.park.archive.entity.ArcCategory;
 import com.zhyq.park.archive.entity.ArcDoc;
+import com.zhyq.park.archive.entity.ArcFolder;
 import com.zhyq.park.archive.mapper.ArcCategoryMapper;
 import com.zhyq.park.archive.mapper.ArcDocMapper;
+import com.zhyq.park.archive.mapper.ArcFolderMapper;
 import com.zhyq.park.archive.service.ArcAnalyzeService;
 import com.zhyq.park.common.exception.BizException;
 import com.zhyq.park.common.result.PageResult;
@@ -47,6 +49,7 @@ public class ArcDocController {
 
     private final ArcDocMapper docMapper;
     private final ArcCategoryMapper categoryMapper;
+    private final ArcFolderMapper folderMapper;
     private final SysFileMapper fileMapper;
     private final FileStorageService storage;
     private final ArcAnalyzeService analyzer;
@@ -111,12 +114,26 @@ public class ArcDocController {
                                            @RequestParam(required = false) Integer secretLevel,
                                            @RequestParam(required = false) Integer status,
                                            @RequestParam(required = false) Integer year,
-                                           @RequestParam(required = false) Long projectId) {
+                                           @RequestParam(required = false) Long projectId,
+                                           @RequestParam(required = false) Long folderId,
+                                           @RequestParam(defaultValue = "false") boolean includeSub) {
         LambdaQueryWrapper<ArcDoc> qw = new LambdaQueryWrapper<>();
         qw.eq(projectId != null, ArcDoc::getProjectId, projectId)
           .eq(StringUtils.hasText(docType), ArcDoc::getDocType, docType)
           .eq(secretLevel != null, ArcDoc::getSecretLevel, secretLevel)
           .eq(status != null, ArcDoc::getStatus, status);
+        // 文件夹模式:folderId 为空=全部;0=根目录(未归入文件夹);>0=指定文件夹(可选含子文件夹)
+        if (folderId != null) {
+            if (folderId == 0) {
+                qw.isNull(ArcDoc::getFolderId);
+            } else if (includeSub) {
+                List<Long> ids = descendantFolderIds(folderId);
+                if (ids.isEmpty()) return Result.ok(PageResult.of(0, List.of()));
+                qw.in(ArcDoc::getFolderId, ids);
+            } else {
+                qw.eq(ArcDoc::getFolderId, folderId);
+            }
+        }
         if (year != null && year >= 1900 && year <= 2999) {
             qw.ge(ArcDoc::getDocDate, LocalDate.of(year, 1, 1)).le(ArcDoc::getDocDate, LocalDate.of(year, 12, 31));
         }
@@ -147,7 +164,7 @@ public class ArcDocController {
         return Result.ok(analyzer.analyze(req.getFileId(), req.getSourcePath(), req.getLastModified()));
     }
 
-    @Operation(summary = "确认归档:保存资料并关联文件,自动生成档号")
+    @Operation(summary = "确认归档:保存资料并关联文件,自动生成资料编号")
     @PostMapping
     @Transactional(rollbackFor = Exception.class)
     public Result<ArcDoc> add(@RequestBody ArcDoc doc) {
@@ -157,6 +174,14 @@ public class ArcDocController {
         if (docMapper.selectCount(new LambdaQueryWrapper<ArcDoc>().eq(ArcDoc::getFileId, file.getId())) > 0) {
             throw new BizException("该文件已归档");
         }
+        // 文件夹模式:校验目标文件夹,名称缺省用原文件名
+        boolean folderMode = doc.getFolderId() != null;
+        if (folderMode && folderMapper.selectById(doc.getFolderId()) == null) {
+            throw new BizException("目标文件夹不存在");
+        }
+        if (!StringUtils.hasText(doc.getName())) {
+            doc.setName(stripExt(file.getOriginalName()));
+        }
         normalize(doc, true);
         doc.setId(null);
         doc.setOriginalName(file.getOriginalName());
@@ -164,7 +189,10 @@ public class ArcDocController {
         doc.setFileSize(file.getFileSize());
         if (StringUtils.hasText(doc.getFileHash()) && !doc.getFileHash().matches("[0-9a-f]{64}")) doc.setFileHash(null);
         synchronized (ARCHIVE_NO_LOCK) {
-            doc.setArchiveNo(nextArchiveNo(doc.getCategoryCode(), doc.getDocDate(), doc.getProjectId()));
+            // 文件夹模式和未指定分类的资料,统一走全局流水编号 ZL-000001;老档案分类仍沿用原档号规则
+            doc.setArchiveNo(folderMode || !StringUtils.hasText(doc.getCategoryCode())
+                ? nextFolderDocNo()
+                : nextArchiveNo(doc.getCategoryCode(), doc.getDocDate(), doc.getProjectId()));
             docMapper.insert(doc);
         }
         int attached = fileMapper.update(null, new LambdaUpdateWrapper<SysFile>()
@@ -186,6 +214,36 @@ public class ArcDocController {
             .set(ArcDoc::getVersionLabel, doc.getVersionLabel()).set(ArcDoc::getCounterparty, doc.getCounterparty())
             .set(ArcDoc::getExpireDate, doc.getExpireDate()).set(ArcDoc::getStatus, doc.getStatus())
             .set(ArcDoc::getRemark, doc.getRemark()));
+        return Result.ok();
+    }
+
+    @Data
+    public static class MoveReq {
+        /** 单个资料(兼容旧调用) */
+        private Long id;
+        /** 批量移动的资料 id 列表 */
+        private List<Long> ids;
+        /** 目标文件夹,0 或空表示移出到根目录 */
+        private Long folderId;
+    }
+
+    @Operation(summary = "把资料移动到另一个文件夹(支持批量)")
+    @PutMapping("/move")
+    @Transactional(rollbackFor = Exception.class)
+    public Result<Void> move(@RequestBody MoveReq req) {
+        List<Long> ids = new ArrayList<>();
+        if (req.getIds() != null) {
+            for (Long id : req.getIds()) if (id != null) ids.add(id);
+        }
+        if (ids.isEmpty() && req.getId() != null) ids.add(req.getId());
+        if (ids.isEmpty()) throw new BizException("请选择要移动的资料");
+        if (ids.size() > 500) throw new BizException("一次最多移动 500 份资料");
+        Long target = req.getFolderId() == null || req.getFolderId() <= 0 ? null : req.getFolderId();
+        if (target != null && folderMapper.selectById(target) == null) throw new BizException("目标文件夹不存在");
+        long exists = docMapper.selectCount(new LambdaQueryWrapper<ArcDoc>().in(ArcDoc::getId, ids));
+        if (exists == 0) throw new BizException("资料不存在");
+        docMapper.update(null, new LambdaUpdateWrapper<ArcDoc>()
+            .in(ArcDoc::getId, ids).set(ArcDoc::getFolderId, target));
         return Result.ok();
     }
 
@@ -211,12 +269,17 @@ public class ArcDocController {
         d.setName(trim(d.getName()));
         if (!StringUtils.hasText(d.getName())) throw new BizException("请填写名称");
         if (d.getName().length() > 200) throw new BizException("名称不能超过200个字");
+        // 分类可选:文件夹模式下不再强制档案分类;传了就必须有效
         String code = trim(d.getCategoryCode());
-        if (!StringUtils.hasText(code) || categoryMapper.selectCount(new LambdaQueryWrapper<ArcCategory>()
-                .eq(ArcCategory::getCode, code).isNotNull(ArcCategory::getParentCode)) == 0) {
-            throw new BizException("请选择有效的分类");
+        if (StringUtils.hasText(code)) {
+            if (categoryMapper.selectCount(new LambdaQueryWrapper<ArcCategory>()
+                    .eq(ArcCategory::getCode, code).isNotNull(ArcCategory::getParentCode)) == 0) {
+                throw new BizException("请选择有效的分类");
+            }
+            d.setCategoryCode(code);
+        } else {
+            d.setCategoryCode(null);
         }
-        d.setCategoryCode(code);
         d.setDocType(ArcAnalyzeService.DOC_TYPES.contains(d.getDocType()) ? d.getDocType() : "其他");
         if (d.getSecretLevel() == null || d.getSecretLevel() < 1 || d.getSecretLevel() > 3) d.setSecretLevel(2);
         if (d.getStatus() == null || (d.getStatus() != ST_ACTIVE && d.getStatus() != ST_EXPIRED)) d.setStatus(ST_ACTIVE);
@@ -243,6 +306,40 @@ public class ArcDocController {
             }
         }
         return prefix + String.format("%04d", seq + 1);
+    }
+
+    /** 文件夹模式的全局资料编号:ZL-000001,递增不复用 */
+    private String nextFolderDocNo() {
+        String prefix = "ZL-";
+        String max = docMapper.maxFolderDocNo();
+        int seq = 0;
+        if (max != null && max.length() > prefix.length()) {
+            try {
+                seq = Integer.parseInt(max.substring(prefix.length()));
+            } catch (NumberFormatException ignore) {
+                // 编号被手工改过时从 0 起算
+            }
+        }
+        return prefix + String.format("%06d", seq + 1);
+    }
+
+    /** 当前文件夹及所有子文件夹的 id(靠物化 path 前缀匹配) */
+    private List<Long> descendantFolderIds(Long folderId) {
+        ArcFolder self = folderMapper.selectById(folderId);
+        if (self == null) return List.of();
+        String prefix = self.getPath();
+        List<ArcFolder> all = folderMapper.selectList(new LambdaQueryWrapper<ArcFolder>()
+            .likeRight(ArcFolder::getPath, prefix));
+        List<Long> ids = new ArrayList<>();
+        for (ArcFolder f : all) ids.add(f.getId());
+        if (!ids.contains(folderId)) ids.add(folderId);
+        return ids;
+    }
+
+    private static String stripExt(String name) {
+        if (name == null) return null;
+        int dot = name.lastIndexOf('.');
+        return dot > 0 ? name.substring(0, dot) : name;
     }
 
     private static String trim(String s) { return s == null ? null : s.trim(); }
