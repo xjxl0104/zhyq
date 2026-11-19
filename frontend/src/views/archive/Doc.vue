@@ -27,6 +27,20 @@ const currentFolderName = computed(() => {
   if (currentFolderId.value === null) return '全部资料'
   return breadcrumb.value.length ? breadcrumb.value[breadcrumb.value.length - 1].name : '文件夹'
 })
+/** 树上的 count 是「含子文件夹」的合计，根目录用它的总和展示全库资料量 */
+const docsInTree = computed(() => folderTree.value.reduce((s, n) => s + (n.count || 0), 0))
+const isRoot = computed(() => currentFolderId.value === null)
+/** 默认展开一级文件夹 + 当前所在路径,免得一进来只看到 11 个折叠节点 */
+const expandedKeys = computed(() => {
+  const ids = folderTree.value.map((n) => n.id)
+  for (const b of breadcrumb.value) if (!ids.includes(b.id)) ids.push(b.id)
+  return ids
+})
+const emptyHint = computed(() =>
+  isRoot.value
+    ? `根目录没有直接存放的文件，资料都归在各文件夹里（共 ${docsInTree.value} 份），点开上面的文件夹即可查看`
+    : '这个文件夹还没有文件，把文件拖进来试试'
+)
 
 function findNode(nodes, id) {
   for (const n of nodes || []) {
@@ -380,6 +394,7 @@ onMounted(async () => {
         :data="folderTree"
         node-key="id"
         :props="{ label: 'name', children: 'children' }"
+        :default-expanded-keys="expandedKeys"
         :expand-on-click-node="false"
         highlight-current
         :current-node-key="currentFolderId"
@@ -417,7 +432,10 @@ onMounted(async () => {
             <span class="cp" @click="selectFolder(b.id)">{{ b.name }}</span>
           </template>
         </div>
-        <span class="crumb-meta">{{ subFolders.length }} 个文件夹 · {{ total }} 份资料</span>
+        <span class="crumb-meta">
+          <template v-if="isRoot">{{ subFolders.length }} 个顶级文件夹 · 共 {{ docsInTree }} 份资料</template>
+          <template v-else>{{ subFolders.length }} 个子文件夹 · {{ total }} 份资料</template>
+        </span>
       </div>
 
       <div v-if="dragOver" class="drop-mask">
@@ -462,7 +480,7 @@ onMounted(async () => {
           <el-button size="small" text @click="clearSelection">取消选择</el-button>
         </div>
         <el-table ref="tableRef" :data="files" v-loading="loading" border stripe
-          empty-text="这个文件夹还是空的，把文件拖进来试试" @selection-change="onSelChange">
+          :empty-text="emptyHint" @selection-change="onSelChange">
           <el-table-column type="selection" width="46" />
           <el-table-column prop="archiveNo" label="编号" width="130" />
           <el-table-column label="名称" min-width="300" show-overflow-tooltip>
