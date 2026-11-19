@@ -72,6 +72,8 @@ def main():
     ok = skipped = failed = 0
     for i, it in enumerate(items, 1):
         full = os.path.join(a.root, it["path"].replace("/", os.sep))
+        if os.name == "nt" and not full.startswith("\\\\?\\"):  # 路径很长时(>260 字符)需要扩展长度前缀
+            full = "\\\\?\\" + os.path.abspath(full)
         tag = "[%d/%d] %s" % (i, len(items), it["path"])
         if not os.path.isfile(full):
             print(tag, "-> 文件不存在,跳过"); failed += 1; continue

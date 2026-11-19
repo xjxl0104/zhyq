@@ -104,9 +104,9 @@ def main():
             skipped.append((rel, why))
             continue
         items.append(dict(path=rel, name=name, categoryCode=code, docType=dtype, secretLevel=int(secret),
-                          docDate=None if ddate in ("None", "") else ddate,
-                          period=None if period in ("None", "") else period,
-                          versionLabel=None if ver in ("None", "") else ver,
+                          docDate=None if ddate in ("None", "null", "") else ddate,
+                          period=None if period in ("None", "null", "") else period,
+                          versionLabel=None if ver in ("None", "null", "") else ver,
                           _conf=int(conf), _reasons=reasons, _tlen=int(tlen)))
     disambiguate(items)
 
