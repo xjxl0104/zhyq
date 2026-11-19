@@ -190,8 +190,7 @@ export const menuTree = [
       },
       {
         title: '资料管理', icon: 'FolderOpened', children: [
-          { title: '资料库', path: '/archive/doc' },
-          { title: '分类与规则', path: '/archive/setting' }
+          { title: '资料库', path: '/archive/doc' }
         ]
       },
       { title: '应用中心', path: '/app/center' }

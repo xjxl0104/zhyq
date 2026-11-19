@@ -13,6 +13,8 @@ import java.time.LocalDate;
 @TableName("arc_doc")
 public class ArcDoc extends BaseEntity {
     private Long projectId;
+    /** 所属文件夹 arc_folder.id(像电脑文件夹),可为空表示未归入任何文件夹 */
+    private Long folderId;
     private String archiveNo;
     private String name;
     private String originalName;

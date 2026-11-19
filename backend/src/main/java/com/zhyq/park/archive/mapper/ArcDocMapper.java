@@ -11,4 +11,8 @@ public interface ArcDocMapper extends BaseMapper<ArcDoc> {
     @Select("SELECT MAX(archive_no) FROM arc_doc WHERE archive_no LIKE CONCAT(#{prefix}, '%') "
         + "AND IFNULL(project_id, 0) = IFNULL(#{projectId}, 0)")
     String maxArchiveNo(@Param("prefix") String prefix, @Param("projectId") Long projectId);
+
+    /** 文件夹模式下全局资料编号的最大值(格式 ZL-000001,含已删除的,避免编号复用) */
+    @Select("SELECT MAX(archive_no) FROM arc_doc WHERE archive_no LIKE 'ZL-%'")
+    String maxFolderDocNo();
 }
