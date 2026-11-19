@@ -228,6 +228,12 @@ async function onDrop(e, folderId) {
   const list = e.dataTransfer?.files
   if (list && list.length) await uploadFiles(list, folderId)
 }
+/** 去掉扩展名:列表会把 fileExt 单独拼在名称后面,名称里再带一遍就会重复 */
+function stripExt(name) {
+  const s = name || ''
+  const i = s.lastIndexOf('.')
+  return i > 0 ? s.slice(0, i) : s
+}
 async function uploadFiles(list, folderId) {
   const arr = Array.from(list || [])
   if (!arr.length) return
@@ -239,7 +245,7 @@ async function uploadFiles(list, folderId) {
       await archiveApi.add({
         folderId: folderId ?? null,
         fileId: sf.id,
-        name: f.name
+        name: stripExt(f.name)
       })
       ok++
     } catch (err) {
@@ -342,10 +348,27 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="fm">
+  <div class="page-container archive-page">
+    <div class="page-header">
+      <div class="ph-title">
+        <h2>资料库</h2>
+        <p>像电脑文件夹一样管理园区资料：新建文件夹、拖拽上传、自动编号</p>
+      </div>
+      <div class="toolbar">
+        <el-input v-model="keyword" placeholder="搜索资料" clearable style="width: 200px"
+          @keyup.enter="search" @clear="search">
+          <template #prefix><el-icon><Search /></el-icon></template>
+        </el-input>
+        <el-button @click="openFolderDialog(currentFolderId)"><el-icon><Plus /></el-icon>新建文件夹</el-button>
+        <el-button type="primary" :loading="uploading" @click="pickFiles"><el-icon><Upload /></el-icon>上传文件</el-button>
+        <input ref="fileInput" type="file" multiple style="display: none" @change="onPickChange" />
+      </div>
+    </div>
+
+    <div class="fm">
     <aside class="side">
       <div class="side-head">
-        <span class="side-title">资料库</span>
+        <span class="side-title">文件夹</span>
         <el-tooltip content="新建根文件夹" placement="top">
           <el-button size="small" circle @click="openFolderDialog(null)"><el-icon><Plus /></el-icon></el-button>
         </el-tooltip>
@@ -386,23 +409,15 @@ onMounted(async () => {
     </aside>
 
     <section class="main" @dragover="onMainDragOver" @dragleave="onMainLeave" @drop.prevent="onDrop($event, currentFolderId)">
-      <div class="crumb">
+      <div class="crumb-bar">
         <div class="crumb-path">
-          <span class="cp" @click="selectFolder(null)">全部资料</span>
+          <span class="cp root" :class="{ cur: currentFolderId === null }" @click="selectFolder(null)">全部资料</span>
           <template v-for="b in breadcrumb" :key="b.id">
             <span class="sep">/</span>
             <span class="cp" @click="selectFolder(b.id)">{{ b.name }}</span>
           </template>
         </div>
-        <div class="crumb-actions">
-          <el-input v-model="keyword" size="small" placeholder="搜索资料" clearable style="width: 180px"
-            @keyup.enter="search" @clear="search">
-            <template #prefix><el-icon><Search /></el-icon></template>
-          </el-input>
-          <el-button size="small" @click="openFolderDialog(currentFolderId)"><el-icon><Plus /></el-icon>新建文件夹</el-button>
-          <el-button size="small" type="primary" :loading="uploading" @click="pickFiles"><el-icon><Upload /></el-icon>上传文件</el-button>
-          <input ref="fileInput" type="file" multiple style="display: none" @change="onPickChange" />
-        </div>
+        <span class="crumb-meta">{{ subFolders.length }} 个文件夹 · {{ total }} 份资料</span>
       </div>
 
       <div v-if="dragOver" class="drop-mask">
@@ -436,9 +451,8 @@ onMounted(async () => {
 
       <div class="files">
         <div class="files-head">
-          <span class="fh-title">{{ currentFolderName }}</span>
-          <span class="fh-count">共 {{ total }} 份资料</span>
-          <span class="fh-hint">可直接把文件拖进来上传</span>
+          <span class="fh-title">资料列表</span>
+          <span class="fh-hint">把文件直接拖进这个区域即可上传</span>
         </div>
         <div v-if="selected.length" class="bulk">
           <span class="bulk-txt">已勾选 {{ selected.length }} 份资料</span>
@@ -475,6 +489,7 @@ onMounted(async () => {
           layout="total, sizes, prev, pager, next" :total="total" :page-sizes="[20, 50, 100]" @change="loadFiles" />
       </div>
     </section>
+    </div>
 
     <el-dialog v-model="folderDialog.visible" :title="folderDialog.title" width="440px">
       <el-input v-model="folderDialog.name" placeholder="文件夹名称，如：2026年10月" maxlength="100" @keyup.enter="saveFolder" />
@@ -507,8 +522,13 @@ onMounted(async () => {
 </template>
 
 <style scoped>
-.fm { display: flex; gap: 16px; align-items: flex-start; }
-.side { width: 268px; flex: none; background: var(--el-bg-color, #fff); border: 1px solid var(--el-border-color-lighter, #ebeef5); border-radius: 8px; padding: 12px 8px; max-height: calc(100vh - 130px); overflow: auto; }
+.archive-page { display: flex; flex-direction: column; gap: 14px; }
+.page-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
+.ph-title h2 { margin: 0 0 6px; font-size: 18px; font-weight: 600; color: var(--el-text-color-primary, #303133); }
+.ph-title p { margin: 0; font-size: 13px; color: var(--el-text-color-secondary, #909399); }
+.toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.fm { display: flex; gap: 14px; align-items: flex-start; min-width: 0; }
+.side { width: 260px; flex: none; background: var(--el-bg-color, #fff); border: 1px solid var(--el-border-color-lighter, #ebeef5); border-radius: 8px; padding: 10px 6px; position: sticky; top: 0; max-height: calc(100vh - 172px); overflow: auto; }
 .side-head { display: flex; align-items: center; justify-content: space-between; padding: 0 8px 10px; }
 .side-title { font-weight: 600; }
 .all { display: flex; align-items: center; gap: 6px; padding: 7px 8px; margin-bottom: 4px; border-radius: 4px; cursor: pointer; font-size: 14px; }
@@ -520,16 +540,19 @@ onMounted(async () => {
 .tnode .cnt { font-size: 12px; color: var(--el-text-color-secondary, #909399); }
 .tnode .more { display: none; color: var(--el-text-color-secondary, #909399); }
 .tnode:hover .more { display: inline-flex; }
-.main { flex: 1; min-width: 0; position: relative; }
-.crumb { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; }
-.crumb-path { font-size: 14px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.main { flex: 1; min-width: 0; position: relative; display: flex; flex-direction: column; gap: 12px; }
+.crumb-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 10px 14px; background: var(--el-bg-color, #fff); border: 1px solid var(--el-border-color-lighter, #ebeef5); border-radius: 8px; }
+.crumb-path { font-size: 13px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; min-width: 0; }
 .cp { cursor: pointer; color: var(--el-color-primary, #409eff); }
+.cp.root { color: var(--el-text-color-regular, #606266); font-weight: 500; }
+.cp.root.cur { color: var(--el-text-color-primary, #303133); cursor: default; }
 .cp:hover { text-decoration: underline; }
-.sep { color: var(--el-text-color-secondary, #c0c4cc); }
-.crumb-actions { display: flex; gap: 8px; align-items: center; }
+.cp.cur:hover { text-decoration: none; }
+.sep { color: var(--el-text-color-placeholder, #c0c4cc); }
+.crumb-meta { font-size: 12px; color: var(--el-text-color-secondary, #909399); white-space: nowrap; }
 .drop-mask { position: absolute; inset: 0; z-index: 10; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; background: rgba(64, 158, 255, 0.08); border: 2px dashed var(--el-color-primary, #409eff); border-radius: 10px; color: var(--el-color-primary, #409eff); font-size: 15px; pointer-events: none; }
 .dm-ico { font-size: 40px; }
-.folders { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; margin-bottom: 16px; }
+.folders { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; }
 .fold-card { position: relative; display: flex; flex-direction: column; gap: 4px; padding: 14px 14px 12px; border: 1px solid var(--el-border-color-lighter, #ebeef5); border-radius: 10px; background: var(--el-bg-color, #fff); cursor: grab; transition: border-color .15s, box-shadow .15s; }
 .fold-card:active { cursor: grabbing; }
 .fold-card:hover { border-color: var(--el-color-primary-light-5, #a0cfff); box-shadow: 0 2px 8px rgba(64, 158, 255, .12); }
@@ -543,11 +566,18 @@ onMounted(async () => {
 .bulk { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; padding: 8px 12px; border-radius: 6px; background: var(--el-color-primary-light-9, #ecf5ff); border: 1px solid var(--el-color-primary-light-7, #c6e2ff); }
 .bulk-txt { font-size: 13px; color: var(--el-color-primary, #409eff); }
 .move-tip { margin-bottom: 10px; font-size: 13px; color: var(--el-text-color-regular, #606266); }
-.fh-title { font-size: 15px; font-weight: 600; }
-.fh-count { font-size: 13px; color: var(--el-text-color-secondary, #909399); }
+.fh-title { font-size: 14px; font-weight: 600; }
 .fh-hint { margin-left: auto; font-size: 12px; color: var(--el-text-color-placeholder, #a8abb2); }
 .fname { display: inline-flex; align-items: center; gap: 6px; }
 .fico { color: var(--el-color-primary, #409eff); }
 .ext { color: var(--el-text-color-secondary, #909399); font-style: normal; }
 .pager { margin-top: 14px; justify-content: flex-end; }
+
+@media (max-width: 900px) {
+  .page-header { flex-direction: column; align-items: stretch; }
+  .toolbar { flex-wrap: wrap; }
+  .toolbar :deep(.el-input) { width: 100% !important; }
+  .fm { flex-direction: column; }
+  .side { width: 100%; max-height: 260px; }
+}
 </style>
