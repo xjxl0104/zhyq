@@ -139,6 +139,8 @@ const routes = [
       { path: 'oa/attendance', meta: { title: '考勤管理' }, component: () => import('@/views/oa/Attendance.vue') },
       { path: 'oa/document', meta: { title: '公文管理' }, component: () => import('@/views/oa/Document.vue') },
       { path: 'oa/flow', meta: { title: '流程管理' }, component: () => import('@/views/oa/Flow.vue') },
+      { path: 'archive/doc', meta: { title: '资料库' }, component: () => import('@/views/archive/Doc.vue') },
+      { path: 'archive/setting', meta: { title: '分类与规则' }, component: () => import('@/views/archive/Setting.vue') },
 
       // 应用中心
       { path: 'app/center', meta: { title: '应用中心' }, component: () => import('@/views/app/AppCenter.vue') },

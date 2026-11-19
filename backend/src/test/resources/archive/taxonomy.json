@@ -1,0 +1,4804 @@
+{
+ "categories": [
+  {
+   "code": "01",
+   "parent": null,
+   "name": "综合行政",
+   "sort": 10,
+   "secret": 2
+  },
+  {
+   "code": "02",
+   "parent": null,
+   "name": "客户服务与租户",
+   "sort": 20,
+   "secret": 2
+  },
+  {
+   "code": "03",
+   "parent": null,
+   "name": "合同协议",
+   "sort": 30,
+   "secret": 3
+  },
+  {
+   "code": "04",
+   "parent": null,
+   "name": "证照资质与权属",
+   "sort": 40,
+   "secret": 2
+  },
+  {
+   "code": "05",
+   "parent": null,
+   "name": "财务收费",
+   "sort": 50,
+   "secret": 3
+  },
+  {
+   "code": "06",
+   "parent": null,
+   "name": "工程设备设施",
+   "sort": 60,
+   "secret": 2
+  },
+  {
+   "code": "07",
+   "parent": null,
+   "name": "图纸与竣工资料",
+   "sort": 70,
+   "secret": 2
+  },
+  {
+   "code": "08",
+   "parent": null,
+   "name": "安全消防应急",
+   "sort": 80,
+   "secret": 2
+  },
+  {
+   "code": "09",
+   "parent": null,
+   "name": "环境保洁绿化",
+   "sort": 90,
+   "secret": 2
+  },
+  {
+   "code": "10",
+   "parent": null,
+   "name": "质量与考核",
+   "sort": 100,
+   "secret": 2
+  },
+  {
+   "code": "11",
+   "parent": null,
+   "name": "法务合规",
+   "sort": 110,
+   "secret": 2
+  },
+  {
+   "code": "12",
+   "parent": null,
+   "name": "招商与园区运营",
+   "sort": 120,
+   "secret": 2
+  },
+  {
+   "code": "99",
+   "parent": null,
+   "name": "待归类",
+   "sort": 130,
+   "secret": 2
+  },
+  {
+   "code": "01.01",
+   "parent": "01",
+   "name": "组织架构与岗位职责",
+   "sort": 1,
+   "secret": 2
+  },
+  {
+   "code": "01.02",
+   "parent": "01",
+   "name": "人事培训与考核",
+   "sort": 2,
+   "secret": 3
+  },
+  {
+   "code": "01.03",
+   "parent": "01",
+   "name": "会议公文与印章",
+   "sort": 3,
+   "secret": 2
+  },
+  {
+   "code": "01.04",
+   "parent": "01",
+   "name": "物资钥匙与节能管理",
+   "sort": 4,
+   "secret": 2
+  },
+  {
+   "code": "01.05",
+   "parent": "01",
+   "name": "管理体系与总控台账",
+   "sort": 5,
+   "secret": 2
+  },
+  {
+   "code": "01.06",
+   "parent": "01",
+   "name": "汇报总结与会议材料",
+   "sort": 6,
+   "secret": 2
+  },
+  {
+   "code": "01.07",
+   "parent": "01",
+   "name": "档案与文件管理",
+   "sort": 7,
+   "secret": 2
+  },
+  {
+   "code": "01.08",
+   "parent": "01",
+   "name": "信息化系统管理",
+   "sort": 8,
+   "secret": 2
+  },
+  {
+   "code": "01.09",
+   "parent": "01",
+   "name": "供应商与外包管理",
+   "sort": 9,
+   "secret": 2
+  },
+  {
+   "code": "02.01",
+   "parent": "02",
+   "name": "入驻交房与退租",
+   "sort": 10,
+   "secret": 2
+  },
+  {
+   "code": "02.02",
+   "parent": "02",
+   "name": "租户档案与联系人",
+   "sort": 11,
+   "secret": 3
+  },
+  {
+   "code": "02.03",
+   "parent": "02",
+   "name": "装修报批与监管",
+   "sort": 12,
+   "secret": 2
+  },
+  {
+   "code": "02.04",
+   "parent": "02",
+   "name": "投诉建议与满意度",
+   "sort": 13,
+   "secret": 2
+  },
+  {
+   "code": "02.05",
+   "parent": "02",
+   "name": "车辆车位与通行名单",
+   "sort": 14,
+   "secret": 3
+  },
+  {
+   "code": "02.06",
+   "parent": "02",
+   "name": "客户服务手册与流程",
+   "sort": 15,
+   "secret": 2
+  },
+  {
+   "code": "03.01",
+   "parent": "03",
+   "name": "物业服务合同",
+   "sort": 16,
+   "secret": 3
+  },
+  {
+   "code": "03.02",
+   "parent": "03",
+   "name": "专项服务合同",
+   "sort": 17,
+   "secret": 3
+  },
+  {
+   "code": "03.03",
+   "parent": "03",
+   "name": "设备维保合同",
+   "sort": 18,
+   "secret": 3
+  },
+  {
+   "code": "03.04",
+   "parent": "03",
+   "name": "保险合同与保单",
+   "sort": 19,
+   "secret": 3
+  },
+  {
+   "code": "03.05",
+   "parent": "03",
+   "name": "租赁合同与补充协议",
+   "sort": 20,
+   "secret": 3
+  },
+  {
+   "code": "03.06",
+   "parent": "03",
+   "name": "采购与其他协议",
+   "sort": 21,
+   "secret": 3
+  },
+  {
+   "code": "04.01",
+   "parent": "04",
+   "name": "企业证照与账户信息",
+   "sort": 22,
+   "secret": 2
+  },
+  {
+   "code": "04.02",
+   "parent": "04",
+   "name": "产权权属与不动产",
+   "sort": 23,
+   "secret": 2
+  },
+  {
+   "code": "04.03",
+   "parent": "04",
+   "name": "水电表户名变更与过户",
+   "sort": 24,
+   "secret": 3
+  },
+  {
+   "code": "04.04",
+   "parent": "04",
+   "name": "授权委托与证明",
+   "sort": 25,
+   "secret": 3
+  },
+  {
+   "code": "04.05",
+   "parent": "04",
+   "name": "资质许可与验收批文",
+   "sort": 26,
+   "secret": 2
+  },
+  {
+   "code": "05.01",
+   "parent": "05",
+   "name": "租金物业费账单与通知",
+   "sort": 27,
+   "secret": 3
+  },
+  {
+   "code": "05.02",
+   "parent": "05",
+   "name": "水电气抄表缴费与分摊",
+   "sort": 28,
+   "secret": 3
+  },
+  {
+   "code": "05.03",
+   "parent": "05",
+   "name": "保洁垃圾停车等收费",
+   "sort": 29,
+   "secret": 3
+  },
+  {
+   "code": "05.04",
+   "parent": "05",
+   "name": "预算与决算",
+   "sort": 30,
+   "secret": 3
+  },
+  {
+   "code": "05.05",
+   "parent": "05",
+   "name": "采购申请与请款",
+   "sort": 31,
+   "secret": 3
+  },
+  {
+   "code": "05.06",
+   "parent": "05",
+   "name": "发票收据与付款凭证",
+   "sort": 32,
+   "secret": 3
+  },
+  {
+   "code": "05.07",
+   "parent": "05",
+   "name": "收费与财务制度",
+   "sort": 33,
+   "secret": 2
+  },
+  {
+   "code": "06.01",
+   "parent": "06",
+   "name": "设备台账与检测",
+   "sort": 34,
+   "secret": 2
+  },
+  {
+   "code": "06.02",
+   "parent": "06",
+   "name": "机房运行与维保规程",
+   "sort": 35,
+   "secret": 2
+  },
+  {
+   "code": "06.03",
+   "parent": "06",
+   "name": "电梯与特种设备",
+   "sort": 36,
+   "secret": 2
+  },
+  {
+   "code": "06.04",
+   "parent": "06",
+   "name": "维修工单巡检保养记录",
+   "sort": 37,
+   "secret": 2
+  },
+  {
+   "code": "06.05",
+   "parent": "06",
+   "name": "房屋建筑与地坪维护",
+   "sort": 38,
+   "secret": 2
+  },
+  {
+   "code": "06.06",
+   "parent": "06",
+   "name": "弱电智能化系统",
+   "sort": 39,
+   "secret": 2
+  },
+  {
+   "code": "06.07",
+   "parent": "06",
+   "name": "月台装卸货设施",
+   "sort": 40,
+   "secret": 2
+  },
+  {
+   "code": "07.01",
+   "parent": "07",
+   "name": "竣工移交资料",
+   "sort": 41,
+   "secret": 2
+  },
+  {
+   "code": "07.02",
+   "parent": "07",
+   "name": "CAD图纸",
+   "sort": 42,
+   "secret": 2
+  },
+  {
+   "code": "07.03",
+   "parent": "07",
+   "name": "平面图与示意图",
+   "sort": 43,
+   "secret": 2
+  },
+  {
+   "code": "07.04",
+   "parent": "07",
+   "name": "设计施工与验收文件",
+   "sort": 44,
+   "secret": 2
+  },
+  {
+   "code": "08.01",
+   "parent": "08",
+   "name": "消防安全制度与协议",
+   "sort": 45,
+   "secret": 2
+  },
+  {
+   "code": "08.02",
+   "parent": "08",
+   "name": "消防检查与隐患整改",
+   "sort": 46,
+   "secret": 2
+  },
+  {
+   "code": "08.03",
+   "parent": "08",
+   "name": "消防设施检测与报告",
+   "sort": 47,
+   "secret": 2
+  },
+  {
+   "code": "08.04",
+   "parent": "08",
+   "name": "治安车辆动火与危险品",
+   "sort": 48,
+   "secret": 2
+  },
+  {
+   "code": "08.05",
+   "parent": "08",
+   "name": "应急预案与演练",
+   "sort": 49,
+   "secret": 2
+  },
+  {
+   "code": "08.06",
+   "parent": "08",
+   "name": "安全责任与培训",
+   "sort": 50,
+   "secret": 2
+  },
+  {
+   "code": "08.07",
+   "parent": "08",
+   "name": "上墙制度与警示标识",
+   "sort": 51,
+   "secret": 1
+  },
+  {
+   "code": "09.01",
+   "parent": "09",
+   "name": "保洁作业与检查",
+   "sort": 52,
+   "secret": 2
+  },
+  {
+   "code": "09.02",
+   "parent": "09",
+   "name": "绿化养护",
+   "sort": 53,
+   "secret": 2
+  },
+  {
+   "code": "09.03",
+   "parent": "09",
+   "name": "垃圾清运与病媒防治",
+   "sort": 54,
+   "secret": 2
+  },
+  {
+   "code": "10.01",
+   "parent": "10",
+   "name": "服务标准SOP与SLA",
+   "sort": 55,
+   "secret": 2
+  },
+  {
+   "code": "10.02",
+   "parent": "10",
+   "name": "巡查与检查考核",
+   "sort": 56,
+   "secret": 2
+  },
+  {
+   "code": "10.03",
+   "parent": "10",
+   "name": "满意度与第三方评估",
+   "sort": 57,
+   "secret": 2
+  },
+  {
+   "code": "10.04",
+   "parent": "10",
+   "name": "奖惩考核",
+   "sort": 58,
+   "secret": 3
+  },
+  {
+   "code": "11.01",
+   "parent": "11",
+   "name": "法律法规与合规",
+   "sort": 59,
+   "secret": 2
+  },
+  {
+   "code": "11.02",
+   "parent": "11",
+   "name": "纠纷与诉讼",
+   "sort": 60,
+   "secret": 3
+  },
+  {
+   "code": "11.03",
+   "parent": "11",
+   "name": "合同范本",
+   "sort": 61,
+   "secret": 2
+  },
+  {
+   "code": "12.01",
+   "parent": "12",
+   "name": "形象品牌与导视标识",
+   "sort": 62,
+   "secret": 2
+  },
+  {
+   "code": "12.02",
+   "parent": "12",
+   "name": "园区活动与方案",
+   "sort": 63,
+   "secret": 2
+  },
+  {
+   "code": "12.03",
+   "parent": "12",
+   "name": "招商物业协同交付",
+   "sort": 64,
+   "secret": 2
+  },
+  {
+   "code": "12.04",
+   "parent": "12",
+   "name": "广告位与媒体资源",
+   "sort": 65,
+   "secret": 2
+  },
+  {
+   "code": "99.01",
+   "parent": "99",
+   "name": "待归类资料",
+   "sort": 66,
+   "secret": 2
+  }
+ ],
+ "rules": [
+  {
+   "keyword": "组织架构",
+   "scope": 1,
+   "category": "01.01",
+   "docType": null,
+   "secret": null,
+   "weight": 10
+  },
+  {
+   "keyword": "岗位职责",
+   "scope": 1,
+   "category": "01.01",
+   "docType": null,
+   "secret": null,
+   "weight": 10
+  },
+  {
+   "keyword": "岗位说明",
+   "scope": 1,
+   "category": "01.01",
+   "docType": null,
+   "secret": null,
+   "weight": 10
+  },
+  {
+   "keyword": "定岗定编",
+   "scope": 1,
+   "category": "01.01",
+   "docType": null,
+   "secret": null,
+   "weight": 10
+  },
+  {
+   "keyword": "职责",
+   "scope": 1,
+   "category": "01.01",
+   "docType": null,
+   "secret": null,
+   "weight": 6
+  },
+  {
+   "keyword": "人事",
+   "scope": 1,
+   "category": "01.02",
+   "docType": null,
+   "secret": null,
+   "weight": 10
+  },
+  {
+   "keyword": "培训",
+   "scope": 1,
+   "category": "01.02",
+   "docType": null,
+   "secret": null,
+   "weight": 10
+  },
+  {
+   "keyword": "招聘",
+   "scope": 1,
+   "category": "01.02",
+   "docType": null,
+   "secret": null,
+   "weight": 10
+  },
+  {
+   "keyword": "考勤",
+   "scope": 1,
+   "category": "01.02",
+   "docType": null,
+   "secret": null,
+   "weight": 10
+  },
+  {
+   "keyword": "员工手册",
+   "scope": 1,
+   "category": "01.02",
+   "docType": null,
+   "secret": null,
+   "weight": 10
+  },
+  {
+   "keyword": "薪酬",
+   "scope": 1,
+   "category": "01.02",
+   "docType": null,
+   "secret": null,
+   "weight": 10
+  },
+  {
+   "keyword": "绩效",
+   "scope": 1,
+   "category": "01.02",
+   "docType": null,
+   "secret": null,
+   "weight": 10
+  },
+  {
+   "keyword": "入职",
+   "scope": 1,
+   "category": "01.02",
+   "docType": null,
+   "secret": null,
+   "weight": 10
+  },
+  {
+   "keyword": "离职",
+   "scope": 1,
+   "category": "01.02",
+   "docType": null,
+   "secret": null,
+   "weight": 10
+  },
+  {
+   "keyword": "劳动合同",
+   "scope": 1,
+   "category": "01.02",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "会议",
+   "scope": 1,
+   "category": "01.03",
+   "docType": null,
+   "secret": null,
+   "weight": 10
+  },
+  {
+   "keyword": "公文",
+   "scope": 1,
+   "category": "01.03",
+   "docType": null,
+   "secret": null,
+   "weight": 10
+  },
+  {
+   "keyword": "签批",
+   "scope": 1,
+   "category": "01.03",
+   "docType": null,
+   "secret": null,
+   "weight": 10
+  },
+  {
+   "keyword": "印章",
+   "scope": 1,
+   "category": "01.03",
+   "docType": null,
+   "secret": null,
+   "weight": 10
+  },
+  {
+   "keyword": "用印",
+   "scope": 1,
+   "category": "01.03",
+   "docType": null,
+   "secret": null,
+   "weight": 10
+  },
+  {
+   "keyword": "纪要",
+   "scope": 1,
+   "category": "01.03",
+   "docType": null,
+   "secret": null,
+   "weight": 10
+  },
+  {
+   "keyword": "证照合同用印",
+   "scope": 1,
+   "category": "01.03",
+   "docType": null,
+   "secret": null,
+   "weight": 10
+  },
+  {
+   "keyword": "物资",
+   "scope": 1,
+   "category": "01.04",
+   "docType": null,
+   "secret": null,
+   "weight": 10
+  },
+  {
+   "keyword": "出入库",
+   "scope": 1,
+   "category": "01.04",
+   "docType": null,
+   "secret": null,
+   "weight": 10
+  },
+  {
+   "keyword": "钥匙",
+   "scope": 1,
+   "category": "01.04",
+   "docType": null,
+   "secret": null,
+   "weight": 10
+  },
+  {
+   "keyword": "节能",
+   "scope": 1,
+   "category": "01.04",
+   "docType": null,
+   "secret": null,
+   "weight": 10
+  },
+  {
+   "keyword": "仓库管理",
+   "scope": 1,
+   "category": "01.04",
+   "docType": null,
+   "secret": null,
+   "weight": 6
+  },
+  {
+   "keyword": "体系总控",
+   "scope": 1,
+   "category": "01.05",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "总控台账",
+   "scope": 1,
+   "category": "01.05",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "体系深化",
+   "scope": 1,
+   "category": "01.05",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "表单与记录",
+   "scope": 1,
+   "category": "01.05",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "运行表单台账",
+   "scope": 1,
+   "category": "01.05",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "管理体系",
+   "scope": 1,
+   "category": "01.05",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "股东会",
+   "scope": 1,
+   "category": "01.06",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "工作汇报",
+   "scope": 1,
+   "category": "01.06",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "汇报",
+   "scope": 1,
+   "category": "01.06",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "工作总结",
+   "scope": 1,
+   "category": "01.06",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "月报",
+   "scope": 1,
+   "category": "01.06",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "周报",
+   "scope": 1,
+   "category": "01.06",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "季报",
+   "scope": 1,
+   "category": "01.06",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "档案",
+   "scope": 1,
+   "category": "01.07",
+   "docType": null,
+   "secret": null,
+   "weight": 10
+  },
+  {
+   "keyword": "归档",
+   "scope": 1,
+   "category": "01.07",
+   "docType": null,
+   "secret": null,
+   "weight": 10
+  },
+  {
+   "keyword": "保管期限",
+   "scope": 1,
+   "category": "01.07",
+   "docType": null,
+   "secret": null,
+   "weight": 10
+  },
+  {
+   "keyword": "销毁",
+   "scope": 1,
+   "category": "01.07",
+   "docType": null,
+   "secret": null,
+   "weight": 10
+  },
+  {
+   "keyword": "电子文档",
+   "scope": 1,
+   "category": "01.07",
+   "docType": null,
+   "secret": null,
+   "weight": 10
+  },
+  {
+   "keyword": "信息安全",
+   "scope": 1,
+   "category": "01.07",
+   "docType": null,
+   "secret": null,
+   "weight": 10
+  },
+  {
+   "keyword": "信息化",
+   "scope": 1,
+   "category": "01.08",
+   "docType": null,
+   "secret": null,
+   "weight": 10
+  },
+  {
+   "keyword": "智慧物业",
+   "scope": 1,
+   "category": "01.08",
+   "docType": null,
+   "secret": null,
+   "weight": 10
+  },
+  {
+   "keyword": "系统管理",
+   "scope": 1,
+   "category": "01.08",
+   "docType": null,
+   "secret": null,
+   "weight": 10
+  },
+  {
+   "keyword": "小程序",
+   "scope": 1,
+   "category": "01.08",
+   "docType": null,
+   "secret": null,
+   "weight": 10
+  },
+  {
+   "keyword": "供应商",
+   "scope": 1,
+   "category": "01.09",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "外包商",
+   "scope": 1,
+   "category": "01.09",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "外包",
+   "scope": 1,
+   "category": "01.09",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "分包",
+   "scope": 1,
+   "category": "01.09",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "供方",
+   "scope": 1,
+   "category": "01.09",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "入驻",
+   "scope": 1,
+   "category": "02.01",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "交房",
+   "scope": 1,
+   "category": "02.01",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "验收流程",
+   "scope": 1,
+   "category": "02.01",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "退租",
+   "scope": 1,
+   "category": "02.01",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "交割",
+   "scope": 1,
+   "category": "02.01",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "招商入驻",
+   "scope": 1,
+   "category": "02.01",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "租户档案",
+   "scope": 1,
+   "category": "02.02",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "租客联系人",
+   "scope": 1,
+   "category": "02.02",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "租户联系人",
+   "scope": 1,
+   "category": "02.02",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "租客",
+   "scope": 1,
+   "category": "02.02",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "联系人",
+   "scope": 1,
+   "category": "02.02",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "租户",
+   "scope": 1,
+   "category": "02.02",
+   "docType": null,
+   "secret": null,
+   "weight": 8
+  },
+  {
+   "keyword": "装修",
+   "scope": 1,
+   "category": "02.03",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "施工报批",
+   "scope": 1,
+   "category": "02.03",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "装修报批",
+   "scope": 1,
+   "category": "02.03",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "投诉",
+   "scope": 1,
+   "category": "02.04",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "客户建议",
+   "scope": 1,
+   "category": "02.04",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "回访",
+   "scope": 1,
+   "category": "02.04",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "满意度调查",
+   "scope": 1,
+   "category": "02.04",
+   "docType": null,
+   "secret": null,
+   "weight": 16
+  },
+  {
+   "keyword": "建议",
+   "scope": 1,
+   "category": "02.04",
+   "docType": null,
+   "secret": null,
+   "weight": 6
+  },
+  {
+   "keyword": "车位",
+   "scope": 1,
+   "category": "02.05",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "车牌",
+   "scope": 1,
+   "category": "02.05",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "人脸",
+   "scope": 1,
+   "category": "02.05",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "停车系统",
+   "scope": 1,
+   "category": "02.05",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "通行名单",
+   "scope": 1,
+   "category": "02.05",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "免费车位",
+   "scope": 1,
+   "category": "02.05",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "停车",
+   "scope": 1,
+   "category": "02.05",
+   "docType": null,
+   "secret": null,
+   "weight": 8
+  },
+  {
+   "keyword": "客户服务手册",
+   "scope": 1,
+   "category": "02.06",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "客户服务",
+   "scope": 1,
+   "category": "02.06",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "服务手册",
+   "scope": 1,
+   "category": "02.06",
+   "docType": null,
+   "secret": null,
+   "weight": 8
+  },
+  {
+   "keyword": "物业服务合同",
+   "scope": 1,
+   "category": "03.01",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "物业管理合同",
+   "scope": 1,
+   "category": "03.01",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "运营及物业管理服务合同",
+   "scope": 1,
+   "category": "03.01",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "物业合同",
+   "scope": 1,
+   "category": "03.01",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "保洁服务协议",
+   "scope": 1,
+   "category": "03.02",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "保洁协议",
+   "scope": 1,
+   "category": "03.02",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "垃圾分类协议",
+   "scope": 1,
+   "category": "03.02",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "快递柜",
+   "scope": 1,
+   "category": "03.02",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "清运合同",
+   "scope": 1,
+   "category": "03.02",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "保安服务",
+   "scope": 1,
+   "category": "03.02",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "绿化服务合同",
+   "scope": 1,
+   "category": "03.02",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "垃圾清理合同",
+   "scope": 1,
+   "category": "03.02",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "服务协议",
+   "scope": 1,
+   "category": "03.02",
+   "docType": null,
+   "secret": null,
+   "weight": 6
+  },
+  {
+   "keyword": "维保合同",
+   "scope": 1,
+   "category": "03.03",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "维护保养合同",
+   "scope": 1,
+   "category": "03.03",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "维修保养合同",
+   "scope": 1,
+   "category": "03.03",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "电梯维保",
+   "scope": 1,
+   "category": "03.03",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "消防维保",
+   "scope": 1,
+   "category": "03.03",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "维保",
+   "scope": 1,
+   "category": "03.03",
+   "docType": null,
+   "secret": null,
+   "weight": 6
+  },
+  {
+   "keyword": "保单",
+   "scope": 1,
+   "category": "03.04",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "公众责任险",
+   "scope": 1,
+   "category": "03.04",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "财产一切险",
+   "scope": 1,
+   "category": "03.04",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "保险合同",
+   "scope": 1,
+   "category": "03.04",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "保险",
+   "scope": 1,
+   "category": "03.04",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "责任险",
+   "scope": 1,
+   "category": "03.04",
+   "docType": null,
+   "secret": null,
+   "weight": 8
+  },
+  {
+   "keyword": "租赁合同",
+   "scope": 1,
+   "category": "03.05",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "租赁协议",
+   "scope": 1,
+   "category": "03.05",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "仓储合同",
+   "scope": 1,
+   "category": "03.05",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "仓库租赁",
+   "scope": 1,
+   "category": "03.05",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "补充协议",
+   "scope": 1,
+   "category": "03.05",
+   "docType": null,
+   "secret": null,
+   "weight": 6
+  },
+  {
+   "keyword": "采购合同",
+   "scope": 1,
+   "category": "03.06",
+   "docType": null,
+   "secret": null,
+   "weight": 8
+  },
+  {
+   "keyword": "购销合同",
+   "scope": 1,
+   "category": "03.06",
+   "docType": null,
+   "secret": null,
+   "weight": 8
+  },
+  {
+   "keyword": "协议书",
+   "scope": 1,
+   "category": "03.06",
+   "docType": null,
+   "secret": null,
+   "weight": 8
+  },
+  {
+   "keyword": "承揽合同",
+   "scope": 1,
+   "category": "03.06",
+   "docType": null,
+   "secret": null,
+   "weight": 8
+  },
+  {
+   "keyword": "合同",
+   "scope": 1,
+   "category": "03.06",
+   "docType": null,
+   "secret": null,
+   "weight": 4
+  },
+  {
+   "keyword": "协议",
+   "scope": 1,
+   "category": "03.06",
+   "docType": null,
+   "secret": null,
+   "weight": 4
+  },
+  {
+   "keyword": "营业执照",
+   "scope": 1,
+   "category": "04.01",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "账户信息表",
+   "scope": 1,
+   "category": "04.01",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "开户许可",
+   "scope": 1,
+   "category": "04.01",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "银行开户",
+   "scope": 1,
+   "category": "04.01",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "税务登记",
+   "scope": 1,
+   "category": "04.01",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "统一社会信用代码",
+   "scope": 1,
+   "category": "04.01",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "账户信息",
+   "scope": 1,
+   "category": "04.01",
+   "docType": null,
+   "secret": null,
+   "weight": 8
+  },
+  {
+   "keyword": "公章",
+   "scope": 1,
+   "category": "04.01",
+   "docType": null,
+   "secret": null,
+   "weight": 8
+  },
+  {
+   "keyword": "不动产",
+   "scope": 1,
+   "category": "04.02",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "产权证",
+   "scope": 1,
+   "category": "04.02",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "产权证明",
+   "scope": 1,
+   "category": "04.02",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "房产证",
+   "scope": 1,
+   "category": "04.02",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "土地证",
+   "scope": 1,
+   "category": "04.02",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "产权",
+   "scope": 1,
+   "category": "04.02",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "权属",
+   "scope": 1,
+   "category": "04.02",
+   "docType": null,
+   "secret": null,
+   "weight": 6
+  },
+  {
+   "keyword": "水表变更",
+   "scope": 1,
+   "category": "04.03",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "电表变更",
+   "scope": 1,
+   "category": "04.03",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "过户",
+   "scope": 1,
+   "category": "04.03",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "户名变更",
+   "scope": 1,
+   "category": "04.03",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "水表过户",
+   "scope": 1,
+   "category": "04.03",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "电表过户",
+   "scope": 1,
+   "category": "04.03",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "水表永久编号",
+   "scope": 1,
+   "category": "04.03",
+   "docType": null,
+   "secret": null,
+   "weight": 10
+  },
+  {
+   "keyword": "授权委托",
+   "scope": 1,
+   "category": "04.04",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "委托书",
+   "scope": 1,
+   "category": "04.04",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "身份证",
+   "scope": 1,
+   "category": "04.04",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "法人证明",
+   "scope": 1,
+   "category": "04.04",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "情况证明",
+   "scope": 1,
+   "category": "04.04",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "证明",
+   "scope": 1,
+   "category": "04.04",
+   "docType": null,
+   "secret": null,
+   "weight": 8
+  },
+  {
+   "keyword": "许可证",
+   "scope": 1,
+   "category": "04.05",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "资质",
+   "scope": 1,
+   "category": "04.05",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "验收批文",
+   "scope": 1,
+   "category": "04.05",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "备案证",
+   "scope": 1,
+   "category": "04.05",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "消防验收",
+   "scope": 1,
+   "category": "04.05",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "竣工验收备案",
+   "scope": 1,
+   "category": "04.05",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "证书",
+   "scope": 1,
+   "category": "04.05",
+   "docType": null,
+   "secret": null,
+   "weight": 6
+  },
+  {
+   "keyword": "租金",
+   "scope": 1,
+   "category": "05.01",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "物业费",
+   "scope": 1,
+   "category": "05.01",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "管理费",
+   "scope": 1,
+   "category": "05.01",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "应收收费明细",
+   "scope": 1,
+   "category": "05.01",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "缴费通知",
+   "scope": 1,
+   "category": "05.01",
+   "docType": null,
+   "secret": null,
+   "weight": 5
+  },
+  {
+   "keyword": "收费明细",
+   "scope": 1,
+   "category": "05.01",
+   "docType": null,
+   "secret": null,
+   "weight": 5
+  },
+  {
+   "keyword": "水电费",
+   "scope": 1,
+   "category": "05.02",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "水费",
+   "scope": 1,
+   "category": "05.02",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "电费",
+   "scope": 1,
+   "category": "05.02",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "抄表",
+   "scope": 1,
+   "category": "05.02",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "水表",
+   "scope": 1,
+   "category": "05.02",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "电表",
+   "scope": 1,
+   "category": "05.02",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "能耗",
+   "scope": 1,
+   "category": "05.02",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "自来水",
+   "scope": 1,
+   "category": "05.02",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "电费缴费单",
+   "scope": 1,
+   "category": "05.02",
+   "docType": null,
+   "secret": null,
+   "weight": 16
+  },
+  {
+   "keyword": "水费缴费单",
+   "scope": 1,
+   "category": "05.02",
+   "docType": null,
+   "secret": null,
+   "weight": 16
+  },
+  {
+   "keyword": "电费汇总",
+   "scope": 1,
+   "category": "05.02",
+   "docType": null,
+   "secret": null,
+   "weight": 16
+  },
+  {
+   "keyword": "水电汇总",
+   "scope": 1,
+   "category": "05.02",
+   "docType": null,
+   "secret": null,
+   "weight": 16
+  },
+  {
+   "keyword": "分摊",
+   "scope": 1,
+   "category": "05.02",
+   "docType": null,
+   "secret": null,
+   "weight": 6
+  },
+  {
+   "keyword": "缴费通知",
+   "scope": 1,
+   "category": "05.02",
+   "docType": null,
+   "secret": null,
+   "weight": 5
+  },
+  {
+   "keyword": "电子版缴费通知",
+   "scope": 1,
+   "category": "05.02",
+   "docType": null,
+   "secret": null,
+   "weight": 5
+  },
+  {
+   "keyword": "保洁费",
+   "scope": 1,
+   "category": "05.03",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "停车费",
+   "scope": 1,
+   "category": "05.03",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "垃圾费",
+   "scope": 1,
+   "category": "05.03",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "垃圾分摊",
+   "scope": 1,
+   "category": "05.03",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "工业垃圾",
+   "scope": 1,
+   "category": "05.03",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "生活垃圾",
+   "scope": 1,
+   "category": "05.03",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "垃圾缴费",
+   "scope": 1,
+   "category": "05.03",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "停车场收费",
+   "scope": 1,
+   "category": "05.03",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "保洁服务收费",
+   "scope": 1,
+   "category": "05.03",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "收费标准",
+   "scope": 1,
+   "category": "05.03",
+   "docType": null,
+   "secret": null,
+   "weight": 6
+  },
+  {
+   "keyword": "预算",
+   "scope": 1,
+   "category": "05.04",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "决算",
+   "scope": 1,
+   "category": "05.04",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "年度预算",
+   "scope": 1,
+   "category": "05.04",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "月度预算",
+   "scope": 1,
+   "category": "05.04",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "经费",
+   "scope": 1,
+   "category": "05.04",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "财务报表",
+   "scope": 1,
+   "category": "05.04",
+   "docType": null,
+   "secret": null,
+   "weight": 6
+  },
+  {
+   "keyword": "采购申请",
+   "scope": 1,
+   "category": "05.05",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "物资采购",
+   "scope": 1,
+   "category": "05.05",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "请款",
+   "scope": 1,
+   "category": "05.05",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "采购清单",
+   "scope": 1,
+   "category": "05.05",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "付款申请",
+   "scope": 1,
+   "category": "05.05",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "采购",
+   "scope": 1,
+   "category": "05.05",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "报价",
+   "scope": 1,
+   "category": "05.05",
+   "docType": null,
+   "secret": null,
+   "weight": 6
+  },
+  {
+   "keyword": "发票",
+   "scope": 1,
+   "category": "05.06",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "收据",
+   "scope": 1,
+   "category": "05.06",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "付款凭证",
+   "scope": 1,
+   "category": "05.06",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "银行回单",
+   "scope": 1,
+   "category": "05.06",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "转账记录",
+   "scope": 1,
+   "category": "05.06",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "付款截图",
+   "scope": 1,
+   "category": "05.06",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "回单",
+   "scope": 1,
+   "category": "05.06",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "凭证",
+   "scope": 1,
+   "category": "05.06",
+   "docType": null,
+   "secret": null,
+   "weight": 8
+  },
+  {
+   "keyword": "付款",
+   "scope": 1,
+   "category": "05.06",
+   "docType": null,
+   "secret": null,
+   "weight": 8
+  },
+  {
+   "keyword": "财务预算及报销",
+   "scope": 1,
+   "category": "05.07",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "欠费催缴",
+   "scope": 1,
+   "category": "05.07",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "违约处罚",
+   "scope": 1,
+   "category": "05.07",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "报销",
+   "scope": 1,
+   "category": "05.07",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "财务制度",
+   "scope": 1,
+   "category": "05.07",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "收费账单",
+   "scope": 1,
+   "category": "05.07",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "催缴",
+   "scope": 1,
+   "category": "05.07",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "设备台账",
+   "scope": 1,
+   "category": "06.01",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "设备清单",
+   "scope": 1,
+   "category": "06.01",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "设备检测",
+   "scope": 1,
+   "category": "06.01",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "检测费用",
+   "scope": 1,
+   "category": "06.01",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "资产台账",
+   "scope": 1,
+   "category": "06.01",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "盘点",
+   "scope": 1,
+   "category": "06.01",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "检测",
+   "scope": 1,
+   "category": "06.01",
+   "docType": null,
+   "secret": null,
+   "weight": 6
+  },
+  {
+   "keyword": "设备",
+   "scope": 1,
+   "category": "06.01",
+   "docType": null,
+   "secret": null,
+   "weight": 6
+  },
+  {
+   "keyword": "机房",
+   "scope": 1,
+   "category": "06.02",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "配电房",
+   "scope": 1,
+   "category": "06.02",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "供配电",
+   "scope": 1,
+   "category": "06.02",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "泵房",
+   "scope": 1,
+   "category": "06.02",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "停送电",
+   "scope": 1,
+   "category": "06.02",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "发电机",
+   "scope": 1,
+   "category": "06.02",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "水泵房",
+   "scope": 1,
+   "category": "06.02",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "运行管理操作规程",
+   "scope": 1,
+   "category": "06.02",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "维护保养工作规程",
+   "scope": 1,
+   "category": "06.02",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "机电设备",
+   "scope": 1,
+   "category": "06.02",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "变配电",
+   "scope": 1,
+   "category": "06.02",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "给排水",
+   "scope": 1,
+   "category": "06.02",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "暖通",
+   "scope": 1,
+   "category": "06.02",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "突发事故",
+   "scope": 1,
+   "category": "06.02",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "运行管理",
+   "scope": 1,
+   "category": "06.02",
+   "docType": null,
+   "secret": null,
+   "weight": 6
+  },
+  {
+   "keyword": "维护保养",
+   "scope": 1,
+   "category": "06.02",
+   "docType": null,
+   "secret": null,
+   "weight": 6
+  },
+  {
+   "keyword": "电梯",
+   "scope": 1,
+   "category": "06.03",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "特种设备",
+   "scope": 1,
+   "category": "06.03",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "发电机组",
+   "scope": 1,
+   "category": "06.03",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "叉车",
+   "scope": 1,
+   "category": "06.03",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "锅炉",
+   "scope": 1,
+   "category": "06.03",
+   "docType": null,
+   "secret": null,
+   "weight": 4
+  },
+  {
+   "keyword": "维修工单",
+   "scope": 1,
+   "category": "06.04",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "工单",
+   "scope": 1,
+   "category": "06.04",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "巡检",
+   "scope": 1,
+   "category": "06.04",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "保养计划",
+   "scope": 1,
+   "category": "06.04",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "保养记录",
+   "scope": 1,
+   "category": "06.04",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "巡检记录",
+   "scope": 1,
+   "category": "06.04",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "报修",
+   "scope": 1,
+   "category": "06.04",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "维修",
+   "scope": 1,
+   "category": "06.04",
+   "docType": null,
+   "secret": null,
+   "weight": 5
+  },
+  {
+   "keyword": "房屋建筑",
+   "scope": 1,
+   "category": "06.05",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "地坪",
+   "scope": 1,
+   "category": "06.05",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "屋面",
+   "scope": 1,
+   "category": "06.05",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "防水",
+   "scope": 1,
+   "category": "06.05",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "外立面",
+   "scope": 1,
+   "category": "06.05",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "库区",
+   "scope": 1,
+   "category": "06.05",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "建筑",
+   "scope": 1,
+   "category": "06.05",
+   "docType": null,
+   "secret": null,
+   "weight": 5
+  },
+  {
+   "keyword": "弱电",
+   "scope": 1,
+   "category": "06.06",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "监控系统",
+   "scope": 1,
+   "category": "06.06",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "智能化",
+   "scope": 1,
+   "category": "06.06",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "门禁系统",
+   "scope": 1,
+   "category": "06.06",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "道闸",
+   "scope": 1,
+   "category": "06.06",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "消防监控中心",
+   "scope": 1,
+   "category": "06.06",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "监控",
+   "scope": 1,
+   "category": "06.06",
+   "docType": null,
+   "secret": null,
+   "weight": 5
+  },
+  {
+   "keyword": "月台",
+   "scope": 1,
+   "category": "06.07",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "装卸货",
+   "scope": 1,
+   "category": "06.07",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "卸货平台",
+   "scope": 1,
+   "category": "06.07",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "登车桥",
+   "scope": 1,
+   "category": "06.07",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "竣工移交",
+   "scope": 1,
+   "category": "07.01",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "竣工资料",
+   "scope": 1,
+   "category": "07.01",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "移交资料",
+   "scope": 1,
+   "category": "07.01",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "竣工图",
+   "scope": 1,
+   "category": "07.01",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "竣工验收",
+   "scope": 1,
+   "category": "07.01",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "移交",
+   "scope": 1,
+   "category": "07.01",
+   "docType": null,
+   "secret": null,
+   "weight": 6
+  },
+  {
+   "keyword": "dwg",
+   "scope": 1,
+   "category": "07.02",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "dxf",
+   "scope": 1,
+   "category": "07.02",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "cad",
+   "scope": 1,
+   "category": "07.02",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "施工图",
+   "scope": 1,
+   "category": "07.02",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "图纸",
+   "scope": 1,
+   "category": "07.02",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "图纸",
+   "scope": 1,
+   "category": "07.02",
+   "docType": null,
+   "secret": null,
+   "weight": 6
+  },
+  {
+   "keyword": "平面图",
+   "scope": 1,
+   "category": "07.03",
+   "docType": null,
+   "secret": null,
+   "weight": 16
+  },
+  {
+   "keyword": "示意图",
+   "scope": 1,
+   "category": "07.03",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "编号图",
+   "scope": 1,
+   "category": "07.03",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "布局图",
+   "scope": 1,
+   "category": "07.03",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "分区图",
+   "scope": 1,
+   "category": "07.03",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "总平图",
+   "scope": 1,
+   "category": "07.03",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "导视图纸",
+   "scope": 1,
+   "category": "07.03",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "设计方案",
+   "scope": 1,
+   "category": "07.04",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "施工组织",
+   "scope": 1,
+   "category": "07.04",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "验收报告",
+   "scope": 1,
+   "category": "07.04",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "验收单",
+   "scope": 1,
+   "category": "07.04",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "监理",
+   "scope": 1,
+   "category": "07.04",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "设计说明",
+   "scope": 1,
+   "category": "07.04",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "勘察",
+   "scope": 1,
+   "category": "07.04",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "消防安全管理",
+   "scope": 1,
+   "category": "08.01",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "消防安全协议",
+   "scope": 1,
+   "category": "08.01",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "消防安全责任",
+   "scope": 1,
+   "category": "08.01",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "消防管理制度",
+   "scope": 1,
+   "category": "08.01",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "消防安全",
+   "scope": 1,
+   "category": "08.01",
+   "docType": null,
+   "secret": null,
+   "weight": 8
+  },
+  {
+   "keyword": "隐患检查",
+   "scope": 1,
+   "category": "08.02",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "隐患排查",
+   "scope": 1,
+   "category": "08.02",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "防火检查",
+   "scope": 1,
+   "category": "08.02",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "消防检查",
+   "scope": 1,
+   "category": "08.02",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "整改通知",
+   "scope": 1,
+   "category": "08.02",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "双节隐患",
+   "scope": 1,
+   "category": "08.02",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "隐患整改",
+   "scope": 1,
+   "category": "08.02",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "隐患",
+   "scope": 1,
+   "category": "08.02",
+   "docType": null,
+   "secret": null,
+   "weight": 8
+  },
+  {
+   "keyword": "消防设施检测",
+   "scope": 1,
+   "category": "08.03",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "消防检测报告",
+   "scope": 1,
+   "category": "08.03",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "消防维保报告",
+   "scope": 1,
+   "category": "08.03",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "消防设施维护保养检测",
+   "scope": 1,
+   "category": "08.03",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "消防检测",
+   "scope": 1,
+   "category": "08.03",
+   "docType": null,
+   "secret": null,
+   "weight": 8
+  },
+  {
+   "keyword": "消防报告",
+   "scope": 1,
+   "category": "08.03",
+   "docType": null,
+   "secret": null,
+   "weight": 8
+  },
+  {
+   "keyword": "治安",
+   "scope": 1,
+   "category": "08.04",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "动火",
+   "scope": 1,
+   "category": "08.04",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "危险品",
+   "scope": 1,
+   "category": "08.04",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "危化",
+   "scope": 1,
+   "category": "08.04",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "车辆通行",
+   "scope": 1,
+   "category": "08.04",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "出入管理",
+   "scope": 1,
+   "category": "08.04",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "门岗",
+   "scope": 1,
+   "category": "08.04",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "保安",
+   "scope": 1,
+   "category": "08.04",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "秩序",
+   "scope": 1,
+   "category": "08.04",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "安保",
+   "scope": 1,
+   "category": "08.04",
+   "docType": null,
+   "secret": null,
+   "weight": 6
+  },
+  {
+   "keyword": "应急预案",
+   "scope": 1,
+   "category": "08.05",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "应急处理",
+   "scope": 1,
+   "category": "08.05",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "应急演练",
+   "scope": 1,
+   "category": "08.05",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "演练",
+   "scope": 1,
+   "category": "08.05",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "处理程序",
+   "scope": 1,
+   "category": "08.05",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "突发事故",
+   "scope": 1,
+   "category": "08.05",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "火警",
+   "scope": 1,
+   "category": "08.05",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "火灾",
+   "scope": 1,
+   "category": "08.05",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "应急",
+   "scope": 1,
+   "category": "08.05",
+   "docType": null,
+   "secret": null,
+   "weight": 6
+  },
+  {
+   "keyword": "安全生产责任",
+   "scope": 1,
+   "category": "08.06",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "安全责任书",
+   "scope": 1,
+   "category": "08.06",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "安全培训",
+   "scope": 1,
+   "category": "08.06",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "安全生产",
+   "scope": 1,
+   "category": "08.06",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "安全教育",
+   "scope": 1,
+   "category": "08.06",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "控烟",
+   "scope": 1,
+   "category": "08.06",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "上墙",
+   "scope": 1,
+   "category": "08.07",
+   "docType": null,
+   "secret": null,
+   "weight": 6
+  },
+  {
+   "keyword": "警示标识",
+   "scope": 1,
+   "category": "08.07",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "警示牌",
+   "scope": 1,
+   "category": "08.07",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "标语",
+   "scope": 1,
+   "category": "08.07",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "保洁作业",
+   "scope": 1,
+   "category": "09.01",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "保洁标准",
+   "scope": 1,
+   "category": "09.01",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "保洁检查",
+   "scope": 1,
+   "category": "09.01",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "保洁岗位",
+   "scope": 1,
+   "category": "09.01",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "环境卫生检查",
+   "scope": 1,
+   "category": "09.01",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "保洁考核",
+   "scope": 1,
+   "category": "09.01",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "保洁",
+   "scope": 1,
+   "category": "09.01",
+   "docType": null,
+   "secret": null,
+   "weight": 6
+  },
+  {
+   "keyword": "卫生间",
+   "scope": 1,
+   "category": "09.01",
+   "docType": null,
+   "secret": null,
+   "weight": 6
+  },
+  {
+   "keyword": "绿化养护",
+   "scope": 1,
+   "category": "09.02",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "绿化管理",
+   "scope": 1,
+   "category": "09.02",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "绿化",
+   "scope": 1,
+   "category": "09.02",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "园林",
+   "scope": 1,
+   "category": "09.02",
+   "docType": null,
+   "secret": null,
+   "weight": 5
+  },
+  {
+   "keyword": "垃圾管理",
+   "scope": 1,
+   "category": "09.03",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "垃圾清运",
+   "scope": 1,
+   "category": "09.03",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "病媒",
+   "scope": 1,
+   "category": "09.03",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "杀虫",
+   "scope": 1,
+   "category": "09.03",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "灭鼠",
+   "scope": 1,
+   "category": "09.03",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "消杀",
+   "scope": 1,
+   "category": "09.03",
+   "docType": null,
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "垃圾",
+   "scope": 1,
+   "category": "09.03",
+   "docType": null,
+   "secret": null,
+   "weight": 6
+  },
+  {
+   "keyword": "SOP",
+   "scope": 1,
+   "category": "10.01",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "SLA",
+   "scope": 1,
+   "category": "10.01",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "服务质量标准",
+   "scope": 1,
+   "category": "10.01",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "服务标准",
+   "scope": 1,
+   "category": "10.01",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "质量标准",
+   "scope": 1,
+   "category": "10.01",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "质量管理",
+   "scope": 1,
+   "category": "10.01",
+   "docType": null,
+   "secret": null,
+   "weight": 6
+  },
+  {
+   "keyword": "飞行检查",
+   "scope": 1,
+   "category": "10.02",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "内部巡查",
+   "scope": 1,
+   "category": "10.02",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "质量检查",
+   "scope": 1,
+   "category": "10.02",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "巡查",
+   "scope": 1,
+   "category": "10.02",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "巡检考核",
+   "scope": 1,
+   "category": "10.02",
+   "docType": null,
+   "secret": null,
+   "weight": 6
+  },
+  {
+   "keyword": "第三方满意度",
+   "scope": 1,
+   "category": "10.03",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "满意度评估",
+   "scope": 1,
+   "category": "10.03",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "第三方评估",
+   "scope": 1,
+   "category": "10.03",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "满意度",
+   "scope": 1,
+   "category": "10.03",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "奖惩",
+   "scope": 1,
+   "category": "10.04",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "考核办法",
+   "scope": 1,
+   "category": "10.04",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "考核制度",
+   "scope": 1,
+   "category": "10.04",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "处罚",
+   "scope": 1,
+   "category": "10.04",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "奖励",
+   "scope": 1,
+   "category": "10.04",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "法律法规",
+   "scope": 1,
+   "category": "11.01",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "法规跟踪",
+   "scope": 1,
+   "category": "11.01",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "合规",
+   "scope": 1,
+   "category": "11.01",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "法律法规跟踪",
+   "scope": 1,
+   "category": "11.01",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "合规管理",
+   "scope": 1,
+   "category": "11.01",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "纠纷",
+   "scope": 1,
+   "category": "11.02",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "诉讼",
+   "scope": 1,
+   "category": "11.02",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "仲裁",
+   "scope": 1,
+   "category": "11.02",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "法律处理",
+   "scope": 1,
+   "category": "11.02",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "律师函",
+   "scope": 1,
+   "category": "11.02",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "起诉",
+   "scope": 1,
+   "category": "11.02",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "合同范本",
+   "scope": 1,
+   "category": "11.03",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "范本",
+   "scope": 1,
+   "category": "11.03",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "格式合同",
+   "scope": 1,
+   "category": "11.03",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "合同模板",
+   "scope": 1,
+   "category": "11.03",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "合同模版",
+   "scope": 1,
+   "category": "11.03",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "形象品牌",
+   "scope": 1,
+   "category": "12.01",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "导视标识",
+   "scope": 1,
+   "category": "12.01",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "导视",
+   "scope": 1,
+   "category": "12.01",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "品牌",
+   "scope": 1,
+   "category": "12.01",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "VI手册",
+   "scope": 1,
+   "category": "12.01",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "标识管理",
+   "scope": 1,
+   "category": "12.01",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "活动方案",
+   "scope": 1,
+   "category": "12.02",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "活动组织",
+   "scope": 1,
+   "category": "12.02",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "中秋",
+   "scope": 1,
+   "category": "12.02",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "节日",
+   "scope": 1,
+   "category": "12.02",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "国庆",
+   "scope": 1,
+   "category": "12.02",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "春节",
+   "scope": 1,
+   "category": "12.02",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "端午",
+   "scope": 1,
+   "category": "12.02",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "礼品发放",
+   "scope": 1,
+   "category": "12.02",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "团建",
+   "scope": 1,
+   "category": "12.02",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "招商活动",
+   "scope": 1,
+   "category": "12.02",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "活动",
+   "scope": 1,
+   "category": "12.02",
+   "docType": null,
+   "secret": null,
+   "weight": 6
+  },
+  {
+   "keyword": "招商物业协同",
+   "scope": 1,
+   "category": "12.03",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "协同交付",
+   "scope": 1,
+   "category": "12.03",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "招商配合",
+   "scope": 1,
+   "category": "12.03",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "招商",
+   "scope": 1,
+   "category": "12.03",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "广告位",
+   "scope": 1,
+   "category": "12.04",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "媒体资源",
+   "scope": 1,
+   "category": "12.04",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "广告",
+   "scope": 1,
+   "category": "12.04",
+   "docType": null,
+   "secret": null,
+   "weight": 14
+  },
+  {
+   "keyword": "物业服务费",
+   "scope": 2,
+   "category": "03.01",
+   "docType": null,
+   "secret": null,
+   "weight": 3
+  },
+  {
+   "keyword": "甲方",
+   "scope": 2,
+   "category": "03.01",
+   "docType": null,
+   "secret": null,
+   "weight": 3
+  },
+  {
+   "keyword": "乙方",
+   "scope": 2,
+   "category": "03.01",
+   "docType": null,
+   "secret": null,
+   "weight": 3
+  },
+  {
+   "keyword": "物业管理服务",
+   "scope": 2,
+   "category": "03.01",
+   "docType": null,
+   "secret": null,
+   "weight": 3
+  },
+  {
+   "keyword": "被保险人",
+   "scope": 2,
+   "category": "03.04",
+   "docType": null,
+   "secret": null,
+   "weight": 4
+  },
+  {
+   "keyword": "保险期间",
+   "scope": 2,
+   "category": "03.04",
+   "docType": null,
+   "secret": null,
+   "weight": 4
+  },
+  {
+   "keyword": "保险费",
+   "scope": 2,
+   "category": "03.04",
+   "docType": null,
+   "secret": null,
+   "weight": 4
+  },
+  {
+   "keyword": "保险单",
+   "scope": 2,
+   "category": "03.04",
+   "docType": null,
+   "secret": null,
+   "weight": 4
+  },
+  {
+   "keyword": "统一社会信用代码",
+   "scope": 2,
+   "category": "04.01",
+   "docType": null,
+   "secret": null,
+   "weight": 4
+  },
+  {
+   "keyword": "营业期限",
+   "scope": 2,
+   "category": "04.01",
+   "docType": null,
+   "secret": null,
+   "weight": 4
+  },
+  {
+   "keyword": "法定代表人",
+   "scope": 2,
+   "category": "04.01",
+   "docType": null,
+   "secret": null,
+   "weight": 4
+  },
+  {
+   "keyword": "隐患",
+   "scope": 2,
+   "category": "08.02",
+   "docType": null,
+   "secret": null,
+   "weight": 3
+  },
+  {
+   "keyword": "整改",
+   "scope": 2,
+   "category": "08.02",
+   "docType": null,
+   "secret": null,
+   "weight": 3
+  },
+  {
+   "keyword": "消防",
+   "scope": 2,
+   "category": "08.02",
+   "docType": null,
+   "secret": null,
+   "weight": 3
+  },
+  {
+   "keyword": "读数",
+   "scope": 2,
+   "category": "05.02",
+   "docType": null,
+   "secret": null,
+   "weight": 3
+  },
+  {
+   "keyword": "用电量",
+   "scope": 2,
+   "category": "05.02",
+   "docType": null,
+   "secret": null,
+   "weight": 3
+  },
+  {
+   "keyword": "用水量",
+   "scope": 2,
+   "category": "05.02",
+   "docType": null,
+   "secret": null,
+   "weight": 3
+  },
+  {
+   "keyword": "上月读数",
+   "scope": 2,
+   "category": "05.02",
+   "docType": null,
+   "secret": null,
+   "weight": 3
+  },
+  {
+   "keyword": "本月读数",
+   "scope": 2,
+   "category": "05.02",
+   "docType": null,
+   "secret": null,
+   "weight": 3
+  },
+  {
+   "keyword": "租金",
+   "scope": 2,
+   "category": "05.01",
+   "docType": null,
+   "secret": null,
+   "weight": 3
+  },
+  {
+   "keyword": "应收",
+   "scope": 2,
+   "category": "05.01",
+   "docType": null,
+   "secret": null,
+   "weight": 3
+  },
+  {
+   "keyword": "本期应缴",
+   "scope": 2,
+   "category": "05.01",
+   "docType": null,
+   "secret": null,
+   "weight": 3
+  },
+  {
+   "keyword": "合同",
+   "scope": 1,
+   "category": null,
+   "docType": "合同协议",
+   "secret": null,
+   "weight": 10
+  },
+  {
+   "keyword": "协议",
+   "scope": 1,
+   "category": null,
+   "docType": "合同协议",
+   "secret": null,
+   "weight": 10
+  },
+  {
+   "keyword": "保单",
+   "scope": 1,
+   "category": null,
+   "docType": "合同协议",
+   "secret": null,
+   "weight": 10
+  },
+  {
+   "keyword": "制度",
+   "scope": 1,
+   "category": null,
+   "docType": "制度规程",
+   "secret": null,
+   "weight": 10
+  },
+  {
+   "keyword": "办法",
+   "scope": 1,
+   "category": null,
+   "docType": "制度规程",
+   "secret": null,
+   "weight": 10
+  },
+  {
+   "keyword": "规定",
+   "scope": 1,
+   "category": null,
+   "docType": "制度规程",
+   "secret": null,
+   "weight": 10
+  },
+  {
+   "keyword": "规程",
+   "scope": 1,
+   "category": null,
+   "docType": "制度规程",
+   "secret": null,
+   "weight": 10
+  },
+  {
+   "keyword": "守则",
+   "scope": 1,
+   "category": null,
+   "docType": "制度规程",
+   "secret": null,
+   "weight": 10
+  },
+  {
+   "keyword": "须知",
+   "scope": 1,
+   "category": null,
+   "docType": "制度规程",
+   "secret": null,
+   "weight": 10
+  },
+  {
+   "keyword": "职责",
+   "scope": 1,
+   "category": null,
+   "docType": "制度规程",
+   "secret": null,
+   "weight": 10
+  },
+  {
+   "keyword": "流程",
+   "scope": 1,
+   "category": null,
+   "docType": "制度规程",
+   "secret": null,
+   "weight": 10
+  },
+  {
+   "keyword": "标准",
+   "scope": 1,
+   "category": null,
+   "docType": "制度规程",
+   "secret": null,
+   "weight": 10
+  },
+  {
+   "keyword": "预案",
+   "scope": 1,
+   "category": null,
+   "docType": "制度规程",
+   "secret": null,
+   "weight": 10
+  },
+  {
+   "keyword": "SOP",
+   "scope": 1,
+   "category": null,
+   "docType": "制度规程",
+   "secret": null,
+   "weight": 10
+  },
+  {
+   "keyword": "手册",
+   "scope": 1,
+   "category": null,
+   "docType": "制度规程",
+   "secret": null,
+   "weight": 10
+  },
+  {
+   "keyword": "处理程序",
+   "scope": 1,
+   "category": null,
+   "docType": "制度规程",
+   "secret": null,
+   "weight": 10
+  },
+  {
+   "keyword": "营业执照",
+   "scope": 1,
+   "category": null,
+   "docType": "证照证明",
+   "secret": null,
+   "weight": 10
+  },
+  {
+   "keyword": "许可证",
+   "scope": 1,
+   "category": null,
+   "docType": "证照证明",
+   "secret": null,
+   "weight": 10
+  },
+  {
+   "keyword": "资质",
+   "scope": 1,
+   "category": null,
+   "docType": "证照证明",
+   "secret": null,
+   "weight": 10
+  },
+  {
+   "keyword": "证书",
+   "scope": 1,
+   "category": null,
+   "docType": "证照证明",
+   "secret": null,
+   "weight": 10
+  },
+  {
+   "keyword": "身份证",
+   "scope": 1,
+   "category": null,
+   "docType": "证照证明",
+   "secret": null,
+   "weight": 10
+  },
+  {
+   "keyword": "产权",
+   "scope": 1,
+   "category": null,
+   "docType": "证照证明",
+   "secret": null,
+   "weight": 10
+  },
+  {
+   "keyword": "证明",
+   "scope": 1,
+   "category": null,
+   "docType": "证照证明",
+   "secret": null,
+   "weight": 10
+  },
+  {
+   "keyword": "备案",
+   "scope": 1,
+   "category": null,
+   "docType": "证照证明",
+   "secret": null,
+   "weight": 10
+  },
+  {
+   "keyword": "账户信息",
+   "scope": 1,
+   "category": null,
+   "docType": "证照证明",
+   "secret": null,
+   "weight": 10
+  },
+  {
+   "keyword": "台账",
+   "scope": 1,
+   "category": null,
+   "docType": "台账清单",
+   "secret": null,
+   "weight": 9
+  },
+  {
+   "keyword": "清单",
+   "scope": 1,
+   "category": null,
+   "docType": "台账清单",
+   "secret": null,
+   "weight": 9
+  },
+  {
+   "keyword": "明细",
+   "scope": 1,
+   "category": null,
+   "docType": "台账清单",
+   "secret": null,
+   "weight": 9
+  },
+  {
+   "keyword": "名单",
+   "scope": 1,
+   "category": null,
+   "docType": "台账清单",
+   "secret": null,
+   "weight": 9
+  },
+  {
+   "keyword": "登记",
+   "scope": 1,
+   "category": null,
+   "docType": "台账清单",
+   "secret": null,
+   "weight": 9
+  },
+  {
+   "keyword": "汇总",
+   "scope": 1,
+   "category": null,
+   "docType": "台账清单",
+   "secret": null,
+   "weight": 9
+  },
+  {
+   "keyword": "分配表",
+   "scope": 1,
+   "category": null,
+   "docType": "台账清单",
+   "secret": null,
+   "weight": 9
+  },
+  {
+   "keyword": "收集表",
+   "scope": 1,
+   "category": null,
+   "docType": "台账清单",
+   "secret": null,
+   "weight": 9
+  },
+  {
+   "keyword": "联系人",
+   "scope": 1,
+   "category": null,
+   "docType": "台账清单",
+   "secret": null,
+   "weight": 9
+  },
+  {
+   "keyword": "分摊表",
+   "scope": 1,
+   "category": null,
+   "docType": "台账清单",
+   "secret": null,
+   "weight": 9
+  },
+  {
+   "keyword": "总表",
+   "scope": 1,
+   "category": null,
+   "docType": "台账清单",
+   "secret": null,
+   "weight": 9
+  },
+  {
+   "keyword": "记录",
+   "scope": 1,
+   "category": null,
+   "docType": "记录表单",
+   "secret": null,
+   "weight": 9
+  },
+  {
+   "keyword": "检查表",
+   "scope": 1,
+   "category": null,
+   "docType": "记录表单",
+   "secret": null,
+   "weight": 9
+  },
+  {
+   "keyword": "隐患检查",
+   "scope": 1,
+   "category": null,
+   "docType": "记录表单",
+   "secret": null,
+   "weight": 9
+  },
+  {
+   "keyword": "巡检",
+   "scope": 1,
+   "category": null,
+   "docType": "记录表单",
+   "secret": null,
+   "weight": 9
+  },
+  {
+   "keyword": "抄表",
+   "scope": 1,
+   "category": null,
+   "docType": "记录表单",
+   "secret": null,
+   "weight": 9
+  },
+  {
+   "keyword": "表单",
+   "scope": 1,
+   "category": null,
+   "docType": "记录表单",
+   "secret": null,
+   "weight": 9
+  },
+  {
+   "keyword": "确认函",
+   "scope": 1,
+   "category": null,
+   "docType": "记录表单",
+   "secret": null,
+   "weight": 9
+  },
+  {
+   "keyword": "检查",
+   "scope": 1,
+   "category": null,
+   "docType": "记录表单",
+   "secret": null,
+   "weight": 9
+  },
+  {
+   "keyword": "通知单",
+   "scope": 1,
+   "category": null,
+   "docType": "通知账单",
+   "secret": null,
+   "weight": 10
+  },
+  {
+   "keyword": "缴费",
+   "scope": 1,
+   "category": null,
+   "docType": "通知账单",
+   "secret": null,
+   "weight": 10
+  },
+  {
+   "keyword": "账单",
+   "scope": 1,
+   "category": null,
+   "docType": "通知账单",
+   "secret": null,
+   "weight": 10
+  },
+  {
+   "keyword": "催缴",
+   "scope": 1,
+   "category": null,
+   "docType": "通知账单",
+   "secret": null,
+   "weight": 10
+  },
+  {
+   "keyword": "方案",
+   "scope": 1,
+   "category": null,
+   "docType": "方案报告",
+   "secret": null,
+   "weight": 9
+  },
+  {
+   "keyword": "报告",
+   "scope": 1,
+   "category": null,
+   "docType": "方案报告",
+   "secret": null,
+   "weight": 9
+  },
+  {
+   "keyword": "汇报",
+   "scope": 1,
+   "category": null,
+   "docType": "方案报告",
+   "secret": null,
+   "weight": 9
+  },
+  {
+   "keyword": "总结",
+   "scope": 1,
+   "category": null,
+   "docType": "方案报告",
+   "secret": null,
+   "weight": 9
+  },
+  {
+   "keyword": "计划",
+   "scope": 1,
+   "category": null,
+   "docType": "方案报告",
+   "secret": null,
+   "weight": 9
+  },
+  {
+   "keyword": "说明",
+   "scope": 1,
+   "category": null,
+   "docType": "方案报告",
+   "secret": null,
+   "weight": 9
+  },
+  {
+   "keyword": "体系深化",
+   "scope": 1,
+   "category": null,
+   "docType": "方案报告",
+   "secret": null,
+   "weight": 9
+  },
+  {
+   "keyword": "图纸",
+   "scope": 1,
+   "category": null,
+   "docType": "图纸图片",
+   "secret": null,
+   "weight": 10
+  },
+  {
+   "keyword": "平面图",
+   "scope": 1,
+   "category": null,
+   "docType": "图纸图片",
+   "secret": null,
+   "weight": 10
+  },
+  {
+   "keyword": "示意图",
+   "scope": 1,
+   "category": null,
+   "docType": "图纸图片",
+   "secret": null,
+   "weight": 10
+  },
+  {
+   "keyword": "编号图",
+   "scope": 1,
+   "category": null,
+   "docType": "图纸图片",
+   "secret": null,
+   "weight": 10
+  },
+  {
+   "keyword": "竣工图",
+   "scope": 1,
+   "category": null,
+   "docType": "图纸图片",
+   "secret": null,
+   "weight": 10
+  },
+  {
+   "keyword": "dwg",
+   "scope": 1,
+   "category": null,
+   "docType": "图纸图片",
+   "secret": null,
+   "weight": 10
+  },
+  {
+   "keyword": "dxf",
+   "scope": 1,
+   "category": null,
+   "docType": "图纸图片",
+   "secret": null,
+   "weight": 10
+  },
+  {
+   "keyword": "发票",
+   "scope": 1,
+   "category": null,
+   "docType": "票据凭证",
+   "secret": null,
+   "weight": 10
+  },
+  {
+   "keyword": "收据",
+   "scope": 1,
+   "category": null,
+   "docType": "票据凭证",
+   "secret": null,
+   "weight": 10
+  },
+  {
+   "keyword": "凭证",
+   "scope": 1,
+   "category": null,
+   "docType": "票据凭证",
+   "secret": null,
+   "weight": 10
+  },
+  {
+   "keyword": "付款",
+   "scope": 1,
+   "category": null,
+   "docType": "票据凭证",
+   "secret": null,
+   "weight": 10
+  },
+  {
+   "keyword": "回单",
+   "scope": 1,
+   "category": null,
+   "docType": "票据凭证",
+   "secret": null,
+   "weight": 10
+  },
+  {
+   "keyword": "申请",
+   "scope": 1,
+   "category": null,
+   "docType": "函件申请",
+   "secret": null,
+   "weight": 8
+  },
+  {
+   "keyword": "授权委托书",
+   "scope": 1,
+   "category": null,
+   "docType": "函件申请",
+   "secret": null,
+   "weight": 8
+  },
+  {
+   "keyword": "委托书",
+   "scope": 1,
+   "category": null,
+   "docType": "函件申请",
+   "secret": null,
+   "weight": 8
+  },
+  {
+   "keyword": "函",
+   "scope": 1,
+   "category": null,
+   "docType": "函件申请",
+   "secret": null,
+   "weight": 8
+  },
+  {
+   "keyword": "请款",
+   "scope": 1,
+   "category": null,
+   "docType": "函件申请",
+   "secret": null,
+   "weight": 12
+  },
+  {
+   "keyword": "水表",
+   "scope": 1,
+   "category": null,
+   "docType": "记录表单",
+   "secret": null,
+   "weight": 9
+  },
+  {
+   "keyword": "电表",
+   "scope": 1,
+   "category": null,
+   "docType": "记录表单",
+   "secret": null,
+   "weight": 9
+  },
+  {
+   "keyword": "身份证",
+   "scope": 1,
+   "category": null,
+   "docType": null,
+   "secret": 3,
+   "weight": 5
+  },
+  {
+   "keyword": "人脸",
+   "scope": 1,
+   "category": null,
+   "docType": null,
+   "secret": 3,
+   "weight": 5
+  },
+  {
+   "keyword": "车牌",
+   "scope": 1,
+   "category": null,
+   "docType": null,
+   "secret": 3,
+   "weight": 5
+  },
+  {
+   "keyword": "银行",
+   "scope": 1,
+   "category": null,
+   "docType": null,
+   "secret": 3,
+   "weight": 5
+  },
+  {
+   "keyword": "账户信息",
+   "scope": 1,
+   "category": null,
+   "docType": null,
+   "secret": 3,
+   "weight": 5
+  },
+  {
+   "keyword": "开户",
+   "scope": 1,
+   "category": null,
+   "docType": null,
+   "secret": 3,
+   "weight": 5
+  },
+  {
+   "keyword": "工资",
+   "scope": 1,
+   "category": null,
+   "docType": null,
+   "secret": 3,
+   "weight": 5
+  },
+  {
+   "keyword": "劳动合同",
+   "scope": 1,
+   "category": null,
+   "docType": null,
+   "secret": 3,
+   "weight": 5
+  },
+  {
+   "keyword": "上墙",
+   "scope": 1,
+   "category": null,
+   "docType": null,
+   "secret": 1,
+   "weight": 5
+  }
+ ],
+ "docTypes": [
+  "制度规程",
+  "合同协议",
+  "证照证明",
+  "台账清单",
+  "记录表单",
+  "通知账单",
+  "方案报告",
+  "图纸图片",
+  "票据凭证",
+  "函件申请",
+  "其他"
+ ]
+}
