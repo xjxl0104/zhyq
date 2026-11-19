@@ -37,6 +37,8 @@ public class PaymentController {
         BigDecimal amount = body.get("amount") == null ? null : new BigDecimal(body.get("amount").toString());
         String payMethod = body.get("payMethod") == null ? null : body.get("payMethod").toString();
         String payNo = body.get("payNo") == null ? null : body.get("payNo").toString();
+        if (body.get("tenantRefId") != null)
+            return Result.ok(paymentService.collectForTenant(Long.valueOf(body.get("tenantRefId").toString()), billId, amount, payMethod, payNo));
         return Result.ok(paymentService.收款(billId, amount, payMethod, payNo));
     }
 
@@ -64,6 +66,8 @@ public class PaymentController {
     public Result<Bill> writeOff(@RequestBody Map<String, Object> body) {
         Long billId = body.get("billId") == null ? null : Long.valueOf(body.get("billId").toString());
         String remark = body.get("remark") == null ? null : body.get("remark").toString();
+        if (body.get("tenantRefId") != null)
+            return Result.ok(paymentService.writeOffForTenant(Long.valueOf(body.get("tenantRefId").toString()), billId, remark, username()));
         return Result.ok(paymentService.零元核销(billId, remark, username()));
     }
 

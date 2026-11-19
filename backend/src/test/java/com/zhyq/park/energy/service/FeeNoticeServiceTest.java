@@ -136,6 +136,8 @@ class FeeNoticeServiceTest {
         assertThat(service.require(1L).getNoticeStale()).isTrue();
 
         p.setInputsChangedTime(LocalDateTime.of(2026, 11, 1, 9, 59, 0));
+        assertThat(service.require(1L).getNoticeStale()).isTrue(); // 旧版草稿要按归属期重算
+        p.setCalculationVersion(2);
         assertThat(service.require(1L).getNoticeStale()).isFalse();
     }
 
@@ -147,7 +149,7 @@ class FeeNoticeServiceTest {
         Bill paid = new Bill();
         paid.setId(5L);
         paid.setPaidAmount(new BigDecimal("1.00"));
-        when(billMapper.selectById(5L)).thenReturn(paid);
+        when(billMapper.lockActive(5L)).thenReturn(paid);
 
         assertThatThrownBy(() -> service.deleteNotices(1L, List.of(11L), false))
                 .isInstanceOf(BizException.class).hasMessageContaining("已收款");
@@ -163,7 +165,7 @@ class FeeNoticeServiceTest {
         Bill unpaid = new Bill();
         unpaid.setId(5L);
         unpaid.setPaidAmount(BigDecimal.ZERO);
-        when(billMapper.selectById(5L)).thenReturn(unpaid);
+        when(billMapper.lockActive(5L)).thenReturn(unpaid);
 
         var r = service.deleteNotices(1L, List.of(11L), false);
 

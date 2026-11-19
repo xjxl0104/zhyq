@@ -8,7 +8,8 @@
       <div class="commerce-page__actions">
         <span class="commerce-chip"><el-icon><Calendar /></el-icon>最近 6 个月</span>
         <!-- 刷新是否真的生效,光看数字看不出来(数字常常本来就没变)。给出更新时间 -->
-        <span v-if="updatedAt" class="commerce-chip">更新于 {{ updatedAt }}</span>
+        <span v-if="updatedAt" class="commerce-chip">上次完整更新 {{ updatedAt }}</span>
+        <span v-if="refreshWarning" role="status" class="commerce-chip">{{ refreshWarning }}</span>
         <el-button class="commerce-action" data-testid="fullscreen-dashboard" :aria-pressed="fullscreen" @click="toggleFullscreen">
           <el-icon><FullScreen /></el-icon><span>{{ fullscreen ? '退出全屏' : '全屏展示' }}</span>
         </el-button>
@@ -133,6 +134,7 @@
 </template>
 
 <script setup>
+import { refreshHistory } from '@/utils/refreshHistory'
 import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, reactive, ref } from 'vue'
 import * as echarts from 'echarts'
 import { ElMessage } from 'element-plus'
@@ -143,6 +145,8 @@ import MonitoringPanels from './MonitoringPanels.vue'
 // 等于把「实时」做成了「手动」。定时器只在页面可见时跑,见下面 onActivated/onDeactivated
 const AUTO_REFRESH_MS = 60000
 const updatedAt = ref('')
+const refreshWarning = ref('')
+const recordRefresh = refreshHistory()
 let autoTimer = null
 let disposed = false, resizeObserver
 const boardRef = ref(), monitoringRef = ref(), fullscreen = ref(false), refreshing = ref(false)
@@ -193,6 +197,7 @@ function renderSourceChart() {
 
 async function load() {
   if (loading.value || disposed) return
+  const results = []
   loading.value = true
   try {
     const ov = await dashboardApi.overview()
@@ -204,7 +209,8 @@ async function load() {
     Object.assign(other, ov.other || {})
     await nextTick()
     renderSourceChart()
-  } catch (e) { /* 各区块保留现有值 */ }
+    results.push(['园区概览', true])
+  } catch { results.push(['园区概览', false]) }
 
   try {
     roomData.value = await dashboardApi.roomStatus() || []
@@ -214,7 +220,8 @@ async function load() {
       color: ['#0a24e9', '#6f7df3', '#5c9764', '#d99022', '#d95c62', '#a9b6c0', '#277f9d'],
       series: [{ type: 'pie', radius: ['53%', '73%'], center: ['50%', '43%'], data: roomData.value, itemStyle: { borderColor: '#fff', borderWidth: 4, borderRadius: 6 }, label: { show: false } }]
     }, true)
-  } catch (e) { /* 房源图独立容错 */ }
+    results.push(['房源状态', true])
+  } catch { results.push(['房源状态', false]) }
 
   try {
     const trend = await dashboardApi.revenueTrend()
@@ -228,7 +235,8 @@ async function load() {
         { name: '实收', type: 'line', data: trend.received, smooth: true, symbol: 'circle', symbolSize: 7, itemStyle: { color: '#0a24e9', borderColor: '#fff', borderWidth: 2 }, lineStyle: { width: 3, color: '#0a24e9' }, areaStyle: { color: 'rgba(10,36,233,.07)' } }
       ]
     }, true)
-  } catch (e) { /* 趋势图独立容错 */ }
+    results.push(['收款趋势', true])
+  } catch { results.push(['收款趋势', false]) }
 
   try {
     const wo = await dashboardApi.workOrderCategory()
@@ -239,8 +247,11 @@ async function load() {
       yAxis: { type: 'value', axisLine: { show: false }, axisTick: { show: false }, splitLine: { lineStyle: { color: '#f0f2f5', type: 'dashed' } }, axisLabel: { color: '#a9b6c0' } },
       series: [{ type: 'bar', data: wo.map(x => x.value), itemStyle: { color: '#0a24e9', borderRadius: [7, 7, 0, 0] }, barMaxWidth: 24 }]
     }, true)
-  } catch (e) { /* 工单图独立容错 */ }
-  updatedAt.value = new Date().toLocaleTimeString('zh-CN', { hour12: false })
+    results.push(['工单分类', true])
+  } catch { results.push(['工单分类', false]) }
+  const refresh = recordRefresh(results)
+  refreshWarning.value = refresh.warning
+  if (refresh.updated) updatedAt.value = refresh.updated
   loading.value = false
 }
 

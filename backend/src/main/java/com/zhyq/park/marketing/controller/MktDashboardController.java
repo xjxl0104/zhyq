@@ -25,12 +25,13 @@ public class MktDashboardController {
     @Operation(summary = "汇总卡片") @PreAuthorize("hasAuthority('crm:marketing:dashboard:query')") @GetMapping("/summary")
     public Result<Map<String, Object>> summary(@RequestParam(defaultValue = "30d") String range) {
         LocalDate since = since(range);
+        LocalDate activityStart = LocalDate.now(java.time.ZoneId.of("Asia/Shanghai")).minusDays(29);
         Map<String, Object> m = new HashMap<>();
         m.put("activePromoters", jdbc.queryForObject(
                 "SELECT COUNT(DISTINCT p.id) FROM crm_promoter p WHERE p.deleted = 0 AND p.status = 1 AND (" +
                 " EXISTS (SELECT 1 FROM crm_customer c WHERE c.referrer_id = p.id AND c.deleted = 0 AND c.create_time >= ?)" +
                 " OR EXISTS (SELECT 1 FROM crm_promoter_commission pc WHERE pc.promoter_id = p.id AND pc.deleted = 0 AND pc.create_time >= ?))",
-                Long.class, since.minusDays(30), since.minusDays(30)));
+                Long.class, activityStart, activityStart));
         m.put("referrals", jdbc.queryForObject("SELECT COUNT(*) FROM crm_customer WHERE deleted = 0 AND referrer_id IS NOT NULL AND create_time >= ?", Long.class, since));
         m.put("outboundOrders", jdbc.queryForObject("SELECT COUNT(*) FROM crm_referral_order WHERE deleted = 0 AND source_type = 2 AND status = 2 AND event_time >= ?", Long.class, since));
         m.put("serviceFee", jdbc.queryForObject("SELECT COALESCE(SUM(service_fee),0) FROM crm_referral_order WHERE deleted = 0 AND source_type = 2 AND status = 2 AND event_time >= ?", java.math.BigDecimal.class, since));
@@ -43,7 +44,12 @@ public class MktDashboardController {
     public Result<List<Map<String, Object>>> funnel(@RequestParam(defaultValue = "30d") String range) {
         LocalDate since = since(range);
         long referred = count("SELECT COUNT(*) FROM crm_customer WHERE deleted = 0 AND referrer_id IS NOT NULL AND create_time >= ?", since);
-        long visited = count("SELECT COUNT(DISTINCT c.id) FROM crm_customer c JOIN crm_follow f ON f.lead_id = c.source_lead_id WHERE c.deleted = 0 AND c.referrer_id IS NOT NULL AND c.create_time >= ?", since);
+        long visited = count("""
+                SELECT COUNT(*) FROM crm_customer c JOIN crm_lead l ON l.id = c.source_lead_id AND l.deleted = 0
+                WHERE c.deleted = 0 AND c.referrer_id IS NOT NULL AND c.create_time >= ?
+                AND (l.source = '上门到访' OR EXISTS (SELECT 1 FROM crm_follow f
+                     WHERE f.lead_id = l.id AND f.deleted = 0 AND f.type IN ('客户到访', '上门到访')))
+                """, since);
         long signed = count("SELECT COUNT(DISTINCT customer_id) FROM crm_service_contract WHERE deleted = 0 AND status >= 4 AND status <= 7 AND create_time >= ?", since);
         long performing = count("SELECT COUNT(DISTINCT customer_id) FROM crm_referral_order WHERE deleted = 0 AND source_type = 2 AND status = 2 AND event_time >= ?", since);
         return Result.ok(List.of(stage("推荐", referred), stage("已到访", Math.min(visited, referred)), stage("签约", signed), stage("履约", performing)));

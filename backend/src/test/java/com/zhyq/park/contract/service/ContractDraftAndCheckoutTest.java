@@ -39,7 +39,7 @@ class ContractDraftAndCheckoutTest {
         });
         var room=new ContractRoom();room.setRoomId(7L);when(rooms.selectList(any(Wrapper.class))).thenReturn(List.of(room));
         service(mapper,rooms,roomMapper).terminate(1L);
-        verify(roomMapper).updateById(org.mockito.ArgumentMatchers.<RoomRef>argThat(r->r.getId().equals(7L)&&r.getStatus()==1));
+        verify(roomMapper).releaseIfVacant(7L, 1L);
     }
     private ContractService service(ContractMapper mapper, ContractRoomMapper rooms,RoomRefMapper roomMapper){return new ContractService(mapper,rooms,mock(ContractVersionMapper.class),roomMapper,mock(ApprovalRefMapper.class),mock(ApplicationEventPublisher.class),mock(WorkflowService.class),mock(ReceivableRegisterMapper.class),mock(ReceivablePlanService.class));}
 }

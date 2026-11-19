@@ -99,7 +99,7 @@ class BudgetServiceTest {
         Budget budget = annual();
         budget.setId(7L);
         budget.setStatus(BudgetService.ST_AUDITING);
-        when(budgetMapper.selectById(7L)).thenReturn(budget);
+        when(budgetMapper.lockForRemoval(7L)).thenReturn(budget);
 
         assertThrows(BizException.class, () -> service.remove(7L));
 
@@ -111,7 +111,7 @@ class BudgetServiceTest {
         Budget budget = annual();
         budget.setId(7L);
         budget.setStatus(BudgetService.ST_DRAFT);
-        when(budgetMapper.selectById(7L)).thenReturn(budget);
+        when(budgetMapper.lockForRemoval(7L)).thenReturn(budget);
 
         service.remove(7L);
 

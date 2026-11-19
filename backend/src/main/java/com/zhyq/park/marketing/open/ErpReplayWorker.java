@@ -34,6 +34,7 @@ public class ErpReplayWorker {
     private final MktWarehouseErpMapper erpMapper;
     private final ErpOrderIngestService ingestService;
     private final ObjectMapper objectMapper;
+    private final ErpReliabilityService reliability;
 
     /** @return 本次处理的条数 */
     public int replayDue() {
@@ -65,7 +66,12 @@ public class ErpReplayWorker {
         if (row.getPayloadJson() == null || row.getPayloadJson().isBlank()) {
             markDead(row, "缺少原事件内容，无法安全重放；请 ERP 使用原 event_id 和原内容重新推送"); return true;
         }
-        JsonNode ev = objectMapper.readTree(row.getPayloadJson());
+        JsonNode ev;
+        try { ev = objectMapper.readTree(row.getPayloadJson()); }
+        catch (com.fasterxml.jackson.core.JsonProcessingException invalid) {
+            markDead(row, "原事件 JSON 无法解析，请人工核对");
+            return true;
+        }
         // Ingest acquires the warehouse lock and owns the state transition. Do not regress a concurrent success.
         ErpOrderIngestService.IngestResult r;
         try {
@@ -85,23 +91,22 @@ public class ErpReplayWorker {
         int attempts = (row.getAttempts() == null ? 0 : row.getAttempts()) + 1;
         LambdaUpdateWrapper<MktErpEventInbox> w = new LambdaUpdateWrapper<MktErpEventInbox>()
                 .eq(MktErpEventInbox::getId, row.getId())
-                .in(MktErpEventInbox::getStatus, "RECEIVED", "RETRY", "PROCESSING")
-                .set(MktErpEventInbox::getAttempts, attempts)
-                .set(MktErpEventInbox::getLastError, error);
+                .in(MktErpEventInbox::getStatus, "RECEIVED", "RETRY", "PROCESSING");
         if (attempts >= MAX_ATTEMPTS) {
-            w.set(MktErpEventInbox::getStatus, "DEAD").set(MktErpEventInbox::getNextRetryAt, null);
+            reliability.deadLetter(row, w, attempts, "MAX_RETRY", error);
+            return;
         } else {
             // 退避:5/10/20/40 分钟,回 RETRY 由 retryDue 再翻 RECEIVED
             long backoffMin = 5L << (attempts - 1);
-            w.set(MktErpEventInbox::getStatus, "RETRY").set(MktErpEventInbox::getNextRetryAt, LocalDateTime.now().plusMinutes(backoffMin));
+            w.set(MktErpEventInbox::getAttempts, attempts).set(MktErpEventInbox::getLastError, error == null ? null : error.substring(0, Math.min(500, error.length())))
+                    .set(MktErpEventInbox::getStatus, "RETRY").set(MktErpEventInbox::getNextRetryAt, LocalDateTime.now().plusMinutes(backoffMin));
         }
         inboxMapper.update(null, w);
     }
 
     private void markDead(MktErpEventInbox row, String error) {
-        inboxMapper.update(null, new LambdaUpdateWrapper<MktErpEventInbox>()
-                .eq(MktErpEventInbox::getId, row.getId()).eq(MktErpEventInbox::getStatus, "RECEIVED")
-                .set(MktErpEventInbox::getStatus, "DEAD").set(MktErpEventInbox::getNextRetryAt, null)
-                .set(MktErpEventInbox::getLastError, error));
+        var transition = new LambdaUpdateWrapper<MktErpEventInbox>()
+                .eq(MktErpEventInbox::getId, row.getId()).eq(MktErpEventInbox::getStatus, "RECEIVED");
+        reliability.deadLetter(row, transition, row.getAttempts() == null ? 0 : row.getAttempts(), "UNREPLAYABLE", error);
     }
 }

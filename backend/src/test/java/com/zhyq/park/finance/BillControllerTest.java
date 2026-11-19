@@ -220,8 +220,8 @@ class BillControllerTest {
         when(billMapper.selectPage(any(), any()))
                 .thenReturn(new com.baomidou.mybatisplus.extension.plugins.pagination.Page<>());
 
-        controller().page(1, 10, null, null, null, null, null, "保证金", null, null, null, null);
-        controller().page(1, 10, null, null, null, null, null, "租金", null, null, null, null);
+        controller().page(1, 10, null, null, null, null, null, "保证金", null, null, null, null, false);
+        controller().page(1, 10, null, null, null, null, null, "租金", null, null, null, null, false);
 
         @SuppressWarnings({"unchecked", "rawtypes"})
         ArgumentCaptor<com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<Bill>> captor =
@@ -241,7 +241,7 @@ class BillControllerTest {
         when(billMapper.selectPage(any(), any()))
                 .thenReturn(new com.baomidou.mybatisplus.extension.plugins.pagination.Page<>());
 
-        controller().page(1, 10, null, null, 23L, 2, 6, "保证金", null, null, true, true);
+        controller().page(1, 10, null, null, 23L, 2, 6, "保证金", null, null, true, true, false);
 
         @SuppressWarnings({"unchecked", "rawtypes"})
         ArgumentCaptor<com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<Bill>> captor =
@@ -264,9 +264,9 @@ class BillControllerTest {
         when(billMapper.selectPage(any(), any()))
                 .thenReturn(new com.baomidou.mybatisplus.extension.plugins.pagination.Page<>());
 
-        controller().page(1, 10, null, null, null, null, null, null, null, null, null, null);
-        controller().page(1, 10, null, null, null, null, null, null, null, null, null, false);
-        controller().page(1, 10, null, null, null, null, null, null, null, 17L, null, true);
+        controller().page(1, 10, null, null, null, null, null, null, null, null, null, null, false);
+        controller().page(1, 10, null, null, null, null, null, null, null, null, null, false, false);
+        controller().page(1, 10, null, null, null, null, null, null, null, 17L, null, true, false);
 
         @SuppressWarnings({"unchecked", "rawtypes"})
         ArgumentCaptor<com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<Bill>> captor =

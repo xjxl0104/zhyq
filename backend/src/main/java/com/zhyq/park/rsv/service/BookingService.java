@@ -40,9 +40,7 @@ public class BookingService {
      * 预订:时段冲突校验(同 resourceId、status=已预订、时段重叠)→ 冲突拒绝;
      * 计费 fee=ceil(时长小时)×price_per_hour(price 空则 fee 空);insert status=1。
      *
-     * <p>冲突校验 + insert 在同一事务内。注意:无 DB 唯一约束兜底,极端并发下两个请求可能
-     * 都通过校验(校验查不到对方未提交的插入)→ 可能重复,属可接受(设计 D2:事务内查重防并发,
-     * 非强原子)。如需绝对防重,后续可加数据库排他约束或串行化隔离。</p>
+     * 同一资源先锁定资源记录，再检查所有重叠时段并登记。
      */
     @Transactional(rollbackFor = Exception.class, isolation = Isolation.READ_COMMITTED)
     public Long book(ResvBooking booking) {
@@ -55,7 +53,7 @@ public class BookingService {
             throw new BizException("结束时间必须晚于开始时间");
         }
 
-        ResvResource resource = resourceMapper.selectById(booking.getResourceId());
+        ResvResource resource = resourceMapper.lockForBooking(booking.getResourceId());
         if (resource == null) {
             throw new BizException("资源不存在");
         }

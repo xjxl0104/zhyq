@@ -49,7 +49,7 @@ public class MktAutoWithdrawJob {
         if (!enabled) return;
         LocalDate today = LocalDate.now(ZoneId.of("Asia/Shanghai"));
         int day = withdrawals.autoWithdrawDay();
-        if (day <= 0 || today.getDayOfMonth() != Math.min(day, today.lengthOfMonth())) return;
+        if (day <= 0 || today.getDayOfMonth() < Math.min(day, today.lengthOfMonth())) return;
         try {
             Result r = runOnce();
             if (r.failed() > 0) {
@@ -74,7 +74,7 @@ public class MktAutoWithdrawJob {
         for (MktPromoter p : list) {
             try {
                 BigDecimal amount = withdrawals.autoWithdrawAmount(p.getId());
-                if (amount.compareTo(MktWithdrawalService.MIN_WITHDRAWAL) < 0 || withdrawals.hasOpenWithdrawal(p.getId())) { skipped++; continue; }
+                if (amount.compareTo(MktWithdrawalService.MIN_WITHDRAWAL) < 0 || withdrawals.hasOpenWithdrawal(p.getId()) || withdrawals.autoAppliedThisMonth(p.getId())) { skipped++; continue; }
                 withdrawals.apply(p.getId(), amount, true);
                 submitted++;
                 total = total.add(amount);

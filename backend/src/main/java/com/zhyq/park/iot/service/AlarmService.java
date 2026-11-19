@@ -63,8 +63,7 @@ public class AlarmService {
                 .eq(Alarm::getAlarmType, alarm.getAlarmType())
                 .eq(Alarm::getActive, ACTIVE)
                 .last("limit 1"));
-        if (existedActive != null) {
-            increment(existedActive, now);
+        if (existedActive != null && increment(existedActive, now)) {
             return existedActive.getId();
         }
 
@@ -87,8 +86,7 @@ public class AlarmService {
                     .eq(Alarm::getAlarmType, alarm.getAlarmType())
                     .eq(Alarm::getActive, ACTIVE)
                     .last("limit 1"));
-            if (dup != null) {
-                increment(dup, now);
+            if (dup != null && increment(dup, now)) {
                 return dup.getId();
             }
             throw e;
@@ -98,30 +96,19 @@ public class AlarmService {
         return alarm.getId();
     }
 
-    private void increment(Alarm existed, LocalDateTime now) {
+    private boolean increment(Alarm existed, LocalDateTime now) {
         // 原地 read-modify-write 在并发重复上报下会丢更新,改为原子 SQL 自增(occur_count = occur_count + 1)
-        alarmMapper.update(null, new LambdaUpdateWrapper<Alarm>()
-                .eq(Alarm::getId, existed.getId())
+        return alarmMapper.update(null, new LambdaUpdateWrapper<Alarm>()
+                .eq(Alarm::getId, existed.getId()).eq(Alarm::getActive, ACTIVE)
                 .setSql("occur_count = occur_count + 1")
-                .set(Alarm::getLastTime, now));
+                .set(Alarm::getLastTime, now)) == 1;
     }
 
     private void publishAlarmRaised(Alarm alarm, LocalDateTime now) {
-        try {
-            Long spaceId = null;
-            if (alarm.getDeviceId() != null) {
-                Device device = deviceMapper.selectById(alarm.getDeviceId());
-                if (device != null) {
-                    spaceId = device.getSpaceId();
-                }
-            }
-            eventPublisher.publishEvent(new DomainEvent.AlarmRaised(
-                    alarm.getId(), alarm.getDeviceId(),
-                    alarm.getLevel() == null ? null : String.valueOf(alarm.getLevel()),
-                    spaceId, alarm.getAlarmType(), now));
-        } catch (Exception e) {
-            log.warn("发布 AlarmRaised 事件失败,不影响告警落库,alarmId={}", alarm.getId(), e);
-        }
+        Device device = alarm.getDeviceId() == null ? null : deviceMapper.selectById(alarm.getDeviceId());
+        eventPublisher.publishEvent(new DomainEvent.AlarmRaised(
+                alarm.getId(), alarm.getDeviceId(), alarm.getLevel() == null ? null : alarm.getLevel().toString(),
+                device == null ? null : device.getSpaceId(), alarm.getAlarmType(), now));
     }
 
     /** 确认:新建(1)→已确认(2) */
@@ -131,10 +118,7 @@ public class AlarmService {
         if (alarm.getStatus() == null || alarm.getStatus() != ST_NEW) {
             throw new BizException("仅新建状态的告警可确认");
         }
-        Alarm upd = new Alarm();
-        upd.setId(id);
-        upd.setStatus(ST_CONFIRMED);
-        alarmMapper.updateById(upd);
+        transition(id, ST_NEW, ST_CONFIRMED, null);
     }
 
     /** 开始处理:已确认(2)→处理中(3),可带受理人 */
@@ -144,13 +128,14 @@ public class AlarmService {
         if (alarm.getStatus() == null || alarm.getStatus() != ST_CONFIRMED) {
             throw new BizException("仅已确认状态的告警可开始处理");
         }
-        Alarm upd = new Alarm();
-        upd.setId(id);
-        upd.setStatus(ST_PROCESSING);
-        if (StringUtils.hasText(assignee)) {
-            upd.setAssignee(assignee);
-        }
-        alarmMapper.updateById(upd);
+        transition(id, ST_CONFIRMED, ST_PROCESSING, assignee);
+    }
+
+    private void transition(Long id, int from, int to, String assignee) {
+        int changed = alarmMapper.update(null, new LambdaUpdateWrapper<Alarm>()
+                .eq(Alarm::getId, id).eq(Alarm::getStatus, from).eq(Alarm::getActive, ACTIVE)
+                .set(Alarm::getStatus, to).set(StringUtils.hasText(assignee), Alarm::getAssignee, assignee));
+        if (changed != 1) throw new BizException("告警状态已变化，请刷新后重试");
     }
 
     /** 恢复:处理中(3)→已恢复(4),退出活动域(active=NULL) */
@@ -160,32 +145,44 @@ public class AlarmService {
         if (alarm.getStatus() == null || alarm.getStatus() != ST_PROCESSING) {
             throw new BizException("仅处理中状态的告警可标记恢复");
         }
-        clearActiveAndSetStatus(id, ST_RECOVERED);
+        clearActiveAndSetStatus(id, ST_RECOVERED, ST_PROCESSING);
     }
 
     /** 关闭:→已关闭(5),退出活动域(active=NULL)。保留既有对外语义,额外置 active=NULL */
     @Transactional(rollbackFor = Exception.class)
     public void close(Long id) {
-        require(id);
-        clearActiveAndSetStatus(id, ST_CLOSED);
+        var current = require(id);
+        if (Integer.valueOf(ST_CLOSED).equals(current.getStatus())) return;
+        finishFromSnapshot(current, ST_CLOSED);
     }
 
     /** 误报:→误报(6),退出活动域(active=NULL) */
     @Transactional(rollbackFor = Exception.class)
     public void falsePositive(Long id) {
-        require(id);
-        clearActiveAndSetStatus(id, ST_FALSE_POSITIVE);
+        var current = require(id);
+        if (Integer.valueOf(ST_FALSE_POSITIVE).equals(current.getStatus())) return;
+        finishFromSnapshot(current, ST_FALSE_POSITIVE);
     }
 
     /**
      * updateById 对 null 字段默认跳过(NOT_NULL 策略),不会清空 active 列,
      * 因此用 LambdaUpdateWrapper 显式 {@code set(Alarm::getActive, null)} 一次性写 status+active。
      */
-    private void clearActiveAndSetStatus(Long id, int status) {
-        alarmMapper.update(null, new LambdaUpdateWrapper<Alarm>()
+    private void clearActiveAndSetStatus(Long id, int status, Integer... allowed) {
+        int changed = alarmMapper.update(null, new LambdaUpdateWrapper<Alarm>()
                 .eq(Alarm::getId, id)
-                .set(Alarm::getStatus, status)
-                .set(Alarm::getActive, null));
+                .in(Alarm::getStatus, (Object[]) allowed).eq(Alarm::getActive, ACTIVE)
+                .set(Alarm::getStatus, status).set(Alarm::getActive, null));
+        if (changed != 1) throw new BizException("告警已结束或状态已变化，请刷新后重试");
+    }
+
+    private void finishFromSnapshot(Alarm alarm, int status) {
+        var change = new LambdaUpdateWrapper<Alarm>().eq(Alarm::getId, alarm.getId())
+                .eq(Alarm::getStatus, alarm.getStatus())
+                .isNull(alarm.getActive() == null, Alarm::getActive)
+                .eq(alarm.getActive() != null, Alarm::getActive, alarm.getActive())
+                .set(Alarm::getStatus, status).set(Alarm::getActive, null);
+        if (alarmMapper.update(null, change) != 1) throw new BizException("告警状态已变化，请刷新后重试");
     }
 
     /** 指派受理人 */

@@ -75,6 +75,12 @@ public class WorkOrderService {
         workOrderLogMapper.insert(l);
     }
 
+    private void updateCurrent(WorkOrder current, WorkOrder update) {
+        int changed = workOrderMapper.update(update, new LambdaUpdateWrapper<WorkOrder>()
+                .eq(WorkOrder::getId, current.getId()).eq(WorkOrder::getStatus, current.getStatus()));
+        if (changed != 1) throw new BizException("工单状态已变化，请刷新后重试");
+    }
+
     /** 派单:待派单(1)→待接单(2),记录处理人 */
     @Transactional(rollbackFor = Exception.class)
     public void dispatch(Long id, String assignee) {
@@ -89,7 +95,7 @@ public class WorkOrderService {
         upd.setId(id);
         upd.setAssignee(assignee);
         upd.setStatus(ST_PENDING_ACCEPT);
-        workOrderMapper.updateById(upd);
+        updateCurrent(wo, upd);
         log(id, "派单", assignee, "派单给:" + assignee);
     }
 
@@ -103,7 +109,7 @@ public class WorkOrderService {
         WorkOrder upd = new WorkOrder();
         upd.setId(id);
         upd.setStatus(ST_PROCESSING);
-        workOrderMapper.updateById(upd);
+        updateCurrent(wo, upd);
         log(id, "接单", operator, "已接单");
     }
 
@@ -118,7 +124,7 @@ public class WorkOrderService {
         WorkOrder upd = new WorkOrder();
         upd.setId(id);
         upd.setArriveTime(now);
-        workOrderMapper.updateById(upd);
+        updateCurrent(wo, upd);
         log(id, "到场", operator, "已到场:" + now);
     }
 
@@ -173,7 +179,7 @@ public class WorkOrderService {
         if (score != null) {
             upd.setScore(score);
         }
-        workOrderMapper.updateById(upd);
+        updateCurrent(wo, upd);
         log(id, "回访", operator, "满意度回访:" + (score == null ? "-" : score)
                 + (StringUtils.hasText(remark) ? ",备注:" + remark : ""));
     }
@@ -210,7 +216,7 @@ public class WorkOrderService {
         WorkOrder upd = new WorkOrder();
         upd.setId(id);
         upd.setStatus(ST_CLOSED);
-        workOrderMapper.updateById(upd);
+        updateCurrent(wo, upd);
         log(id, "关闭", operator, StringUtils.hasText(content) ? content : "工单关闭");
         eventPublisher.publishEvent(new DomainEvent.WorkOrderClosed(id, LocalDateTime.now()));
     }

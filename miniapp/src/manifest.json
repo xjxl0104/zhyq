@@ -2,8 +2,8 @@
   "name": "园区伙伴",
   "appid": "",
   "description": "园区全民营销 · 推荐客户 · 园区伙伴",
-  "versionName": "1.9.14",
-  "versionCode": "204",
+  "versionName": "1.9.15",
+  "versionCode": "205",
   "vueVersion": "3",
   "mp-weixin": {
     "appid": "wxc01f4ad2297319a0",

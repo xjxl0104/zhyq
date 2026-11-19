@@ -23,6 +23,8 @@ test('时间节点包含冻结、自动结算、自动提现与财务审批', ()
   const steps = scheduleSteps({ freezeDays: 7, settleTime: '每天 02:00', autoWithdrawDay: 10 })
   assert.deepEqual(steps.map(s => s.title), ['客户发货', '冻结 7 天', '自动结算', '自动提现', '财务审批', '打款到账'])
   assert.match(steps[3].desc, /每月 10 日/)
+  for (const raw of [0, '0']) assert.equal(scheduleSteps({ freezeDays: raw })[1].title, '冻结 0 天')
+  for (const raw of [undefined, null, ' ', false, -1, 1.5]) assert.equal(scheduleSteps({ freezeDays: raw })[1].title, '冻结 7 天')
   assert.match(scheduleSteps({ autoWithdrawDay: 0 })[3].desc, /随时手动/)
 })
 test('首页快捷入口改为结算提现并注册结算页面', () => {

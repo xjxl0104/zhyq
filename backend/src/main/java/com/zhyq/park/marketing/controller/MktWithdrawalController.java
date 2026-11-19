@@ -111,12 +111,12 @@ public class MktWithdrawalController {
         return Result.ok(withdrawalService.apply(Long.valueOf(body.get("promoterId").toString()), new BigDecimal(body.get("amount").toString())));
     }
 
-    @Operation(summary = "审核通过") @PreAuthorize("hasAuthority('crm:marketing:withdrawal:audit')") @PostMapping("/{id}/approve")
+    @Operation(summary = "审核通过") @PreAuthorize("isAuthenticated()") @PostMapping("/{id}/approve")
     public Result<Void> approve(@PathVariable Long id, @RequestBody(required = false) Map<String, String> body) {
         withdrawalService.approveFromConsole(id, body == null ? null : body.get("opinion"), MktAuditService.currentOperator()); return Result.ok();
     }
 
-    @Operation(summary = "驳回") @PreAuthorize("hasAuthority('crm:marketing:withdrawal:audit')") @PostMapping("/{id}/reject")
+    @Operation(summary = "驳回") @PreAuthorize("isAuthenticated()") @PostMapping("/{id}/reject")
     public Result<Void> reject(@PathVariable Long id, @RequestBody Map<String, String> body) {
         withdrawalService.rejectFromConsole(id, body.get("reason"), MktAuditService.currentOperator()); return Result.ok();
     }

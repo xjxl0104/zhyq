@@ -37,7 +37,9 @@ export function withdrawalStatusText(w = {}) {
 
 /** 时间节点说明（与后台自动任务一致）。 */
 export function scheduleSteps(schedule = {}) {
-  const freeze = n(schedule.freezeDays) || 7
+  const raw = schedule.freezeDays
+  const days = Number(raw)
+  const freeze = (typeof raw === 'number' || (typeof raw === 'string' && raw.trim() !== '')) && Number.isInteger(days) && days >= 0 ? days : 7
   const day = n(schedule.autoWithdrawDay)
   return [
     { title: '客户发货', desc: '按发货日生成佣金' },

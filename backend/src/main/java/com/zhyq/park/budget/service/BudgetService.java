@@ -150,7 +150,7 @@ public class BudgetService {
     /** 删除:审批中/已通过/已归档不可删,防误删在途或已执行的预算。 */
     @Transactional(rollbackFor = Exception.class)
     public void remove(Long id) {
-        Budget budget = budgetMapper.selectById(id);
+        Budget budget = budgetMapper.lockForRemoval(id);
         if (budget == null) {
             throw new BizException("预算不存在");
         }

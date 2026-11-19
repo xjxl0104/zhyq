@@ -244,7 +244,7 @@ public final class FeeNoticeCalculator {
                     n.setElectricPublicFee(n.getElectricPublicFee().add(sum(electricRows, SheetRow::getPublicFee)));
                 }
                 // 垃圾费:这个区域参与分摊才有,按它自己的计租面积
-                UnitShare us = split.units().get(unit);
+                UnitShare us = split.units().get(new UnitTenant(unit, tenantKey(first)));
                 BigDecimal unitArea = us == null ? BigDecimal.ZERO : us.area();
                 BigDecimal unitDomestic = us == null ? money(BigDecimal.ZERO) : us.domestic();
                 BigDecimal unitIndustrial = us == null ? money(BigDecimal.ZERO) : us.industrial();
@@ -412,7 +412,9 @@ public final class FeeNoticeCalculator {
     public record UnitShare(String unit, BigDecimal area, boolean share, BigDecimal ratio,
                             BigDecimal domestic, BigDecimal industrial) {}
 
-    public record GarbageSplit(Map<String, UnitShare> units, BigDecimal totalArea) {}
+    public record UnitTenant(String unit, String tenant) {}
+
+    public record GarbageSplit(Map<UnitTenant, UnitShare> units, BigDecimal totalArea) {}
 
     /**
      * 垃圾费分摊:生活 / 工业两笔总额按各单元计租面积占比摊,只有参与分摊(share_public=1)且填了面积的单元参与。
@@ -420,24 +422,25 @@ public final class FeeNoticeCalculator {
      * 通知单与垃圾处理费页面都调用这里,保证两边金额逐分一致。
      */
     public static GarbageSplit splitGarbage(FeePeriod period, List<SheetRow> tenantRows) {
-        Map<String, BigDecimal> area = new LinkedHashMap<>();
-        Map<String, Boolean> share = new LinkedHashMap<>();
+        Map<UnitTenant, BigDecimal> area = new LinkedHashMap<>();
+        Map<UnitTenant, Boolean> share = new LinkedHashMap<>();
         for (SheetRow r : tenantRows) {
             if (!r.isTenant()) {
                 continue;
             }
-            String unit = unitKey(r);
+            UnitTenant unit = new UnitTenant(unitKey(r), tenantKey(r));
             share.merge(unit, r.isSharePublic(), Boolean::logicalOr);
             BigDecimal a = r.getLeaseArea() != null && r.getLeaseArea().signum() > 0 ? r.getLeaseArea() : BigDecimal.ZERO;
             area.merge(unit, a, BigDecimal::max);
         }
         // 顺序固定(楼层 → 区域名),最大余数法的并列才不会随查询顺序漂移
-        List<String> units = new ArrayList<>(area.keySet());
-        units.sort(Comparator.comparing((String u) -> floorOrder(floorKey(u))).thenComparing(u -> u, String.CASE_INSENSITIVE_ORDER));
-        List<String> sharing = new ArrayList<>();
+        List<UnitTenant> units = new ArrayList<>(area.keySet());
+        units.sort(Comparator.comparing((UnitTenant u) -> floorOrder(floorKey(u.unit())))
+                .thenComparing(UnitTenant::unit).thenComparing(UnitTenant::tenant));
+        List<UnitTenant> sharing = new ArrayList<>();
         List<BigDecimal> weights = new ArrayList<>();
         BigDecimal totalArea = BigDecimal.ZERO;
-        for (String u : units) {
+        for (UnitTenant u : units) {
             if (Boolean.TRUE.equals(share.get(u)) && area.get(u).signum() > 0) {
                 sharing.add(u);
                 weights.add(area.get(u));
@@ -446,13 +449,13 @@ public final class FeeNoticeCalculator {
         }
         List<BigDecimal> domestic = apportion(period.getDomesticGarbageAmount(), weights);
         List<BigDecimal> industrial = apportion(period.getIndustrialGarbageAmount(), weights);
-        Map<String, UnitShare> out = new LinkedHashMap<>();
-        for (String u : units) {
+        Map<UnitTenant, UnitShare> out = new LinkedHashMap<>();
+        for (UnitTenant u : units) {
             int idx = sharing.indexOf(u);
             boolean sharesGarbage = idx >= 0;
             BigDecimal ratio = sharesGarbage && totalArea.signum() > 0
                     ? area.get(u).divide(totalArea, COEF_SCALE, RoundingMode.HALF_UP) : BigDecimal.ZERO;
-            out.put(u, new UnitShare(u, area.get(u), Boolean.TRUE.equals(share.get(u)), ratio,
+            out.put(u, new UnitShare(u.unit(), area.get(u), Boolean.TRUE.equals(share.get(u)), ratio,
                     sharesGarbage ? domestic.get(idx) : money(BigDecimal.ZERO),
                     sharesGarbage ? industrial.get(idx) : money(BigDecimal.ZERO)));
         }

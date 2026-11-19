@@ -66,7 +66,8 @@ public class BillController {
                                          // 从流水/收据/发票/收款通知点「关联账单」跳过来时按 id 定位那一张
                                          @RequestParam(required = false) Long billId,
                                          @RequestParam(required = false) Boolean onlyDue,
-                                         @RequestParam(required = false) Boolean onlyOutstanding) {
+                                         @RequestParam(required = false) Boolean onlyOutstanding,
+                                         @RequestParam(defaultValue = "false") boolean payableOnly) {
         LambdaQueryWrapper<Bill> qw = new LambdaQueryWrapper<>();
         // 「保证金」是费用大类:登记表生成的是「租金保证金/物业保证金」,按后缀命中
         // 全部保证金类账单(老数据里费用类型恰好叫「保证金」的也被 %保证金 覆盖)
@@ -79,6 +80,7 @@ public class BillController {
           .eq(tenantRefId != null, Bill::getTenantRefId, tenantRefId)
           .eq(direction != null, Bill::getDirection, direction)
           .eq(status != null, Bill::getStatus, status)
+          .in(payableOnly, Bill::getStatus, 3, 4, 6)
           .likeLeft(depositCategory, Bill::getFeeType, "保证金")
           .eq(!depositCategory && StringUtils.hasText(feeType), Bill::getFeeType, feeType)
           .eq(StringUtils.hasText(source), Bill::getSource, source)

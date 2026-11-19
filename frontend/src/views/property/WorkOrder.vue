@@ -279,7 +279,7 @@
         </el-form-item>
         <el-form-item label="责任人" prop="assignee">
           <el-select v-model="dispatchForm.assignee" filterable placeholder="请选择责任人" style="width: 100%">
-            <el-option v-for="u in staffList" :key="u.id" :label="u.nickname || u.username" :value="u.nickname || u.username" />
+            <el-option v-for="u in staffList" :key="u.id" :label="u.nickname || u.username" :value="u.username" />
           </el-select>
         </el-form-item>
       </el-form>

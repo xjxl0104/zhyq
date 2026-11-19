@@ -94,4 +94,15 @@ describe('request 拦截器的 projectId 注入', () => {
     await request.get('/auth/my-access', { adapter })
     expect(requests[1].headers.get('Authorization')).toBe(`Bearer ${oversized}`)
   })
+  it.each(['http', 'business'])('旧请求的 %s 401 保留重新登录的凭据', async mode => {
+    const config = runInterceptor({ url: '/budget', method: 'get', headers: {} })
+    localStorage.setItem('zhyq_token', 'new-session')
+    const response = request.interceptors.response.handlers[0]
+    const error = mode === 'http'
+      ? response.rejected({ config, response: { status: 401 } })
+      : response.fulfilled({ config, data: { code: 401 } })
+    await expect(error).rejects.toBeDefined()
+    expect(localStorage.getItem('zhyq_token')).toBe('new-session')
+  })
+
 })

@@ -148,8 +148,8 @@
     </div>
 
     <!-- 表单弹窗 -->
-    <el-dialog v-model="dialog.visible" :title="dialog.title" width="680px">
-      <el-form :model="form" label-width="100px" ref="formRef" :rules="rules">
+    <el-dialog v-model="dialog.visible" :close-on-click-modal="!savingContract" :close-on-press-escape="!savingContract" :show-close="!savingContract" :title="dialog.title" width="680px">
+      <el-form :model="form" :disabled="savingContract || loadingAttachments" label-width="100px" ref="formRef" :rules="rules">
         <el-row :gutter="16">
           <el-col :span="12">
             <el-form-item label="合同编号" prop="code">
@@ -250,14 +250,14 @@
           </el-col>
           <el-col :span="24">
             <el-form-item label="附件">
-              <FileUpload v-model="attachFiles" biz-type="contract" :biz-id="form.id" />
+              <FileUpload :key="editorVersion" v-model="attachFiles" biz-type="contract" defer-removal :disabled="savingContract || loadingAttachments" @busy="filesBusy = $event" />
             </el-form-item>
           </el-col>
         </el-row>
       </el-form>
       <template #footer>
-        <el-button @click="dialog.visible = false">取消</el-button>
-        <el-button type="primary" @click="submitForm">确定</el-button>
+        <el-button :disabled="savingContract" @click="dialog.visible = false">取消</el-button>
+        <el-button type="primary" :loading="savingContract" :disabled="filesBusy || loadingAttachments" @click="submitForm">确定</el-button>
       </template>
     </el-dialog>
 
@@ -497,6 +497,12 @@ const emptyForm = () => ({
 })
 const form = reactive(emptyForm())
 const attachFiles = ref([])
+const initialFiles = ref([])
+let savedDraft = null
+const filesBusy = ref(false)
+const loadingAttachments = ref(false)
+const editorVersion = ref(0)
+const savingContract = ref(false)
 const rules = {
   code: [{ required: true, message: '请输入合同编号（留空保存时按设置自动生成）', trigger: 'blur' }],
   tenantRefId: [{ required: true, message: '请选择租客', trigger: 'change' }],
@@ -510,14 +516,30 @@ const settingDefaults = reactive({ termYears: null, depositMonths: null })
 
 async function openDialog(row) {
   if (row && row.status !== 1) return ElMessage.warning('仅草稿合同可编辑，已提交合同请使用对应业务流程')
+  const revision = ++editorVersion.value
   try { await loadTenants() } catch (e) { /* 请求拦截器已提示 */ }
+  if (revision !== editorVersion.value) return
+  filesBusy.value = false
+  loadingAttachments.value = Boolean(row)
   dialog.visible = true
   dialog.title = row ? '编辑合同' : '新增合同'
   attachFiles.value = []
+  initialFiles.value = []
+  savedDraft = null
   if (row) {
     Object.assign(form, row)
     // 编辑:载入已关联附件
-    try { attachFiles.value = await fileApi.list('contract', row.id) } catch (e) { /* 忽略 */ }
+    try {
+      const stored = await fileApi.list('contract', row.id)
+      if (revision !== editorVersion.value || form.id !== row.id || !dialog.visible) return
+      savedDraft = JSON.stringify(form)
+      attachFiles.value = stored || []
+      initialFiles.value = [...attachFiles.value]
+    } catch {
+      if (revision === editorVersion.value) dialog.visible = false
+    } finally {
+      if (revision === editorVersion.value) loadingAttachments.value = false
+    }
     return
   }
   Object.assign(form, emptyForm())
@@ -526,6 +548,7 @@ async function openDialog(row) {
   // 新增:编号与租期/保证金规则都来自「合同设置」,用户不必对着空框猜格式
   try {
     const d = await contractApi.defaults()
+    if (revision !== editorVersion.value || !dialog.visible) return
     if (d?.code) form.code = d.code
     settingDefaults.termYears = d?.termYears ?? null
     settingDefaults.depositMonths = d?.depositMonths ?? null
@@ -550,23 +573,37 @@ function onRentBasisChange() {
   }
 }
 async function submitForm() {
-  await formRef.value.validate()
-  let contractId = form.id
-  if (form.id) {
-    await contractApi.update(form)
-  } else {
-    contractId = await contractApi.add(form)
+  if (savingContract.value || filesBusy.value || loadingAttachments.value) return
+  savingContract.value = true
+  try {
+    await formRef.value.validate()
+    if (form.id) {
+      if (savedDraft !== JSON.stringify(form)) await contractApi.update(form)
+    } else {
+      form.id = await contractApi.add(form)
+    }
+    if (!form.id) throw new Error('服务器没有返回合同编号')
+    savedDraft = JSON.stringify(form)
+    const chosen = new Set(attachFiles.value.map(file => file.id))
+    const pending = attachFiles.value.filter(file => !file.bizId).map(file => file.id)
+    if (pending.length) {
+      await fileApi.attachVerified('contract', form.id, pending)
+      const linked = new Set(pending)
+      attachFiles.value = attachFiles.value.map(file => linked.has(file.id) ? { ...file, bizId: form.id } : file)
+    }
+    for (const file of [...initialFiles.value]) {
+      if (chosen.has(file.id)) continue
+      await fileApi.remove(file.id)
+      initialFiles.value = initialFiles.value.filter(item => item.id !== file.id)
+    }
+    ElMessage.success('保存成功')
+    dialog.visible = false
+    await load()
+  } catch (error) {
+    if (form.id) ElMessage.warning('合同或附件尚未全部保存，请核对后在此重试')
+  } finally {
+    savingContract.value = false
   }
-  // 先传后回填:把新上传(bizId 为空)的附件关联到本合同
-  const pendingIds = (attachFiles.value || [])
-    .filter(f => f && f.id && !f.bizId)
-    .map(f => f.id)
-  if (contractId && pendingIds.length) {
-    try { await fileApi.attach('contract', contractId, pendingIds) } catch (e) { /* 忽略,不阻断保存 */ }
-  }
-  ElMessage.success('保存成功')
-  dialog.visible = false
-  load()
 }
 async function remove(id) {
   await contractApi.remove(id)

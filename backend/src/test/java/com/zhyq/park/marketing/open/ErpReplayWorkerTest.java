@@ -30,6 +30,7 @@ class ErpReplayWorkerTest {
     @Mock MktErpEventInboxMapper inbox;
     @Mock MktWarehouseErpMapper erp;
     @Mock ErpOrderIngestService ingest;
+    @Mock com.zhyq.park.marketing.mapper.MktErpDeadLetterMapper letters;
 
     @BeforeAll static void initTableInfo() {
         MapperBuilderAssistant a = new MapperBuilderAssistant(new MybatisConfiguration(), "");
@@ -37,7 +38,7 @@ class ErpReplayWorkerTest {
         TableInfoHelper.initTableInfo(a, MktWarehouseErp.class);
     }
 
-    private ErpReplayWorker worker() { return new ErpReplayWorker(inbox, erp, ingest, new ObjectMapper()); }
+    private ErpReplayWorker worker() { return new ErpReplayWorker(inbox, erp, ingest, new ObjectMapper(), new ErpReliabilityService(null, null, inbox, letters, null, null)); }
 
     private MktErpEventInbox row(long id, int attempts) {
         MktErpEventInbox r = new MktErpEventInbox();
@@ -99,6 +100,7 @@ class ErpReplayWorkerTest {
     }
 
     @Test void failureAfterMaxAttemptsGoesToDead() {
+        when(inbox.update(isNull(), any())).thenReturn(1);
         when(inbox.selectList(any())).thenReturn(List.of(row(5L, 4)));   // attempts=4,再失败即第 5 次
         when(erp.selectOne(any())).thenReturn(cred());
         when(ingest.ingest(any(), any(), anyString())).thenReturn(new ErpOrderIngestService.IngestResult(false, null, false, "BIZ", "boom"));
@@ -110,6 +112,8 @@ class ErpReplayWorkerTest {
         com.zhyq.park.marketing.support.WrapperAssert wa = com.zhyq.park.marketing.support.WrapperAssert.of(
                 (com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<MktErpEventInbox>) cap.getAllValues().get(cap.getAllValues().size() - 1));
         assertThat(wa.setValue("status")).isEqualTo("DEAD");
+        verify(letters).insert(argThat((com.zhyq.park.marketing.entity.MktErpDeadLetter dl) ->
+                dl.getInboxId().equals(5L) && dl.getAttempts() == 5 && "MAX_RETRY".equals(dl.getErrorCode())));
     }
 
     @Test void failureBelowMaxGoesToRetryWithBackoff() {

@@ -275,7 +275,7 @@ public class FeeNoticeService {
         }
         Map<Long, Map<String, Object>> readings = readingsOfPeriod(p, meters);
         Map<Long, BigDecimal> prevByMeter = lastReadingBefore(p, meters);
-        Map<Long, Map<String, Object>> tenantByRoom = tenantByRoom();
+        Map<Long, Map<String, Object>> tenantByRoom = tenantByRoom(p);
 
         List<SheetRow> rows = new ArrayList<>();
         for (Meter m : meters) {
@@ -343,18 +343,24 @@ public class FeeNoticeService {
         return out;
     }
 
-    /** 房间 → 在租租户:只认未删除且执行中(status=5)的合同,同房间多份按起租日取最新 */
-    private Map<Long, Map<String, Object>> tenantByRoom() {
+    /** 仅当同一承租人覆盖整个账期才自动归属；交接和不完整租期留待单独核对。 */
+    private Map<Long, Map<String, Object>> tenantByRoom(FeePeriod period) {
+        YearMonth month = parse(period.getPeriod());
+        LocalDate start = period.getPeriodStart() == null ? month.atDay(1) : period.getPeriodStart();
+        LocalDate end = period.getPeriodEnd() == null ? month.atEndOfMonth() : period.getPeriodEnd();
         Map<Long, Map<String, Object>> out = new LinkedHashMap<>();
-        for (Map<String, Object> r : jdbc.queryForList("""
-                SELECT cr.room_id, t.id AS tenant_ref_id, t.name AS tenant_name
+        for (var row : jdbc.queryForList("""
+                SELECT cr.room_id, MIN(t.id) AS tenant_ref_id, MIN(t.name) AS tenant_name
                 FROM biz_contract_room cr
-                JOIN biz_contract c ON c.id = cr.contract_id AND c.deleted = 0 AND c.status = 5
+                JOIN biz_contract c ON c.id = cr.contract_id AND c.deleted = 0 AND c.status IN (5,8,9)
                 JOIN biz_tenant t ON t.id = c.tenant_ref_id AND t.deleted = 0
-                WHERE cr.deleted = 0
-                ORDER BY c.start_date DESC, c.id DESC
-                """)) {
-            out.putIfAbsent(((Number) r.get("room_id")).longValue(), r);
+                WHERE cr.deleted = 0 AND c.start_date <= ?
+                  AND LEAST(c.end_date, COALESCE(c.terminate_date, c.end_date)) >= ?
+                GROUP BY cr.room_id
+                HAVING COUNT(DISTINCT t.id) = 1 AND MAX(c.start_date <= ?
+                    AND LEAST(c.end_date, COALESCE(c.terminate_date, c.end_date)) >= ?) = 1
+                """, end, start, start, end)) {
+            out.put(((Number) row.get("room_id")).longValue(), row);
         }
         return out;
     }
@@ -462,8 +468,7 @@ public class FeeNoticeService {
             meterMapper.update(null, uw);
         }
         if (leaseArea != null && applyAreaToUnit && StringUtils.hasText(meter.getArea())) {
-            meterMapper.update(null, new LambdaUpdateWrapper<Meter>()
-                    .eq(Meter::getArea, meter.getArea()).set(Meter::getLeaseArea, leaseArea));
+            setUnitLeaseArea(meter.getId(), meter.getArea(), meter.getRoomId(), meter.getCustomerName(), leaseArea);
         }
         touchDrafts();
     }
@@ -490,15 +495,16 @@ public class FeeNoticeService {
         rows.addAll(loadRows(p, FeeNoticeCalculator.TYPE_WATER));
         rows.addAll(loadRows(p, FeeNoticeCalculator.TYPE_ELECTRIC));
         FeeNoticeCalculator.GarbageSplit split = FeeNoticeCalculator.splitGarbage(p, rows);
-        Map<String, List<SheetRow>> byUnit = new LinkedHashMap<>();
+        Map<FeeNoticeCalculator.UnitTenant, List<SheetRow>> byUnit = new LinkedHashMap<>();
         for (SheetRow r : rows) {
             if (r.isTenant()) {
-                byUnit.computeIfAbsent(FeeNoticeCalculator.unitKey(r), k -> new ArrayList<>()).add(r);
+                byUnit.computeIfAbsent(new FeeNoticeCalculator.UnitTenant(FeeNoticeCalculator.unitKey(r), FeeNoticeCalculator.tenantKey(r)), k -> new ArrayList<>()).add(r);
             }
         }
         List<GarbageRow> out = new ArrayList<>();
-        for (FeeNoticeCalculator.UnitShare us : split.units().values()) {
-            List<SheetRow> unitRows = byUnit.getOrDefault(us.unit(), List.of());
+        for (var entry : split.units().entrySet()) {
+            FeeNoticeCalculator.UnitShare us = entry.getValue();
+            List<SheetRow> unitRows = byUnit.get(entry.getKey());
             SheetRow first = unitRows.get(0);
             out.add(new GarbageRow(us.unit(), FeeNoticeCalculator.floorKey(first.getArea()),
                     FeeNoticeCalculator.firstNonBlank(first.getTenantName(), first.getCustomerName(), "-"),
@@ -560,6 +566,7 @@ public class FeeNoticeService {
         snap.setTotalLeaseArea(batch.totalLeaseArea());
         snap.setNoticeCount(batch.notices().size());
         snap.setTotalAmount(totalAmount);
+        snap.setCalculationVersion(2);
         snap.setGeneratedTime(LocalDateTime.now());
         periodMapper.updateById(snap);
         return new GenerateResult(require(periodId), batch.notices(), batch.warnings());
@@ -783,10 +790,10 @@ public class FeeNoticeService {
             throw new BizException("该账期不是已确认状态");
         }
         List<FeeNotice> notices = noticeMapper.selectList(new LambdaQueryWrapper<FeeNotice>()
-                .eq(FeeNotice::getFeePeriodId, periodId).isNotNull(FeeNotice::getBillId));
+                .eq(FeeNotice::getFeePeriodId, periodId).isNotNull(FeeNotice::getBillId).orderByAsc(FeeNotice::getBillId));
         int kept = 0;
         for (FeeNotice n : notices) {
-            Bill b = billMapper.selectById(n.getBillId());
+            Bill b = billMapper.lockActive(n.getBillId());
             if (b != null && b.getPaidAmount() != null && b.getPaidAmount().signum() > 0) {
                 kept++;
             }
@@ -796,7 +803,7 @@ public class FeeNoticeService {
         }
         int removed = 0;
         for (FeeNotice n : notices) {
-            if (billMapper.selectById(n.getBillId()) != null) {
+            if (billMapper.lockActive(n.getBillId()) != null) {
                 billMapper.deleteById(n.getBillId());
                 removed++;
             }
@@ -824,8 +831,9 @@ public class FeeNoticeService {
     /** 派生状态:生成通知单之后读数 / 总量 / 表计又改过 → 通知单是旧的 */
     private FeePeriod decorate(FeePeriod p) {
         if (p != null) {
-            p.setNoticeStale(p.getGeneratedTime() != null && p.getInputsChangedTime() != null
-                    && p.getInputsChangedTime().isAfter(p.getGeneratedTime()));
+            p.setNoticeStale(p.getGeneratedTime() != null && FeePeriod.ST_DRAFT.equals(p.getStatus())
+                    && (!Integer.valueOf(2).equals(p.getCalculationVersion()) || (p.getInputsChangedTime() != null
+                    && p.getInputsChangedTime().isAfter(p.getGeneratedTime()))));
         }
         return p;
     }
@@ -1000,7 +1008,7 @@ public class FeeNoticeService {
             }
             qw.in(FeeNotice::getId, ids);
         }
-        List<FeeNotice> targets = noticeMapper.selectList(qw);
+        List<FeeNotice> targets = noticeMapper.selectList(qw.orderByAsc(FeeNotice::getBillId));
         Map<String, Object> m = new LinkedHashMap<>();
         if (targets.isEmpty()) {
             m.put("deleted", 0);
@@ -1009,7 +1017,7 @@ public class FeeNoticeService {
         }
         int paid = 0;
         for (FeeNotice n : targets) {
-            Bill b = n.getBillId() == null ? null : billMapper.selectById(n.getBillId());
+            Bill b = n.getBillId() == null ? null : billMapper.lockActive(n.getBillId());
             if (b != null && b.getPaidAmount() != null && b.getPaidAmount().signum() > 0) {
                 paid++;
             }
@@ -1021,7 +1029,7 @@ public class FeeNoticeService {
         List<Long> noticeIds = new ArrayList<>();
         for (FeeNotice n : targets) {
             noticeIds.add(n.getId());
-            if (n.getBillId() != null && billMapper.selectById(n.getBillId()) != null) {
+            if (n.getBillId() != null && billMapper.lockActive(n.getBillId()) != null) {
                 billMapper.deleteById(n.getBillId());
                 bills++;
             }
@@ -1083,7 +1091,7 @@ public class FeeNoticeService {
             m.setLastReading(in.lastReading() == null ? BigDecimal.ZERO : in.lastReading());
             m.setRoomId(in.roomId());
             m.setStatus(1);
-            m.setLeaseArea(in.leaseArea() != null ? in.leaseArea() : sameAreaLeaseArea(area));
+            m.setLeaseArea(in.leaseArea() != null ? in.leaseArea() : sameAreaLeaseArea(area, m.getRoomId(), m.getCustomerName()));
             try {
                 meterMapper.insert(m);
             } catch (DuplicateKeyException e) {
@@ -1116,13 +1124,8 @@ public class FeeNoticeService {
         meterMapper.update(null, uw);
         if (in.leaseArea() != null) {
             String targetArea = area.isEmpty() ? m.getArea() : area;
-            LambdaUpdateWrapper<Meter> area_uw = new LambdaUpdateWrapper<Meter>().set(Meter::getLeaseArea, in.leaseArea());
-            if (StringUtils.hasText(targetArea)) {
-                area_uw.eq(Meter::getArea, targetArea);
-            } else {
-                area_uw.eq(Meter::getId, m.getId());
-            }
-            meterMapper.update(null, area_uw);
+            setUnitLeaseArea(m.getId(), targetArea, in.roomId() == null ? m.getRoomId() : in.roomId(),
+                    in.customerName() == null ? m.getCustomerName() : trimToNull(in.customerName()), in.leaseArea());
         }
         touchDrafts();
         return meterMapper.selectById(m.getId());
@@ -1157,8 +1160,22 @@ public class FeeNoticeService {
         return code;
     }
 
-    private BigDecimal sameAreaLeaseArea(String area) {
-        return meterMapper.selectList(new LambdaQueryWrapper<Meter>().eq(Meter::getArea, area).isNotNull(Meter::getLeaseArea))
+    private void setUnitLeaseArea(Long meterId, String area, Long roomId, String customer, BigDecimal size) {
+        var update = new LambdaUpdateWrapper<Meter>().set(Meter::getLeaseArea, size);
+        if (!StringUtils.hasText(area) || (roomId == null && !StringUtils.hasText(customer))) {
+            update.eq(Meter::getId, meterId);
+        } else {
+            update.eq(Meter::getArea, area).eq(roomId != null, Meter::getRoomId, roomId)
+                    .isNull(roomId == null, Meter::getRoomId).eq(roomId == null, Meter::getCustomerName, customer);
+        }
+        meterMapper.update(null, update);
+    }
+
+    private BigDecimal sameAreaLeaseArea(String area, Long roomId, String customer) {
+        if (roomId == null && !StringUtils.hasText(customer)) return null;
+        return meterMapper.selectList(new LambdaQueryWrapper<Meter>().eq(Meter::getArea, area)
+                .eq(roomId != null, Meter::getRoomId, roomId).isNull(roomId == null, Meter::getRoomId)
+                .eq(roomId == null, Meter::getCustomerName, customer).isNotNull(Meter::getLeaseArea))
                 .stream().map(Meter::getLeaseArea).filter(a -> a.signum() > 0).max(BigDecimal::compareTo).orElse(null);
     }
 

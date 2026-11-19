@@ -53,7 +53,6 @@ public class ContractService {
     private static final int ST_TERMINATED = 9; // 已终止
 
     // 房源状态
-    private static final int ROOM_RENTABLE = 1; // 可租
     private static final int ROOM_RENTED = 5;   // 在租
 
     /** 普通编辑只能修改草稿条款，生命周期必须经过领域动作。 */
@@ -196,10 +195,7 @@ public class ContractService {
             if (cr.getRoomId() == null) {
                 continue;
             }
-            RoomRef room = new RoomRef();
-            room.setId(cr.getRoomId());
-            room.setStatus(ROOM_RENTABLE);
-            roomRefMapper.updateById(room);
+            roomRefMapper.releaseIfVacant(cr.getRoomId(), contractId);
         }
     }
 

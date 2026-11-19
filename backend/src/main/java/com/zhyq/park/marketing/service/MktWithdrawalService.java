@@ -116,6 +116,9 @@ public class MktWithdrawalService {
         if (p == null || p.getStatus() == null || p.getStatus() != MktPromoterService.ST_NORMAL) {
             throw new BizException("伙伴状态异常,不能提现");
         }
+        if (automatic && (hasOpenWithdrawal(promoterId) || autoAppliedThisMonth(promoterId))) {
+            throw new BizException("本期已自动提现或存在处理中提现单");
+        }
         int startDay = windowStartDay(), endDay = windowEndDay();
         if (!automatic && !inWindow(startDay, endDay, LocalDate.now())) {
             throw new BizException("每月 " + startDay + "–" + Math.max(startDay, endDay) + " 日开放提现申请,请在开放期内提交");
@@ -141,6 +144,7 @@ public class MktWithdrawalService {
         MktWithdrawal w = new MktWithdrawal();
         w.setWithdrawalNo("WD-" + LocalDate.now().format(DAY) + "-" + UUID.randomUUID().toString().replace("-", "").substring(0, 6).toUpperCase());
         w.setPromoterId(promoterId);
+        if (automatic) w.setAutoPeriod(java.time.YearMonth.now(java.time.ZoneId.of("Asia/Shanghai")).toString());
         w.setAmount(amount);
         w.setTaxMode(taxMode);
         w.setTaxAmount(tax);
@@ -204,6 +208,11 @@ public class MktWithdrawalService {
         return w;
     }
 
+    public boolean autoAppliedThisMonth(Long promoterId) {
+        LocalDate start = LocalDate.now(java.time.ZoneId.of("Asia/Shanghai")).withDayOfMonth(1);
+        return withdrawalMapper.countAutomatic(promoterId, start, start.plusMonths(1)) > 0;
+    }
+
     /** 可自动提现的金额:可提现余额按分向下取整;不足 1 分返回 0。 */
     public BigDecimal autoWithdrawAmount(Long promoterId) {
         return balance(promoterId).max(BigDecimal.ZERO).setScale(2, RoundingMode.DOWN);
@@ -220,6 +229,7 @@ public class MktWithdrawalService {
     public void approveFromConsole(Long id, String opinion, String operator) {
         var task = workflowService == null ? null : workflowService.currentPendingTask(WORKFLOW_BIZ_TYPE, id);
         if (task != null) { workflowService.approve(task.getId(), StringUtils.hasText(opinion) ? opinion : "同意"); return; }
+        requireLegacyAudit();
         approve(id, operator);
     }
 
@@ -229,7 +239,15 @@ public class MktWithdrawalService {
         if (!StringUtils.hasText(reason)) throw new BizException("驳回必须填写原因");
         var task = workflowService == null ? null : workflowService.currentPendingTask(WORKFLOW_BIZ_TYPE, id);
         if (task != null) { workflowService.reject(task.getId(), reason); return; }
+        requireLegacyAudit();
         reject(id, reason, operator);
+    }
+
+    private static void requireLegacyAudit() {
+        var auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || auth.getAuthorities().stream().noneMatch(a -> "crm:marketing:withdrawal:audit".equals(a.getAuthority()))) {
+            throw new BizException(403, "当前账号没有旧单据审核权限");
+        }
     }
 
     /** 审批流最后一个节点通过(同一事务回调)。 */

@@ -38,6 +38,8 @@ public class AccParkingService {
         if (plateNo == null || plateNo.isBlank()) {
             throw new BizException("车牌必填");
         }
+        plateNo = plateNo.trim();
+        parkingMapper.lockPlate(plateNo);
         Long inCount = parkingMapper.selectCount(new LambdaQueryWrapper<AccParking>()
                 .eq(AccParking::getPlateNo, plateNo)
                 .eq(AccParking::getStatus, ST_IN));

@@ -3,13 +3,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import ContractList from '../ContractList.vue'
 import { contractApi } from '@/api/contract'
+import { fileApi } from '@/api/file'
 
 const { push }=vi.hoisted(()=>({push:vi.fn()}))
 vi.mock('vue-router', () => ({ useRouter: () => ({ push }) }))
-vi.mock('@/api/contract', () => ({ contractApi: { page: vi.fn() } }))
+vi.mock('@/api/contract', () => ({ contractApi: { page: vi.fn(), defaults: vi.fn(), add: vi.fn(), update: vi.fn() } }))
 vi.mock('@/api/tenant', () => ({ tenantApi: { list: vi.fn().mockResolvedValue([{ id: 3, name: '测试租客' }]) } }))
 vi.mock('@/api/building', () => ({ projectApi: { list: vi.fn().mockResolvedValue([{ id: 4, name: '测试园区' }]) } }))
-vi.mock('@/api/file', () => ({ fileApi: {} }))
+vi.mock('@/api/file', () => ({ fileApi: { attachVerified: vi.fn(), list: vi.fn(), remove: vi.fn() } }))
 
 let mobile = true
 const rows = [
@@ -84,6 +85,24 @@ describe('合同手机版保留主线台账能力', () => {
   it('待审合同进入业务过滤的我的待办，不直接审批合同', async () => {
     const wrapper=mountPage();await flushPromises();await wrapper.vm.openApproval(17)
     expect(push).toHaveBeenCalledWith({path:'/oa/approval',query:{bizType:'contract',bizId:'17'}})
+  })
+
+  it('附件关联暂时失败后，重试沿用原合同且无需再次保存正文', async () => {
+    const wrapper = mountPage()
+    await flushPromises()
+    await wrapper.vm.openDialog()
+    wrapper.vm.formRef = { validate: vi.fn().mockResolvedValue(true) }
+    wrapper.vm.attachFiles = [{ id: 51 }]
+    contractApi.add.mockResolvedValue(91)
+    fileApi.attachVerified.mockRejectedValueOnce(new Error('附件暂不可用')).mockResolvedValueOnce()
+    await wrapper.vm.submitForm()
+    expect(wrapper.vm.form.id).toBe(91)
+    expect(wrapper.vm.dialog.visible).toBe(true)
+    await wrapper.vm.submitForm()
+    expect(contractApi.add).toHaveBeenCalledTimes(1)
+    expect(contractApi.update).not.toHaveBeenCalled()
+    expect(fileApi.attachVerified).toHaveBeenLastCalledWith('contract', 91, [51])
+    expect(wrapper.vm.dialog.visible).toBe(false)
   })
 
   it('桌面按字段对应本页合计，新增或调整列后仍保持金额归位', async () => {

@@ -95,6 +95,7 @@
 </template>
 
 <script setup>
+import { parkToday as today } from '@/utils/parkDate'
 import { computed, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { followApi } from '@/api/crm'
@@ -136,7 +137,6 @@ watch(leadId, () => { list.value = [] })
 const formRef = ref()
 const dialogVisible = ref(false)
 const saving = ref(false)
-const today = () => new Date().toISOString().slice(0, 10)
 const defaultForm = () => ({
   followDate: today(), type: '电话', followBy: '', intentChange: '',
   content: '', issue: '', nextFollow: '', result: ''

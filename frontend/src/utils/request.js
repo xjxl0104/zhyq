@@ -23,6 +23,7 @@ request.interceptors.request.use((config) => {
     }
   } else if (token) config.headers.Authorization = `Bearer ${token}`
 
+  config.sessionToken = token
   const excluded = NO_PROJECT_PREFIXES.some((p) => url.startsWith(p))
   if (!excluded) {
     const pid = useProjectStore().currentProjectId
@@ -47,6 +48,12 @@ request.interceptors.request.use((config) => {
   return config
 })
 
+function expireSession(config) {
+  if (config?.sessionToken !== localStorage.getItem('zhyq_token')) return
+  localStorage.removeItem('zhyq_token')
+  if (!location.pathname.startsWith('/login')) location.href = '/login'
+}
+
 request.interceptors.response.use(
   (res) => {
     const data = res.data
@@ -54,8 +61,7 @@ request.interceptors.response.use(
     if (res.config.responseType === 'blob') return res
     if (data.code === 0) return data.data
     if (data.code === 401) {
-      localStorage.removeItem('zhyq_token')
-      if (!location.pathname.startsWith('/login')) location.href = '/login'
+      expireSession(res.config)
       return Promise.reject(new Error('未登录'))
     }
     ElMessage.error(data.message || '请求失败')
@@ -64,8 +70,7 @@ request.interceptors.response.use(
   (err) => {
     // HTTP 401(拦截器直接拒的情况)
     if (err.response && err.response.status === 401) {
-      localStorage.removeItem('zhyq_token')
-      if (!location.pathname.startsWith('/login')) location.href = '/login'
+      expireSession(err.config || err.response.config)
       return Promise.reject(err)
     }
     ElMessage.error(err.message || '网络异常')

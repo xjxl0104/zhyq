@@ -12,6 +12,7 @@ const props = defineProps({
   bizType: { type: String, default: '' },
   bizId: { type: [Number, String], default: null },
   accept: { type: String, default: '' },
+  deferRemoval: Boolean,
   camera: Boolean,
   photosOnly: Boolean,
   disabled: Boolean
@@ -90,7 +91,7 @@ async function onRemove(uploadFile) {
   const id = uploadFile.id || (uploadFile.raw && uploadFile.raw.id)
   if (id) {
     // 营销合同和资金附件保留归档；提交前移除只是取消本次选择。
-    if (!props.bizType.startsWith('mkt_')) {
+    if (!props.deferRemoval && !props.bizType.startsWith('mkt_')) {
       try { await fileApi.remove(id) } catch (e) { /* 忽略,前端仍移除 */ }
     }
     const next = props.modelValue.filter(f => f.id !== id)

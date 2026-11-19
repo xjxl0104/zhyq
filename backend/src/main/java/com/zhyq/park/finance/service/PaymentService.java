@@ -80,6 +80,25 @@ public class PaymentService {
         return doPay(billId, amount, payMethod, payNo, payTime, operator, remark, false);
     }
 
+    @Transactional(rollbackFor = Exception.class)
+    public Payment collectForTenant(Long tenantId, Long billId, BigDecimal amount, String method, String payNo) {
+        requireBillTenant(billId, tenantId);
+        return 收款(billId, amount, method, payNo);
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public Bill writeOffForTenant(Long tenantId, Long billId, String remark, String operator) {
+        requireBillTenant(billId, tenantId);
+        return 零元核销(billId, remark, operator);
+    }
+
+    private void requireBillTenant(Long billId, Long tenantId) {
+        Bill bill = billMapper.lockActive(billId);
+        if (bill == null || !tenantId.equals(bill.getTenantRefId())) {
+            throw new BizException("账单不属于当前租客，请刷新后重选");
+        }
+    }
+
     private Payment doPay(Long billId, BigDecimal amount, String payMethod, String payNo,
                           LocalDateTime payTime, String operator, String remark, boolean publishEvent) {
         // ① 幂等键必须最先查:同 payNo 重放要原样返回首次结果 —— 哪怕首次收款已把

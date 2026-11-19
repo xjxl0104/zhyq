@@ -156,7 +156,7 @@ public class PurRequestService {
     /** 删除:审批中/已通过/已完成不可删,防误删在途或已执行单据。 */
     @Transactional(rollbackFor = Exception.class)
     public void remove(Long id) {
-        PurRequest request = requestMapper.selectById(id);
+        PurRequest request = requestMapper.lockForRemoval(id);
         if (request == null) {
             throw new BizException("采购申请不存在");
         }

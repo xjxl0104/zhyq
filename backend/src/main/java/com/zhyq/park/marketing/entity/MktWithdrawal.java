@@ -15,6 +15,7 @@ import java.time.LocalDateTime;
 public class MktWithdrawal extends BaseEntity {
     /** WD-yyyyMMdd-0001 */
     private String withdrawalNo;
+    private String autoPeriod;
     private Long promoterId;
     /** 税前 */
     private BigDecimal amount;

@@ -102,8 +102,8 @@ describe('收银台页面', () => {
 
     wrapper.vm.tenantRefId = 3
     wrapper.vm.selected = [
-      { id: 11, amount: 100, paidAmount: 0, lateFee: 0 },
-      { id: 12, amount: 50, paidAmount: 0, lateFee: 0 }
+      { id: 11, tenantRefId: 3, amount: 100, paidAmount: 0, lateFee: 0 },
+      { id: 12, tenantRefId: 3, amount: 50, paidAmount: 0, lateFee: 0 }
     ]
     wrapper.vm.payAmount = 150
     await wrapper.vm.confirmPay()
@@ -116,7 +116,7 @@ describe('收银台页面', () => {
     const failedPayNo = paymentApi.pay.mock.calls[1][0].payNo
 
     // 重试:失败那张账单必须复用同一个幂等键,后端撞同 payNo 不会重复入账
-    wrapper.vm.selected = [{ id: 12, amount: 50, paidAmount: 0, lateFee: 0 }]
+    wrapper.vm.selected = [{ id: 12, tenantRefId: 3, amount: 50, paidAmount: 0, lateFee: 0 }]
     wrapper.vm.payAmount = 50
     await wrapper.vm.confirmPay()
     await flushPromises()
@@ -134,14 +134,14 @@ describe('收银台页面', () => {
     await flushPromises()
 
     wrapper.vm.tenantRefId = 3
-    wrapper.vm.selected = [{ id: 21, amount: 50, paidAmount: 0, lateFee: 0 }]
+    wrapper.vm.selected = [{ id: 21, tenantRefId: 3, amount: 50, paidAmount: 0, lateFee: 0 }]
     wrapper.vm.payAmount = 50
     await wrapper.vm.confirmPay()
     await flushPromises()
     const firstPayNo = paymentApi.pay.mock.calls[0][0].payNo
 
     // 刷新后欠款变小(假设首笔其实入账了),按新金额重试 → 新 payNo,走后端全量校验
-    wrapper.vm.selected = [{ id: 21, amount: 50, paidAmount: 30, lateFee: 0 }]
+    wrapper.vm.selected = [{ id: 21, tenantRefId: 3, amount: 50, paidAmount: 30, lateFee: 0 }]
     wrapper.vm.payAmount = 20
     await wrapper.vm.confirmPay()
     await flushPromises()
@@ -149,6 +149,35 @@ describe('收银台页面', () => {
     const secondCall = paymentApi.pay.mock.calls[1][0]
     expect(secondCall.amount).toBe(20)
     expect(secondCall.payNo).not.toBe(firstPayNo)
+  })
+
+  it('先选甲再选乙，迟到的甲响应不能覆盖乙账单', async () => {
+    let finishA
+    billApi.page.mockImplementationOnce(() => new Promise(resolve => { finishA = resolve }))
+      .mockResolvedValueOnce({ records: [{ id: 22, tenantRefId: 5, status: 3 }], total: 1 })
+    const wrapper = mount(Cashier, { global: { plugins: [ElementPlus] } })
+    await flushPromises()
+    wrapper.vm.tenantRefId = 3
+    const old = wrapper.vm.loadBills()
+    wrapper.vm.tenantRefId = 5
+    await wrapper.vm.loadBills()
+    finishA({ records: [{ id: 11, tenantRefId: 3, status: 3 }], total: 1 })
+    await old
+    expect(wrapper.vm.bills.map(row => row.id)).toEqual([22])
+    wrapper.unmount()
+  })
+
+  it('可收账单超过一页时加载第 101 张', async () => {
+    const rows = Array.from({ length: 101 }, (_, index) => ({ id: index + 1, status: 3, tenantRefId: 3 }))
+    billApi.page.mockResolvedValueOnce({ records: rows.slice(0, 100), total: 101 })
+      .mockResolvedValueOnce({ records: rows.slice(100), total: 101 })
+    const wrapper = mount(Cashier, { global: { plugins: [ElementPlus] } })
+    await flushPromises()
+    wrapper.vm.tenantRefId = 3
+    await wrapper.vm.loadBills()
+    expect(billApi.page).toHaveBeenLastCalledWith(expect.objectContaining({ pageNo: 2, payableOnly: true }))
+    expect(wrapper.vm.bills.at(-1).id).toBe(101)
+    wrapper.unmount()
   })
 
   it('totalOwe 用整数分求和:浮点欠款相加不产生残差', async () => {

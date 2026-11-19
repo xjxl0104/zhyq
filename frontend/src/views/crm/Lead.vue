@@ -343,6 +343,7 @@
 </template>
 
 <script setup>
+import { parkToday as today } from '@/utils/parkDate'
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { leadApi } from '@/api/crm'
@@ -390,7 +391,6 @@ function reset() { Object.assign(query, defaultQuery()); load() }
 const formRef = ref()
 const dialogVisible = ref(false)
 const saving = ref(false)
-const today = () => new Date().toISOString().slice(0, 10)
 const defaultForm = () => ({
   id: null, leadNo: '', registerDate: today(), source: '', contact: '', phone: '', company: '',
   customerType: '', coopMode: '', demandArea: '', goodsType: '', orderVolume: '', coopPeriod: '',

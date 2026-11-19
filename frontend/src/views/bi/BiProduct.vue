@@ -10,7 +10,8 @@
         <span class="commerce-chip"><el-icon><Calendar /></el-icon>近 30 天</span>
         <!-- 使用度是「近 30 天累计」,本页自己的请求又不计入埋点,所以刷新后数字常常
              原地不动。没有更新时间的话,用户没法判断刷新到底生效没有 -->
-        <span v-if="updatedAt" class="commerce-chip">更新于 {{ updatedAt }}</span>
+        <span v-if="updatedAt" class="commerce-chip">上次完整更新 {{ updatedAt }}</span>
+        <span v-if="refreshWarning" role="status" class="commerce-chip">{{ refreshWarning }}</span>
         <el-button class="commerce-action" type="primary" :loading="loading" @click="load">
           <el-icon><Refresh /></el-icon><span>刷新分析</span>
         </el-button>
@@ -94,6 +95,7 @@
 </template>
 
 <script setup>
+import { refreshHistory } from '@/utils/refreshHistory'
 import { computed, onActivated, onMounted, ref } from 'vue'
 import { biApi } from '@/api/bi'
 import { moduleLabel } from '@/constants/modules'
@@ -108,6 +110,8 @@ const flow = ref({})
 const feedbackData = ref([])
 const loading = ref(false)
 const updatedAt = ref('')
+const refreshWarning = ref('')
+const recordRefresh = refreshHistory()
 const moduleChartRef = ref(null)
 const gaugeChartRef = ref(null)
 const feedbackChartRef = ref(null)
@@ -118,7 +122,7 @@ const closeRate = computed(() => {
   return started ? Math.min(100, Math.round(completed / started * 100)) : 0
 })
 const totalRequests = computed(() => moduleData.value.reduce((sum, item) => sum + Number(item.request_count || 0), 0))
-const totalUsers = computed(() => moduleData.value.reduce((sum, item) => sum + Number(item.user_count || 0), 0))
+const totalUsers = computed(() => Number(moduleData.value[0]?.distinct_users || 0))
 const feedbackTotal = computed(() => feedbackData.value.reduce((sum, item) => sum + Number(item.cnt || 0), 0))
 const numberFmt = (value) => Number(value || 0).toLocaleString('zh-CN')
 
@@ -190,6 +194,7 @@ const feedbackChart = useChart(feedbackChartRef, (theme) => {
 })
 
 async function load() {
+  if (loading.value) return
   loading.value = true
   try {
     const [modules, flowData, feedback] = await Promise.allSettled([
@@ -203,7 +208,13 @@ async function load() {
     moduleChart.refresh()
     gauge.refresh()
     feedbackChart.refresh()
-    updatedAt.value = new Date().toLocaleTimeString('zh-CN', { hour12: false })
+    const refresh = recordRefresh([
+      ['模块使用', modules.status === 'fulfilled'],
+      ['流程闭环', flowData.status === 'fulfilled'],
+      ['反馈', feedback.status === 'fulfilled']
+    ])
+    refreshWarning.value = refresh.warning
+    if (refresh.updated) updatedAt.value = refresh.updated
   } finally {
     loading.value = false
   }

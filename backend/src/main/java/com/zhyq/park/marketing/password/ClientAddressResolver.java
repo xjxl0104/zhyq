@@ -83,6 +83,13 @@ public class ClientAddressResolver {
         } else if (!value.matches("[0-9]{1,3}(\\.[0-9]{1,3}){3}")) {
             return null;
         }
+        if (!value.contains(":")) {
+            String[] octets = value.split("\\.");
+            for (String octet : octets) {
+                if ((octet.length() > 1 && octet.startsWith("0")) || Integer.parseInt(octet) > 255) return null;
+            }
+            return value;
+        }
         try { return InetAddress.getByName(value).getHostAddress(); }
         catch (UnknownHostException e) { return null; }
     }

@@ -76,6 +76,18 @@ class YunshanVolumeSyncServiceTest {
         lenient().when(transactions.getTransaction(any())).thenAnswer(i -> new SimpleTransactionStatus());
     }
 
+    @Test void staleOrConflictingSnapshotCannotReviseVolume() {
+        var previous = local(0, 100);
+        previous.setDataAsOf(AS_OF.plusHours(6));
+        when(volumeMapper.selectList(any())).thenReturn(List.of(previous));
+        respond(page(List.of(day(0, 80)), 1, 1, 80));
+        assertThatThrownBy(this::sync).hasMessageContaining("早于本地");
+        previous.setDataAsOf(AS_OF);
+        assertThatThrownBy(this::sync).hasMessageContaining("不同票数");
+        assertThat(previous.getConsignNum()).isEqualTo(100L);
+        verify(volumeMapper, never()).updateById(any(MktYunshanDailyVolume.class));
+    }
+
     @Test void expiredContractBlocksManualSyncAndReconciliationBeforeExternalCalls() {
         doThrow(new BizException("客户合同已失效")).when(scope).requireSigned(3L, 2L);
         assertThatThrownBy(() -> sync()).hasMessageContaining("合同已失效");

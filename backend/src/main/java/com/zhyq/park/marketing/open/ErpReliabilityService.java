@@ -53,21 +53,40 @@ public class ErpReliabilityService {
             LambdaUpdateWrapper<MktErpEventInbox> transition = new LambdaUpdateWrapper<MktErpEventInbox>()
                     .eq(MktErpEventInbox::getId, row.getId())
                     .eq(MktErpEventInbox::getStatus, "RETRY")
-                    .le(MktErpEventInbox::getNextRetryAt, now)
-                    .set(MktErpEventInbox::getNextRetryAt, null);
+                    .le(MktErpEventInbox::getNextRetryAt, now);
             if (attempts >= MAX_ATTEMPTS) {
-                int changed = inboxMapper.update(null, transition.set(MktErpEventInbox::getStatus, "DEAD")
-                        .set(MktErpEventInbox::getLastError, "超过最大重试次数"));
-                if (changed == 0) continue;
-                MktErpDeadLetter dl = new MktErpDeadLetter(); dl.setInboxId(row.getId()); dl.setWarehouseId(row.getWarehouseId());
-                dl.setEventId(row.getEventId()); dl.setOrderNo(row.getOrderNo()); dl.setErrorCode("MAX_RETRY"); dl.setErrorMessage("超过最大重试次数"); dl.setAttempts(attempts); dl.setProjectId(row.getProjectId());
-                try { deadMapper.insert(dl); } catch (DuplicateKeyException ignored) { }
-                moved++;
+                moved += deadLetter(row, transition, attempts, "MAX_RETRY", "超过最大重试次数");
             } else {
-                moved += inboxMapper.update(null, transition.set(MktErpEventInbox::getStatus, "RECEIVED"));
+                moved += inboxMapper.update(null, transition.set(MktErpEventInbox::getNextRetryAt, null).set(MktErpEventInbox::getStatus, "RECEIVED"));
             }
         }
         return moved;
+    }
+
+    @Transactional
+    public int deadLetter(MktErpEventInbox row, LambdaUpdateWrapper<MktErpEventInbox> transition,
+                          int attempts, String code, String error) {
+        String detail = error == null ? code : error.substring(0, Math.min(error.length(), 500));
+        int changed = inboxMapper.update(null, transition.set(MktErpEventInbox::getStatus, "DEAD")
+                .set(MktErpEventInbox::getAttempts, attempts).set(MktErpEventInbox::getLastError, detail)
+                .set(MktErpEventInbox::getNextRetryAt, null));
+        if (changed == 0) return 0;
+        MktErpDeadLetter letter = new MktErpDeadLetter();
+        letter.setInboxId(row.getId());
+        letter.setEventId(row.getEventId());
+        letter.setWarehouseId(row.getWarehouseId());
+        letter.setOrderNo(row.getOrderNo());
+        letter.setErrorCode(code);
+        letter.setErrorMessage(detail);
+        letter.setAttempts(attempts);
+        letter.setProjectId(row.getProjectId());
+        try { deadMapper.insert(letter); }
+        catch (DuplicateKeyException existing) {
+            deadMapper.update(null, new LambdaUpdateWrapper<MktErpDeadLetter>()
+                    .eq(MktErpDeadLetter::getInboxId, row.getId()).set(MktErpDeadLetter::getErrorCode, code)
+                    .set(MktErpDeadLetter::getErrorMessage, detail).set(MktErpDeadLetter::getAttempts, attempts));
+        }
+        return changed;
     }
 
     @Transactional

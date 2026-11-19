@@ -34,23 +34,23 @@ public class ScoreCalculationJob {
                 -- 覆盖广度
                 LEAST(ROUND(COALESCE(pm.coverage_rate, 0) * 100), 100) AS dim_coverage,
                 -- 流程闭环
-                CASE WHEN pm.flow_close_rate IS NULL THEN NULL
+                CASE WHEN pm.facts_measured = 0 OR pm.flow_close_rate IS NULL THEN NULL
                      ELSE LEAST(ROUND(pm.flow_close_rate * 100), 100) END AS dim_flow,
                 -- 使用频率
                 LEAST(ROUND(pm.active_days / ? * 100), 100) AS dim_frequency,
                 -- 数据贡献（部门分位数）
-                ROUND(
+                CASE WHEN pm.facts_measured = 0 THEN NULL WHEN pm.total_data_created = 0 THEN 0 ELSE ROUND(
                     (SELECT COUNT(*) FROM user_period_metrics pm2
                      WHERE pm2.dept_id = pm.dept_id
                        AND pm2.period_type = pm.period_type
                        AND pm2.period_start = pm.period_start
-                       AND pm2.total_data_created <= pm.total_data_created
+                       AND pm2.facts_measured = 1 AND pm2.total_data_created <= pm.total_data_created
                     ) * 100.0 /
                     GREATEST((SELECT COUNT(*) FROM user_period_metrics pm3
-                     WHERE pm3.dept_id = pm.dept_id
+                     WHERE pm3.facts_measured = 1 AND pm3.dept_id = pm.dept_id
                        AND pm3.period_type = pm.period_type
                        AND pm3.period_start = pm.period_start), 1)
-                ) AS dim_data,
+                ) END AS dim_data,
                 -- 反馈贡献
                 LEAST(ROUND(
                     (pm.total_feedback + pm.total_adopted * 2) * 50.0 /
@@ -78,9 +78,9 @@ public class ScoreCalculationJob {
         String updateTotal = """
             UPDATE user_score
             SET total_score = (
-                COALESCE(dim_coverage, 0) + COALESCE(dim_flow, 0) + dim_frequency + dim_data + dim_feedback
+                COALESCE(dim_coverage, 0) + COALESCE(dim_flow, 0) + dim_frequency + COALESCE(dim_data, 0) + dim_feedback
             ) / (
-                CASE WHEN dim_flow IS NULL THEN 4 ELSE 5 END
+                3 + (dim_flow IS NOT NULL) + (dim_data IS NOT NULL)
             ),
             updated_at = NOW()
             WHERE period_type = ? AND period_start = ?

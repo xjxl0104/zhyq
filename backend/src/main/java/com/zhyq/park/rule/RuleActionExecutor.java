@@ -41,14 +41,13 @@ public class RuleActionExecutor {
 
     public void execute(Rule rule, AlarmRaised event) {
         if (ACTION_CREATE_WORKORDER.equals(rule.getActionType())) {
-            createWorkOrder(rule, event);
+            createWorkOrder(rule, event.alarmId(), event.spaceId());
         } else {
             log.warn("未知动作类型,跳过:actionType={}, ruleId={}", rule.getActionType(), rule.getId());
         }
     }
 
-    private void createWorkOrder(Rule rule, AlarmRaised event) {
-        Long alarmId = event.alarmId();
+    void createWorkOrder(Rule rule, Long alarmId, Long spaceId) {
         long existing = workOrderMapper.selectCount(
                 new LambdaQueryWrapper<WorkOrder>().eq(WorkOrder::getSourceAlarmId, alarmId));
         if (existing > 0) {
@@ -61,10 +60,10 @@ public class RuleActionExecutor {
         String title = config == null ? null : config.getStr("title");
 
         WorkOrder wo = new WorkOrder();
-        wo.setCode("WO" + System.currentTimeMillis());
+        wo.setCode("WO-ALARM-" + alarmId);
         wo.setOrderType(StrUtil.isBlank(orderType) ? "告警" : orderType);
         wo.setTitle(StrUtil.isBlank(title) ? "IoT告警工单" : title);
-        wo.setSpaceId(event.spaceId());
+        wo.setSpaceId(spaceId);
         wo.setSourceAlarmId(alarmId);
         // 同时写通用来源列,使汇总页能用统一口径反查所有来源
         wo.setSourceType(WorkOrderSource.ALARM);

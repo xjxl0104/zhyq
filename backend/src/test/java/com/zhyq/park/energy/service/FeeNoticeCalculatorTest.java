@@ -352,13 +352,30 @@ class FeeNoticeCalculatorTest {
         FeeNoticeCalculator.GarbageSplit split = FeeNoticeCalculator.splitGarbage(p, rows);
 
         assertThat(split.totalArea()).isEqualByComparingTo("10400");
-        assertThat(split.units().get("室外").domestic()).isEqualByComparingTo("0");
+        assertThat(split.units().get(new FeeNoticeCalculator.UnitTenant("室外", "N充电柱")).domestic()).isEqualByComparingTo("0");
         BigDecimal domestic = split.units().values().stream().map(FeeNoticeCalculator.UnitShare::domestic)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
         BigDecimal industrial = split.units().values().stream().map(FeeNoticeCalculator.UnitShare::industrial)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
         assertThat(domestic).isEqualByComparingTo("2402.78");
         assertThat(industrial).isEqualByComparingTo("1854");
+    }
+
+    @Test
+    void twoTenantsWithTheSameAreaLabelShareOneHundredExactlyOnce() {
+        FeePeriod period = new FeePeriod();
+        period.setId(1L);
+        period.setPeriod("2026-10");
+        period.setDomesticGarbageAmount(new BigDecimal("100"));
+        List<SheetRow> meters = List.of(row(1, "一区", "甲", 10L, "电", "1", true, "30"),
+                row(2, "一区", "乙", 20L, "电", "1", true, "70"),
+                row(3, "一区", "乙", 20L, "电", "1", true, "70"));
+        var electricity = FeeNoticeCalculator.allocate("电", new BigDecimal("3"), BigDecimal.ONE, meters);
+        var water = FeeNoticeCalculator.allocate("水", BigDecimal.ZERO, BigDecimal.ONE, List.of());
+        var amounts = FeeNoticeCalculator.buildNotices(period, water, electricity, Map.of()).notices()
+                .stream().map(FeeNotice::getDomesticGarbageFee).toList();
+        assertThat(amounts).usingElementComparator(BigDecimal::compareTo)
+                .containsExactlyInAnyOrder(new BigDecimal("30"), new BigDecimal("70"));
     }
 
     @Test

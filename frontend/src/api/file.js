@@ -21,6 +21,13 @@ export const fileApi = {
   attach(bizType, bizId, fileIds) {
     return request.post('/file/attach', { bizType, bizId, fileIds })
   },
+  async attachVerified(bizType, bizId, fileIds) {
+    const count = await this.attach(bizType, bizId, fileIds)
+    if (count === fileIds.length) return
+    // A previous attempt may have committed before its response was lost.
+    const linked = new Set((await this.list(bizType, bizId)).map(file => String(file.id)))
+    if (fileIds.some(id => !linked.has(String(id)))) throw new Error('部分附件尚未关联')
+  },
   remove(id) {
     return request.delete(`/file/${id}`)
   },

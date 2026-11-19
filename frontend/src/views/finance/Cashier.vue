@@ -8,7 +8,7 @@
           <!-- 档案里的每个租客都能选:欠款的排前面并带「N 笔 · ¥金额」徽标,没欠款的
                显示「无欠款」也照样可选。原先只列欠款租客,当月有应收的租客一旦口径
                没对上就整个从下拉里消失,收银员无从下手 -->
-          <el-select v-model="tenantRefId" filterable placeholder="请选择租客(欠款的在前)" clearable
+          <el-select v-model="tenantRefId" :disabled="paying" filterable placeholder="请选择租客(欠款的在前)" clearable
                      style="width: 340px" @change="loadBills">
             <el-option v-for="t in tenants" :key="t.tenantRefId"
                        :label="tenantOptionLabel(t)" :value="t.tenantRefId">
@@ -146,19 +146,26 @@ async function loadTenants() {
   tenants.value = (await billApi.payableTenants()) || []
 }
 
+let billLoad = 0
 async function loadBills() {
+  const version = ++billLoad
+  const tenant = tenantRefId.value
   selected.value = []
   bills.value = []
-  if (!tenantRefId.value) return
-  loading.value = true
+  loading.value = !!tenant
+  if (!tenant) return
   try {
-    // status 不传,前端过滤可收款状态
-    const res = await billApi.page({ pageNo: 1, pageSize: 100, tenantRefId: tenantRefId.value, direction: 1 })
-    // 原来还带 owe(b) > 0:免租期账单应收就是 0,被这条过滤掉后在收银台根本看不见,
-    // 收银员既结不了也不知道它存在。改为全部列出,0 应收的走「零元核销」
-    bills.value = (res.records || []).filter(b => PAYABLE.includes(b.status))
+    const rows = []
+    for (let pageNo = 1; ; pageNo++) {
+      const page = await billApi.page({ pageNo, pageSize: 100, tenantRefId: tenant, direction: 1, payableOnly: true })
+      if (version !== billLoad || tenant !== tenantRefId.value) return
+      const records = page.records || []
+      rows.push(...records)
+      if (!records.length || rows.length >= Number(page.total ?? rows.length)) break
+    }
+    bills.value = rows.filter(row => PAYABLE.includes(row.status))
   } finally {
-    loading.value = false
+    if (version === billLoad) loading.value = false
   }
 }
 
@@ -183,7 +190,13 @@ function payNoFor(billId, cents) {
 watch(tenantRefId, () => { payNos.clear(); lastPayments.value = [] })
 
 async function confirmPay() {
-  if (!selected.value.length) return
+  if (paying.value || loading.value || !selected.value.length) return
+  const tenant = tenantRefId.value
+  if (!tenant || selected.value.some(row => String(row.tenantRefId) !== String(tenant))) {
+    ElMessage.warning('所选账单与当前租客不一致，请刷新后重选')
+    await loadBills()
+    return
+  }
   // 免租期账单(应收 0)与正常账单常常混选:0 应收的走核销,其余的走收款,
   // 一次点击两条路都走完 —— 分两次操作只会让收银员漏掉其中一半
   const zeroBills = canWriteOff.value ? selected.value.filter(row => billOweCents(row) === 0) : []
@@ -200,12 +213,13 @@ async function confirmPay() {
   const created = []
   try {
     for (const row of zeroBills) {
-      await paymentApi.writeOff({ billId: row.id, remark: '收银台零元核销' })
+      await paymentApi.writeOff({ tenantRefId: tenant, billId: row.id, remark: '收银台零元核销' })
       writtenOff++
     }
     for (const item of plan) {
       const cents = Math.round(item.amount * 100)
       const payment = await paymentApi.pay({
+        tenantRefId: tenant,
         billId: item.billId,
         amount: item.amount,
         payMethod: payMethod.value,

@@ -90,9 +90,11 @@ public class WorkflowService {
                 .eq(WfInstance::getBizType, bizType).eq(WfInstance::getBizId, bizId)
                 .eq(WfInstance::getStatus, INST_RUNNING).last("limit 1"));
         if (running == null) return null;
-        return taskMapper.selectOne(new LambdaQueryWrapper<WfTask>()
+        WfTask pending = taskMapper.selectOne(new LambdaQueryWrapper<WfTask>()
                 .eq(WfTask::getInstanceId, running.getId()).eq(WfTask::getSeq, running.getCurrentSeq())
                 .eq(WfTask::getStatus, TASK_PENDING).last("limit 1"));
+        if (pending == null) throw new BizException("审批流程当前节点异常，请刷新后核对");
+        return pending;
     }
 
     private Long doStart(String bizType, Long bizId, Long approvalId) {

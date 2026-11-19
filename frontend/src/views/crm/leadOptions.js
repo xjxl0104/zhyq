@@ -30,7 +30,7 @@ export const STATUS_OPTIONS = [
   { value: 6, label: '已流失/暂缓', type: 'danger' }
 ]
 
-export const FOLLOW_TYPE_OPTIONS = ['电话', '微信/在线沟通', '上门拜访', '邀约看仓', '邮件', '其他']
+export const FOLLOW_TYPE_OPTIONS = ['电话', '微信/在线沟通', '上门拜访', '邀约看仓', '客户到访', '邮件', '其他']
 
 export const INTENT_CHANGE_OPTIONS = ['明显升温', '持平', '降温', '已成交', '已流失']
 

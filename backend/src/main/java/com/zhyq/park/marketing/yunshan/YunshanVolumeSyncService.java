@@ -254,6 +254,13 @@ public class YunshanVolumeSyncService {
                 row.setRevisedCount(0); row.setDataAsOf(remote.dataAsOf()); row.setFetchedAt(now);
                 requireWrite(volumeMapper.insert(row));
             } else {
+                LocalDateTime prior = row.getDataAsOf();
+                if (prior != null && (remote.dataAsOf() == null || remote.dataAsOf().isBefore(prior))) {
+                    throw new BizException("云山统计快照早于本地版本，本批未更新");
+                }
+                if (prior != null && prior.equals(remote.dataAsOf()) && !Objects.equals(row.getConsignNum(), day.getValue())) {
+                    throw new BizException("同一云山统计快照包含不同票数，请核对上游数据");
+                }
                 if (!Objects.equals(row.getConsignNum(), day.getValue())) {
                     row.setConsignNum(day.getValue());
                     row.setRevisedCount(Math.addExact(row.getRevisedCount() == null ? 0 : row.getRevisedCount(), 1));

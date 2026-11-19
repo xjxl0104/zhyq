@@ -1,11 +1,7 @@
 package com.zhyq.park.property.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
-import com.zhyq.park.common.notify.NotificationService;
 import com.zhyq.park.property.entity.WorkOrder;
-import com.zhyq.park.property.entity.WorkOrderLog;
-import com.zhyq.park.property.mapper.WorkOrderLogMapper;
 import com.zhyq.park.property.mapper.WorkOrderMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -27,8 +23,7 @@ import java.util.List;
 public class SlaEscalationJob {
 
     private final WorkOrderMapper workOrderMapper;
-    private final WorkOrderLogMapper workOrderLogMapper;
-    private final NotificationService notificationService;
+    private final SlaEscalationWriter writer;
 
     /** 每 10 分钟(避开:00),扫描活动工单打 SLA 超时态 */
     @Scheduled(cron = "0 3/10 * * * ?")
@@ -59,10 +54,10 @@ public class SlaEscalationJob {
                 }
                 if ((status == WorkOrderService.ST_PENDING_DISPATCH || status == WorkOrderService.ST_PENDING_ACCEPT)
                         && SlaCalculator.isTimedOut(wo.getCreateTime(), now, wo.getSlaRespondMin())) {
-                    escalate(wo, WorkOrderService.SLA_RESP_TIMEOUT, "响应超时");
+                    writer.escalate(wo, WorkOrderService.SLA_RESP_TIMEOUT, "响应超时");
                 } else if ((status == WorkOrderService.ST_PROCESSING || status == WorkOrderService.ST_PENDING_VERIFY)
                         && SlaCalculator.isTimedOut(wo.getCreateTime(), now, wo.getSlaResolveMin())) {
-                    escalate(wo, WorkOrderService.SLA_RESOLVE_TIMEOUT, "解决超时");
+                    writer.escalate(wo, WorkOrderService.SLA_RESOLVE_TIMEOUT, "解决超时");
                 }
             } catch (Exception e) {
                 log.error("[sla] escalate failed for workOrderId={}", wo.getId(), e);
@@ -70,36 +65,4 @@ public class SlaEscalationJob {
         }
     }
 
-    private void escalate(WorkOrder wo, int slaState, String reason) {
-        int updated = workOrderMapper.update(null, new LambdaUpdateWrapper<WorkOrder>()
-                .eq(WorkOrder::getId, wo.getId())
-                .eq(WorkOrder::getEscalated, 0)
-                .set(WorkOrder::getSlaState, slaState)
-                .set(WorkOrder::getEscalated, 1));
-        if (updated == 0) {
-            // 已被并发的另一次扫描抢先打上,跳过日志/通知避免重复
-            return;
-        }
-
-        WorkOrderLog l = new WorkOrderLog();
-        l.setOrderId(wo.getId());
-        l.setAction("SLA升级");
-        l.setOperator("system");
-        l.setContent(reason + ",工单号:" + wo.getCode());
-        workOrderLogMapper.insert(l);
-
-        try {
-            String assignee = wo.getAssignee();
-            // assignee 占位(#7 鉴权轮后接真实指派),为空则通知 system 兜底
-            notificationService.sendInApp(null,
-                    "工单SLA超时:" + reason,
-                    "工单 " + wo.getCode() + " " + reason + ",请及时处理",
-                    "workorder",
-                    wo.getId());
-            log.info("[sla] escalated workOrderId={} reason={} assignee={}", wo.getId(), reason,
-                    assignee == null ? "system" : assignee);
-        } catch (Exception e) {
-            log.warn("[sla] notify failed for workOrderId={}", wo.getId(), e);
-        }
-    }
 }

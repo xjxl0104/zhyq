@@ -10,6 +10,9 @@ import java.util.List;
 
 public interface BillMapper extends BaseMapper<Bill> {
 
+    @Select("SELECT * FROM fin_bill WHERE id = #{id} AND deleted = 0 FOR UPDATE")
+    Bill lockActive(@Param("id") Long id);
+
     @Select("""
             SELECT COUNT(*)
             FROM fin_bill b
