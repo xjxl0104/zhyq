@@ -88,14 +88,16 @@ class MktWithdrawalServiceTest {
         verify(withdrawalMapper, never()).insert(any(MktWithdrawal.class));
     }
 
-    @Test void publishedRulesDescribeTheManualFlowWithoutAnInventedArrivalPromise() {
+    @Test void publishedRulesDescribeTheDefaultWindow() {
         when(bizSettings.getString(eq("marketing"), eq("withdraw_arrival_time"), anyString()))
+                .thenAnswer(call -> call.getArgument(2));
+        when(bizSettings.getInt(eq("marketing"), anyString(), anyInt()))
                 .thenAnswer(call -> call.getArgument(2));
         var rules = service.withdrawalRules();
         assertThat(rules).containsEntry("minimumAmount", new BigDecimal("0.01"))
                 .containsEntry("dailyLimit", 0)
                 .containsEntry("feeAmount", BigDecimal.ZERO)
-                .containsEntry("applicationTime", "随时可提交申请")
+                .containsEntry("applicationTime", "每月 25–30 日开放提现申请")
                 .containsEntry("payoutMethod", "财务审批通过后转账至已审核的收款账户")
                 .containsEntry("arrivalTime", MktWithdrawalService.DEFAULT_ARRIVAL_TIME);
         verify(bizSettings, never()).getDecimal(eq("marketing"), eq("min_withdraw"), any());
@@ -278,11 +280,31 @@ class MktWithdrawalServiceTest {
     private static MktPromoterCommission row(Long id, String amount) { MktPromoterCommission c = new MktPromoterCommission(); c.setId(id); c.setPromoterId(1L); c.setAmount(new BigDecimal(amount)); c.setSign(1); c.setStatus(MktCommissionService.C_SETTLED); return c; }
 
     @Test void withdrawalWindowIsInclusiveAndZeroStartMeansNoLimit() {
-        assertThat(MktWithdrawalService.inWindow(25, 31, java.time.LocalDate.of(2026, 10, 24))).isFalse();
-        assertThat(MktWithdrawalService.inWindow(25, 31, java.time.LocalDate.of(2026, 10, 25))).isTrue();
-        assertThat(MktWithdrawalService.inWindow(25, 31, java.time.LocalDate.of(2026, 2, 28))).isTrue();
-        assertThat(MktWithdrawalService.inWindow(25, 31, java.time.LocalDate.of(2026, 11, 1))).isFalse();
+        assertThat(MktWithdrawalService.inWindow(25, 30, java.time.LocalDate.of(2026, 10, 24))).isFalse();
+        assertThat(MktWithdrawalService.inWindow(25, 30, java.time.LocalDate.of(2026, 10, 25))).isTrue();
+        assertThat(MktWithdrawalService.inWindow(25, 30, java.time.LocalDate.of(2026, 10, 30))).isTrue();
+        assertThat(MktWithdrawalService.inWindow(25, 30, java.time.LocalDate.of(2026, 10, 31))).isFalse();
+        assertThat(MktWithdrawalService.inWindow(25, 30, java.time.LocalDate.of(2026, 2, 28))).isTrue();
+        assertThat(MktWithdrawalService.inWindow(25, 30, java.time.LocalDate.of(2026, 11, 1))).isFalse();
         assertThat(MktWithdrawalService.inWindow(0, 0, java.time.LocalDate.of(2026, 10, 11))).isTrue();
+    }
+
+    @Test void autoWithdrawDayIsClampedIntoApplicationWindow() {
+        // 历史配置 auto_withdraw_day=10;新窗口 25-30 时自动提现必须落进窗口内,不能绕过限制
+        when(bizSettings.getInt(eq("marketing"), eq("withdraw_window_start_day"), anyInt())).thenReturn(25);
+        when(bizSettings.getInt(eq("marketing"), eq("withdraw_window_end_day"), anyInt())).thenReturn(30);
+        when(bizSettings.getInt(eq("marketing"), eq("auto_withdraw_day"), anyInt())).thenReturn(10);
+        assertThat(service.autoWithdrawDay()).isEqualTo(25);
+        // 已落在窗口内的配置保持不变
+        when(bizSettings.getInt(eq("marketing"), eq("auto_withdraw_day"), anyInt())).thenReturn(28);
+        assertThat(service.autoWithdrawDay()).isEqualTo(28);
+        // 0 = 关闭,不参与 clamp
+        when(bizSettings.getInt(eq("marketing"), eq("auto_withdraw_day"), anyInt())).thenReturn(0);
+        assertThat(service.autoWithdrawDay()).isZero();
+        // 不限制申请窗口(start<=0)时沿用配置
+        when(bizSettings.getInt(eq("marketing"), eq("withdraw_window_start_day"), anyInt())).thenReturn(0);
+        when(bizSettings.getInt(eq("marketing"), eq("auto_withdraw_day"), anyInt())).thenReturn(10);
+        assertThat(service.autoWithdrawDay()).isEqualTo(10);
     }
 
     @Test void submittedApplicationEntersTheWithdrawalApprovalFlow() {
@@ -320,11 +342,12 @@ class MktWithdrawalServiceTest {
     }
 
     @Test void rulesDescribeTheConfiguredWindow() {
-        when(bizSettings.getInt(eq("marketing"), eq("withdraw_window_start_day"), anyInt())).thenReturn(25);
-        when(bizSettings.getInt(eq("marketing"), eq("withdraw_window_end_day"), anyInt())).thenReturn(31);
+        // 使用与默认值不同的窗口,验证规则参数覆盖仍生效(默认 25-30 由另一用例覆盖)
+        when(bizSettings.getInt(eq("marketing"), eq("withdraw_window_start_day"), anyInt())).thenReturn(5);
+        when(bizSettings.getInt(eq("marketing"), eq("withdraw_window_end_day"), anyInt())).thenReturn(12);
         when(bizSettings.getString(eq("marketing"), eq("withdraw_arrival_time"), anyString()))
                 .thenAnswer(call -> call.getArgument(2));
-        assertThat(service.withdrawalRules()).containsEntry("applicationTime", "每月 25–31 日开放提现申请")
+        assertThat(service.withdrawalRules()).containsEntry("applicationTime", "每月 5–12 日开放提现申请")
                 .containsKey("applicationOpen");
     }
 }
