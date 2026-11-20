@@ -44,11 +44,11 @@ public class MktWithdrawalService {
     /** Cash precision, not an accumulated-earnings threshold; legacy min_withdraw settings are retired. */
     public static final BigDecimal MIN_WITHDRAWAL = new BigDecimal("0.01");
     public static final String DEFAULT_ARRIVAL_TIME = "财务审批通过后 3 个工作日内打款，实际到账以收款渠道处理为准";
-    /** 提现申请开放日(含)。默认 0 = 全月随时可申请;设置了起止日才限制。 */
-    public static final int DEFAULT_WINDOW_START_DAY = 0;
-    public static final int DEFAULT_WINDOW_END_DAY = 31;
-    /** 每月自动提现日:系统把伙伴的全部可提现余额自动提交提现申请。0 = 关闭。 */
-    public static final int DEFAULT_AUTO_WITHDRAW_DAY = 10;
+    /** 提现申请开放日(含)。默认每月 25-30 日可申请;起始日设为 0 表示全月随时可申请。 */
+    public static final int DEFAULT_WINDOW_START_DAY = 25;
+    public static final int DEFAULT_WINDOW_END_DAY = 30;
+    /** 每月自动提现日:系统把伙伴的全部可提现余额自动提交提现申请。0 = 关闭;须落在提现申请开放窗口内。 */
+    public static final int DEFAULT_AUTO_WITHDRAW_DAY = 25;
     public static final String WORKFLOW_BIZ_TYPE = "withdrawal";
 
     private static final String MODULE = "marketing";
@@ -86,7 +86,15 @@ public class MktWithdrawalService {
 
     private int windowEndDay() { return bizSettings.getInt(MODULE, "withdraw_window_end_day", DEFAULT_WINDOW_END_DAY); }
 
-    public int autoWithdrawDay() { return bizSettings.getInt(MODULE, "auto_withdraw_day", DEFAULT_AUTO_WITHDRAW_DAY); }
+    /** 自动提现日必须落在提现申请开放窗口内,避免系统自动提交绕过「仅开放期可申请」的规则。 */
+    public int autoWithdrawDay() {
+        int configured = bizSettings.getInt(MODULE, "auto_withdraw_day", DEFAULT_AUTO_WITHDRAW_DAY);
+        if (configured <= 0) return 0; // 0 = 关闭自动提现
+        int start = windowStartDay();
+        if (start <= 0) return configured; // 未限制申请窗口时沿用配置
+        int end = Math.max(start, windowEndDay());
+        return Math.min(Math.max(configured, start), end);
+    }
 
     /** 起始日 ≤ 0 表示不限制日期;止日大于当月天数时自然截到月末。 */
     static boolean inWindow(int startDay, int endDay, LocalDate day) {

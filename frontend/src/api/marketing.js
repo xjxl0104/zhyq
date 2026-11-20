@@ -164,7 +164,7 @@ export const mktCommissionApi = {
   settle: (ids) => postRaw(`${BASE}/commission/settle`, { ids }),
   void: (id, data) => request.post(`${BASE}/commission/${id}/void`, data),
   batches: (params) => request.get(`${BASE}/commission/batches`, { params }),
-  // 按合同月结:data = { contractId, month: 'YYYY-MM' };上个月仅限每月 3-10 号,更早月份可随时补结
+  // 按合同月结:data = { contractId, month: 'YYYY-MM' };已结束的月份随时可结(不早于合同开始月),默认结算上个月
   settleContract: (data) => postRaw(`${BASE}/commission/settle-contract`, data)
 }
 
