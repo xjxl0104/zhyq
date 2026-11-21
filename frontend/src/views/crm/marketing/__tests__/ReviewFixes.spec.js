@@ -15,7 +15,7 @@ vi.mock('@/utils/permission',()=>({hasPermission:()=>true}))
 vi.mock('@/utils/fileDownload',()=>({startFileDownload:vi.fn()}))
 const pending=()=>{let resolve,reject;const promise=new Promise((a,b)=>{resolve=a;reject=b});return {promise,resolve,reject}}
 const wrappers=[]
-function mount(component,props={}){const w=shallowMount(component,{props,global:{stubs:{Search:true,Plus:true,ElDialog:{template:'<div><slot /></div>'},FileUpload:true,WarehouseAttachments:true,ElForm:{template:'<div><slot /></div>',methods:{validate:()=>Promise.resolve(true)}}}}});wrappers.push(w);return w}
+function mount(component,props={}){const w=shallowMount(component,{props,global:{stubs:{Search:true,Plus:true,RouterLink:true,ElDialog:{template:'<div><slot /></div>'},FileUpload:true,WarehouseAttachments:true,ElForm:{template:'<div><slot /></div>',methods:{validate:()=>Promise.resolve(true)}}}}});wrappers.push(w);return w}
 beforeEach(()=>{
   vi.clearAllMocks()
   for(const api of [mktWithdrawalApi,mktBillApi,mktSettlementApi,mktWarehouseApi,mktContractApi,mktCustomerApi])api.page.mockResolvedValue({records:[],total:0})

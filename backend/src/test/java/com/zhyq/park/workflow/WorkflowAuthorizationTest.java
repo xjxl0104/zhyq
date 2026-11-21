@@ -50,6 +50,14 @@ class WorkflowAuthorizationTest {
         login("assigned");workflow.approve(7L,"ok");
         verify(events).publishEvent(argThat((Object e)->e instanceof DomainEvent.WorkflowApproved));
     }
+    @Test void withdrawalAdminCannotReplaceTheNamedApproverThroughGenericWorkflowEndpoint(){
+        instance.setBizType("withdrawal");
+        login("admin","ROLE_admin","crm:marketing:withdrawal:audit");
+        denied(()->workflow.approve(7L,"forged"));denied(()->workflow.reject(7L,"forged"));
+        verify(tasks,never()).update(isNull(),any());verifyNoInteractions(events);
+        login("assigned","ROLE_admin");workflow.approve(7L,"同意");
+        verify(events).publishEvent(argThat((Object e)->e instanceof DomainEvent.WorkflowApproved));
+    }
     @Test void assignedRoleCanRejectButSameNamedUsernameCannotImpersonateRole(){
         node.setApproverType("role");task.setAssignee("finance");
         login("finance");denied(()->workflow.reject(7L,"forged"));

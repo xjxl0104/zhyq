@@ -16,6 +16,8 @@
     { "path": "pages/allocation/index", "style": { "navigationBarTitleText": "客户定价与分佣" } },
     { "path": "pages/income/index", "style": { "navigationBarTitleText": "收益明细" } },
     { "path": "pages/withdraw/index", "style": { "navigationBarTitleText": "提现" } },
+    { "path": "pages/withdrawal-approvals/index", "style": { "navigationBarTitleText": "提现审批", "enablePullDownRefresh": true } },
+    { "path": "pages/withdrawal-detail/index", "style": { "navigationBarTitleText": "提现详情", "enablePullDownRefresh": true } },
     { "path": "pages/settlement/index", "style": { "navigationBarTitleText": "结算提现", "enablePullDownRefresh": true } },
     { "path": "pages/settlement/contract", "style": { "navigationBarTitleText": "合同结算" } },
     { "path": "pages/notices/index", "style": { "navigationBarTitleText": "消息通知" } },

@@ -67,6 +67,8 @@ public class MpBizController {
     private final TenantMessageMapper messageMapper;
     private final MktLockService lockService;
     private final MktWithdrawalService withdrawalService;
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.zhyq.park.marketing.service.MktWithdrawalViewService withdrawalViews;
     private final BizSettings bizSettings;
     private final MktAuditService auditService;
     private final MktCustomerAssignmentService assignmentService;
@@ -181,10 +183,10 @@ public class MpBizController {
     }
 
     @Operation(summary = "提现记录") @GetMapping("/withdrawal/page")
-    public Result<PageResult<MktWithdrawal>> withdrawals(@RequestParam(defaultValue = "1") int pageNo, @RequestParam(defaultValue = "20") int pageSize) {
+    public Result<PageResult<Map<String, Object>>> withdrawals(@RequestParam(defaultValue = "1") int pageNo, @RequestParam(defaultValue = "20") int pageSize) {
         IPage<MktWithdrawal> p = withdrawalMapper.selectPage(new Page<>(Math.max(pageNo, 1), Math.min(Math.max(pageSize, 1), 50)),
                 new LambdaQueryWrapper<MktWithdrawal>().eq(MktWithdrawal::getPromoterId, MpAuthService.currentPromoterId()).orderByDesc(MktWithdrawal::getId));
-        return Result.ok(PageResult.of(p.getTotal(), p.getRecords()));
+        return Result.ok(PageResult.of(p.getTotal(), p.getRecords().stream().map(w -> withdrawalViews.describe(w, false)).toList()));
     }
 
     @Operation(summary = "消息(复用 tenant_message,tenant_ref_id = 伙伴 id,channel=mp)") @GetMapping("/notice/page")

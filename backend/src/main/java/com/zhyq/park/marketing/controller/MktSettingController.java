@@ -45,7 +45,7 @@ public class MktSettingController {
     public Result<List<Map<String, Object>>> all() {
         List<Map<String, Object>> rows = new ArrayList<>(jdbc.queryForList(
                 "SELECT skey, svalue, remark FROM biz_setting WHERE module = ? AND deleted = 0 "
-                        + "AND skey NOT IN ('min_withdraw', 'withdraw_free_times', 'prelock_days', 'lock_days', 'lock_extend_days') ORDER BY id", MODULE));
+                        + "AND skey NOT IN ('min_withdraw', 'withdraw_free_times', 'prelock_days', 'lock_days', 'lock_extend_days', 'withdraw_approver_username', 'withdraw_approver_promoter_id') ORDER BY id", MODULE));
         // The default is visible without writing during GET; saving it creates the missing setting.
         if (rows.stream().noneMatch(row -> ARRIVAL_TIME.equals(row.get("skey")))) {
             rows.add(Map.of("skey", ARRIVAL_TIME, "svalue", MktWithdrawalService.DEFAULT_ARRIVAL_TIME, "remark", ARRIVAL_REMARK));
