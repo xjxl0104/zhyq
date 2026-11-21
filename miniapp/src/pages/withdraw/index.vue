@@ -35,7 +35,7 @@
         <view v-if="inputHint" class="muted input-hint">{{ inputHint }}</view>
         <view class="row" v-if="validAmount"><text class="muted">预估代扣 / 到账（元）</text><text>{{ tax }} / {{ net }}</text></view>
         <button class="btn" :loading="loading" :disabled="loading || !validAmount" @click="submit">提交提现申请</button>
-        <view class="muted submit-note">提交后进入数智云仓财务审批，可在下方查看审批进度及付款流水。</view>
+        <view class="muted submit-note">提交后由指定审批人审核。点击下方记录可查看审批人、审批过程及付款流水。</view>
       </view>
     </template>
 
@@ -44,9 +44,9 @@
       <view v-if="history.error" class="muted">{{ history.error }}<button class="btn ghost" :disabled="history.loading" @click="pager.retry()">重新读取记录</button></view>
       <view v-if="history.loading && !list.length" class="muted">正在读取提现记录…</view>
       <view v-else-if="!list.length && history.loaded && !history.error" class="muted">暂无提现记录。提交申请后，可在这里查看审核及打款进度。</view>
-      <view class="row history-row" v-for="w in list" :key="w.id">
+      <view class="row history-row" v-for="w in list" :key="w.id" @click="openWithdrawal(w.id)">
         <view class="history-details"><view>{{ w.withdrawalNo }}</view><view class="muted">{{ formatTime(w.createTime) }}</view><view v-if="w.rejectReason" class="muted">驳回原因：{{ w.rejectReason }}</view><view v-if="w.payNo" class="muted">付款流水：{{ w.payNo }}</view></view>
-        <view class="history-amount"><view class="money">{{ Number(w.netAmount).toFixed(2) }}</view><text class="tag" :class="w.status === 3 ? 'ok' : w.status === 4 ? 'warn' : ''">{{ STATUS[w.status] || '处理中' }}</text></view>
+        <view class="history-amount"><view class="money">{{ withdrawalAmount(w.netAmount) }}</view><text class="tag" :class="Number(w.status) === 3 ? 'ok' : Number(w.status) === 4 ? 'warn' : ''">{{ withdrawalStage(w) }}</text><button class="record-link" @click.stop="openWithdrawal(w.id)">查看审批进度 ›</button></view>
       </view>
       <button v-if="list.length < history.total" class="btn ghost" :loading="history.loading" :disabled="history.loading" @click="pager.load(false)">加载更多提现记录</button>
       <view v-else-if="list.length" class="muted">共 {{ history.total }} 笔，已全部显示</view>
@@ -66,7 +66,7 @@ import { onShow, onReachBottom } from '@dcloudio/uni-app'
 import { bizApi } from '@/api'
 import { createPager } from '@/utils/pagination.mjs'
 import { withdrawalBalanceView, formatLedgerBalance, isValidWithdrawal, withdrawalRuleRows } from '@/utils/withdrawal.mjs'
-const STATUS = { 1: '财务审批中', 2: '审批通过·待打款', 3: '已打款', 4: '已驳回' }
+import { withdrawalStage, withdrawalAmount } from '@/utils/withdrawal-approval.mjs'
 const error=ref('')
 const b = ref(null); const amount = ref(''); const loading = ref(false)
 const history=reactive({}),pager=createPager(bizApi.withdrawals,history),list=computed(()=>history.records)
@@ -83,6 +83,7 @@ const inputHint = computed(() => {
   return ''
 })
 function openAccount() { uni.switchTab({ url: '/pages/me/index' }) }
+function openWithdrawal(id) { if (/^\d+$/.test(String(id))) uni.navigateTo({ url: `/pages/withdrawal-detail/index?id=${id}` }) }
 function formatTime(value) { return typeof value === 'string' ? value.replace('T', ' ').slice(0, 16) : '—' }
 const closed = computed(() => b.value?.withdrawalRules?.applicationOpen === false)
 const validAmount = computed(() => !closed.value && !!b.value && Number(b.value.idVerified) === 1 && !!cashAvailable.value && isValidWithdrawal(amount.value, cashAvailable.value.amount, b.value.minWithdraw ?? 0))
@@ -94,7 +95,7 @@ async function submit() {
   if(loading.value || !validAmount.value)return
   loading.value = true
   error.value = ''
-  try { await bizApi.withdraw(amount.value.trim()); uni.showToast({ title: '已提交,等待财务审批' }); amount.value = ''; await load() }
+  try { await bizApi.withdraw(amount.value.trim()); uni.showToast({ title: '已提交，等待审批' }); amount.value = ''; await load() }
   catch (failure) { error.value = failure.message || '提现申请失败，请重试' }
   finally { loading.value = false }
 }
@@ -119,5 +120,6 @@ onUnmounted(()=>{balanceRequest++;pager.invalidate()})
 .history-row { align-items: flex-start; gap: 20rpx; }
 .history-details { min-width: 0; overflow-wrap: anywhere; }
 .history-amount { flex-shrink: 0; text-align: right; }
+.record-link { margin: 12rpx 0 0; padding: 0; font-size: 25rpx; line-height: 1.8; color: var(--park-blue); background: transparent; }
 button:focus-visible { outline: 2px solid var(--park-blue); outline-offset: 2px; }
 </style>

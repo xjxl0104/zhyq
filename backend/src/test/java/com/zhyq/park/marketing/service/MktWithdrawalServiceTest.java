@@ -47,6 +47,9 @@ class MktWithdrawalServiceTest {
     }
     @BeforeEach void setUp() {
         service = new MktWithdrawalService(withdrawalMapper, commissionMapper, promoterMapper, bizSettings, auditService, accountMapper, proofs);
+        var workflow = mock(com.zhyq.park.workflow.service.WorkflowService.class);
+        lenient().when(workflow.startBySystem(eq("withdrawal"), anyLong())).thenReturn(88L);
+        service.setWorkflowService(workflow);
         lenient().when(bizSettings.getDecimal(eq("marketing"), eq("min_withdraw"), any(BigDecimal.class))).thenReturn(new BigDecimal("100"));
         lenient().when(bizSettings.getInt(eq("marketing"), eq("tax_mode"), anyInt())).thenReturn(0);
         lenient().when(promoterMapper.selectForUpdate(1L)).thenReturn(promoter());
@@ -309,11 +312,33 @@ class MktWithdrawalServiceTest {
 
     @Test void submittedApplicationEntersTheWithdrawalApprovalFlow() {
         var workflow = mock(com.zhyq.park.workflow.service.WorkflowService.class);
+        when(workflow.startBySystem("withdrawal", 9L)).thenReturn(88L);
         service.setWorkflowService(workflow);
         when(commissionMapper.selectList(any(Wrapper.class))).thenReturn(List.of(row(1L, "50.00")));
         when(commissionMapper.update(isNull(), any(Wrapper.class))).thenReturn(1);
         service.apply(1L, new BigDecimal("20.00"));
         verify(workflow).startBySystem("withdrawal", 9L);
+    }
+    @Test void missingFlowFailsClosedInsteadOfLeavingAnUnreviewedApplication() {
+        var workflow = mock(com.zhyq.park.workflow.service.WorkflowService.class);
+        // Mockito returns 0L for an unstubbed boxed Long; the real missing-definition branch returns null.
+        when(workflow.startBySystem("withdrawal", 9L)).thenReturn(null);
+        service.setWorkflowService(workflow);
+        when(commissionMapper.selectList(any(Wrapper.class))).thenReturn(List.of(row(1L, "50.00")));
+        when(commissionMapper.update(isNull(), any(Wrapper.class))).thenReturn(1);
+        assertThatThrownBy(() -> service.apply(1L,new BigDecimal("20.00"))).hasMessageContaining("审批流程未配置");
+        verify(workflow).startBySystem("withdrawal", 9L);
+    }
+    @Test void consoleCannotBypassMissingOrCompletedWorkflow() {
+        assertThatThrownBy(() -> service.approveFromConsole(5L,"同意","admin")).hasMessageContaining("缺少待办审批任务");
+        assertThatThrownBy(() -> service.rejectFromConsole(5L,"驳回","admin")).hasMessageContaining("没有可办理的审批任务");
+        verify(withdrawalMapper, never()).update(any(), any(Wrapper.class));
+    }
+    @Test void manualReplayRejectsExistingOpenWithdrawalBeforeReservingMoreMoney() {
+        when(withdrawalMapper.selectCount(any())).thenReturn(1L);
+        assertThatThrownBy(() -> service.applyManual(1L,new BigDecimal("20.00"))).hasMessageContaining("已有处理中提现申请");
+        verify(withdrawalMapper,never()).insert(any(MktWithdrawal.class));
+        verifyNoInteractions(commissionMapper);
     }
 
     @Test void automaticApplicationIgnoresTheApplicationWindow() {

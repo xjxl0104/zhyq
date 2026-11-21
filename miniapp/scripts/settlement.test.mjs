@@ -1,7 +1,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { flowSegments, barHeights, settleShares, withdrawalStatusText, scheduleSteps, money } from '../src/utils/settlement.mjs'
+import { flowSegments, barHeights, settleShares, withdrawalStatusText, withdrawalScheduleText, scheduleSteps, money } from '../src/utils/settlement.mjs'
+import { withdrawalRuleRows } from '../src/utils/withdrawal.mjs'
 
 test('资金流转五段按顺序，占比按合计计算', () => {
   const segs = flowSegments({ frozen: 1, settleable: 1, withdrawable: 2, withdrawing: 0, withdrawn: 4 })
@@ -15,17 +16,41 @@ test('柱高按最大值缩放，非零至少 4，零为 0', () => {
 })
 test('结算进度与提现状态文案', () => {
   assert.deepEqual(settleShares({ settled: 3, settleable: 1, frozen: 0 }), { settled: 75, settleable: 25, frozen: 0 })
-  assert.equal(withdrawalStatusText({ status: 1, nodeName: '数智云仓财务审批' }), '财务审批中（数智云仓财务审批）')
+  assert.equal(withdrawalStatusText({ status: 1, nodeName: '提现审批' }), '审批中（提现审批）')
+  assert.equal(withdrawalStatusText({ status: 1, approval: { assigneeName: '杨洪' } }), '待杨洪审批')
   assert.equal(withdrawalStatusText({ status: 2 }), '审批通过·待打款')
   assert.equal(money('1.005'), '1.00')
 })
-test('时间节点包含冻结、自动结算、自动提现与财务审批', () => {
+test('时间节点包含冻结、自动结算、自动提现与指定审批', () => {
   const steps = scheduleSteps({ freezeDays: 7, settleTime: '每天 02:00', autoWithdrawDay: 10 })
-  assert.deepEqual(steps.map(s => s.title), ['客户发货', '冻结 7 天', '自动结算', '自动提现', '财务审批', '打款到账'])
+  assert.deepEqual(steps.map(s => s.title), ['客户发货', '冻结 7 天', '自动结算', '自动提现', '提现审批', '打款到账'])
   assert.match(steps[3].desc, /每月 10 日/)
   for (const raw of [0, '0']) assert.equal(scheduleSteps({ freezeDays: raw })[1].title, '冻结 0 天')
   for (const raw of [undefined, null, ' ', false, -1, 1.5]) assert.equal(scheduleSteps({ freezeDays: raw })[1].title, '冻结 7 天')
-  assert.match(scheduleSteps({ autoWithdrawDay: 0 })[3].desc, /随时手动/)
+  assert.match(scheduleSteps({ autoWithdrawDay: 0 })[3].desc, /未开启自动提现/)
+})
+test('结算空态及节点统一遵守后端25至30号提现窗口，不承诺随时申请', () => {
+  const schedule = { autoWithdrawDay: 25, rules: { applicationTime: '每月 25–30 日开放提现申请', autoWithdraw: '每月 25 日 10:00 自动提交提现申请' } }
+  const text = withdrawalScheduleText(schedule)
+  assert.match(text, /每月 25–30 日开放提现申请/)
+  assert.match(text, /每月 25 日 10:00 自动提交提现申请/)
+  assert.doesNotMatch(text, /随时|全天/)
+  assert.equal(scheduleSteps(schedule)[3].desc, text)
+  assert.match(withdrawalScheduleText({ withdrawalRules: { applicationTime: '每月 20–25 日开放提现申请' } }), /每月 20–25 日/)
+  assert.equal(withdrawalRuleRows({ withdrawalRules: schedule.rules }).find(row => row.label === '提现时间').value, schedule.rules.applicationTime)
+  const page = readFileSync(new URL('../src/pages/settlement/index.vue', import.meta.url), 'utf8')
+  assert.match(page, /暂无提现记录。\{\{ withdrawalSchedule \}\}/)
+  assert.doesNotMatch(page, /随时手动申请/)
+})
+test('提现窗口缺失或异常时保守提示；只有后端明确无限制才显示随时', () => {
+  for (const applicationTime of [undefined, null, '', ' ', false, 0]) {
+    const rules = { applicationTime }
+    const text = withdrawalScheduleText({ rules })
+    assert.match(text, /以提现页显示的开放时间为准/)
+    assert.doesNotMatch(text, /随时|全天|每月 0/)
+    assert.equal(withdrawalRuleRows({ withdrawalRules: rules }).find(row => row.label === '提现时间').value, '以提现页显示的开放时间为准')
+  }
+  assert.match(withdrawalScheduleText({ rules: { applicationTime: '随时可提交申请' } }), /随时可提交申请/)
 })
 test('首页快捷入口改为结算提现并注册结算页面', () => {
   const home = readFileSync(new URL('../src/pages/home/index.vue', import.meta.url), 'utf8')

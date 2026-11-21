@@ -171,6 +171,10 @@ export const mktCommissionApi = {
 // 提现
 export const mktWithdrawalApi = {
   page: (params) => request.get(`${BASE}/withdrawal/page`, { params }),
+  manualOptions: (keyword) => request.get(`${BASE}/withdrawal/manual-options`, { params: { keyword } }),
+  manualContext: (promoterId) => request.get(`${BASE}/withdrawal/manual-context/${promoterId}`),
+  approvalIdentity: () => request.get(`${BASE}/withdrawal/approval-identity`),
+  saveApprovalIdentity: (data) => request.put(`${BASE}/withdrawal/approval-identity`, data),
   payAccount: (id) => request.get(`${BASE}/withdrawal/${id}/pay-account`),
   balance: (promoterId) => request.get(`${BASE}/withdrawal/balance/${promoterId}`),
   manual: (data) => request.post(`${BASE}/withdrawal/manual`, data),

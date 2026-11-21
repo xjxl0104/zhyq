@@ -52,8 +52,16 @@ export const bizApi = {
   balance: () => get('/withdrawal/balance'),
   withdraw: (amount) => post('/withdrawal', { amount }),
   withdrawals: (params) => get('/withdrawal/page', params),
+  withdrawal: id => get(`/withdrawal/${id}`),
   noticeRead: (id) => post(`/notice/${id}/read`),
   notices: (params) => get('/notice/page', params)
+}
+
+export const withdrawalApprovalApi = {
+  capability: () => get('/withdrawal/approval/capability'),
+  page: params => get('/withdrawal/approval/page', params),
+  detail: id => get(`/withdrawal/approval/${id}`),
+  audit: (id, data) => post(`/withdrawal/approval/${id}/audit`, data)
 }
 
 export const accountAdminApi = {
