@@ -1,4 +1,5 @@
 // 结算提现页的纯计算：金额格式、资金流转占比、柱状图高度、提现状态文案。
+import { withdrawalApplicationTime } from './withdrawal.mjs'
 const n = v => { const x = Number(v); return Number.isFinite(x) ? x : 0 }
 export const money = v => n(v).toFixed(2)
 
@@ -29,24 +30,34 @@ export function settleShares(row = {}) {
   return { settled: pct(row.settled), settleable: pct(row.settleable), frozen: pct(row.frozen) }
 }
 
-export const WITHDRAW_STATUS = { 1: '财务审批中', 2: '审批通过·待打款', 3: '已打款', 4: '已驳回' }
+export const WITHDRAW_STATUS = { 1: '审批中', 2: '审批通过·待打款', 3: '已打款', 4: '已驳回' }
 export function withdrawalStatusText(w = {}) {
   const base = WITHDRAW_STATUS[w.status] || '处理中'
+  if (Number(w.status) === 1 && w.approval?.assigneeName) return `待${w.approval.assigneeName}审批`
   return Number(w.status) === 1 && w.nodeName ? `${base}（${w.nodeName}）` : base
 }
 
+/** 申请窗口与自动提现规则统一以服务端返回为准，缺少规则时不承诺随时开放。 */
+export function withdrawalScheduleText(schedule = {}) {
+  const policy = schedule.rules || schedule.withdrawalRules || {}
+  const raw = schedule.autoWithdrawDay
+  const day = Number(raw)
+  const validDay = (typeof raw === 'number' || (typeof raw === 'string' && raw.trim() !== '')) && Number.isInteger(day) && day >= 0 && day <= 31
+  const configuredAuto = typeof policy.autoWithdraw === 'string' ? policy.autoWithdraw.trim() : ''
+  const automatic = configuredAuto || (validDay ? (day > 0 ? `每月 ${day} 日按系统规则自动提交提现申请` : '未开启自动提现') : '自动提现安排以提现页规则为准')
+  return `${automatic}；手动申请时间：${withdrawalApplicationTime(policy)}。`
+}
 /** 时间节点说明（与后台自动任务一致）。 */
 export function scheduleSteps(schedule = {}) {
   const raw = schedule.freezeDays
   const days = Number(raw)
   const freeze = (typeof raw === 'number' || (typeof raw === 'string' && raw.trim() !== '')) && Number.isInteger(days) && days >= 0 ? days : 7
-  const day = n(schedule.autoWithdrawDay)
   return [
     { title: '客户发货', desc: '按发货日生成佣金' },
     { title: `冻结 ${freeze} 天`, desc: '发货满冻结期自动解冻' },
     { title: '自动结算', desc: `每天 ${schedule.settleTime?.replace('每天 ', '') || '02:00'} 结算已结束月份的已解冻佣金，计入可提现余额` },
-    { title: '自动提现', desc: day > 0 ? `每月 ${day} 日 10:00 自动把全部可提现余额提交申请；也可随时手动申请` : '随时手动申请提现' },
-    { title: '财务审批', desc: '数智云仓财务审批提现申请' },
+    { title: '自动提现', desc: withdrawalScheduleText(schedule) },
+    { title: '提现审批', desc: '由指定审批人核对提现申请，详情可查看审批人及处理进度' },
     { title: '打款到账', desc: schedule.rules?.arrivalTime || '审批通过后由财务打款' },
   ]
 }

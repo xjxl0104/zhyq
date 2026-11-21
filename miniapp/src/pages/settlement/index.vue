@@ -51,10 +51,10 @@
 
       <view class="section-head"><text class="section-title">最近提现</text><text class="section-link" @click="go('/pages/withdraw/index')">全部记录 ›</text></view>
       <view class="card">
-        <view v-if="!data.withdrawals.length" class="muted">暂无提现记录。每月 {{ schedule.autoWithdrawDay || '—' }} 日系统会自动提交，也可以随时手动申请。</view>
+        <view v-if="!data.withdrawals.length" class="muted">暂无提现记录。{{ withdrawalSchedule }}</view>
         <view v-for="w in data.withdrawals" :key="w.id" class="row wd-row">
           <view class="wd-main"><view>{{ String(w.createTime || '').replace('T', ' ').slice(0, 16) }}</view><view class="caption">{{ w.withdrawalNo }}</view><view v-if="w.rejectReason" class="caption">驳回原因：{{ w.rejectReason }}</view></view>
-          <view class="wd-side"><view class="money">{{ money(w.amount) }}</view><text :class="['tag', Number(w.status) === 3 ? 'ok' : Number(w.status) === 4 ? 'warn' : '']">{{ statusText(w) }}</text></view>
+          <view class="wd-side"><view class="money">{{ money(w.amount) }}</view><text :class="['tag', Number(w.status) === 3 ? 'ok' : Number(w.status) === 4 ? 'warn' : '']">{{ statusText(w) }}</text><button class="record-link" @click="openWithdrawal(w.id)">审批进度 ›</button></view>
         </view>
       </view>
     </template>
@@ -70,17 +70,19 @@ export default { mixins: [appShareMixin] }
 import { computed, ref } from 'vue'
 import { onShow, onPullDownRefresh } from '@dcloudio/uni-app'
 import { settlementApi } from '@/api'
-import { money, flowSegments, settleShares, withdrawalStatusText, scheduleSteps } from '@/utils/settlement.mjs'
+import { money, flowSegments, settleShares, withdrawalStatusText, withdrawalScheduleText, scheduleSteps } from '@/utils/settlement.mjs'
 
 const data = ref(null), error = ref(''), loading = ref(false)
 const totals = computed(() => data.value?.totals || {})
 const schedule = computed(() => data.value?.schedule || {})
 const segments = computed(() => flowSegments(totals.value))
 const steps = computed(() => scheduleSteps(schedule.value))
+const withdrawalSchedule = computed(() => withdrawalScheduleText(schedule.value))
 const shares = settleShares
 const statusText = withdrawalStatusText
 const go = url => uni.navigateTo({ url })
 function openContract(c) { go(`/pages/settlement/contract?id=${encodeURIComponent(c.contractId)}`) }
+function openWithdrawal(id) { if (/^\d+$/.test(String(id))) go(`/pages/withdrawal-detail/index?id=${id}`) }
 let seq = 0
 async function load() {
   const current = ++seq
@@ -95,6 +97,7 @@ onPullDownRefresh(load)
 
 <style scoped>
 .settle-page { padding-bottom: 40rpx; }
+.record-link { margin: 12rpx 0 0; padding: 0; font-size: 25rpx; line-height: 1.8; color: var(--park-blue); background: transparent; }
 .hero-btn { margin: 24rpx 0 0; padding: 0 28rpx; width: fit-content; color: #1d2a57; background: #fff; border-radius: 999rpx; font-size: 26rpx; font-weight: 650; line-height: 64rpx; }
 .flow-bar, .mini-bar { display: flex; height: 22rpx; overflow: hidden; border-radius: 11rpx; background: #eef1f8; }
 .mini-bar { height: 14rpx; margin-top: 20rpx; }

@@ -137,8 +137,32 @@
     </div>
 
     <!-- 审批意见弹窗 -->
-    <el-dialog v-model="audit.visible" :title="(audit.source === 'task' ? '办理当前节点：' : '办理单据：') + (audit.mode === 'approve' ? '通过' : '驳回')" width="min(480px,94vw)" :close-on-click-modal="!saving" :close-on-press-escape="!saving" :show-close="!saving">
+    <el-dialog v-model="audit.visible" :title="(audit.source === 'task' ? '办理当前节点：' : '办理单据：') + (audit.mode === 'approve' ? '通过' : '驳回')" width="min(680px,94vw)" :close-on-click-modal="!saving" :close-on-press-escape="!saving" :show-close="!saving" @closed="clearAuditDetail">
       <div class="audit-title">单据:{{ audit.row.title }}</div>
+      <div v-if="audit.row.bizType === 'withdrawal'" v-loading="audit.detailLoading" class="withdrawal-detail">
+        <el-alert v-if="audit.detailError" :title="audit.detailError" type="error" :closable="false"><el-button link @click="loadWithdrawalDetail">重新读取</el-button></el-alert>
+        <template v-if="audit.detail">
+          <el-descriptions title="核对提现申请" :column="2" border>
+            <el-descriptions-item label="提现单号" :span="2">{{ audit.detail.withdrawalNo }}</el-descriptions-item>
+            <el-descriptions-item label="伙伴">{{ audit.detail.promoterName || '未命名伙伴' }} · #{{ audit.detail.promoterId }}</el-descriptions-item>
+            <el-descriptions-item label="手机号">{{ audit.detail.promoterPhone || '未绑定' }}</el-descriptions-item>
+            <el-descriptions-item label="称号">{{ audit.detail.positionCode || '未设置' }}</el-descriptions-item>
+            <el-descriptions-item label="邀请码">{{ audit.detail.inviteCode || '未设置' }}</el-descriptions-item>
+            <el-descriptions-item label="申请金额">{{ money(audit.detail.amount) }} 元</el-descriptions-item>
+            <el-descriptions-item label="税额">{{ money(audit.detail.taxAmount) }} 元</el-descriptions-item>
+            <el-descriptions-item label="税后实付" :span="2"><b>{{ money(audit.detail.netAmount) }} 元</b></el-descriptions-item>
+            <el-descriptions-item label="收款户名">{{ audit.detail.accountName || '未填写' }}</el-descriptions-item>
+            <el-descriptions-item label="账户尾号">{{ audit.detail.accountTail || '未填写' }}</el-descriptions-item>
+            <el-descriptions-item label="开户银行 / 类型" :span="2">{{ audit.detail.bankName || ({1:'微信',2:'银行卡',3:'支付宝'}[audit.detail.accountType]) || '未填写' }}</el-descriptions-item>
+            <el-descriptions-item label="当前审批人" :span="2">{{ audit.detail.approval?.assigneeName || audit.detail.approval?.assignee || '—' }}</el-descriptions-item>
+          </el-descriptions>
+          <div v-if="audit.detail.history?.length" class="withdrawal-history">
+            <b>审批记录</b>
+            <div v-for="(h, index) in audit.detail.history" :key="index" class="history-item">{{ h.nodeName || '审批节点' }} · {{ h.assigneeName || h.assignee || '—' }} · {{ {1:'待审批',2:'已通过',3:'已驳回'}[h.status] || h.status }}<span v-if="h.actTime"> · {{ h.actTime }}</span><div v-if="h.opinion">{{ h.opinion }}</div></div>
+          </div>
+          <el-alert v-if="!canAuditWithdrawal" title="该申请已处理或不属于您的审批待办，请刷新后查看。" type="warning" :closable="false" />
+        </template>
+      </div>
       <el-form label-width="80px">
         <el-form-item label="审批意见" :required="audit.mode === 'reject'">
           <el-input v-model="audit.opinion" type="textarea" :rows="3" maxlength="500" show-word-limit :disabled="saving"
@@ -147,7 +171,7 @@
       </el-form>
       <template #footer>
         <el-button :disabled="saving" @click="audit.visible = false">取消</el-button>
-        <el-button :type="audit.mode === 'approve' ? 'success' : 'warning'" :loading="saving" :disabled="saving" @click="submitAudit">
+        <el-button :type="audit.mode === 'approve' ? 'success' : 'warning'" :loading="saving" :disabled="saving || !canAuditWithdrawal" @click="submitAudit">
           {{ audit.mode === 'approve' ? '通过' : '驳回' }}
         </el-button>
       </template>
@@ -162,6 +186,8 @@ import { hasPermission } from '@/utils/permission'
 import { wfTaskApi } from '@/api/workflow'
 import { ElMessage } from 'element-plus'
 import { approvalApi } from '@/api/oa'
+import { mktWithdrawalApi } from '@/api/marketing'
+import { money } from '@/utils/format'
 import MobileRecordList from '@/components/MobileRecordList.vue'
 import { useResponsive } from '@/composables/useResponsive'
 
@@ -252,14 +278,33 @@ function applyRoute() {
 }
 function showTasks(row) { Object.assign(query,{pageNo:1,title:'',bizType:row.bizType,bizId:row.bizId});activeTab.value='tasks';return loadTasks() }
 watch(() => [route.query.bizType,route.query.bizId],() => { applyRoute();refreshAll() })
-const audit = reactive({ visible: false, mode: 'approve', row: {}, opinion: '', source: 'task' })
+const audit = reactive({ visible: false, mode: 'approve', row: {}, opinion: '', source: 'task', detail: null, detailLoading: false, detailError: '' })
+let detailRequest = 0
+const canAuditWithdrawal = computed(() => audit.row.bizType !== 'withdrawal' || (!audit.detailLoading && !audit.detailError && audit.detail?.[audit.mode === 'approve' ? 'canApprove' : 'canReject'] === true))
+function clearAuditDetail() { detailRequest++; audit.detail = null; audit.detailLoading = false; audit.detailError = '' }
+async function loadWithdrawalDetail() {
+  if (saving.value || !audit.visible || audit.row.bizType !== 'withdrawal') return
+  const request = ++detailRequest, bizId = audit.row.bizId
+  Object.assign(audit, { detail: null, detailLoading: true, detailError: '' })
+  try {
+    const detail = await mktWithdrawalApi.get(bizId)
+    if (request === detailRequest && audit.visible && audit.row.bizId === bizId) {
+      if (Number(detail?.id) !== Number(bizId)) throw new Error('提现单据不一致，请重新打开待办')
+      audit.detail = detail
+    }
+  } catch (e) {
+    if (request === detailRequest && audit.visible) audit.detailError = e.message || '提现资料读取失败，请核对资料后再审批'
+  } finally { if (request === detailRequest) audit.detailLoading = false }
+}
 function openAudit(row,mode,source='task') {
   if(saving.value)return
   if(source==='task' ? (!row.taskId || !tasks.value.some(t=>t.taskId===row.taskId)) : row.canDirectApprove !== true)return
+  clearAuditDetail()
   Object.assign(audit,{visible:true,mode,row,opinion:'',source})
+  if(row.bizType === 'withdrawal') return loadWithdrawalDetail()
 }
 async function submitAudit() {
-  if(saving.value || !audit.visible)return
+  if(saving.value || !audit.visible || !canAuditWithdrawal.value)return
   if(audit.source==='task' ? !audit.row.taskId : audit.row.canDirectApprove !== true)return
   const opinion=audit.opinion.trim()
   if(audit.mode==='reject' && !opinion)return ElMessage.warning('请填写驳回原因')
@@ -282,7 +327,7 @@ async function remove(id) {
   await approvalApi.remove(id);ElMessage.success('删除成功');await refreshAll()
 }
 onMounted(() => { applyRoute();refreshAll() })
-onBeforeUnmount(() => { taskRequest++;headerRequest++ })
+onBeforeUnmount(() => { taskRequest++;headerRequest++;detailRequest++ })
 </script>
 
 <style scoped>
@@ -297,6 +342,9 @@ onBeforeUnmount(() => { taskRequest++;headerRequest++ })
 .stat-value.rejected { color: #f56c6c; }
 .approval-tabs { margin-bottom: 8px; }
 .audit-title { color: #606266; margin-bottom: 12px; }
+.withdrawal-detail { min-height: 60px; margin-bottom: 20px; }
+.withdrawal-history { margin: 16px 0; }
+.history-item { margin-top: 10px; color: var(--el-text-color-secondary); font-size: 13px; line-height: 1.6; }
 .pager { margin-top: 16px; justify-content: flex-end; }
 @media(max-width:640px){.stat-row{flex-wrap:wrap;gap:8px}.stat-card{flex:1 1 40%}.pager{justify-content:flex-start;overflow:auto}}
 </style>

@@ -62,7 +62,7 @@ public class MktWithdrawalService {
     private final MktAuditService auditService;
     private final com.zhyq.park.marketing.mapper.MktPromoterAccountMapper accountMapper;
     private final MktPaymentProofService proofService;
-    /** 审批流引擎;单元测试里不注入时按旧的单节点审核运行。 */
+    /** 资金申请必须关联审批流。 */
     @org.springframework.beans.factory.annotation.Autowired(required = false) @lombok.Setter
     private com.zhyq.park.workflow.service.WorkflowService workflowService;
 
@@ -114,6 +114,14 @@ public class MktWithdrawalService {
     /** 申请提现:校验伙伴正常、按分提交、余额;锁定流水(按时间先后凑够金额);算税。 */
     @Transactional
     public MktWithdrawal apply(Long promoterId, BigDecimal amount) {
+        return apply(promoterId, amount, false);
+    }
+
+    /** 后台代申请串行核对同一伙伴，重发请求不能生成第二张待处理提现单。 */
+    @Transactional
+    public MktWithdrawal applyManual(Long promoterId, BigDecimal amount) {
+        if (promoterMapper.selectForUpdate(promoterId) == null) throw new BizException("伙伴不存在");
+        if (hasOpenWithdrawal(promoterId)) throw new BizException("该伙伴已有处理中提现申请，请先核对原申请，勿重复提交");
         return apply(promoterId, amount, false);
     }
 
@@ -211,8 +219,9 @@ public class MktWithdrawalService {
         }
         withdrawalMapper.updateById(w);
         auditService.log(automatic ? "withdrawal.auto-apply" : "withdrawal.apply", BIZ_TYPE, w.getId(), "税前 " + amount + " 税 " + tax);
-        // 进入审批流:未配置启用的「伙伴提现审批流」时降级为提现审核页直接审核。
-        if (workflowService != null) workflowService.startBySystem(WORKFLOW_BIZ_TYPE, w.getId());
+        // 资金申请必须生成审批任务；配置缺失时整个申请事务回滚，不能静默绕过审批。
+        if (workflowService == null || workflowService.startBySystem(WORKFLOW_BIZ_TYPE, w.getId()) == null)
+            throw new BizException("提现审批流程未配置或未启用，请联系园区配置指定审批人后重试");
         return w;
     }
 
@@ -237,8 +246,7 @@ public class MktWithdrawalService {
     public void approveFromConsole(Long id, String opinion, String operator) {
         var task = workflowService == null ? null : workflowService.currentPendingTask(WORKFLOW_BIZ_TYPE, id);
         if (task != null) { workflowService.approve(task.getId(), StringUtils.hasText(opinion) ? opinion : "同意"); return; }
-        requireLegacyAudit();
-        approve(id, operator);
+        throw new BizException("该提现单缺少待办审批任务，请先补齐审批流程");
     }
 
     /** 后台「提现审核」页驳回:审批中走审批流驳回,已审批待打款的直接驳回。 */
@@ -247,15 +255,7 @@ public class MktWithdrawalService {
         if (!StringUtils.hasText(reason)) throw new BizException("驳回必须填写原因");
         var task = workflowService == null ? null : workflowService.currentPendingTask(WORKFLOW_BIZ_TYPE, id);
         if (task != null) { workflowService.reject(task.getId(), reason); return; }
-        requireLegacyAudit();
-        reject(id, reason, operator);
-    }
-
-    private static void requireLegacyAudit() {
-        var auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
-        if (auth == null || auth.getAuthorities().stream().noneMatch(a -> "crm:marketing:withdrawal:audit".equals(a.getAuthority()))) {
-            throw new BizException(403, "当前账号没有旧单据审核权限");
-        }
+        throw new BizException("该提现单没有可办理的审批任务，请刷新状态后核对");
     }
 
     /** 审批流最后一个节点通过(同一事务回调)。 */

@@ -34,81 +34,48 @@ public class MktWithdrawalController {
     private final MktWithdrawalService withdrawalService;
     private final com.zhyq.park.receivable.service.FieldEncryptionService encryption;
     private final MktAuditService auditService;
-    private final org.springframework.jdbc.core.JdbcTemplate jdbc;
+    private final com.zhyq.park.marketing.service.MktWithdrawalViewService views;
+    private final com.zhyq.park.marketing.service.MktWithdrawalApprovalIdentity approvalIdentity;
 
-    @Operation(summary = "分页") @PreAuthorize("hasAuthority('crm:marketing:withdrawal:query')") @GetMapping("/page")
+    @PreAuthorize("hasRole('admin')") @GetMapping("/approval-identity")
+    public Result<Map<String,Object>> approvalIdentity() { return Result.ok(approvalIdentity.configuration()); }
+
+    public record ApprovalIdentityRequest(String username, Long promoterId) {}
+    @PreAuthorize("hasRole('admin')") @PutMapping("/approval-identity")
+    public Result<Void> configureApprovalIdentity(@RequestBody ApprovalIdentityRequest request) {
+        approvalIdentity.configure(request.username(),request.promoterId()); return Result.ok();
+    }
+
+    @Operation(summary = "分页") @PreAuthorize("isAuthenticated()") @GetMapping("/page")
     public Result<PageResult<Map<String, Object>>> page(@RequestParam(defaultValue = "1") int pageNo,
                                                         @RequestParam(defaultValue = "10") int pageSize,
                                                         @RequestParam(required = false) Long promoterId,
                                                         @RequestParam(required = false) Integer status,
                                                         @RequestParam(required = false) Long projectId) {
+        views.requireConsoleRead();
         LambdaQueryWrapper<MktWithdrawal> qw = new LambdaQueryWrapper<MktWithdrawal>()
                 .eq(promoterId != null, MktWithdrawal::getPromoterId, promoterId)
                 .eq(status != null, MktWithdrawal::getStatus, status)
                 .and(projectId != null, q -> q.eq(MktWithdrawal::getProjectId, projectId).or().isNull(MktWithdrawal::getProjectId))
                 .orderByDesc(MktWithdrawal::getId);
-        IPage<MktWithdrawal> p = withdrawalMapper.selectPage(new Page<>(pageNo, pageSize), qw);
-        Map<Long, Map<String, Object>> approvals = approvalProgress(p.getRecords().stream().map(MktWithdrawal::getId).toList());
-        List<Map<String, Object>> rows = p.getRecords().stream().map(w -> {
-            Map<String, Object> m = new HashMap<>();
-            m.put("id", w.getId()); m.put("withdrawalNo", w.getWithdrawalNo()); m.put("promoterId", w.getPromoterId());
-            m.put("amount", w.getAmount()); m.put("taxMode", w.getTaxMode()); m.put("taxAmount", w.getTaxAmount()); m.put("netAmount", w.getNetAmount());
-            m.put("payNo", w.getPayNo()); m.put("payMethod", w.getPayMethod()); m.put("status", w.getStatus());
-            m.put("auditBy", w.getAuditBy()); m.put("auditAt", w.getAuditAt()); m.put("payBy", w.getPayBy()); m.put("payAt", w.getPayAt());
-            m.put("payProof", w.getPayProof()); m.put("accountName", w.getAccountName());
-            m.put("accountType", w.getAccountType()); m.put("accountTail", w.getAccountTail()); m.put("bankName", w.getBankName());
-            m.put("accountVerifiedAt", w.getAccountVerifiedAt()); m.put("commissionAllocations", w.getCommissionAllocations());
-            m.put("rejectReason", w.getRejectReason()); m.put("createTime", w.getCreateTime());
-            MktPromoter pr = promoterMapper.selectById(w.getPromoterId());
-            m.put("promoterName", pr == null ? null : pr.getName());
-            m.put("approval", approvals.get(w.getId()));
-            return m;
-        }).collect(Collectors.toList());
-        return Result.ok(PageResult.of(p.getTotal(), rows));
+        IPage<MktWithdrawal> p = withdrawalMapper.selectPage(new Page<>(Math.max(pageNo, 1), Math.min(Math.max(pageSize, 1), 50)), qw);
+        return Result.ok(PageResult.of(p.getTotal(), p.getRecords().stream().map(w -> views.describe(w, false)).toList()));
     }
+    @Operation(summary = "提现详情与审批轨迹") @PreAuthorize("isAuthenticated()") @GetMapping("/{id}")
+    public Result<Map<String, Object>> one(@PathVariable Long id) { return Result.ok(views.one(id, null)); }
 
-    /** 审批进度:每张提现单最新一条审批实例的状态、当前节点与审批人(无审批链时为 null)。 */
-    private Map<Long, Map<String, Object>> approvalProgress(List<Long> ids) {
-        Map<Long, Map<String, Object>> result = new HashMap<>();
-        if (ids.isEmpty()) return result;
-        String in = ids.stream().map(String::valueOf).collect(Collectors.joining(","));
-        for (Map<String, Object> r : jdbc.queryForList(
-                "SELECT i.biz_id, i.status, n.name AS node_name, t.assignee, t.opinion, t.act_time "
-                        + "FROM wf_instance i "
-                        + "LEFT JOIN wf_task t ON t.instance_id = i.id AND t.seq = i.current_seq AND t.deleted = 0 "
-                        + "LEFT JOIN wf_node n ON n.id = t.node_id "
-                        + "WHERE i.deleted = 0 AND i.biz_type = '" + MktWithdrawalService.WORKFLOW_BIZ_TYPE + "' AND i.biz_id IN (" + in + ") "
-                        + "ORDER BY i.id DESC, t.id DESC")) {
-            Long id = ((Number) r.get("biz_id")).longValue();
-            if (result.containsKey(id)) continue;
-            Map<String, Object> m = new HashMap<>();
-            Object st = r.get("status");
-            m.put("status", st); // 1审批中 2通过 3驳回
-            m.put("nodeName", r.get("node_name")); m.put("assignee", r.get("assignee"));
-            m.put("opinion", r.get("opinion")); m.put("actTime", r.get("act_time"));
-            result.put(id, m);
-        }
-        return result;
-    }
+    @Operation(summary = "代申请伙伴搜索") @PreAuthorize("hasAuthority('crm:marketing:withdrawal:audit')") @GetMapping("/manual-options")
+    public Result<List<Map<String, Object>>> manualOptions(@RequestParam(required = false) String keyword) { return Result.ok(views.options(keyword)); }
 
-    @Operation(summary = "单张提现单(审批中心展示用)") @PreAuthorize("hasAuthority('crm:marketing:withdrawal:query')") @GetMapping("/{id}")
-    public Result<Map<String, Object>> one(@PathVariable Long id) {
-        MktWithdrawal w = withdrawalMapper.selectById(id);
-        if (w == null) throw new com.zhyq.park.common.exception.BizException("提现单不存在");
-        MktPromoter pr = promoterMapper.selectById(w.getPromoterId());
-        Map<String, Object> m = new HashMap<>();
-        m.put("id", w.getId()); m.put("withdrawalNo", w.getWithdrawalNo()); m.put("amount", w.getAmount());
-        m.put("netAmount", w.getNetAmount()); m.put("status", w.getStatus()); m.put("promoterName", pr == null ? null : pr.getName());
-        m.put("title", (pr == null ? "伙伴#" + w.getPromoterId() : pr.getName()) + " 提现 " + w.getAmount() + " 元(" + w.getWithdrawalNo() + ")");
-        return Result.ok(m);
-    }
+    @Operation(summary = "代申请核对资料") @PreAuthorize("hasAuthority('crm:marketing:withdrawal:audit')") @GetMapping("/manual-context/{promoterId}")
+    public Result<Map<String, Object>> manualContext(@PathVariable Long promoterId) { return Result.ok(views.manualContext(promoterId)); }
 
     @Operation(summary = "可提现余额") @PreAuthorize("hasAuthority('crm:marketing:withdrawal:query')") @GetMapping("/balance/{promoterId}")
     public Result<BigDecimal> balance(@PathVariable Long promoterId) { return Result.ok(withdrawalService.balance(promoterId)); }
 
     @Operation(summary = "代伙伴申请(阶段 A)") @PreAuthorize("hasAuthority('crm:marketing:withdrawal:audit')") @PostMapping("/manual")
     public Result<MktWithdrawal> manual(@RequestBody Map<String, Object> body) {
-        return Result.ok(withdrawalService.apply(Long.valueOf(body.get("promoterId").toString()), new BigDecimal(body.get("amount").toString())));
+        return Result.ok(withdrawalService.applyManual(Long.valueOf(body.get("promoterId").toString()), new BigDecimal(body.get("amount").toString())));
     }
 
     @Operation(summary = "审核通过") @PreAuthorize("isAuthenticated()") @PostMapping("/{id}/approve")

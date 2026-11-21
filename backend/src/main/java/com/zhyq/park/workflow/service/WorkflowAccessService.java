@@ -84,8 +84,10 @@ public class WorkflowAccessService {
 
     public void requireAssignee(WfTask task) {
         Authentication auth = current();
-        if (admin(auth)) return;
         if (task == null || task.getAssignee() == null || task.getAssignee().isBlank()) throw denied();
+        WfInstance instance = instances.selectById(task.getInstanceId());
+        // 提现必须由流程指定人员办理，后台管理员也不能代替指定审批人。
+        if (admin(auth) && (instance == null || !"withdrawal".equals(instance.getBizType()))) return;
         WfNode node = nodes.selectHistoricalApprovalNode(task.getNodeId());
         if (node == null) throw denied();
         boolean assigned = switch (String.valueOf(node.getApproverType())) {
@@ -94,6 +96,11 @@ public class WorkflowAccessService {
             default -> false;
         };
         if (!assigned) throw denied();
+    }
+
+    public boolean canAct(WfTask task) {
+        try { requireAssignee(task); return true; }
+        catch (BizException denied) { return false; }
     }
 
     public List<WfTask> myTasks(String requestedAssignee) {
