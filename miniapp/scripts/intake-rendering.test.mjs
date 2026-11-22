@@ -38,7 +38,8 @@ test('WeChat artifact gate rejects the exact missing usingComponents registratio
   const form = join(build, 'components/ReferralForm.wxml')
   writeFileSync(form, '<view><slot /></view>')
   assert.throws(() => verifyWechatComponents(source, build), /缺少表单内容/)
-  writeFileSync(form, '<view><input placeholder="公司 / 品牌名称"/><input placeholder="对接人职位"/><input placeholder="联系手机"/>销售平台 产品重量 指定快递承运商 平均包裹产品数量 现有仓配现状<slot/><button bindtap="submit">提交需求</button></view>')
+  writeFileSync(form, '<view><input placeholder="公司 / 品牌名称"/><input placeholder="对接人职位"/><input placeholder="联系手机"/>销售品类 销售平台 产品重量 指定快递承运商 现有仓配现状<radio-group bindchange="change"/><slot/><button bindtap="submit">提交需求</button></view>')
+  writeFileSync(join(build, 'components/ReferralForm.js'), 'const fields=["SKU 数量","日均单量","平均包裹产品数量"]')
   assert.equal(verifyWechatComponents(source, build), 1)
 })
 
@@ -75,10 +76,9 @@ test('anonymous QR scene loads form, submit records consent, and optional phone 
   assert.equal(vm.runInContext('submitted.value', page), true)
 })
 
-test('all picker types reopen at selected value and can return to first option', () => {
+test('warehouse picker reopens at selected value and can return to first option', () => {
   const form = intake.newReferralForm()
   form.warehouseId = 12
-  form.requirements.productCount = intake.COUNT_RANGES[1]
   form.requirements.warehouseMode = '外包云仓'
   // Vue templates unwrap computed refs before evaluating picker bindings.
   const context = vm.createContext({ ...intake, form, computed: get => get(),
@@ -88,13 +88,41 @@ test('all picker types reopen at selected value and can return to first option',
   const pickers = []
   const visit = node => { if (node.tag === 'picker') pickers.push(node); for (const child of node.children || []) visit(child) }
   visit(parse(formSource).descriptor.template.ast)
-  assert.equal(pickers.length, 2)
+  assert.equal(pickers.length, 1)
   for (const [index, picker] of pickers.entries()) {
     const value = picker.props.find(prop => prop.type === 7 && prop.name === 'bind' && prop.arg?.content === 'value')
     assert.ok(value, `picker ${index} 必须绑定当前选择`)
     const change = picker.props.find(prop => prop.type === 7 && prop.name === 'on' && prop.arg?.content === 'change')
-    assert.equal(vm.runInContext(value.exp.content, context), [2, 2][index])
+    assert.equal(vm.runInContext(value.exp.content, context), 2)
     vm.runInContext(`(${change.exp.content})({detail:{value:0}})`, context)
     assert.equal(vm.runInContext(value.exp.content, context), 0)
+  }
+})
+test('business scale uses visible choices and each range submits one selected value or empty', () => {
+  const form = intake.newReferralForm(); form.name = '扫码客户'
+  let emitted
+  const context = vm.createContext({ ...intake, form, defineProps: () => ({ form }),
+    defineEmits: () => (_event, body) => { emitted = body }, uni: { showToast() {} } })
+  vm.runInContext(script(formSource), context)
+  const groups = [], pickers = []
+  const visit = node => {
+    if (node.tag === 'radio-group') groups.push(node)
+    if (node.tag === 'picker') pickers.push(node)
+    for (const child of node.children || []) visit(child)
+  }
+  visit(parse(formSource).descriptor.template.ast)
+  assert.equal(groups.length, 1)
+  assert.equal(pickers.length, 1) // Only existing warehouse-mode picker remains outside business scale.
+  const change = groups[0].props.find(prop => prop.type === 7 && prop.name === 'on' && prop.arg?.content === 'change')
+  const fields = vm.runInContext('rangeFields', context)
+  assert.deepEqual(Array.from(fields, field => field.key), ['skuCount', 'dailyOrders', 'itemsPerParcelRange'])
+  for (const field of fields) {
+    context.field = field
+    for (const option of [field.options[1], field.options[2], field.options[0]]) {
+      context.next = option.value
+      vm.runInContext(`(${change.exp.content})({detail:{value:next}})`, context)
+      vm.runInContext('submit()', context)
+      assert.equal(emitted.requirements[field.key], option.value)
+    }
   }
 })

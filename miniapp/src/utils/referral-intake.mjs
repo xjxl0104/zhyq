@@ -1,4 +1,9 @@
 export const SALES_PLATFORMS = ['天猫', '京东', '拼多多', '有赞', '抖音', '视频号', '其他']
+export const PRODUCT_CATEGORIES = ['食品饮料', '美妆护肤', '日化清洁', '服装鞋帽', '家居家纺', '母婴用品', '宠物用品', '数码家电', '文体办公', '箱包配饰', '五金汽配', '其他']
+export const ITEMS_PER_PARCEL_RANGES = ['0-2', '2-5', '5-10', '10-20', '>=20']
+export function itemsPerParcelLabel(value) {
+  return value === '0-2' ? '少于 2 件' : rangeLabel(value, '件')
+}
 export const COURIERS = ['圆通', '中通', '顺丰', '申通', '韵达', '极兔', '京东', '邮政', '其他', '无']
 // “无”与其他快递互斥：勾选“无”时清空其他项，勾选其他项时取消“无”
 export function exclusiveNone(previous = [], next = []) {
@@ -20,7 +25,7 @@ export function rangeLabel(value, unit = '') {
 }
 export function newReferralForm() {
   return { name: '', brandName: '', contact: '', phone: '', serviceType: 2, warehouseId: null, demand: '', remark: '',
-    requirements: { contactPosition: '', salesPlatforms: [], salesPlatformOther: '', productWeights: [], productCount: '', skuCount: '', dailyOrders: '', itemsPerParcel: '',
+    requirements: { contactPosition: '', salesPlatforms: [], salesPlatformOther: '', productWeights: [], productCategories: [], productCategoryOther: '', productCount: '', skuCount: '', dailyOrders: '', itemsPerParcel: '', itemsPerParcelRange: '',
       packaging: '', couriers: [], courierOther: '', invoiceRequired: null,
       warehouseMode: '', currentCouriers: [], currentCourierOther: '', painPoints: [], painPointOther: '' } }
 }
@@ -31,6 +36,14 @@ export function referralPayload(form) {
   if (name.length > 100) throw new Error('客户名称最多 100 字')
   if (phone && !/^1\d{10}$/.test(phone)) throw new Error('手机号格式不对')
   const r = form.requirements || newReferralForm().requirements
+  if (r.productCategories != null && !Array.isArray(r.productCategories)) throw new Error('请选择有效的销售品类')
+  const productCategories = [...new Set(r.productCategories || [])]
+  if (productCategories.some(x => !PRODUCT_CATEGORIES.includes(x))) throw new Error('请选择有效的销售品类')
+  const productCategoryOther = productCategories.includes('其他') ? text(r.productCategoryOther) : ''
+  if (productCategories.includes('其他') && !productCategoryOther) throw new Error('请填写其他销售品类')
+  if (productCategoryOther.length > 100) throw new Error('其他销售品类最多 100 字')
+  const itemsPerParcelRange = text(r.itemsPerParcelRange)
+  if (itemsPerParcelRange && !ITEMS_PER_PARCEL_RANGES.includes(itemsPerParcelRange)) throw new Error('请选择有效的平均包裹产品数量范围')
   const salesPlatforms = [...new Set(r.salesPlatforms || [])], couriers = [...new Set(r.couriers || [])]
   if (salesPlatforms.some(x => !SALES_PLATFORMS.includes(x)) || couriers.some(x => !COURIERS.includes(x))) throw new Error('请选择有效的平台和快递')
   if (couriers.includes('无') && couriers.length > 1) throw new Error('指定快递选了“无”，就不能再选其他快递')
@@ -64,7 +77,7 @@ export function referralPayload(form) {
   return { name, brandName: text(form.brandName), contact: text(form.contact), phone: phone || null,
     // 表单已不再选择意向云仓
     serviceType: form.serviceType, warehouseId: null,
-    demand: text(form.demand), remark: text(form.remark), requirements: { ...r, contactPosition, salesPlatforms, salesPlatformOther,
+    demand: text(form.demand), remark: text(form.remark), requirements: { ...r, contactPosition, salesPlatforms, salesPlatformOther, productCategories, productCategoryOther, itemsPerParcelRange,
       productWeights, itemsPerParcel, couriers, courierOther, packaging: text(r.packaging), invoiceRequired: r.invoiceRequired ?? null,
       warehouseMode, currentCouriers, currentCourierOther, painPoints, painPointOther } }
 }
@@ -91,10 +104,11 @@ export function requirementRows(r = {}) {
     ['产品重量', (r.productWeights || []).map(x => `${rangeLabel(x.range, 'kg')}${x.percentage == null ? '' : `（${x.percentage}%）`}`).join('；')],
     // 表单已不再收集仓储面积，只在历史数据有值时显示
     ['仓储面积', r.storageArea && rangeLabel(r.storageArea, '㎡')],
-    ['销售产品种类数', r.productCount && rangeLabel(r.productCount, '种')],
+    ['销售品类', multi(r.productCategories, r.productCategoryOther)],
+    ['销售产品种类数（历史填写）', r.productCount && rangeLabel(r.productCount, '种')],
     ['SKU 数量', r.skuCount && rangeLabel(r.skuCount, '个')],
     ['日均单量', r.dailyOrders && rangeLabel(r.dailyOrders, '单')],
-    ['平均包裹产品数量', r.itemsPerParcel == null || r.itemsPerParcel === '' ? '' : `${r.itemsPerParcel} 件`],
+    ['平均包裹产品数量', r.itemsPerParcelRange ? itemsPerParcelLabel(r.itemsPerParcelRange) : r.itemsPerParcel == null || r.itemsPerParcel === '' ? '' : `${r.itemsPerParcel} 件`],
     ['打包方式', r.packaging], ['指定快递承运商', multi(r.couriers, r.courierOther)],
     ['是否开发票', r.invoiceRequired === true ? '是' : r.invoiceRequired === false ? '否' : ''],
     ['目前仓配方式', r.warehouseMode], ['目前合作快递', multi(r.currentCouriers, r.currentCourierOther)],
