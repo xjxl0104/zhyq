@@ -14,13 +14,17 @@
     <!-- 2 业务规模 -->
     <view class="group">
       <view class="group-title"><text class="bar" />业务规模 <text class="muted">选填</text></view>
-      <picker v-for="field in rangeFields" :key="field.key" :range="field.options" :value="selectedIndex(field.options, form.requirements[field.key])" range-key="label" @change="e => form.requirements[field.key] = field.options[e.detail.value].value">
-        <view class="input select">
-          <text class="sel-label">{{ field.label }}</text>
-          <text :class="['sel-value', { empty: !form.requirements[field.key] }]">{{ form.requirements[field.key] ? rangeLabel(form.requirements[field.key], field.unit) : '请选择' }}</text>
-        </view>
-      </picker>
-      <input class="input" v-model="form.requirements.itemsPerParcel" type="digit" maxlength="7" placeholder="平均包裹产品数量（件，选填）" />
+      <view class="sub-title first-sub">销售品类 <text class="muted">可多选</text></view>
+      <checkbox-group class="choices" @change="e => form.requirements.productCategories = e.detail.value">
+        <label v-for="item in PRODUCT_CATEGORIES" :key="item" class="choice"><checkbox :value="item" :checked="form.requirements.productCategories.includes(item)" color="#3857f5" /><text>{{ item }}</text></label>
+      </checkbox-group>
+      <input v-if="form.requirements.productCategories.includes('其他')" class="input" v-model="form.requirements.productCategoryOther" maxlength="100" placeholder="请填写其他销售品类" />
+      <view v-for="field in rangeFields" :key="field.key">
+        <view class="sub-title">{{ field.label }} <text class="muted">单选</text></view>
+        <radio-group class="choices" @change="e => form.requirements[field.key] = e.detail.value">
+          <label v-for="option in field.options" :key="option.value" class="choice"><radio :value="option.value" :checked="(form.requirements[field.key] || '') === option.value" color="#3857f5" /><text>{{ option.label }}</text></label>
+        </radio-group>
+      </view>
       <view class="sub-title">产品重量 <text class="muted">可多选；填写占比时合计需为 100%</text></view>
       <checkbox-group @change="changeWeights">
         <view v-for="range in WEIGHT_RANGES" :key="range" class="weight-row">
@@ -76,14 +80,14 @@
   </view>
 </template>
 <script setup>
-import { SALES_PLATFORMS, COURIERS, WEIGHT_RANGES, COUNT_RANGES, ORDER_RANGES, WAREHOUSE_MODES, PAIN_POINTS, rangeLabel, referralPayload, exclusiveNone } from '@/utils/referral-intake.mjs'
+import { SALES_PLATFORMS, PRODUCT_CATEGORIES, ITEMS_PER_PARCEL_RANGES, itemsPerParcelLabel, COURIERS, WEIGHT_RANGES, COUNT_RANGES, ORDER_RANGES, WAREHOUSE_MODES, PAIN_POINTS, rangeLabel, referralPayload, exclusiveNone } from '@/utils/referral-intake.mjs'
 const props = defineProps({ form: { type: Object, required: true }, warehouses: { type: Array, default: () => [] }, loading: Boolean, disabled: Boolean, submitLabel: { type: String, default: '提交推荐' } })
 const emit = defineEmits(['submit'])
 const rangeFields = [
-  { key: 'productCount', label: '销售产品种类数', unit: '种', ranges: COUNT_RANGES },
   { key: 'skuCount', label: 'SKU 数量', unit: '个', ranges: COUNT_RANGES },
-  { key: 'dailyOrders', label: '日均单量', unit: '单', ranges: ORDER_RANGES }
-].map(f => ({ ...f, options: [{ value: '', label: '暂不填写' }, ...f.ranges.map(value => ({ value, label: rangeLabel(value, f.unit) }))] }))
+  { key: 'dailyOrders', label: '日均单量', unit: '单', ranges: ORDER_RANGES },
+  { key: 'itemsPerParcelRange', label: '平均包裹产品数量', ranges: ITEMS_PER_PARCEL_RANGES, labelFor: itemsPerParcelLabel }
+].map(f => ({ ...f, options: [{ value: '', label: '暂不填写' }, ...f.ranges.map(value => ({ value, label: f.labelFor ? f.labelFor(value) : rangeLabel(value, f.unit) }))] }))
 const warehouseModeOptions = [{ value: '', label: '暂不填写' }, ...WAREHOUSE_MODES.map(value => ({ value, label: value }))]
 const selectedIndex = (options, value, key = 'value') => Math.max(0, options.findIndex(option => option[key] === value))
 const selectedWeight = range => props.form.requirements.productWeights.some(x => x.range === range)
@@ -104,6 +108,6 @@ function submit() {
 .pair{display:flex;gap:16rpx}.pair .input{flex:1;min-width:0}
 .select{display:flex;align-items:center;justify-content:space-between;gap:16rpx}.sel-label{flex-shrink:0}.sel-value{color:var(--park-text);text-align:right;font-weight:600}.sel-value.empty{color:var(--park-muted);font-weight:400}
 .sub-title{font-size:26rpx;font-weight:600;margin:28rpx 0 12rpx}.sub-title .muted{font-weight:400;font-size:22rpx;margin-left:12rpx}.sub-title.first-sub{margin-top:12rpx}
-.choices{display:flex;flex-wrap:wrap;gap:20rpx 28rpx}.choice{display:flex;align-items:center;gap:8rpx;min-height:60rpx}.choice checkbox{transform:scale(.82);transform-origin:left center;width:42rpx}
+.choices{display:flex;flex-wrap:wrap;gap:20rpx 28rpx}.choice{display:flex;align-items:center;gap:8rpx;min-height:60rpx}.choice checkbox,.choice radio{transform:scale(.82);transform-origin:left center;width:42rpx}
 .weight-row{display:flex;align-items:center;justify-content:space-between;gap:12rpx;min-height:72rpx}.percentage{display:flex;align-items:center;gap:8rpx;width:180rpx}.percentage input{width:145rpx;padding:10rpx;border:1rpx solid var(--park-line);border-radius:10rpx;background:var(--park-bg);font-size:24rpx}
 </style>

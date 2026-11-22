@@ -1,4 +1,7 @@
 export const platformOptions = ['天猫', '京东', '拼多多', '有赞', '抖音', '视频号', '其他']
+export const productCategoryOptions = ['食品饮料', '美妆护肤', '日化清洁', '服装鞋帽', '家居家纺', '母婴用品', '宠物用品', '数码家电', '文体办公', '箱包配饰', '五金汽配', '其他']
+export const itemsPerParcelRanges = ['0-2', '2-5', '5-10', '10-20', '>=20']
+export const itemsPerParcelLabel = value => ({ '0-2': '少于 2 件', '2-5': '2–小于 5 件', '5-10': '5–小于 10 件', '10-20': '10–小于 20 件', '>=20': '≥20 件' })[value] || ''
 export const courierOptions = ['圆通', '中通', '顺丰', '申通', '韵达', '极兔', '京东', '邮政', '其他', '无']
 // “无”与其他快递互斥
 export function exclusiveNone(previous = [], next = []) {
@@ -9,14 +12,16 @@ export const warehouseModeOptions = ['自建仓', '外包云仓', '两者都有'
 export const painPointOptions = ['时效慢', '错发漏发多', '大促爆仓', '成本太高', '系统对接难', '其他']
 export const weightRanges = ['0-0.3', '0.3-0.5', '0.5-1', '1-2', '2-3', '>=3']
 export const rangeFields = [
-  { key: 'productCount', label: '销售产品种类数', unit: '种', ranges: ['0-10', '10-20', '20-50', '50-100', '100-500', '>=500'] },
   { key: 'skuCount', label: 'SKU 数量', unit: '个', ranges: ['0-10', '10-20', '20-50', '50-100', '100-500', '>=500'] },
   { key: 'dailyOrders', label: '日均单量', unit: '单', ranges: ['0-200', '200-1000', '1000-3000', '3000-5000', '5000-10000', '>=10000'] }
 ]
 export const rangeLabel = (range, unit = '') => range?.startsWith('>=') ? `≥${range.slice(2)} ${unit}` : `${range?.replace('-', '–小于 ')} ${unit}`
-export const emptyRequirements = () => ({ contactPosition: '', salesPlatforms: [], salesPlatformOther: '', productWeights: [], productCount: '', skuCount: '', dailyOrders: '', itemsPerParcel: null,
+export const emptyRequirements = () => ({ contactPosition: '', salesPlatforms: [], salesPlatformOther: '', productWeights: [], productCategories: [], productCategoryOther: '', skuCount: '', dailyOrders: '', itemsPerParcelRange: '', itemsPerParcel: null,
   packaging: '', couriers: [], courierOther: '', invoiceRequired: null, warehouseMode: '', currentCouriers: [], currentCourierOther: '', painPoints: [], painPointOther: '' })
 export function validateRequirements(value) {
+  if ((value.productCategories || []).some(category => !productCategoryOptions.includes(category))) return '销售品类选项不正确'
+  if ((value.productCategories || []).includes('其他') && !(value.productCategoryOther || '').trim()) return '请填写其他销售品类'
+  if (value.itemsPerParcelRange && !itemsPerParcelRanges.includes(value.itemsPerParcelRange)) return '平均包裹产品数量选项不正确'
   if (value.salesPlatforms.includes('其他') && !value.salesPlatformOther.trim()) return '请填写其他销售平台'
   if (value.couriers.includes('其他') && !value.courierOther.trim()) return '请填写其他快递承运商'
   if ((value.currentCouriers || []).includes('其他') && !(value.currentCourierOther || '').trim()) return '请填写目前合作的其他快递'
@@ -34,14 +39,16 @@ export function requirementsRows(value = {}) {
   const rows = [
     ['对接人职位', value.contactPosition || '未填写'],
     ['销售平台', multi(value.salesPlatforms, value.salesPlatformOther)],
+    ['销售品类', multi(value.productCategories, value.productCategoryOther)],
     ['产品重量', (value.productWeights || []).map(w => `${rangeLabel(w.range, 'kg')}${w.percentage != null && w.percentage !== '' ? `（${w.percentage}%）` : ''}`).join('；') || '未填写'],
     ...rangeFields.map(f => [f.label, value[f.key] ? rangeLabel(value[f.key], f.unit) : '未填写']),
-    ['平均包裹产品数量', value.itemsPerParcel != null && value.itemsPerParcel !== '' ? `${value.itemsPerParcel} 件` : '未填写'],
+    ['平均包裹产品数量', itemsPerParcelLabel(value.itemsPerParcelRange) || (value.itemsPerParcel != null && value.itemsPerParcel !== '' ? `${value.itemsPerParcel} 件` : '未填写')],
     ['指定快递承运商', multi(value.couriers, value.courierOther)],
     ['目前仓配方式', value.warehouseMode || '未填写'],
     ['目前合作快递', multi(value.currentCouriers, value.currentCourierOther)],
     ['最头疼的问题', multi(value.painPoints, value.painPointOther)]
   ]
+  if (value.productCount) rows.push(['销售产品种类数（历史）', rangeLabel(value.productCount, '种')])
   // 表单已不再收集仓储面积、打包方式和开票，只在历史数据有值时显示
   if (value.storageArea) rows.push(['仓储面积', rangeLabel(value.storageArea, '㎡')])
   if (value.packaging) rows.push(['打包方式', value.packaging])

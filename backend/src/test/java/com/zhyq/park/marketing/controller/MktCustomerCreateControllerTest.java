@@ -43,7 +43,8 @@ class MktCustomerCreateControllerTest {
         Map<String,Object> body = body();
         body.put("phone", "  "); body.put("id", 999L); body.put("tenantId", 7L); body.put("status", 2);
         body.put("remark", "要求纸箱包装");
-        body.put("assignedWarehouseId", 8L); body.put("requirements", Map.of("salesPlatforms", List.of("天猫"), "invoiceRequired", false));
+        body.put("assignedWarehouseId", 8L); body.put("requirements", Map.of("salesPlatforms", List.of("天猫"), "invoiceRequired", false,
+                "productCategories", List.of("美妆护肤", "其他"), "productCategoryOther", " 绿植盆栽 ", "itemsPerParcelRange", "2-5"));
         controller.create(body);
         ArgumentCaptor<Customer> saved = ArgumentCaptor.forClass(Customer.class);
         verify(customers).insert(saved.capture());
@@ -53,6 +54,10 @@ class MktCustomerCreateControllerTest {
         assertNull(customer.getReferrerId()); assertNull(customer.getAssignedWarehouseId());
         assertEquals("要求纸箱包装", customer.getIntakeRemark());
         assertEquals(false, MktReferralRequirements.parse(customer.getFulfillmentRequirements()).get("invoiceRequired"));
+        var requirements = MktReferralRequirements.parse(customer.getFulfillmentRequirements());
+        assertEquals(List.of("美妆护肤", "其他"), requirements.get("productCategories"));
+        assertEquals("绿植盆栽", requirements.get("productCategoryOther"));
+        assertEquals("2-5", requirements.get("itemsPerParcelRange"));
         verify(protection).assertUnprotected(1L, "新增客户", null);
         verify(intakeGuard).lock(1L);
         verifyNoInteractions(referrals);

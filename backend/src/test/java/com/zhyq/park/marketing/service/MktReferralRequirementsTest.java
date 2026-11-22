@@ -10,6 +10,66 @@ class MktReferralRequirementsTest {
         var value = MktReferralRequirements.parse(MktReferralRequirements.normalize(Map.of()));
         assertThat(value.get("invoiceRequired")).isNull();
         assertThat(value.get("productWeights")).isEqualTo(List.of());
+        assertThat(value.get("productCategories")).isEqualTo(List.of());
+        assertThat(value.get("productCategoryOther")).isNull();
+        assertThat(value.get("itemsPerParcelRange")).isNull();
+    }
+
+    @Test void savesAllProductCategoriesAndTrimsOtherText() {
+        var categories = List.of("食品饮料", "美妆护肤", "日化清洁", "服装鞋帽", "家居家纺", "母婴用品",
+                "宠物用品", "数码家电", "文体办公", "箱包配饰", "五金汽配", "其他");
+        var saved = MktReferralRequirements.parse(MktReferralRequirements.normalize(Map.of(
+                "productCategories", categories, "productCategoryOther", " 绿植盆栽 ", "itemsPerParcelRange", "2-5")));
+        assertThat(saved.get("productCategories")).isEqualTo(categories);
+        assertThat(saved.get("productCategoryOther")).isEqualTo("绿植盆栽");
+        assertThat(saved.get("itemsPerParcelRange")).isEqualTo("2-5");
+        // A complete normalized payload must still fit the shared input-field limit.
+        assertThat(saved).hasSizeLessThanOrEqualTo(30);
+        assertThat(MktReferralRequirements.parse(MktReferralRequirements.normalize(saved))).isEqualTo(saved);
+    }
+
+    @Test void requiresValidDistinctProductCategoriesAndBoundedOtherText() {
+        for (var input : List.<Map<String, Object>>of(
+                Map.of("productCategories", "食品饮料"),
+                Map.of("productCategories", List.of("未知品类")),
+                Map.of("productCategories", List.of(1)),
+                Map.of("productCategories", List.of("食品饮料", "食品饮料")),
+                Map.of("productCategories", List.of("其他")),
+                Map.of("productCategories", List.of("其他"), "productCategoryOther", "  "),
+                Map.of("productCategories", List.of("其他"), "productCategoryOther", "x".repeat(101)))) {
+            assertThatThrownBy(() -> MktReferralRequirements.normalize(input))
+                    .isInstanceOf(com.zhyq.park.common.exception.BizException.class).hasMessageContaining("销售品类");
+        }
+        var saved = MktReferralRequirements.parse(MktReferralRequirements.normalize(Map.of(
+                "productCategories", List.of("食品饮料"), "productCategoryOther", "旧的自填内容")));
+        assertThat(saved.get("productCategoryOther")).isNull();
+    }
+
+    @Test void acceptsParcelRangesAndRejectsInvalidSelections() {
+        for (var range : List.of("0-2", "2-5", "5-10", "10-20", ">=20")) {
+            var saved = MktReferralRequirements.parse(MktReferralRequirements.normalize(Map.of("itemsPerParcelRange", range)));
+            assertThat(saved.get("itemsPerParcelRange")).isEqualTo(range);
+        }
+        for (var invalid : List.of("0", "4-5", 2, List.of("0-2", "2-5"))) {
+            assertThatThrownBy(() -> MktReferralRequirements.normalize(Map.of("itemsPerParcelRange", invalid)))
+                    .isInstanceOf(com.zhyq.park.common.exception.BizException.class).hasMessageContaining("平均包裹产品数量");
+        }
+    }
+
+    @Test void keepsLegacyCountsAndParcelNumbersAlongsideNewSelections() {
+        var legacy = MktReferralRequirements.parse("{\"productCount\":\"10-20\",\"itemsPerParcel\":1.5}");
+        var saved = MktReferralRequirements.parse(MktReferralRequirements.normalize(legacy));
+        assertThat(saved.get("productCount")).isEqualTo("10-20");
+        assertThat(saved.get("itemsPerParcel").toString()).isEqualTo("1.5");
+        assertThat(saved.get("productCategories")).isEqualTo(List.of());
+        assertThat(saved.get("itemsPerParcelRange")).isNull();
+        legacy.put("productCategories", List.of("美妆护肤"));
+        legacy.put("itemsPerParcelRange", "0-2");
+        var updated = MktReferralRequirements.parse(MktReferralRequirements.normalize(legacy));
+        assertThat(updated.get("productCount")).isEqualTo("10-20");
+        assertThat(updated.get("itemsPerParcel").toString()).isEqualTo("1.5");
+        assertThat(updated.get("productCategories")).isEqualTo(List.of("美妆护肤"));
+        assertThat(updated.get("itemsPerParcelRange")).isEqualTo("0-2");
     }
     @Test void preservesMultiplePlatformsOtherCarrierAndCompleteWeightDistribution() {
         var input = Map.of("salesPlatforms", List.of("天猫", "其他"), "salesPlatformOther", " 私域商城 ",
