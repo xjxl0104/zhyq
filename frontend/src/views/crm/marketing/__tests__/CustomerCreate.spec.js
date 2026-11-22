@@ -13,6 +13,16 @@ beforeEach(() => {
   mktWarehouseApi.online.mockResolvedValue([])
 })
 describe('后台新增客户', () => {
+  it('保存品类多选和业务规模区间，不提交已移除的产品种类数默认字段', async () => {
+    const wrapper = shallowMount(CustomerCreateDialog, { props:{ modelValue:false } })
+    await wrapper.setProps({ modelValue:true }); await flushPromises()
+    Object.assign(wrapper.vm.form, { name:'分类客户', requirements:{ ...emptyRequirements(), productCategories:['食品饮料','其他'], productCategoryOther:'户外装备', skuCount:'20-50', dailyOrders:'200-1000', itemsPerParcelRange:'2-5' } })
+    await wrapper.vm.submit()
+    const payload = mktCustomerApi.create.mock.calls[0][0]
+    expect(payload.requirements).toMatchObject({ productCategories:['食品饮料','其他'], productCategoryOther:'户外装备', skuCount:'20-50', dailyOrders:'200-1000', itemsPerParcelRange:'2-5' })
+    expect(payload.requirements).not.toHaveProperty('productCount')
+    wrapper.unmount()
+  })
   it('空手机可以保存完整需求，无伙伴为园区直接客户', async () => {
     const wrapper = shallowMount(CustomerCreateDialog, { props:{ modelValue:false } })
     await wrapper.setProps({ modelValue:true }); await flushPromises()

@@ -10,6 +10,7 @@ import java.util.*;
 public final class MktReferralRequirements {
     private static final ObjectMapper JSON = new ObjectMapper();
     private static final Set<String> PLATFORMS = Set.of("天猫", "京东", "拼多多", "有赞", "抖音", "视频号", "其他");
+    private static final Set<String> PRODUCT_CATEGORIES = Set.of("食品饮料", "美妆护肤", "日化清洁", "服装鞋帽", "家居家纺", "母婴用品", "宠物用品", "数码家电", "文体办公", "箱包配饰", "五金汽配", "其他");
     private static final Set<String> COURIERS = Set.of("圆通", "中通", "顺丰", "申通", "韵达", "极兔", "京东", "邮政", "其他", "无");
     private static final Set<String> WAREHOUSE_MODES = Set.of("自建仓", "外包云仓", "两者都有");
     private static final Set<String> PAIN_POINTS = Set.of("时效慢", "错发漏发多", "大促爆仓", "成本太高", "系统对接难", "其他");
@@ -17,6 +18,7 @@ public final class MktReferralRequirements {
     private static final Set<String> AREA = Set.of("0-50", "50-200", "200-1000", "1000-3000", "3000-5000", ">=5000");
     private static final Set<String> COUNTS = Set.of("0-10", "10-20", "20-50", "50-100", "100-500", ">=500");
     private static final Set<String> ORDERS = Set.of("0-200", "200-1000", "1000-3000", "3000-5000", "5000-10000", ">=10000");
+    private static final Set<String> ITEMS_PER_PARCEL_RANGES = Set.of("0-2", "2-5", "5-10", "10-20", ">=20");
     private MktReferralRequirements() {}
 
     public static String normalize(Object input) {
@@ -24,16 +26,21 @@ public final class MktReferralRequirements {
         if (!(input instanceof Map<?, ?> fields) || fields.size() > 30) throw new BizException("仓配需求格式不正确");
         Map<String,Object> out = new LinkedHashMap<>();
         List<String> platforms = choices(fields.get("salesPlatforms"), PLATFORMS, "销售平台");
+        List<String> categories = choices(fields.get("productCategories"), PRODUCT_CATEGORIES, "销售品类");
         List<String> couriers = choices(fields.get("couriers"), COURIERS, "指定快递承运商");
         out.put("contactPosition", text(fields.get("contactPosition"), 50, "对接人职位"));
         out.put("salesPlatforms", platforms);
         out.put("salesPlatformOther", other(fields.get("salesPlatformOther"), platforms, "其他销售平台"));
         out.put("productWeights", weights(fields.get("productWeights")));
         out.put("storageArea", range(fields.get("storageArea"), AREA, "仓储面积"));
+        out.put("productCategories", categories);
+        out.put("productCategoryOther", other(fields.get("productCategoryOther"), categories, "其他销售品类"));
+        // Keep legacy counts readable while older mini-program releases remain in use.
         out.put("productCount", range(fields.get("productCount"), COUNTS, "销售产品种类数"));
         out.put("skuCount", range(fields.get("skuCount"), COUNTS, "SKU 数量"));
         out.put("dailyOrders", range(fields.get("dailyOrders"), ORDERS, "日均单量"));
         out.put("itemsPerParcel", itemsPerParcel(fields.get("itemsPerParcel")));
+        out.put("itemsPerParcelRange", range(fields.get("itemsPerParcelRange"), ITEMS_PER_PARCEL_RANGES, "平均包裹产品数量"));
         out.put("packaging", text(fields.get("packaging"), 500, "打包方式"));
         out.put("couriers", couriers);
         out.put("courierOther", other(fields.get("courierOther"), couriers, "其他快递承运商"));

@@ -9,6 +9,40 @@ test('new fields are optional; invoice is not silently false', () => {
   const r = referralPayload(form())
   assert.equal(r.requirements.invoiceRequired, null)
   assert.deepEqual(r.requirements.productWeights, [])
+  assert.deepEqual(r.requirements.productCategories, [])
+  assert.equal(r.requirements.itemsPerParcelRange, '')
+})
+test('sales categories support multiple choices, validated other text, and historical counts stay separate', () => {
+  const f = form()
+  f.requirements.productCategories = ['食品饮料', '美妆护肤', '食品饮料', '其他']
+  assert.throws(() => referralPayload(f), /其他销售品类/)
+  f.requirements.productCategoryOther = ' 礼盒鲜花 '
+  f.requirements.productCount = '10-20'
+  let payload = referralPayload(f)
+  assert.deepEqual(payload.requirements.productCategories, ['食品饮料', '美妆护肤', '其他'])
+  const rows = Object.fromEntries(requirementRows(payload.requirements).map(x => [x.label, x.value]))
+  assert.equal(rows['销售品类'], '食品饮料、美妆护肤、其他：礼盒鲜花')
+  assert.equal(rows['销售产品种类数（历史填写）'], '10–＜20种')
+  f.requirements.productCategoryOther = 'a'.repeat(101)
+  assert.throws(() => referralPayload(f), /最多 100/)
+  f.requirements.productCategories = ['日化清洁']
+  assert.equal(referralPayload(f).requirements.productCategoryOther, '')
+  for (const bad of [['不存在的品类'], '食品饮料']) {
+    f.requirements.productCategories = bad
+    assert.throws(() => referralPayload(f), /有效的销售品类/)
+  }
+})
+test('parcel item ranges cover fractional averages and preserve legacy numeric records', () => {
+  const f = form()
+  for (const [range, label] of [['0-2', '少于 2 件'], ['2-5', '2–＜5件'], ['5-10', '5–＜10件'], ['10-20', '10–＜20件'], ['>=20', '≥ 20件']]) {
+    f.requirements.itemsPerParcelRange = range
+    const payload = referralPayload(f)
+    assert.equal(requirementRows(payload.requirements).find(row => row.label === '平均包裹产品数量').value, label)
+  }
+  f.requirements.itemsPerParcelRange = 'not-a-range'
+  assert.throws(() => referralPayload(f), /平均包裹产品数量范围/)
+  f.requirements.itemsPerParcelRange = ''; f.requirements.itemsPerParcel = 1.5
+  assert.equal(requirementRows(referralPayload(f).requirements).find(row => row.label === '平均包裹产品数量').value, '1.5 件')
 })
 test('other options require text and stale hidden text is dropped', () => {
   const f = form(); f.requirements.salesPlatforms = ['其他']
