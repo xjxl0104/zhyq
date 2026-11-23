@@ -35,6 +35,10 @@ public class MktCustomerPricingService {
     /** 非构造注入：晋升后调整上级时使用。 */
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private MktPromoterService promoterService;
+    /** 非构造注入：读取动态配置的平台保底留存比例，保持既有构造器兼容。 */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    @lombok.Setter
+    private com.zhyq.park.common.setting.BizSettings bizSettings;
 
     public record BeneficiaryInput(Long promoterId, BigDecimal amountPerOrder) {}
     public record PricingInput(BigDecimal totalPerOrder, BigDecimal ownerPerOrder, List<BeneficiaryInput> beneficiaries) {}
@@ -210,7 +214,7 @@ public class MktCustomerPricingService {
         MktPromoter actor = requireP4(actorId);
         Customer customer = requireCustomer(customerId);
         requireOwnership(customer, actorId);
-        validateAmounts(input);
+        validateAmounts(input, currentPlatformRate());
         List<Beneficiary> beneficiaries = new ArrayList<>();
         Set<Long> ids = new HashSet<>();
         for (BeneficiaryInput item : input.beneficiaries()) {
@@ -258,6 +262,51 @@ public class MktCustomerPricingService {
         return snapshotOf(pricing, owner);
     }
 
+    /** 供服务合同毛利预检优先查询已配置的每单总佣金快照;未配置或失效时返回 empty 走评级比例回退。 */
+    public Optional<PricingSnapshot> findPricingSnapshot(Long customerId, Long contractId) {
+        if (customerId == null) return Optional.empty();
+        MktCustomerPricing pricing = contractId == null ? null : latestByContract(contractId);
+        if (pricing == null) pricing = latest(customerId);
+        if (pricing == null) return Optional.empty();
+        MktPromoter owner = pricing.getOwnerPromoterId() == null ? null : promoterMapper.selectById(pricing.getOwnerPromoterId());
+        if (owner == null || !"P4".equals(owner.getPositionCode()) || !Integer.valueOf(1).equals(owner.getStatus())) {
+            return Optional.empty();
+        }
+        if (pricing.getContractId() == null) {
+            Customer customer = customerMapper.selectById(customerId);
+            MktPromoter currentOwner = customer == null ? null : ownerOf(customer);
+            if (currentOwner == null || !owner.getId().equals(currentOwner.getId())) {
+                return Optional.empty();
+            }
+        }
+        try {
+            return Optional.of(snapshotOf(pricing, owner));
+        } catch (BizException invalid) {
+            return Optional.empty();
+        }
+    }
+
+    /** 查找合同成交链路上的最近正常状态 P4(供超级管理员未绑私人伙伴手机号时代配分佣)。 */
+    public MktPromoter resolveContractOwnerP4(Long contractId) {
+        MktServiceContract contract = requireContract(contractId);
+        Long startId = contract.getPartnerId();
+        if (startId == null && contract.getCustomerId() != null) {
+            Customer customer = customerMapper.selectById(contract.getCustomerId());
+            if (customer != null) startId = customer.getReferrerId();
+        }
+        Set<Long> seen = new HashSet<>();
+        Long id = startId;
+        while (id != null && seen.add(id) && seen.size() <= 256) {
+            MktPromoter p = promoterMapper.selectById(id);
+            if (p == null) return null;
+            if ("P4".equals(p.getPositionCode())) {
+                return Integer.valueOf(1).equals(p.getStatus()) ? p : null;
+            }
+            id = p.getParentId();
+        }
+        return null;
+    }
+
     /** 校验定价版本当前仍可执行(受益人有效、金额自洽),返回计佣快照;客户定价与合同分配共用。 */
     private PricingSnapshot snapshotOf(MktCustomerPricing pricing, MktPromoter owner) {
         List<Beneficiary> items = readBeneficiaries(pricing);
@@ -275,8 +324,9 @@ public class MktCustomerPricingService {
             throw new BizException("P4 已变更为内部人员，请重新配置本人金额");
         }
         BigDecimal allocated = current.stream().map(Beneficiary::amountPerOrder).reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal companyShare = computeCompanyShare(pricing.getTotalPerOrder(), pricing.getOwnerPerOrder().add(allocated));
         return new PricingSnapshot(pricing.getId(), owner.getId(), owner.getPositionCode(), pricing.getTotalPerOrder(),
-                pricing.getOwnerPerOrder(), pricing.getTotalPerOrder().subtract(pricing.getOwnerPerOrder()).subtract(allocated), current);
+                pricing.getOwnerPerOrder(), companyShare, current);
     }
 
     // ---------------- 按合同佣金分配(P4 在后台为每份合同配置链路成员每单金额) ----------------
@@ -327,7 +377,7 @@ public class MktCustomerPricingService {
                 configured ? pricing.getTotalPerOrder() : null,
                 configured ? pricing.getOwnerPerOrder() : null,
                 configured ? allocated : null,
-                configured ? pricing.getTotalPerOrder().subtract(allocated) : null,
+                configured ? computeCompanyShare(pricing.getTotalPerOrder(), allocated) : null,
                 chain, configured ? readBeneficiaries(pricing) : List.of(),
                 configured ? pricing.getCreateTime() : null,
                 canEdit ? null : readOnlyReason(actor, partner),
@@ -354,7 +404,7 @@ public class MktCustomerPricingService {
         if (partner == null || !inTeam(partner, actor.getId())) {
             throw new BizException(403, "该合同的成交伙伴不在本人邀请体系内");
         }
-        validateContractAmounts(input);
+        validateContractAmounts(input, currentPlatformRate());
         List<Beneficiary> beneficiaries = new ArrayList<>();
         Set<Long> ids = new HashSet<>();
         for (BeneficiaryInput item : input.beneficiaries()) {
@@ -385,6 +435,10 @@ public class MktCustomerPricingService {
 
     /** 合同分配的链路成员可达 4 人(P1-P4),沿用金额规则但放宽 2 名受益人上限。 */
     static void validateContractAmounts(PricingInput input) {
+        validateContractAmounts(input, PLATFORM_RATE);
+    }
+
+    static void validateContractAmounts(PricingInput input, BigDecimal platformRate) {
         if (input == null) throw new BizException("请填写每单佣金配置");
         validateAmount(input.totalPerOrder(), "总佣金");
         validateAmount(input.ownerPerOrder(), "P4 本人金额");
@@ -397,7 +451,7 @@ public class MktCustomerPricingService {
             allocated = allocated.add(item.amountPerOrder());
         }
         if (allocated.compareTo(input.totalPerOrder()) > 0) throw new BizException("本人金额与受益人金额合计不能超过总佣金");
-        requirePlatformShare(input.totalPerOrder(), allocated);
+        requirePlatformShare(input.totalPerOrder(), allocated, platformRate);
     }
 
     private MktServiceContract requireContract(Long id) {
@@ -407,6 +461,10 @@ public class MktCustomerPricingService {
     }
 
     static void validateAmounts(PricingInput input) {
+        validateAmounts(input, PLATFORM_RATE);
+    }
+
+    static void validateAmounts(PricingInput input, BigDecimal platformRate) {
         if (input == null) throw new BizException("请填写每单佣金配置");
         validateAmount(input.totalPerOrder(), "总佣金");
         validateAmount(input.ownerPerOrder(), "P4 本人金额");
@@ -419,17 +477,42 @@ public class MktCustomerPricingService {
             allocated = allocated.add(item.amountPerOrder());
         }
         if (allocated.compareTo(input.totalPerOrder()) > 0) throw new BizException("本人金额与受益人金额合计不能超过总佣金");
-        requirePlatformShare(input.totalPerOrder(), allocated);
+        requirePlatformShare(input.totalPerOrder(), allocated, platformRate);
     }
 
-    /** 平台固定留存每单总佣金的 5%：个人分配合计不能超过总佣金的 95%。 */
+    /** 平台默认保底留存每单总佣金的 5%(可通过 biz_setting platform_retain_rate 在 0–0.50 内动态调整)。 */
     static final BigDecimal PLATFORM_RATE = new BigDecimal("0.05");
+    private static final BigDecimal MAX_PLATFORM_RATE = new BigDecimal("0.50");
+
+    public BigDecimal currentPlatformRate() {
+        if (bizSettings == null) return PLATFORM_RATE;
+        BigDecimal configured = bizSettings.getDecimal("marketing", "platform_retain_rate", PLATFORM_RATE);
+        if (configured == null || configured.signum() < 0 || configured.compareTo(MAX_PLATFORM_RATE) > 0) {
+            return PLATFORM_RATE;
+        }
+        return configured;
+    }
+
+    /** 计算平台每单留存份额:保存时已按 currentPlatformRate() 校验保底留存下限,恒等于总佣金减去个人分配合计。 */
+    public BigDecimal computeCompanyShare(BigDecimal totalPerOrder, BigDecimal totalPersonalAllocated) {
+        if (totalPerOrder == null) return null;
+        BigDecimal allocated = totalPersonalAllocated == null ? BigDecimal.ZERO : totalPersonalAllocated;
+        return totalPerOrder.subtract(allocated);
+    }
 
     static void requirePlatformShare(BigDecimal total, BigDecimal allocated) {
-        BigDecimal maxAllocatable = total.subtract(total.multiply(PLATFORM_RATE));
+        requirePlatformShare(total, allocated, PLATFORM_RATE);
+    }
+
+    static void requirePlatformShare(BigDecimal total, BigDecimal allocated, BigDecimal platformRate) {
+        BigDecimal rate = (platformRate == null || platformRate.signum() < 0 || platformRate.compareTo(MAX_PLATFORM_RATE) > 0)
+                ? PLATFORM_RATE : platformRate;
+        BigDecimal maxAllocatable = total.subtract(total.multiply(rate));
         if (allocated.compareTo(maxAllocatable) > 0) {
-            throw new BizException("平台固定留存总佣金的 5%，个人分配合计不能超过 "
-                    + maxAllocatable.setScale(3, java.math.RoundingMode.DOWN).toPlainString() + " 元/单（总佣金的 95%）");
+            String retainPct = rate.movePointRight(2).stripTrailingZeros().toPlainString() + "%";
+            String maxPct = BigDecimal.ONE.subtract(rate).movePointRight(2).stripTrailingZeros().toPlainString() + "%";
+            throw new BizException("平台固定留存总佣金的 " + retainPct + "，个人分配合计不能超过 "
+                    + maxAllocatable.setScale(3, java.math.RoundingMode.DOWN).toPlainString() + " 元/单（总佣金的 " + maxPct + "）");
         }
     }
 
@@ -524,7 +607,7 @@ public class MktCustomerPricingService {
         boolean configured = p != null && owner != null && owner.getId().equals(p.getOwnerPromoterId());
         List<Beneficiary> items = configured ? readBeneficiaries(p) : List.of();
         BigDecimal allocated = configured ? items.stream().map(Beneficiary::amountPerOrder).reduce(BigDecimal.ZERO, BigDecimal::add) : null;
-        BigDecimal company = configured ? p.getTotalPerOrder().subtract(p.getOwnerPerOrder()).subtract(allocated) : null;
+        BigDecimal company = configured ? computeCompanyShare(p.getTotalPerOrder(), p.getOwnerPerOrder().add(allocated)) : null;
         return new PricingView(c.getId(), c.getName(), configured, canEdit,
                 owner == null ? null : owner.getId(), owner == null ? null : owner.getName(),
                 configured ? p.getTotalPerOrder() : null, configured ? p.getOwnerPerOrder() : null,

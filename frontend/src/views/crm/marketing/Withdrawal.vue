@@ -2,7 +2,9 @@
   <div class="page-container mkt-page">
     <div class="search-bar">
       <el-form :inline="true" :model="query">
-        <el-form-item label="伙伴 ID"><el-input-number v-model="query.promoterId" :min="1" controls-position="right" style="width: 140px" /></el-form-item>
+        <el-form-item label="伙伴">
+          <PromoterSelect v-model="query.promoterId" clearable placeholder="搜索姓名/手机/邀请码" style="width: 240px" />
+        </el-form-item>
         <el-form-item label="状态">
           <el-select v-model="query.status" placeholder="全部" clearable style="width: 120px">
             <el-option v-for="(t, v) in ST" :key="v" :label="t" :value="Number(v)" />
@@ -114,6 +116,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { mktWithdrawalApi } from '@/api/marketing'
 import FileUpload from '@/components/FileUpload.vue'
 import WithdrawalApproverSettings from './WithdrawalApproverSettings.vue'
+import PromoterSelect from './PromoterSelect.vue'
 import { startFileDownload } from '@/utils/fileDownload'
 import { money } from '@/utils/format'
 import { hasPermission } from '@/utils/permission'

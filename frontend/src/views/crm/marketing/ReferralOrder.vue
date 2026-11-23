@@ -1,63 +1,215 @@
 <template>
   <div class="page-container mkt-page">
+    <el-alert
+      type="info"
+      show-icon
+      :closable="false"
+      class="mb"
+      title="计佣双轨口径：园区签合同按出库单 / 云山每日发货票数计佣并纳入园区服务费账单；云仓直签合同仅按实收平台费计佣，出库票数仅作运营统计，不重复生成出库佣金。"
+    />
+
     <!-- ===================== 按合同汇总 ===================== -->
-      <div class="search-bar">
-        <el-form :inline="true" :model="squery">
-          <el-form-item label="合同号"><el-input v-model="squery.contractNo" clearable style="width: 150px" /></el-form-item>
-          <el-form-item label="伙伴">
-            <el-select v-model="squery.promoterId" placeholder="全部" clearable filterable style="width: 140px">
-              <el-option v-for="p in promoters" :key="p.id" :label="p.name" :value="p.id" />
+    <div class="search-bar">
+      <el-form :inline="true" :model="squery">
+        <el-form-item label="合同号"><el-input v-model="squery.contractNo" clearable style="width: 150px" /></el-form-item>
+        <el-form-item label="伙伴">
+          <el-select v-model="squery.promoterId" placeholder="全部" clearable filterable style="width: 160px">
+            <el-option v-for="p in promoters" :key="p.id" :label="p.name" :value="p.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="客户">
+          <el-select v-model="squery.customerId" placeholder="全部" clearable filterable style="width: 160px">
+            <el-option v-for="c in customers" :key="c.id" :label="c.name" :value="c.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="云仓">
+          <el-select v-model="squery.warehouseId" placeholder="全部" clearable filterable style="width: 160px">
+            <el-option v-for="w in warehouses" :key="w.id" :label="w.name" :value="w.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item>
+          <el-button type="primary" @click="searchSummary"><el-icon><Search /></el-icon>查询</el-button>
+          <el-button @click="resetSummary">重置</el-button>
+        </el-form-item>
+      </el-form>
+    </div>
+
+    <div class="table-card">
+      <el-table :data="summaryList" v-loading="summaryLoading" border stripe>
+        <el-table-column prop="contractNo" label="合同号" min-width="155">
+          <template #default="{ row }">
+            {{ row.contractNo }}
+            <el-tag size="small" class="ml4" :type="row.signMode === 2 ? 'warning' : 'info'">{{ SIGN[row.signMode] || '—' }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="服务类型" width="90" align="center"><template #default="{ row }">{{ SVT[row.serviceType] || '—' }}</template></el-table-column>
+        <el-table-column label="计费模式" width="90" align="center"><template #default="{ row }">{{ FM[row.feeModel] || '—' }}</template></el-table-column>
+        <el-table-column prop="customerName" label="客户" min-width="130" />
+        <el-table-column prop="partnerName" label="成交伙伴" width="110"><template #default="{ row }">{{ row.partnerName || '—' }}</template></el-table-column>
+        <el-table-column prop="warehouseName" label="主仓" min-width="130"><template #default="{ row }">{{ row.warehouseName || '—' }}</template></el-table-column>
+        <el-table-column label="计佣订单数" width="100" align="right"><template #default="{ row }">{{ row.orderCount ?? 0 }}</template></el-table-column>
+        <el-table-column label="已确认票数" width="100" align="right"><template #default="{ row }">{{ row.confirmedCount ?? 0 }}</template></el-table-column>
+        <el-table-column label="已确认服务费(元)" width="130" align="right"><template #default="{ row }">{{ money(row.serviceFeeSum) }}</template></el-table-column>
+        <el-table-column label="已确认佣金池(元)" width="130" align="right"><template #default="{ row }">{{ money(row.poolSum) }}</template></el-table-column>
+        <el-table-column prop="lastEventTime" label="最近出库时间" width="160"><template #default="{ row }">{{ row.lastEventTime || '—' }}</template></el-table-column>
+        <el-table-column label="合同有效期" width="210"><template #default="{ row }">{{ (row.startDate || '—') + ' ~ ' + (row.endDate || '—') }}</template></el-table-column>
+        <el-table-column label="操作" width="190" fixed="right">
+          <template #default="{ row }">
+            <el-button link type="primary" @click.stop="openAlloc(row)">佣金分配</el-button>
+            <el-button link type="primary" @click.stop="openOrderDrawer(row)">订单明细 ›</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+      <el-pagination class="pager" background layout="total, prev, pager, next, sizes"
+                     :total="summaryTotal" v-model:current-page="squery.pageNo"
+                     v-model:page-size="squery.pageSize" :page-sizes="[10,20,50]" @change="loadSummary" />
+      <p class="hint pager-hint">计佣订单数 = 该合同客户在合同有效期内、主仓的云仓(ERP)发货票数；已确认票数 = 已生成佣金的票数（云山每个发货日生成一条 YS- 汇总订单代表当天多票，通用 ERP 按单笔事件入账）；点击「订单明细 ›」可逐笔核查分佣拆分并对异常未提现订单执行作废冲正。</p>
+    </div>
+
+    <!-- ===================== 逐笔计佣订单明细与冲正侧滑抽屉 ===================== -->
+    <el-drawer
+      v-model="orderDrawer.visible"
+      :title="`计佣订单明细 · ${orderDrawer.contract?.contractNo || ''}`"
+      size="min(940px, 96vw)"
+    >
+      <template v-if="orderDrawer.contract">
+        <div class="drawer-head-bar mb">
+          <div class="sub">
+            客户：<b>{{ orderDrawer.contract.customerName || '—' }}</b>
+            · 签约方式：<el-tag size="small" :type="orderDrawer.contract.signMode === 2 ? 'warning' : 'info'">{{ SIGN[orderDrawer.contract.signMode] || '—' }}</el-tag>
+            · 主仓：{{ orderDrawer.contract.warehouseName || '—' }}
+          </div>
+          <div class="drawer-filters">
+            <el-input v-model="orderDrawer.sourceNo" clearable size="small" placeholder="筛选单号 (如 YS-)" style="width: 160px" @keyup.enter="searchContractOrders" />
+            <el-select v-model="orderDrawer.status" clearable size="small" placeholder="全部状态" style="width: 120px" @change="searchContractOrders">
+              <el-option v-for="(label, val) in ORDER_ST" :key="val" :label="label" :value="Number(val)" />
             </el-select>
-          </el-form-item>
-          <el-form-item label="客户">
-            <el-select v-model="squery.customerId" placeholder="全部" clearable filterable style="width: 150px">
-              <el-option v-for="c in customers" :key="c.id" :label="c.name" :value="c.id" />
-            </el-select>
-          </el-form-item>
-          <el-form-item label="云仓">
-            <el-select v-model="squery.warehouseId" placeholder="全部" clearable filterable style="width: 150px">
-              <el-option v-for="w in warehouses" :key="w.id" :label="w.name" :value="w.id" />
-            </el-select>
-          </el-form-item>
-          <el-form-item>
-            <el-button type="primary" @click="searchSummary"><el-icon><Search /></el-icon>查询</el-button>
-            <el-button @click="resetSummary">重置</el-button>
-          </el-form-item>
-        </el-form>
-      </div>
-      <div class="table-card">
-        <el-table :data="summaryList" v-loading="summaryLoading" border stripe
-                 >
-          <el-table-column prop="contractNo" label="合同号" min-width="150">
+            <el-button size="small" type="primary" @click="searchContractOrders">筛选</el-button>
+          </div>
+        </div>
+
+        <el-table :data="orderDrawer.list" v-loading="orderDrawer.loading" border stripe size="small" row-key="id">
+          <el-table-column prop="sourceNo" label="计佣单号" min-width="175">
             <template #default="{ row }">
-              {{ row.contractNo }}
-              <el-tag size="small" class="ml4" :type="row.signMode === 2 ? 'warning' : 'info'">{{ SIGN[row.signMode] || '—' }}</el-tag>
+              <div>
+                <code>{{ row.sourceNo || `#${row.id}` }}</code>
+                <el-tag v-if="String(row.sourceNo || '').startsWith('YS-')" size="small" type="info" class="ml4">云山日汇</el-tag>
+              </div>
+              <div v-if="row.remark" class="sub">备注：{{ row.remark }}</div>
             </template>
           </el-table-column>
-          <el-table-column label="服务类型" width="90" align="center"><template #default="{ row }">{{ SVT[row.serviceType] || '—' }}</template></el-table-column>
-          <el-table-column label="计费模式" width="90" align="center"><template #default="{ row }">{{ FM[row.feeModel] || '—' }}</template></el-table-column>
-          <el-table-column prop="customerName" label="客户" min-width="130" />
-          <el-table-column prop="partnerName" label="成交伙伴" width="110"><template #default="{ row }">{{ row.partnerName || '—' }}</template></el-table-column>
-          <el-table-column prop="warehouseName" label="主仓" min-width="130"><template #default="{ row }">{{ row.warehouseName || '—' }}</template></el-table-column>
-          <el-table-column label="计佣订单数" width="100" align="right"><template #default="{ row }">{{ row.orderCount ?? 0 }}</template></el-table-column>
-          <el-table-column label="已确认票数" width="100" align="right"><template #default="{ row }">{{ row.confirmedCount ?? 0 }}</template></el-table-column>
-          <el-table-column label="已确认服务费(元)" width="130" align="right"><template #default="{ row }">{{ money(row.serviceFeeSum) }}</template></el-table-column>
-          <el-table-column label="已确认佣金池(元)" width="130" align="right"><template #default="{ row }">{{ money(row.poolSum) }}</template></el-table-column>
-          <el-table-column prop="lastEventTime" label="最近出库时间" width="160"><template #default="{ row }">{{ row.lastEventTime || '—' }}</template></el-table-column>
-          <el-table-column label="合同有效期" width="210"><template #default="{ row }">{{ (row.startDate || '—') + ' ~ ' + (row.endDate || '—') }}</template></el-table-column>
-          <el-table-column label="操作" width="110" fixed="right">
+          <el-table-column label="来源类型" width="110">
             <template #default="{ row }">
-              <el-button link type="primary" @click.stop="openAlloc(row)">佣金分配</el-button>
+              <el-tag size="small" :type="row.sourceType === 2 ? 'primary' : 'warning'">
+                {{ SOURCE_TYPE[row.sourceType] || `类型${row.sourceType}` }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="计佣票数" width="90" align="right">
+            <template #default="{ row }">{{ row.commissionOrderCount ?? 1 }}</template>
+          </el-table-column>
+          <el-table-column label="服务费 / 基数(元)" width="130" align="right">
+            <template #default="{ row }">{{ money(row.serviceFee ?? row.baseAmount ?? 0) }}</template>
+          </el-table-column>
+          <el-table-column label="佣金池(元)" width="110" align="right">
+            <template #default="{ row }">{{ row.poolAmount != null ? Number(row.poolAmount).toFixed(3) : '0.000' }}</template>
+          </el-table-column>
+          <el-table-column label="状态" width="95">
+            <template #default="{ row }">
+              <el-tag size="small" :type="orderStatusType(row.status)">{{ ORDER_ST[row.status] || row.status }}</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column prop="eventTime" label="业务发生时间" width="160">
+            <template #default="{ row }">{{ row.eventTime || '—' }}</template>
+          </el-table-column>
+          <el-table-column label="操作" width="165" fixed="right">
+            <template #default="{ row }">
+              <el-button link type="primary" @click="toggleSplits(row)">
+                {{ expandedOrderId === row.id ? '收起分佣' : '分佣明细' }}
+              </el-button>
+              <el-button
+                v-if="row.status === 2 && !hasWithdrawnSplit(row.id)"
+                link
+                type="danger"
+                @click="openVoidDialog(row)"
+              >
+                作废冲正
+              </el-button>
             </template>
           </el-table-column>
         </el-table>
-        <el-pagination class="pager" background layout="total, prev, pager, next, sizes"
-                       :total="summaryTotal" v-model:current-page="squery.pageNo"
-                       v-model:page-size="squery.pageSize" :page-sizes="[10,20,50]" @change="loadSummary" />
-        <p class="hint pager-hint">计佣订单数 = 该合同客户在合同有效期内、主仓的云仓(ERP)发货票数，来源于「云仓发货量同步」，不同客户使用各自的 ERP 数据；已确认票数 = 已生成佣金的票数（每个发货日生成一条汇总订单，一条代表当天的多票），与计佣订单数相差的部分是尚未生成佣金的日期（如当天数据次日才拉取、或未配置每单佣金）；金额只计已确认订单，与服务费账单口径一致。</p>
-      </div>
 
-    <!-- 合同佣金分配:链路成员每单金额(仅 P4 可改) + 该合同已产生佣金 -->
+        <!-- 当前展开订单的分佣拆分明细面板 -->
+        <div v-if="expandedOrderId != null" class="splits-box mt12" v-loading="splitsLoading">
+          <div class="splits-head">
+            <span>订单 <code>{{ currentExpandedOrder?.sourceNo || `#${expandedOrderId}` }}</code> 的分佣拆分明细</span>
+            <el-button link size="small" @click="expandedOrderId = null">收起</el-button>
+          </div>
+          <el-table :data="splitsCache[expandedOrderId] || []" size="small" border>
+            <el-table-column prop="promoterId" label="伙伴编号" width="100">
+              <template #default="{ row }">#{{ row.promoterId }}</template>
+            </el-table-column>
+            <el-table-column prop="positionCode" label="岗位" width="80" align="center" />
+            <el-table-column label="方向" width="95" align="center">
+              <template #default="{ row }">
+                <el-tag size="small" :type="row.sign === -1 ? 'danger' : 'success'">
+                  {{ row.sign === -1 ? '冲正扣回' : '正向计佣' }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="拆分金额(元)" width="120" align="right">
+              <template #default="{ row }">
+                <span :class="{ neg: row.sign === -1 }">{{ Number(row.amount || 0).toFixed(3) }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column label="佣金状态" width="110">
+              <template #default="{ row }">{{ COMM_ST[row.status] || row.status }}</template>
+            </el-table-column>
+            <el-table-column label="提现 / 作废说明" min-width="160">
+              <template #default="{ row }">
+                <span v-if="row.withdrawalId">关联提现单 #{{ row.withdrawalId }}</span>
+                <span v-else-if="row.voidReason" class="sub">{{ row.voidReason }}</span>
+                <span v-else class="sub">未提现</span>
+              </template>
+            </el-table-column>
+          </el-table>
+        </div>
+
+        <el-pagination
+          class="pager"
+          small
+          background
+          layout="total, prev, pager, next"
+          :total="orderDrawer.total"
+          v-model:current-page="orderDrawer.pageNo"
+          :page-size="orderDrawer.pageSize"
+          @current-change="loadContractOrders"
+        />
+      </template>
+    </el-drawer>
+
+    <!-- 作废冲正必填原因弹窗 -->
+    <el-dialog v-model="voidDialog.visible" title="计佣订单作废冲正" width="min(460px, 92vw)">
+      <el-alert
+        type="warning"
+        show-icon
+        :closable="false"
+        class="mb"
+        title="作废确认后：未结算佣金直接作废，已结算未提现佣金自动生成负向扣回流水；已进入服务费账单或已提现订单将由后端拦截。"
+      />
+      <p class="sub mb">目标单号：<code>{{ voidDialog.row?.sourceNo || `#${voidDialog.row?.id}` }}</code></p>
+      <el-form label-position="top">
+        <el-form-item label="作废冲正原因" required>
+          <el-input v-model="voidDialog.reason" type="textarea" :rows="3" maxlength="200" show-word-limit placeholder="请填写作废冲正原因（必填，写入审计日志）" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button :disabled="voidDialog.busy" @click="voidDialog.visible = false">取消</el-button>
+        <el-button type="danger" :loading="voidDialog.busy" @click="submitVoidOrder">确认作废冲正</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 合同佣金分配:链路成员每单金额(仅 P4 可改，最多 8 人) + 该合同已产生佣金 -->
     <el-dialog v-model="alloc.visible" :title="`佣金分配 · ${alloc.view?.contractNo || ''}`" width="min(760px, 96vw)">
       <template v-if="alloc.view">
         <el-alert v-if="!alloc.view.canEdit" type="warning" :closable="false" class="mb"
@@ -94,14 +246,15 @@
           </el-table-column>
         </el-table>
         <div v-if="alloc.view.canEdit" class="add-member">
-          <el-select v-model="alloc.addId" filterable clearable placeholder="添加本人团队里的其他成员参与分佣" style="width: 320px" :disabled="!addableMembers.length">
+          <el-select v-model="alloc.addId" filterable clearable placeholder="添加本人团队里的其他成员参与分佣（最多 8 人）" style="width: 320px" :disabled="!addableMembers.length || alloc.form.members.length >= MAX_SPLIT_MEMBERS">
             <el-option v-for="m in addableMembers" :key="m.id" :label="`${m.name || '未命名伙伴'} · ${m.positionCode}${m.phoneTail ? ' · 尾号' + m.phoneTail : ''}（#${m.id}）`" :value="m.id" />
           </el-select>
-          <el-button type="primary" plain :disabled="!alloc.addId" @click="addMember">添加成员</el-button>
-          <span v-if="!addableMembers.length" class="hint">本人团队里暂无可添加的其他正常成员。</span>
+          <el-button type="primary" plain :disabled="!alloc.addId || alloc.form.members.length >= MAX_SPLIT_MEMBERS" @click="addMember">添加成员</el-button>
+          <span v-if="alloc.form.members.length >= MAX_SPLIT_MEMBERS" class="hint">已达单合同最多 {{ MAX_SPLIT_MEMBERS }} 人分佣上限。</span>
+          <span v-else-if="!addableMembers.length" class="hint">本人团队里暂无可添加的其他正常成员。</span>
         </div>
         <p class="hint alloc-sum">
-          成员分成合计 <span :class="{ neg: allocOver }">{{ allocPct }}%</span>（上限 {{ 100 - PLATFORM_PCT }}%，平台固定留存 {{ PLATFORM_PCT }}%）,
+          成员分成合计 <span :class="{ neg: allocOver }">{{ allocPct }}%</span>（上限 {{ 100 - PLATFORM_PCT }}%，平台固定留存 {{ PLATFORM_PCT }}%，最多 {{ MAX_SPLIT_MEMBERS }} 人参与分佣）,
           折合每单 {{ allocSum }} 元 / 每单总佣金 {{ allocTotal }} 元,
           平台和未分配部分合计 {{ allocCompany }} 元
           <template v-if="allocOver">(成员分成超过 {{ 100 - PLATFORM_PCT }}%,无法保存)</template>。
@@ -140,6 +293,12 @@ import { money } from '@/utils/format'
 const SIGN = { 1: '园区签', 2: '云仓直签' }
 const SVT = { 1: '仓储', 2: '代发', 3: '仓配' }
 const FM = { 1: '仓租', 2: '单票', 3: '按件', 4: '包月' }
+const SOURCE_TYPE = { 1: '园区租赁', 2: '出库单', 3: '直签平台费', 4: '入仓签约奖' }
+const ORDER_ST = { 1: '待确认', 2: '已确认', 3: '已退款', 4: '已作废' }
+const COMM_ST = { 1: '冻结中', 2: '可结算', 3: '已结算', 4: '已提现', 5: '已作废' }
+const MAX_SPLIT_MEMBERS = 8
+
+const orderStatusType = (s) => ({ 1: 'warning', 2: 'success', 3: 'info', 4: 'danger' }[s] || 'info')
 
 const summaryLoading = ref(false)
 const summaryList = ref([])
@@ -177,6 +336,123 @@ function resetSummary() {
   loadSummary()
 }
 
+// ==================== 逐笔订单明细抽屉与作废冲正 ====================
+const orderDrawer = reactive({
+  visible: false,
+  loading: false,
+  contract: null,
+  sourceNo: '',
+  status: null,
+  pageNo: 1,
+  pageSize: 15,
+  list: [],
+  total: 0
+})
+const expandedOrderId = ref(null)
+const splitsLoading = ref(false)
+const splitsCache = reactive({})
+const currentExpandedOrder = computed(() => orderDrawer.list.find(o => o.id === expandedOrderId.value) || null)
+
+function hasWithdrawnSplit(orderId) {
+  const splits = splitsCache[orderId]
+  if (!Array.isArray(splits)) return false
+  return splits.some(s => s.withdrawalId != null || s.status === 4)
+}
+
+async function openOrderDrawer(contractRow) {
+  Object.assign(orderDrawer, {
+    visible: true,
+    contract: contractRow,
+    sourceNo: '',
+    status: null,
+    pageNo: 1,
+    list: [],
+    total: 0
+  })
+  expandedOrderId.value = null
+  await loadContractOrders()
+}
+
+async function loadContractOrders() {
+  if (!orderDrawer.contract) return
+  const sourceId = orderDrawer.contract.contractId ?? orderDrawer.contract.id
+  orderDrawer.loading = true
+  try {
+    const res = await mktOrderApi.page({
+      pageNo: orderDrawer.pageNo,
+      pageSize: orderDrawer.pageSize,
+      sourceId,
+      contractNo: orderDrawer.contract.contractNo || undefined,
+      sourceNo: orderDrawer.sourceNo.trim() || undefined,
+      status: orderDrawer.status || undefined
+    })
+    const records = res?.records || []
+    orderDrawer.list = sourceId != null
+      ? records.filter(r => r.sourceId == null || String(r.sourceId) === String(sourceId))
+      : records
+    orderDrawer.total = Number(res?.total ?? orderDrawer.list.length)
+  } finally {
+    orderDrawer.loading = false
+  }
+}
+
+function searchContractOrders() {
+  orderDrawer.pageNo = 1
+  expandedOrderId.value = null
+  return loadContractOrders()
+}
+
+async function toggleSplits(orderRow) {
+  if (expandedOrderId.value === orderRow.id) {
+    expandedOrderId.value = null
+    return
+  }
+  expandedOrderId.value = orderRow.id
+  if (splitsCache[orderRow.id]) return
+  splitsLoading.value = true
+  try {
+    const rows = await mktOrderApi.splits(orderRow.id)
+    splitsCache[orderRow.id] = Array.isArray(rows) ? rows : []
+  } finally {
+    splitsLoading.value = false
+  }
+}
+
+const voidDialog = reactive({ visible: false, row: null, reason: '', busy: false })
+
+async function openVoidDialog(orderRow) {
+  if (!splitsCache[orderRow.id] && mktOrderApi.splits) {
+    try {
+      const rows = await mktOrderApi.splits(orderRow.id)
+      splitsCache[orderRow.id] = Array.isArray(rows) ? rows : []
+    } catch { /* ignore precheck failure */ }
+  }
+  if (hasWithdrawnSplit(orderRow.id)) {
+    return ElMessage.warning('该订单已有提现关联佣金，不能直接作废冲正')
+  }
+  Object.assign(voidDialog, { visible: true, row: orderRow, reason: '', busy: false })
+}
+
+async function submitVoidOrder() {
+  if (voidDialog.busy || !voidDialog.row) return
+  const reason = voidDialog.reason.trim()
+  if (!reason) return ElMessage.warning('请填写作废冲正原因')
+  voidDialog.busy = true
+  try {
+    const targetId = voidDialog.row.id
+    await mktOrderApi.void(targetId, { reason })
+    delete splitsCache[targetId]
+    if (expandedOrderId.value === targetId) expandedOrderId.value = null
+    voidDialog.visible = false
+    ElMessage.success('订单已作废冲正')
+    await Promise.all([loadContractOrders(), loadSummary()])
+  } catch (e) {
+    ElMessage.error(e?.message || '作废冲正失败')
+  } finally {
+    voidDialog.busy = false
+  }
+}
+
 // ==================== 合同佣金分配 ====================
 const alloc = reactive({ visible: false, view: null, saving: false, commissions: [], commissionLoading: false, addId: null,
   form: { totalPerOrder: 0, members: [] } })
@@ -186,6 +462,9 @@ const addableMembers = computed(() => {
   return (alloc.view?.teamMembers || []).filter(m => !used.has(String(m.id)))
 })
 function addMember() {
+  if (alloc.form.members.length >= MAX_SPLIT_MEMBERS) {
+    return ElMessage.warning(`单个合同最多支持 ${MAX_SPLIT_MEMBERS} 人参与分佣`)
+  }
   const m = (alloc.view?.teamMembers || []).find(x => String(x.id) === String(alloc.addId))
   if (!m) return
   alloc.form.members.push({ promoterId: m.id, name: m.name || '未命名伙伴', positionCode: m.positionCode, status: 1, isOwner: false, former: false, added: true, pct: 0 })
@@ -253,12 +532,33 @@ async function saveAlloc() {
 }
 
 onMounted(() => { loadSummary(); loadOptions() })
+
+defineExpose({
+  alloc,
+  orderDrawer,
+  voidDialog,
+  expandedOrderId,
+  splitsCache,
+  addableMembers,
+  allocPct,
+  allocOver,
+  openAlloc,
+  addMember,
+  removeMember,
+  saveAlloc,
+  openOrderDrawer,
+  toggleSplits,
+  openVoidDialog,
+  submitVoidOrder
+})
 </script>
 
 <style scoped>
 .hint { color: var(--el-text-color-secondary); font-size: 12px; }
+.sub { color: var(--el-text-color-secondary); font-size: 12px; }
 .basis-note { color: var(--el-text-color-regular); font-size: 12px; margin-top: 4px; }
 .mb { margin-bottom: 12px; }
+.mt12 { margin-top: 12px; }
 .pager { margin-top: 16px; justify-content: flex-end; }
 .pager-hint { margin-top: 8px; }
 .dim { color: var(--el-text-color-placeholder); }
@@ -266,4 +566,31 @@ onMounted(() => { loadSummary(); loadOptions() })
 .alloc-sum { margin-top: 8px; }
 .add-member { display: flex; align-items: center; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
 .neg { color: var(--el-color-danger); }
+.drawer-head-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.drawer-filters {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.splits-box {
+  padding: 12px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 8px;
+  background: var(--bg-subtle, #f8fafc);
+}
+.splits-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  font-size: 13px;
+  font-weight: 500;
+}
 </style>

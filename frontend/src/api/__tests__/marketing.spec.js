@@ -3,7 +3,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import request from '@/utils/request'
 import { useProjectStore } from '@/stores/project'
-import { mktCommissionApi, mktOrderApi, mktContractApi, mktCustomerApi, mktPromoterApi } from '../marketing'
+import { mktCommissionApi, mktOrderApi, mktContractApi, mktCustomerApi, mktPromoterApi, mktSettingApi } from '../marketing'
 
 let server
 let received
@@ -92,4 +92,17 @@ it('partner deletion sends an authenticated DELETE with its reason in the body',
   expect(received.url).toBe('/api/crm/marketing/promoter/17')
   expect(received.authorization).toBe('Bearer mkt-test-token')
   expect(JSON.parse(received.body)).toMatchObject({ reason: '重复录入' })
+})
+
+it('commission page forwards nonOutbound query flag and setting save sends PUT array', async () => {
+  await mktCommissionApi.page({ nonOutbound: true, pageNo: 1, pageSize: 20 })
+  expect(received.method).toBe('GET')
+  expect(received.url).toContain('/api/crm/marketing/commission/page?')
+  expect(received.url).toContain('nonOutbound=true')
+
+  const items = [{ skey: 'withdraw_window_start_day', svalue: '0' }]
+  await mktSettingApi.save(items)
+  expect(received.method).toBe('PUT')
+  expect(received.url).toBe('/api/crm/marketing/setting')
+  expect(JSON.parse(received.body)).toEqual(items)
 })

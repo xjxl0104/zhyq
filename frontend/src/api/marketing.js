@@ -187,7 +187,8 @@ export const mktWithdrawalApi = {
 // 规则参数 / 审计日志
 export const mktSettingApi = {
   all: () => request.get(`${BASE}/setting`),
-  update: (data) => request.put(`${BASE}/setting`, data)
+  update: (data) => request.put(`${BASE}/setting`, data),
+  save: (data) => request.put(`${BASE}/setting`, data)
 }
 export const mktAuditApi = {
   page: (params) => request.get(`${BASE}/audit/page`, { params })

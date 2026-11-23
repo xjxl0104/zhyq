@@ -152,9 +152,21 @@ class MktCustomerPricingServiceTest {
         assertThat(ok.companyPerOrder()).isEqualByComparingTo("0.015");
         assertThatThrownBy(() -> service.save(4L,10L,new PricingInput(bd("0.300"), bd("0.286"), List.of())))
                 .hasMessageContaining("5%").hasMessageContaining("0.285");
-        assertThatThrownBy(() -> service.save(4L,10L,new PricingInput(bd("1"), bd("0.9"), List.of(new BeneficiaryInput(1L,bd("0.051"))))))
-                .hasMessageContaining("5%");
+        assertThatThrownBy(() -> service.save(4L,10L,new PricingInput(bd("1"), bd("0.9"), List.of(new BeneficiaryInput(1L,bd("0.051")))))
+                ).hasMessageContaining("5%");
         verify(pricingMapper, times(1)).insert(any(MktCustomerPricing.class));
+    }
+    @Test void dynamicPlatformRetainRateFromBizSettingsOverridesDefaultAndBoundsFallback() {
+        var settings = mock(com.zhyq.park.common.setting.BizSettings.class);
+        service.setBizSettings(settings);
+        when(settings.getDecimal(eq("marketing"), eq("platform_retain_rate"), any())).thenReturn(bd("0.10"));
+        assertThatThrownBy(() -> service.save(4L, 10L, new PricingInput(bd("1.000"), bd("0.901"), List.of())))
+                .isInstanceOf(BizException.class).hasMessageContaining("10%").hasMessageContaining("90%");
+        var saved = service.save(4L, 10L, new PricingInput(bd("1.000"), bd("0.900"), List.of()));
+        assertThat(saved.companyPerOrder()).isEqualByComparingTo("0.100");
+        // Out-of-bounds configuration safely falls back to 5%
+        when(settings.getDecimal(eq("marketing"), eq("platform_retain_rate"), any())).thenReturn(bd("0.80"));
+        assertThat(service.currentPlatformRate()).isEqualByComparingTo("0.05");
     }
     @Test void promotionMovesMemberUnderNearestHigherParent() {
         ReflectionTestUtils.setField(service, "promoterService", promoterService);

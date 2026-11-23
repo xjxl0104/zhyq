@@ -31,12 +31,12 @@ const routes = [
       { path: 'crm/lead', meta: { title: '线索管理' }, component: () => import('@/views/crm/Lead.vue') },
       { path: 'crm/customer', meta: { title: '意向客户' }, component: () => import('@/views/crm/Customer.vue') },
       { path: 'crm/plan', meta: { title: '销售计划' }, component: () => import('@/views/crm/Plan.vue') },
-      { path: 'crm/commission', meta: { title: '佣金管理' }, component: () => import('@/views/crm/Commission.vue') },
+      { path: 'crm/commission', meta: { title: '渠道中介返佣' }, component: () => import('@/views/crm/Commission.vue') },
       { path: 'crm/analysis', meta: { title: '招商分析' }, component: () => import('@/views/crm/Analysis.vue') },
       { path: 'crm/channel', meta: { title: '中介管理' }, component: () => import('@/views/crm/Channel.vue') },
 
       // 招商 › 全民营销(园区伙伴 · 云仓生态)
-      { path: 'crm/marketing/dashboard', meta: { title: '看板' }, component: () => import('@/views/crm/marketing/Dashboard.vue') },
+      { path: 'crm/marketing/dashboard', meta: { title: '营销看板' }, component: () => import('@/views/crm/marketing/Dashboard.vue') },
       { path: 'crm/marketing/promoter', meta: { title: '伙伴管理' }, component: () => import('@/views/crm/marketing/Promoter.vue') },
       { path: 'crm/marketing/position', meta: { title: '角色与称号' }, component: () => import('@/views/crm/marketing/Position.vue') },
       { path: 'crm/marketing/grade', meta: { title: '客户评级' }, component: () => import('@/views/crm/marketing/Grade.vue') },
@@ -46,13 +46,13 @@ const routes = [
       { path: 'crm/marketing/warehouse', meta: { title: '云仓管理' }, component: () => import('@/views/crm/marketing/Warehouse.vue') },
       { path: 'crm/marketing/onboarding', meta: { title: '加盟申请' }, component: () => import('@/views/crm/marketing/Onboarding.vue') },
       { path: 'crm/marketing/order', meta: { title: '计佣订单' }, component: () => import('@/views/crm/marketing/ReferralOrder.vue') },
-      { path: 'crm/marketing/commission', meta: { title: '佣金结算' }, component: () => import('@/views/crm/marketing/Commission.vue') },
+      { path: 'crm/marketing/commission', meta: { title: '伙伴佣金结算' }, component: () => import('@/views/crm/marketing/Commission.vue') },
       { path: 'crm/marketing/bill', meta: { title: '服务费账单' }, component: () => import('@/views/crm/marketing/Bill.vue') },
       { path: 'crm/marketing/settlement', meta: { title: '云仓结算' }, component: () => import('@/views/crm/marketing/Settlement.vue') },
       { path: 'crm/marketing/withdrawal', meta: { title: '提现审核' }, component: () => import('@/views/crm/marketing/Withdrawal.vue') },
-      { path: 'crm/marketing/setting', meta: { title: '规则参数' }, component: () => import('@/views/crm/marketing/Setting.vue') },
+      { path: 'crm/marketing/setting', meta: { title: '规则与字典' }, component: () => import('@/views/crm/marketing/Setting.vue') },
       { path: 'crm/marketing/audit', meta: { title: '审计日志' }, component: () => import('@/views/crm/marketing/AuditLog.vue') },
-      { path: 'crm/marketing/erp', meta: { title: 'ERP 对接' }, component: () => import('@/views/crm/marketing/Erp.vue') },
+      { path: 'crm/marketing/erp', meta: { title: '单量与ERP对接' }, component: () => import('@/views/crm/marketing/Erp.vue') },
 
       // 租客
       { path: 'tenant/list', meta: { title: '租客列表' }, component: () => import('@/views/tenant/TenantList.vue') },

@@ -3,7 +3,7 @@
     <header class="dash-head">
       <div>
         <h1 class="dash-title">全民营销看板</h1>
-        <p class="dash-sub">{{ rangeLabel }}的推荐转化、出库与佣金概况</p>
+        <p class="dash-sub">{{ rangeLabel }}的推荐转化、出库、双轨对账与佣金概况</p>
       </div>
       <el-radio-group v-model="range" @change="load" aria-label="时间范围">
         <el-radio-button value="7d">近 7 天</el-radio-button>
@@ -27,6 +27,28 @@
         <div class="kpi-value">{{ fmt(summary[c.key]) }}<span v-if="c.unit" class="kpi-suffix">{{ c.unit }}</span></div>
         <div class="kpi-foot">{{ c.alert && summary[c.key] > 0 ? '需要处理' : c.hint }}</div>
       </component>
+    </section>
+
+    <!-- 4 张核心经营分析结论卡（L1 结论卡面，右上角固定挂「下钻 ›」） -->
+    <section class="analysis-grid" aria-label="核心经营分析结论">
+      <article v-for="item in analysisCards" :key="item.key" class="analysis-card" :data-analysis-key="item.key">
+        <div class="analysis-head">
+          <h2 class="analysis-title">{{ item.title }}</h2>
+          <button
+            type="button"
+            class="drilldown-trigger"
+            :aria-label="`${item.title} 下钻查看论证与物证`"
+            @click="openDrilldown(item.key)"
+          >
+            下钻 ›
+          </button>
+        </div>
+        <div class="analysis-main">
+          <span class="analysis-value">{{ item.primaryText }}</span>
+          <el-tag :type="item.badgeType" size="small" effect="light">{{ item.badgeText }}</el-tag>
+        </div>
+        <div class="analysis-foot">{{ item.footText }}</div>
+      </article>
     </section>
 
     <section class="dash-panels">
@@ -59,19 +81,98 @@
       <ul>
         <li><b>服务费收入</b>：园区按合同单价表算出的服务费合计。</li>
         <li><b>佣金支出</b>：含负向扣回。</li>
-        <li><b>园区毛利</b>：服务费收入 − 应付云仓 − 佣金支出。</li>
+        <li><b>园区毛利</b>：服务费收入 + 直签实收平台费 − 应付云仓 − 佣金支出。</li>
         <li><b>活跃伙伴</b>：近 30 天有推荐或有佣金入账。</li>
       </ul>
-      <p>依据 PARK-MKT-001 §6.3。</p>
+      <p>依据 PARK-MKT-001 §6.3 · 四张分析结论卡支持 L1→L2→L3 全链路物证追溯。</p>
     </details>
+
+    <!-- 三层下钻抽屉（L1 核心问题 + L2 判定逻辑与判据行 + 点击展开 L3 物证与站内跳转） -->
+    <el-drawer
+      v-model="drilldown.visible"
+      :title="activeSpec ? `下钻溯源 · ${activeSpec.title}` : '下钻溯源'"
+      size="min(540px, 94vw)"
+      append-to-body
+    >
+      <div v-if="activeSpec" class="drill-body">
+        <div class="drill-l1-box">
+          <div class="drill-tag-row">
+            <span class="drill-layer-badge">L1 核心问题</span>
+            <el-tag :type="activeSpec.badgeType" size="small">{{ activeSpec.badgeText }}</el-tag>
+          </div>
+          <p class="drill-question">{{ activeSpec.question }}</p>
+          <div class="drill-l1-conclusion">当前结论值：<b>{{ activeSpec.primaryText }}</b></div>
+        </div>
+
+        <div class="drill-logic-box">
+          <div class="drill-layer-badge">L2 判定逻辑说明（同源搬运 · 零二次重算）</div>
+          <p class="drill-logic-text">{{ activeSpec.logicNote }}</p>
+        </div>
+
+        <div class="drill-rows-head">
+          <span>L2 逐条判据列表</span>
+          <span class="drill-rows-tip">点击任意判据行展开 L3 原始物证</span>
+        </div>
+
+        <div class="drill-rows">
+          <div
+            v-for="row in activeSpec.rows"
+            :key="row.key"
+            class="drill-row"
+            :class="{ 'is-open': expandedRowKeys.includes(row.key) }"
+          >
+            <button
+              type="button"
+              class="drill-row-summary"
+              :aria-expanded="expandedRowKeys.includes(row.key)"
+              @click="toggleEvidenceRow(row.key)"
+            >
+              <div class="drill-row-left">
+                <span class="drill-row-label">{{ row.label }}</span>
+                <span v-if="row.verdict" class="drill-row-verdict">{{ row.verdict }}</span>
+              </div>
+              <div class="drill-row-right">
+                <span class="drill-row-val">{{ row.value }}</span>
+                <span class="drill-row-toggle">{{ expandedRowKeys.includes(row.key) ? '收起 L3 ▴' : 'L3 物证 ▾' }}</span>
+              </div>
+            </button>
+
+            <div v-if="expandedRowKeys.includes(row.key)" class="drill-l3" :data-l3-key="row.key">
+              <div class="l3-item">
+                <div class="l3-label">① 原始接口返回数值</div>
+                <pre class="l3-code">{{ row.evidence.raw }}</pre>
+              </div>
+              <div class="l3-item">
+                <div class="l3-label">② 数据来源表与实时聚合说明</div>
+                <div class="l3-text">{{ row.evidence.source }}</div>
+              </div>
+              <div v-if="row.evidence.formula" class="l3-item">
+                <div class="l3-label">③ 带真实参数的计算公式</div>
+                <div class="l3-formula">{{ row.evidence.formula }}</div>
+              </div>
+              <div v-if="row.evidence.to" class="l3-item l3-action">
+                <div class="l3-label">④ 站内对应台账直达</div>
+                <el-button type="primary" plain size="small" @click="goLedger(row.evidence.to)">
+                  {{ row.evidence.linkLabel || '前往对应业务台账' }} ›
+                </el-button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </el-drawer>
   </div>
 </template>
 
 <script setup>
 import { ref, reactive, computed, onMounted, onBeforeUnmount } from 'vue'
+import { useRouter } from 'vue-router'
 import * as echarts from 'echarts'
 import { ArrowRight } from '@element-plus/icons-vue'
 import { mktDashboardApi } from '@/api/marketing'
+import { buildDashboardDrilldownCards } from './dashboardDrilldown'
+
+const router = useRouter()
 
 const RANGE_LABELS = { '7d': '近 7 天', '30d': '近 30 天', '90d': '近 90 天' }
 const BRAND = '#4f46e5'
@@ -96,6 +197,30 @@ const commissionRate = computed(() => {
   const fee = Number(summary.serviceFee), paid = Number(summary.commissionPaid)
   return fee > 0 && Number.isFinite(paid) ? (paid / fee * 100).toFixed(1) : null
 })
+
+// 同源分析结论卡与三层下钻状态
+const analysisCards = computed(() => buildDashboardDrilldownCards(summary, rangeLabel.value))
+const drilldown = reactive({ visible: false, activeKey: '' })
+const expandedRowKeys = ref([])
+const activeSpec = computed(() => analysisCards.value.find(c => c.key === drilldown.activeKey) || null)
+
+function openDrilldown(key) {
+  drilldown.activeKey = key
+  drilldown.visible = true
+  const spec = analysisCards.value.find(c => c.key === key)
+  expandedRowKeys.value = spec?.rows?.[0] ? [spec.rows[0].key] : []
+}
+
+function toggleEvidenceRow(rowKey) {
+  const idx = expandedRowKeys.value.indexOf(rowKey)
+  if (idx >= 0) expandedRowKeys.value.splice(idx, 1)
+  else expandedRowKeys.value.push(rowKey)
+}
+
+function goLedger(target) {
+  drilldown.visible = false
+  router.push(target)
+}
 
 const trendEl = ref()
 let trendChart
@@ -138,17 +263,33 @@ async function load() {
     mktDashboardApi.funnel({ range: range.value }),
     mktDashboardApi.trend({ range: range.value })
   ])
+  for (const k of Object.keys(summary)) delete summary[k]
   Object.assign(summary, s || {})
   funnel.value = toFunnelRows(f || [])
   trendChart?.setOption(trendOption(t || []), true)
 }
 const resize = () => { trendChart?.resize() }
 onMounted(() => {
-  trendChart = echarts.init(trendEl.value)
+  if (trendEl.value) {
+    trendChart = echarts.init(trendEl.value)
+  }
   window.addEventListener('resize', resize)
   load()
 })
 onBeforeUnmount(() => { window.removeEventListener('resize', resize); trendChart?.dispose() })
+
+defineExpose({
+  range,
+  summary,
+  analysisCards,
+  drilldown,
+  expandedRowKeys,
+  activeSpec,
+  load,
+  openDrilldown,
+  toggleEvidenceRow,
+  goLedger
+})
 </script>
 
 <style scoped>
@@ -179,6 +320,168 @@ onBeforeUnmount(() => { window.removeEventListener('resize', resize); trendChart
 .kpi--alert .kpi-value { color: #9a5b00; }
 .kpi--alert .kpi-foot { color: #9a5b00; font-weight: 500; }
 
+/* 4 张经营分析结论卡 */
+.analysis-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.analysis-card {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 16px 18px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+.analysis-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+.analysis-title {
+  margin: 0;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-title);
+  line-height: 1.4;
+}
+.drilldown-trigger {
+  flex: none;
+  padding: 2px 8px;
+  border: 1px solid rgba(79, 70, 229, .22);
+  border-radius: 999px;
+  background: rgba(79, 70, 229, .05);
+  color: var(--brand, #4f46e5);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color .18s ease, border-color .18s ease;
+}
+.drilldown-trigger:hover {
+  background: rgba(79, 70, 229, .12);
+  border-color: rgba(79, 70, 229, .45);
+}
+.analysis-main {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+.analysis-value {
+  font-size: 24px;
+  font-weight: 600;
+  color: var(--text-title);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+.analysis-foot {
+  margin-top: auto;
+  padding-top: 10px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 三层下钻抽屉样式 */
+.drill-body { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.drill-l1-box {
+  padding: 14px 16px;
+  border-radius: 10px;
+  background: #f5f3ff;
+  border: 1px solid #ddd6fe;
+}
+.drill-tag-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.drill-layer-badge {
+  display: inline-block;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #4338ca;
+}
+.drill-question { margin: 8px 0 6px; font-size: 13.5px; line-height: 1.6; color: #1e1b4b; font-weight: 500; }
+.drill-l1-conclusion { font-size: 13px; color: #312e81; font-variant-numeric: tabular-nums; }
+.drill-logic-box {
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: var(--bg-subtle, #f8fafc);
+  border: 1px solid var(--el-border-color-lighter);
+}
+.drill-logic-text { margin: 6px 0 0; font-size: 12.5px; line-height: 1.65; color: var(--text-secondary); }
+.drill-rows-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-title);
+}
+.drill-rows-tip { font-size: 12px; font-weight: 400; color: var(--text-muted); }
+.drill-rows { display: flex; flex-direction: column; gap: 10px; }
+.drill-row {
+  border: 1px solid var(--el-border-color-light);
+  border-radius: 10px;
+  overflow: hidden;
+  background: #fff;
+}
+.drill-row.is-open { border-color: #a5b4fc; }
+.drill-row-summary {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+}
+.drill-row-summary:hover { background: #f8fafc; }
+.drill-row-left { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.drill-row-label { font-size: 13.5px; font-weight: 500; color: var(--text-title); }
+.drill-row-verdict { font-size: 12px; color: var(--text-secondary); }
+.drill-row-right { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; flex: none; }
+.drill-row-val { font-size: 14px; font-weight: 600; color: var(--text-title); font-variant-numeric: tabular-nums; }
+.drill-row-toggle { font-size: 11.5px; color: #4f46e5; }
+.drill-l3 {
+  padding: 12px 14px;
+  border-top: 1px dashed var(--el-border-color-light);
+  background: #fcfcff;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.l3-item { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.l3-label { font-size: 12px; font-weight: 600; color: #475569; }
+.l3-code {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: #0f172a;
+  color: #e2e8f0;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.l3-text, .l3-formula {
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: #334155;
+  overflow-wrap: anywhere;
+}
+.l3-formula {
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: #eef2ff;
+  color: #312e81;
+  font-variant-numeric: tabular-nums;
+}
+.l3-action { align-items: flex-start; }
+
 .dash-panels { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 8fr); gap: 12px; }
 .panel { min-width: 0; padding: 20px; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg); }
 .panel-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
@@ -201,12 +504,16 @@ onBeforeUnmount(() => { window.removeEventListener('resize', resize); trendChart
 .dash-def b { color: var(--text-body); font-weight: 500; }
 .dash-def p { margin: 0; color: var(--text-muted); }
 
-@media (max-width: 1100px) {
+@media (max-width: 1180px) {
   .kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .kpi--lead { grid-column: 1 / -1; }
+  .analysis-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .dash-panels { grid-template-columns: minmax(0, 1fr); }
 }
+@media (max-width: 640px) {
+  .analysis-grid { grid-template-columns: minmax(0, 1fr); }
+}
 @media (prefers-reduced-motion: reduce) {
-  .kpi--link, .kpi-arrow, .funnel-bar { transition: none; }
+  .kpi--link, .kpi-arrow, .funnel-bar, .drilldown-trigger { transition: none; }
 }
 </style>

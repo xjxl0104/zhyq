@@ -82,4 +82,21 @@ class MktMonthlySettlementServiceTest {
         assertThat(result.failed()).isEqualTo(1);
         assertThat(result.errors()).singleElement().asString().contains("合同 5").contains("2026-09");
     }
+
+    @Test @SuppressWarnings("unchecked")
+    void 已解冻的非出库佣金随自动月结批量生成结算批次() {
+        pairs();
+        when(jdbc.queryForList(org.mockito.ArgumentMatchers.contains("source_type IN (1, 3, 4)"))).thenReturn(List.of(
+                Map.of("id", 101L, "amount", new BigDecimal("2000.00")),
+                Map.of("id", 102L, "amount", new BigDecimal("180.50"))));
+        when(commissionService.settle(List.of(101L, 102L), "system")).thenReturn("SB-NON-OUT-1");
+
+        var result = service.settleBefore(LocalDate.of(2026, 11, 8));
+
+        assertThat(result.batches()).isEqualTo(1);
+        assertThat(result.commissions()).isEqualTo(2);
+        assertThat(result.amount()).isEqualByComparingTo("2180.50");
+        assertThat(result.failed()).isZero();
+        verify(commissionService).settle(List.of(101L, 102L), "system");
+    }
 }

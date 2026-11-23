@@ -73,7 +73,9 @@ describe('navigation access', () => {
     expect(marketing.children.map(item => item.title)).toEqual(['看板', '伙伴', '客户', '云仓', '合同', '结算', '设置'])
     const settle = navigationGroup('/crm/marketing/withdrawal', [marketing])
     expect(settle.path).toBe('/crm/marketing/order')
-    expect(settle.tabs.map(tab => tab.title)).toEqual(['计佣订单', '佣金结算', '服务费账单', '云仓结算', '提现审核'])
+    expect(settle.tabs.map(tab => tab.title)).toEqual(['计佣订单', '伙伴佣金结算', '服务费账单', '云仓结算', '提现审核'])
+    const setting = navigationGroup('/crm/marketing/setting', [marketing])
+    expect(setting.tabs.map(tab => tab.title)).toEqual(['规则与字典', '审计日志'])
     expect(navigationGroup('/crm/lead', [marketing])).toBeNull()
   })
 

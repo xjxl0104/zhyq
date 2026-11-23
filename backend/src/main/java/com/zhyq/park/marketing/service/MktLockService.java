@@ -160,6 +160,10 @@ public class MktLockService {
     /** 释放(到期 / 客户拒绝 / 专员判无效 / 运营释放)→ 公海。 */
     @Transactional
     public void release(Long lockId, String reason, String releasedBy) {
+        releaseInternal(lockId, reason, releasedBy, true);
+    }
+
+    private void releaseInternal(Long lockId, String reason, String releasedBy, boolean clearReferrer) {
         requireReason(reason);
         int updated = lockMapper.update(null, new LambdaUpdateWrapper<MktCustomerLock>()
                 .eq(MktCustomerLock::getId, lockId)
@@ -169,8 +173,12 @@ public class MktLockService {
                 .set(MktCustomerLock::getReleasedBy, releasedBy)
                 .set(MktCustomerLock::getReleasedAt, LocalDateTime.now()));
         requireUpdated(updated, lockId);
+        MktCustomerLock released = require(lockId);
+        if (clearReferrer) {
+            clearPublicSeaReferrerIfEligible(released);
+        }
         auditService.log("lock.release", BIZ_TYPE, lockId, reason);
-        publish(require(lockId));
+        publish(released);
     }
 
     /** 未成交客户转移给另一位伙伴，保留原锁定截止时间，不能通过转移无限续期。 */
@@ -182,7 +190,7 @@ public class MktLockService {
         assignmentService.assertNoActiveContracts(old.getCustomerId());
         if (!Objects.equals(customer.getReferrerId(), old.getPromoterId())) throw new BizException("锁定与客户归属不一致，请先核对");
         if (Objects.equals(old.getPromoterId(), toPromoterId)) throw new BizException("请选择其他伙伴");
-        release(lockId, "转移:" + reason, MktAuditService.currentOperator());
+        releaseInternal(lockId, "转移:" + reason, MktAuditService.currentOperator(), false);
         MktPromoter to = promoterMapper.selectForUpdate(toPromoterId);
         if (to == null || to.getStatus() == null || to.getStatus() != 1) {
             throw new BizException("目标伙伴状态异常");
@@ -223,10 +231,27 @@ public class MktLockService {
                     .set(MktCustomerLock::getReleasedAt, now));
             if (updated == 1) {
                 n++;
-                publish(require(l.getId()));
+                MktCustomerLock released = require(l.getId());
+                clearPublicSeaReferrerIfEligible(l.getCustomerId() != null ? l : released);
+                publish(released);
             }
         }
         return n;
+    }
+
+    /** 锁释放回公海时:若客户未签约成交且无生效服务合同,清空其 referrer_id 以便其他伙伴重报接管。 */
+    private void clearPublicSeaReferrerIfEligible(MktCustomerLock lock) {
+        if (lock == null || lock.getCustomerId() == null) return;
+        try {
+            assignmentService.assertNoActiveContracts(lock.getCustomerId());
+        } catch (BizException hasActiveContracts) {
+            return;
+        }
+        customerMapper.update(null, new LambdaUpdateWrapper<Customer>()
+                .eq(Customer::getId, lock.getCustomerId())
+                .eq(lock.getPromoterId() != null, Customer::getReferrerId, lock.getPromoterId())
+                .and(q -> q.isNull(Customer::getStatus).or().ne(Customer::getStatus, 2))
+                .set(Customer::getReferrerId, null));
     }
 
     /** 到期前 N 天需要提醒的有效锁定。 */

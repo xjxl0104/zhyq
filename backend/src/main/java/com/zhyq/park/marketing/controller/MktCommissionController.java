@@ -83,8 +83,11 @@ public class MktCommissionController {
                                                         @RequestParam(required = false) Long projectId,
                                                         @RequestParam(required = false) String promoterName,
                                                         @RequestParam(required = false) Long contractId,
-                                                        @RequestParam(required = false) String month) {
+                                                        @RequestParam(required = false) String month,
+                                                        @RequestParam(required = false) Integer sourceType,
+                                                        @RequestParam(required = false) Boolean nonOutbound) {
         if (month != null && !month.matches("^\\d{4}-(0[1-9]|1[0-2])$")) throw new com.zhyq.park.common.exception.BizException("月份格式应为 yyyy-MM");
+        if (sourceType != null && (sourceType < 1 || sourceType > 4)) throw new BizException("佣金来源类型不正确");
         // 伙伴姓名/手机号模糊搜索:先找出匹配的伙伴 id,没有匹配就直接查不到
         List<Long> nameIds = null;
         if (promoterName != null && !promoterName.isBlank()) {
@@ -100,6 +103,10 @@ public class MktCommissionController {
                 .inSql(contractId != null && month != null, MktPromoterCommission::getReferralOrderId,
                         "SELECT id FROM crm_referral_order WHERE deleted = 0 AND source_type = " + MktCommissionService.SOURCE_OUTBOUND
                                 + " AND source_id = " + contractId + " AND DATE_FORMAT(event_time, '%Y-%m') = '" + month + "'")
+                .inSql(sourceType != null, MktPromoterCommission::getReferralOrderId,
+                        "SELECT id FROM crm_referral_order WHERE deleted = 0 AND source_type = " + sourceType)
+                .inSql(Boolean.TRUE.equals(nonOutbound), MktPromoterCommission::getReferralOrderId,
+                        "SELECT id FROM crm_referral_order WHERE deleted = 0 AND source_type IN (1, 3, 4)")
                 .eq(status != null, MktPromoterCommission::getStatus, status)
                 .eq(referralOrderId != null, MktPromoterCommission::getReferralOrderId, referralOrderId)
                 .and(projectId != null, q -> q.eq(MktPromoterCommission::getProjectId, projectId).or().isNull(MktPromoterCommission::getProjectId))
@@ -125,6 +132,8 @@ public class MktCommissionController {
             var order = orders.get(c.getReferralOrderId());
             m.put("orderEventTime", order == null ? null : order.getEventTime());
             m.put("orderSourceNo", order == null ? null : order.getSourceNo());
+            m.put("orderSourceType", order == null ? null : order.getSourceType());
+            m.put("orderBaseAmount", order == null ? null : order.getBaseAmount());
             m.put("promoterName", names.computeIfAbsent(c.getPromoterId(), id -> {
                 MktPromoter pr = promoterMapper.selectById(id); return pr == null ? null : pr.getName();
             }));

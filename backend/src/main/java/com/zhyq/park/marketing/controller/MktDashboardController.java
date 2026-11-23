@@ -8,8 +8,11 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -34,9 +37,55 @@ public class MktDashboardController {
                 Long.class, activityStart, activityStart));
         m.put("referrals", jdbc.queryForObject("SELECT COUNT(*) FROM crm_customer WHERE deleted = 0 AND referrer_id IS NOT NULL AND create_time >= ?", Long.class, since));
         m.put("outboundOrders", jdbc.queryForObject("SELECT COUNT(*) FROM crm_referral_order WHERE deleted = 0 AND source_type = 2 AND status = 2 AND event_time >= ?", Long.class, since));
-        m.put("serviceFee", jdbc.queryForObject("SELECT COALESCE(SUM(service_fee),0) FROM crm_referral_order WHERE deleted = 0 AND source_type = 2 AND status = 2 AND event_time >= ?", java.math.BigDecimal.class, since));
-        m.put("commissionPaid", jdbc.queryForObject("SELECT COALESCE(SUM(amount),0) FROM crm_promoter_commission WHERE deleted = 0 AND status IN (2,3,4) AND create_time >= ?", java.math.BigDecimal.class, since));
-        m.put("pendingWithdrawals", jdbc.queryForObject("SELECT COUNT(*) FROM crm_withdrawal WHERE deleted = 0 AND status = 1", Long.class));
+        BigDecimal serviceFee = decimal("SELECT COALESCE(SUM(service_fee),0) FROM crm_referral_order WHERE deleted = 0 AND source_type = 2 AND status = 2 AND event_time >= ?", since);
+        m.put("serviceFee", serviceFee);
+        m.put("commissionPaid", decimal("SELECT COALESCE(SUM(amount),0) FROM crm_promoter_commission WHERE deleted = 0 AND status IN (2,3,4) AND create_time >= ?", since));
+        m.put("pendingWithdrawals", count("SELECT COUNT(*) FROM crm_withdrawal WHERE deleted = 0 AND status = 1"));
+
+        // 三层下钻(L1→L2→L3)同源聚合子对象,单次请求返回完整对账与转化明细
+        Map<String, Object> drilldown = new LinkedHashMap<>();
+        BigDecimal warehouseSettlementCost = decimal(
+                "SELECT COALESCE(SUM(amount), 0) FROM crm_warehouse_settlement WHERE deleted = 0 AND create_time >= ?", since);
+        BigDecimal validCommissionTotal = decimal(
+                "SELECT COALESCE(SUM(amount), 0) FROM crm_promoter_commission WHERE deleted = 0 AND status <> 5 AND create_time >= ?", since);
+        BigDecimal netRetainedMargin = serviceFee.subtract(warehouseSettlementCost).subtract(validCommissionTotal);
+        BigDecimal marginRatePct = serviceFee.signum() > 0
+                ? netRetainedMargin.multiply(new BigDecimal("100")).divide(serviceFee, 2, RoundingMode.HALF_UP)
+                : BigDecimal.ZERO;
+        drilldown.put("serviceFeeTotal", serviceFee);
+        drilldown.put("warehouseSettlementCost", warehouseSettlementCost);
+        drilldown.put("validCommissionTotal", validCommissionTotal);
+        drilldown.put("netRetainedMargin", netRetainedMargin);
+        drilldown.put("marginRatePct", marginRatePct);
+
+        drilldown.put("yunshanActiveMaps", count(
+                "SELECT COUNT(*) FROM crm_yunshan_volume_map WHERE deleted = 0 AND status = 1"));
+        drilldown.put("yunshanTotalTickets", count(
+                "SELECT COALESCE(SUM(consign_num), 0) FROM crm_yunshan_daily_volume WHERE deleted = 0 AND stat_date >= ?", since));
+        drilldown.put("erpLiveWarehouses", count(
+                "SELECT COUNT(*) FROM crm_warehouse WHERE deleted = 0 AND join_status = 5 AND erp_status = 2 AND (order_mode = 'erp' OR order_mode IS NULL)"));
+        drilldown.put("erpDiffSnapshots", count(
+                "SELECT COUNT(*) FROM crm_erp_reconcile_snapshot WHERE deleted = 0 AND (state IS NULL OR state <> 'CONFIRMED') "
+                        + "AND (ABS(COALESCE(diff_ratio, 0)) >= 0.02 "
+                        + "OR (GREATEST(COALESCE(external_order_count, 0), COALESCE(system_order_count, 0)) > 0 "
+                        + "AND ABS(COALESCE(diff_order_count, 0)) * 100 >= GREATEST(COALESCE(external_order_count, 0), COALESCE(system_order_count, 0)) * 2))"));
+        drilldown.put("erpUnmappedPending", count(
+                "SELECT COUNT(*) FROM crm_erp_unmapped WHERE deleted = 0 AND status = 'OPEN'"));
+
+        drilldown.put("nonOutboundSettleableAmount", decimal(
+                "SELECT COALESCE(SUM(c.amount), 0) FROM crm_promoter_commission c "
+                        + "JOIN crm_referral_order o ON o.id = c.referral_order_id AND o.deleted = 0 "
+                        + "WHERE c.deleted = 0 AND o.source_type IN (1, 3, 4) AND c.status = 2 AND c.sign = 1 AND c.withdrawal_id IS NULL"));
+        drilldown.put("nonOutboundSettleableCount", count(
+                "SELECT COUNT(*) FROM crm_promoter_commission c "
+                        + "JOIN crm_referral_order o ON o.id = c.referral_order_id AND o.deleted = 0 "
+                        + "WHERE c.deleted = 0 AND o.source_type IN (1, 3, 4) AND c.status = 2 AND c.sign = 1 AND c.withdrawal_id IS NULL"));
+
+        drilldown.put("activeLocksCount", count("SELECT COUNT(*) FROM crm_customer_lock WHERE deleted = 0 AND status = 2"));
+        drilldown.put("dealLocksCount", count("SELECT COUNT(*) FROM crm_customer_lock WHERE deleted = 0 AND status = 3"));
+        drilldown.put("releasedLocksCount", count("SELECT COUNT(*) FROM crm_customer_lock WHERE deleted = 0 AND status = 4"));
+
+        m.put("drilldown", drilldown);
         return Result.ok(m);
     }
 
@@ -70,6 +119,11 @@ public class MktDashboardController {
     private long count(String sql, Object... args) {
         Long v = jdbc.queryForObject(sql, Long.class, args);
         return v == null ? 0 : v;
+    }
+
+    private BigDecimal decimal(String sql, Object... args) {
+        BigDecimal v = jdbc.queryForObject(sql, BigDecimal.class, args);
+        return v == null ? BigDecimal.ZERO : v;
     }
 
     private static Map<String, Object> stage(String name, long count) {

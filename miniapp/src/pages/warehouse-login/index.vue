@@ -10,8 +10,8 @@
       <PasswordAuthForm v-else warehouse @authenticated="done" @busy="busy = $event" />
       <button v-if="canUseWechat" class="method-link" :disabled="busy" @click="choose(method === 'wechat' ? 'password' : 'wechat')">{{ method === 'wechat' ? '账号密码登录（备用）' : '返回一键登录' }}</button>
     </view>
-    <button class="demo-link" :disabled="busy" @click="goDemo">无需登录，进入测试体验</button>
     <button class="identity-link" :disabled="busy" @click="chooseIdentity">切换身份</button>
+    <button v-if="showDemo" class="demo-link" :disabled="busy" @click="goDemo">查看功能演示（示例数据）</button>
   </view>
 </template>
 
@@ -25,8 +25,10 @@ export default { mixins: [appShareMixin] }
 import { ref } from 'vue'
 import { warehouseToken } from '@/utils/request'
 import { warehouseMock as mock } from '@/utils/wechat'
+import { demoEntryEnabled } from '@/utils/demo-entry-env'
 import PasswordAuthForm from '@/components/PasswordAuthForm.vue'
 import WechatAuthForm from '@/components/WechatAuthForm.vue'
+const showDemo = typeof demoEntryEnabled === 'boolean' ? demoEntryEnabled : true
 const canUseWechat = ref(mock)
 // #ifdef MP-WEIXIN
 canUseWechat.value = true
@@ -37,7 +39,7 @@ const busy = ref(false)
 function choose(value) { if (!busy.value) method.value = value }
 function done(t) { warehouseToken.set(t); uni.reLaunch({ url: '/pages/warehouse-dashboard/index' }) }
 function chooseIdentity() { if (!busy.value) uni.reLaunch({ url: '/pages/entry/index?select=1' }) }
-function goDemo() { if (!busy.value) uni.navigateTo({ url: '/pages/demo/index' }) }
+function goDemo() { if (showDemo && !busy.value) uni.navigateTo({ url: '/pages/demo/index' }) }
 </script>
 
 <style scoped>
@@ -47,8 +49,8 @@ function goDemo() { if (!busy.value) uni.navigateTo({ url: '/pages/demo/index' }
 .login-title { color: var(--park-ink); font-size: 48rpx; font-weight: 750; }
 .login-subtitle { margin-top: 12rpx; color: #58617d; font-size: 28rpx; line-height: 1.6; }
 .login-card { padding: 32rpx; }
-.identity-link { padding: 16rpx; color: #58617d; background: transparent; font-size: 28rpx; line-height: 1.5; }
-.demo-link { margin-top: 24rpx; padding: 18rpx; color: var(--park-blue); background: transparent; font-size: 26rpx; line-height: 1.5; }
+.identity-link { margin-top: 16rpx; padding: 16rpx; color: #58617d; background: transparent; font-size: 28rpx; line-height: 1.5; }
+.demo-link { margin-top: 4rpx; padding: 12rpx; color: #8a94aa; background: transparent; font-size: 23rpx; line-height: 1.5; }
 button:focus-visible { outline: 2px solid var(--park-blue); }
 .method-link { margin-top: 24rpx; padding: 20rpx 0; background: transparent; color: #2e47cc; font-size: 28rpx; line-height: 1.5; }
 </style>

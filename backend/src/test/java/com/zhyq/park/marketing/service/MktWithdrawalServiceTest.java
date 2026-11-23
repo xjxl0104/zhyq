@@ -100,7 +100,8 @@ class MktWithdrawalServiceTest {
         assertThat(rules).containsEntry("minimumAmount", new BigDecimal("0.01"))
                 .containsEntry("dailyLimit", 0)
                 .containsEntry("feeAmount", BigDecimal.ZERO)
-                .containsEntry("applicationTime", "每月 25–30 日开放提现申请")
+                .containsEntry("applicationTime", "随时可提交申请")
+                .containsEntry("autoWithdraw", "每月 10 日 10:00 自动把全部可提现余额提交提现申请")
                 .containsEntry("payoutMethod", "财务审批通过后转账至已审核的收款账户")
                 .containsEntry("arrivalTime", MktWithdrawalService.DEFAULT_ARRIVAL_TIME);
         verify(bizSettings, never()).getDecimal(eq("marketing"), eq("min_withdraw"), any());

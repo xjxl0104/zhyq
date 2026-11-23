@@ -1,5 +1,14 @@
 <template>
   <div class="page-container">
+    <el-alert type="info" show-icon :closable="false" class="channel-comm-tip">
+      <template #title>
+        <div class="channel-tip-row">
+          <span>本页用于<b>传统招商中介渠道（crm_channel）</b>返佣结算；全民营销伙伴佣金请前往「全民营销 › 伙伴佣金结算」。</span>
+          <el-button link type="primary" @click="$router.push('/crm/marketing/commission')">前往伙伴佣金结算 ›</el-button>
+        </div>
+      </template>
+    </el-alert>
+
     <!-- 统计卡 -->
     <div class="stat-row">
       <el-card class="stat-card" shadow="never">
@@ -201,6 +210,8 @@ onMounted(async () => {
 
 <style scoped>
 .stat-row { display: flex; gap: 16px; margin-bottom: 16px; }
+.channel-comm-tip { margin-bottom: 14px; }
+.channel-tip-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .stat-card { flex: 1; }
 .stat-label { color: var(--text-secondary); font-size: 13px; }
 .stat-value { font-size: 26px; font-weight: 600; margin-top: 8px; }

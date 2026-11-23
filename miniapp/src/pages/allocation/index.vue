@@ -2,7 +2,7 @@
   <view class="page-wrap pricing-page">
     <view class="card introduction">
       <view class="title">客户定价与分佣</view>
-      <view class="pricing-note">由 P4 按客户／品牌设置每单金额。P1–P4 均无固定金额或比例，称号不决定收益。</view>
+      <view class="pricing-note">由 P4 按客户／品牌设置每单默认金额（平台保底留存 5%，个人可分配上限 95%）。P1–P4 均无固定金额或比例，称号不决定收益。</view>
     </view>
     <view v-if="loading" class="card status-panel">正在加载定价资料…</view>
     <view v-else-if="loadError" class="card">
@@ -32,11 +32,16 @@
         <button class="btn secondary" @click="loadCustomer(selectedCustomerId)">重新读取</button>
       </view>
       <template v-else-if="detail">
+        <view v-if="contractOverrideNotice" class="card contract-override-card" role="status">
+          <view class="override-title">合同专属分佣优先提示</view>
+          <view class="pricing-note">{{ contractOverrideNotice }}</view>
+        </view>
         <view class="card">
           <view class="row form-heading"><text class="section-title">每单金额</text><text class="tag" :class="detail.configured ? 'ok' : 'warn'">{{ detail.configured ? '已配置' : '待定价' }}</text></view>
-          <view class="pricing-note">金额单位：元／单，最多 3 位小数（0.001 元 = 0.1 分）。没有分配金额时请明确填写 0。</view>
+          <view class="pricing-note">金额单位：元／单，最多 3 位小数（0.001 元 = 0.1 分）。平台保底留存 {{ breakdown.platformRatePercent }}%，个人合计上限 {{ breakdown.maxPersonalRatePercent }}%；不分配时请明确填写 0。</view>
           <label class="field-label" for="total-price">总佣金单价</label>
           <view class="amount-field"><input id="total-price" class="input" v-model="form.totalPerOrder" type="digit" :disabled="!editable" placeholder="填写协商后的总额" @input="clearFeedback" /><text>元／单</text></view>
+          <view v-if="breakdown.totalMills !== null" class="cap-inline-hint">个人最高可分配 {{ breakdown.maxPersonalPerOrder }} 元／单（{{ breakdown.maxPersonalRatePercent }}%） · 平台保底留存 {{ breakdown.platformMinShare }} 元／单（{{ breakdown.platformRatePercent }}%）</view>
           <label class="field-label" for="owner-price">P4 本人单价 · {{ detail.ownerName || me.name || '本人' }}</label>
           <view class="amount-field"><input id="owner-price" class="input" v-model="form.ownerPerOrder" type="digit" :disabled="!editable" placeholder="填写本人金额，可为 0" @input="clearFeedback" /><text>元／单</text></view>
         </view>
@@ -57,12 +62,23 @@
         </view>
         <view class="card summary-card">
           <view class="section-title">每单金额核对</view>
-          <view class="row"><text>总佣金</text><text class="money">{{ formatPerOrder(form.totalPerOrder) }} 元</text></view>
-          <view class="row"><text>P4 本人</text><text class="money">{{ formatPerOrder(form.ownerPerOrder) }} 元</text></view>
-          <view class="row"><text>其他受益人合计</text><text class="money">{{ allocatedText }} 元</text></view>
-          <view class="row"><text>公司保留</text><text class="money" :class="{ 'error-text': companyMills !== null && companyMills < 0 }">{{ companyText }} 元</text></view>
-          <view class="pricing-note">公司保留 = 总佣金 − P4 本人金额 − 其他受益人金额。保存只影响之后产生的新计佣记录。</view>
-          <view v-if="detail.updatedAt" class="update-time">上次保存 {{ detail.updatedAt.replace('T', ' ').slice(0, 16) }}</view>
+          <view class="progress-panel">
+            <view class="progress-meta">
+              <text>个人分配进度（上限 {{ breakdown.maxPersonalRatePercent }}%）</text>
+              <text :class="{ 'error-text': breakdown.overLimit }">{{ breakdown.personalPerOrder }} / {{ breakdown.maxPersonalPerOrder }} 元</text>
+            </view>
+            <view class="progress-track">
+              <view class="progress-fill" :class="{ over: breakdown.overLimit }" :style="{ width: breakdown.capUsagePercent + '%' }" />
+            </view>
+            <view class="progress-status" :class="{ 'error-text': breakdown.overLimit, 'success-text': breakdown.personalMills !== null && !breakdown.overLimit }">{{ breakdownStatusText }}</view>
+          </view>
+          <view class="row"><text>每单总佣金</text><text class="money">{{ formatPerOrder(form.totalPerOrder) }} 元</text></view>
+          <view class="row"><text>个人已分配（P4 {{ formatPerOrder(form.ownerPerOrder) }} + 受益人 {{ allocatedText }}）</text><text class="money" :class="{ 'error-text': breakdown.overLimit }">{{ breakdown.personalPerOrder }} 元</text></view>
+          <view class="row"><text>剩余可分配（上限 {{ breakdown.maxPersonalRatePercent }}%）</text><text class="money" :class="{ 'error-text': breakdown.overLimit }">{{ breakdown.remainingPersonalPerOrder }} 元</text></view>
+          <view class="row"><text>公司留存（含平台保底 {{ breakdown.platformRatePercent }}%）</text><text class="money" :class="{ 'error-text': (companyMills !== null && companyMills < 0) || breakdown.overLimit }">{{ companyText }} 元</text></view>
+          <view class="pricing-note">公司留存 = 每单总佣金 − 个人已分配（其中平台保底留存 {{ breakdown.platformMinShare }} 元／单，即 {{ breakdown.platformRatePercent }}%）。保存只影响之后产生的新计佣记录。</view>
+          <view class="pricing-note contract-rule-note">如园区后台已为具体服务合同配置专属分佣方案（最多 8 人），该合同订单优先按合同方案计佣。</view>
+          <view v-if="updatedAtText" class="update-time">上次保存 {{ updatedAtText }}</view>
           <view v-if="formError" class="error-text feedback" role="alert">{{ formError }}</view>
           <view v-if="savedMessage" class="success-text feedback" role="status">{{ savedMessage }}</view>
           <button class="btn" :disabled="!editable" :loading="saving" @click="save">{{ saving ? '正在保存' : '保存客户定价' }}</button>
@@ -84,7 +100,7 @@ import { computed, reactive, ref } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
 import { meApi, pricingApi } from '@/api'
 import { navigateTo } from '@/utils/nav.mjs'
-import { amountToMills, formatPerOrder, millsToAmount, validatePricing } from '@/utils/pricing.mjs'
+import { amountToMills, calcPricingBreakdown, formatPerOrder, millsToAmount, validatePricing } from '@/utils/pricing.mjs'
 
 const me = ref({})
 const customers = ref([])
@@ -127,6 +143,34 @@ const companyMills = computed(() => {
 })
 const allocatedText = computed(() => allocatedMills.value === null ? '—' : millsToAmount(allocatedMills.value))
 const companyText = computed(() => companyMills.value === null ? '—' : millsToAmount(companyMills.value))
+const currentPlatformRate = computed(() => detail.value?.platformRate ?? selectedCustomer.value?.platformRate)
+const breakdown = computed(() => calcPricingBreakdown(form.totalPerOrder, form.ownerPerOrder, activeBeneficiaries.value, currentPlatformRate.value))
+const breakdownStatusText = computed(() => {
+  const info = breakdown.value
+  if (info.totalMills === null) return `填写总佣金后自动测算上限（个人最高 ${info.maxPersonalRatePercent}%，平台保底 ${info.platformRatePercent}%）`
+  if (info.personalMills === null) return `个人合计最高可分配 ${info.maxPersonalPerOrder} 元／单（${info.maxPersonalRatePercent}%），平台保底留存 ${info.platformMinShare} 元／单（${info.platformRatePercent}%）`
+  if (info.overTotal) return '个人分配合计已超过每单总佣金，请下调分配金额'
+  if (info.overLimit) return `平台保底留存总佣金的 ${info.platformRatePercent}%，个人分配合计不能超过 ${info.maxPersonalPerOrder} 元/单（${info.maxPersonalRatePercent}%）`
+  return `校验通过 · 剩余可分配 ${info.remainingPersonalPerOrder} 元／单，公司留存 ${info.companyPerOrder} 元／单`
+})
+const contractOverrideNotice = computed(() => {
+  const current = detail.value || {}
+  const customer = selectedCustomer.value || {}
+  const rawMessage = current.contractOverrideTip || current.contractOverrideNote || current.contractPricingNote
+    || current.contractPricingTip || current.contractNotice || current.contractHint || current.overrideTip || current.overrideNote
+    || customer.contractOverrideTip || customer.contractOverrideNote || ''
+  const overrideCount = Number(current.contractPricingCount || current.contractOverrideCount || current.configuredContractCount
+    || customer.contractPricingCount || customer.contractOverrideCount || 0)
+  const hasFlag = Boolean(rawMessage || current.hasContractOverride || current.hasContractPricing || current.contractOverride
+    || customer.hasContractOverride || customer.hasContractPricing || overrideCount > 0
+    || (Array.isArray(current.contractOverrides) && current.contractOverrides.length > 0))
+  if (!hasFlag) return ''
+  const baseRule = '如园区后台已为具体服务合同配置专属分佣方案（最多 8 人），该合同订单优先按合同方案计佣。'
+  if (rawMessage) return rawMessage.includes('优先按合同方案计佣') ? rawMessage : `${rawMessage}（${baseRule}）`
+  if (overrideCount > 0) return `当前客户已有 ${overrideCount} 份服务合同配置了合同级分佣。${baseRule}`
+  return baseRule
+})
+const updatedAtText = computed(() => detail.value?.updatedAt ? String(detail.value.updatedAt).replace('T', ' ').slice(0, 16) : '')
 
 onLoad(query => { requestedCustomerId = query.customerId || ''; load() })
 function snapshot() {
@@ -210,7 +254,7 @@ function selectBeneficiary(index, event) {
 async function save() {
   if (!editable.value) return
   clearFeedback()
-  formError.value = validatePricing(form.totalPerOrder, form.ownerPerOrder, activeBeneficiaries.value)
+  formError.value = validatePricing(form.totalPerOrder, form.ownerPerOrder, activeBeneficiaries.value, currentPlatformRate.value)
   if (formError.value) return
   saving.value = true
   try {
@@ -259,5 +303,15 @@ async function save() {
 .update-time { margin-top: 12rpx; color: #56627d; font-size: 22rpx; }
 .summary-card .row { gap: 16rpx; }
 .summary-card .money { text-align: right; word-break: break-all; }
+.cap-inline-hint { margin-top: 12rpx; color: #2e47cc; font-size: 23rpx; line-height: 1.6; }
+.contract-override-card { background: #f3f6ff; border-left: 6rpx solid #3857f5 !important; }
+.override-title { color: #20305d; font-size: 27rpx; font-weight: 700; }
+.progress-panel { margin: 18rpx 0 12rpx; padding: 20rpx; border-radius: 16rpx; background: #f6f8fc; }
+.progress-meta { display: flex; align-items: center; justify-content: space-between; gap: 12rpx; color: #253052; font-size: 24rpx; font-weight: 600; }
+.progress-track { height: 14rpx; margin-top: 14rpx; overflow: hidden; border-radius: 999rpx; background: #dfe5f2; }
+.progress-fill { height: 100%; border-radius: 999rpx; background: linear-gradient(90deg, #3857f5, #299cb0); transition: width .2s ease; }
+.progress-fill.over { background: #c5364d; }
+.progress-status { margin-top: 12rpx; color: #56627d; font-size: 23rpx; line-height: 1.5; }
+.contract-rule-note { padding-top: 10rpx; border-top: 1rpx dashed #dfe5f2; color: #39486b; }
 .pricing-page button:focus-visible { outline: 3rpx solid var(--park-blue); outline-offset: 4rpx; }
 </style>

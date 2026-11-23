@@ -125,8 +125,8 @@
             <el-option v-for="p in positions" :key="p.code" :label="p.name" :value="p.code" />
           </el-select>
         </el-form-item>
-        <el-form-item v-if="act.type === 'parent'" label="新上级 ID">
-          <el-input-number v-model="act.value" :min="1" style="width: 100%" />
+        <el-form-item v-if="act.type === 'parent'" label="新上级伙伴">
+          <PromoterSelect v-model="act.value" :exclude-id="act.row?.id" clearable placeholder="搜索姓名、手机号或邀请码（留空设为根节点）" />
         </el-form-item>
         <el-form-item label="原因" required>
           <el-input v-model="act.reason" type="textarea" placeholder="必填,写入审计" />
@@ -221,6 +221,7 @@ import { useProjectStore } from '@/stores/project'
 import { useResponsive } from '@/composables/useResponsive'
 import CommissionBasis from './CommissionBasis.vue'
 import OrgTree from './OrgTree.vue'
+import PromoterSelect from './PromoterSelect.vue'
 
 // list = 伙伴列表；org = 组织架构（P4 → P3 → P2 层级与各层推荐的已签约客户）
 const view = ref('list')

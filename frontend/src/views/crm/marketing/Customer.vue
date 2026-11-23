@@ -28,8 +28,11 @@
         <el-table-column prop="name" label="客户 / 品牌 / 联系方式" min-width="180">
           <template #default="{ row }"><el-button link type="primary" @click="openDetail(row)">{{ row.name }}</el-button><div class="project-note">{{ row.contact || '联系人未填写' }} · {{ row.phone || '电话未填写' }}</div><div class="project-note">{{ projectLabel(row.projectId) }}</div></template>
         </el-table-column>
-        <el-table-column label="推荐来源" width="100">
-          <template #default="{ row }">{{ row.referrerName || (row.referrerId ? `#${row.referrerId}` : '—') }}</template>
+        <el-table-column label="推荐来源" width="115">
+          <template #default="{ row }">
+            <span v-if="row.referrerName || row.referrerId">{{ row.referrerName || `#${row.referrerId}` }}</span>
+            <el-tag v-else type="success" size="small" effect="plain">公海可重报</el-tag>
+          </template>
         </el-table-column>
         <el-table-column label="评级" width="65" align="center">
           <template #default="{ row }"><el-tag v-if="row.grade" :type="gradeType(row.grade)">{{ row.grade }}</el-tag><span v-else>—</span></template>
@@ -37,8 +40,13 @@
         <el-table-column label="客户状态" width="100">
           <template #default="{ row }"><el-tag :type="statusType(row.status)">{{ STATUS[row.status] || row.status }}</el-tag><div class="project-note">{{ BIZ[row.bizLine] || '业务待确认' }} · {{ SIGN[row.signMode] || '默认签约' }}</div></template>
         </el-table-column>
-        <el-table-column label="归属锁定" width="100">
-          <template #default="{ row }"><el-tag v-if="row.lockStatus" :type="lockType(row.lockStatus)" size="small">{{ LOCK[row.lockStatus] }}</el-tag><span v-else class="muted">未锁定</span><div v-if="[1, 2].includes(row.lockStatus) && row.lockDaysLeft != null" class="project-note">剩余 {{ row.lockDaysLeft }} 天</div></template>
+        <el-table-column label="归属锁定" width="120">
+          <template #default="{ row }">
+            <el-tag v-if="row.referrerId == null && (!row.lockStatus || row.lockStatus === 4)" type="success" size="small" effect="plain">公海可重报</el-tag>
+            <el-tag v-else-if="row.lockStatus" :type="lockType(row.lockStatus)" size="small">{{ LOCK[row.lockStatus] }}</el-tag>
+            <span v-else class="muted">未锁定</span>
+            <div v-if="[1, 2].includes(row.lockStatus) && row.lockDaysLeft != null" class="project-note">剩余 {{ row.lockDaysLeft }} 天</div>
+          </template>
         </el-table-column>
         <el-table-column label="云仓承接" min-width="150">
           <template #default="{ row }"><div>{{ row.assignedWarehouseName || '尚未分派' }}</div><div class="project-note">{{ ASSIGN[row.warehouseAssignmentStatus || 0] }}</div><div v-if="row.intendedWarehouseName" class="project-note">意向：{{ row.intendedWarehouseName }}</div></template>
@@ -153,11 +161,14 @@
     </el-dialog>
 
     <!-- 锁定 -->
-    <el-drawer v-model="lock.visible" :title="`锁定 · ${lock.row?.name || ''}`" size="520px">
+    <el-drawer v-model="lock.visible" :title="`锁定 · ${lock.row?.name || ''}`" size="min(520px, 94vw)">
       <el-alert class="mb" title="推荐后锁定 3 个自然月，签约成交后归属长期有效。" type="info" :closable="false" />
       <template v-if="lock.data">
         <el-descriptions :column="1" border>
-          <el-descriptions-item label="状态">{{ LOCK[lock.data.status] }}</el-descriptions-item>
+          <el-descriptions-item label="状态">
+            {{ LOCK[lock.data.status] }}
+            <el-tag v-if="lock.row?.referrerId == null && lock.data.status === 4" type="success" size="small" effect="plain" style="margin-left: 8px">公海可重报</el-tag>
+          </el-descriptions-item>
           <el-descriptions-item label="伙伴">#{{ lock.data.promoterId }}</el-descriptions-item>
           <el-descriptions-item label="锁定截止">{{ lock.data.status === 3 ? '长期有效' : (lock.data.lockUntil || '-') }}</el-descriptions-item>
         </el-descriptions>
@@ -167,14 +178,29 @@
         </div>
       </template>
       <template v-if="!lock.data || lock.data.status === 4">
-        <el-empty :description="lock.data ? '该客户已释放，可以重新报备' : '当前没有有效锁定（公海）'">
-          <el-form :inline="true">
-            <el-form-item label="伙伴 ID"><el-input-number v-model="lock.newPromoterId" :min="1" /></el-form-item>
+        <el-empty :description="lock.data ? '该客户已释放回公海，可重新代伙伴报备' : '当前处于公海，无有效锁定（公海可重报）'">
+          <div class="prelock-form">
+            <PromoterSelect v-model="lock.newPromoterId" placeholder="搜索报备伙伴（姓名/手机/邀请码）" style="width: min(300px, 100%)" />
             <el-button type="primary" @click="lockPrelock">代伙伴报备(锁定 3 个月)</el-button>
-          </el-form>
+          </div>
         </el-empty>
       </template>
     </el-drawer>
+
+    <el-dialog v-model="transferLockDialog.visible" title="转移客户锁定" width="min(480px, 92vw)">
+      <el-form label-width="90px">
+        <el-form-item label="目标伙伴" required>
+          <PromoterSelect v-model="transferLockDialog.toPromoterId" :exclude-id="lock.data?.promoterId" placeholder="搜索目标伙伴姓名、手机号或邀请码" />
+        </el-form-item>
+        <el-form-item label="转移原因" required>
+          <el-input v-model="transferLockDialog.reason" type="textarea" :rows="3" maxlength="200" show-word-limit placeholder="必填，写入审计日志" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button :disabled="transferLockDialog.busy" @click="transferLockDialog.visible = false">取消</el-button>
+        <el-button type="primary" :loading="transferLockDialog.busy" @click="submitLockTransfer">确认转移</el-button>
+      </template>
+    </el-dialog>
 
     <el-drawer v-model="protection.visible" title="竞争保护白名单" size="720px">
       <el-alert type="warning" :closable="false" show-icon class="mb"
@@ -212,6 +238,7 @@ import CustomerPricingDrawer from './CustomerPricingDrawer.vue'
 import CustomerCreateDialog from './CustomerCreateDialog.vue'
 import CustomerRequirements from './CustomerRequirements.vue'
 import CustomerProgressHistory from './CustomerProgressHistory.vue'
+import PromoterSelect from './PromoterSelect.vue'
 
 const projectStore = useProjectStore()
 const creationVisible = ref(false)
@@ -385,6 +412,7 @@ async function submitSign() {
 
 // 锁定
 const lock = reactive({ visible: false, row: null, data: null, newPromoterId: null })
+const transferLockDialog = reactive({ visible: false, toPromoterId: null, reason: '', busy: false })
 async function openLock(row) {
   lock.row = row; lock.newPromoterId = row.referrerId || null
   lock.data = await mktCustomerApi.lock(row.id)
@@ -394,15 +422,28 @@ async function lockReason(fn, title) {
   const { value } = await ElMessageBox.prompt('请填写原因', title, { inputPattern: /\S+/, inputErrorMessage: '原因必填' })
   await mktCustomerApi[fn](lock.data.id, { reason: value }); ElMessage.success('已处理'); await openLock(lock.row); load()
 }
-async function lockTransfer() {
-  const { value: to } = await ElMessageBox.prompt('目标伙伴 ID', '转移锁定', { inputPattern: /^\d+$/, inputErrorMessage: '请输入数字 ID' })
-  const { value: reason } = await ElMessageBox.prompt('转移原因', '转移锁定', { inputPattern: /\S+/, inputErrorMessage: '原因必填' })
-  await mktCustomerApi.transferLock(lock.data.id, { toPromoterId: Number(to), reason })
-  ElMessage.success('已转移'); await openLock(lock.row); load()
+function lockTransfer() {
+  Object.assign(transferLockDialog, { visible: true, toPromoterId: null, reason: '', busy: false })
+}
+async function submitLockTransfer() {
+  if (transferLockDialog.busy || !lock.data) return
+  if (!transferLockDialog.toPromoterId) return ElMessage.error('请选择目标伙伴')
+  const reason = transferLockDialog.reason.trim()
+  if (!reason) return ElMessage.error('请填写转移原因')
+  transferLockDialog.busy = true
+  try {
+    await mktCustomerApi.transferLock(lock.data.id, { toPromoterId: Number(transferLockDialog.toPromoterId), reason })
+    transferLockDialog.visible = false
+    ElMessage.success('已转移')
+    await openLock(lock.row)
+    load()
+  } finally {
+    transferLockDialog.busy = false
+  }
 }
 async function lockPrelock() {
-  if (!lock.newPromoterId) return ElMessage.error('请输入伙伴 ID')
-  await mktCustomerApi.prelock(lock.row.id, { promoterId: lock.newPromoterId })
+  if (!lock.newPromoterId) return ElMessage.error('请选择报备伙伴')
+  await mktCustomerApi.prelock(lock.row.id, { promoterId: Number(lock.newPromoterId) })
   ElMessage.success('已锁定'); await openLock(lock.row); load()
 }
 
@@ -417,6 +458,7 @@ onMounted(load)
 .muted { color: var(--el-text-color-placeholder); }
 .mb { margin-bottom: 12px; }
 .lock-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 16px; }
+.prelock-form { display: flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap; width: 100%; }
 .delete-target { overflow-wrap: anywhere; }
 .delete-note { color: var(--el-text-color-regular); line-height: 1.7; }
 </style>

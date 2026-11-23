@@ -4,7 +4,7 @@ import ReferralOrder from '../ReferralOrder.vue'
 import { mktOrderApi } from '@/api/marketing'
 
 vi.mock('@/api/marketing', () => ({
-  mktOrderApi: Object.fromEntries(['contractSummary', 'contractPricing', 'contractCommissions', 'saveContractPricing'].map(key => [key, vi.fn()])),
+  mktOrderApi: Object.fromEntries(['contractSummary', 'contractPricing', 'contractCommissions', 'saveContractPricing', 'page', 'splits', 'void'].map(key => [key, vi.fn()])),
   mktPromoterApi: { page: vi.fn().mockResolvedValue({ records: [] }) },
   mktCustomerApi: { page: vi.fn().mockResolvedValue({ records: [] }) },
   mktWarehouseApi: { online: vi.fn().mockResolvedValue([]) }
@@ -111,5 +111,42 @@ describe('合同佣金分配：平台固定 5% + 按比例分成', () => {
     await wrapper.vm.openAlloc({ contractId: 5 }); await flushPromises()
     await wrapper.vm.saveAlloc()
     expect(mktOrderApi.saveContractPricing).not.toHaveBeenCalled()
+  })
+
+  it('按合同打开逐笔计佣订单明细抽屉，展开分佣拆分并对未提现异常订单执行作废冲正', async () => {
+    mktOrderApi.page.mockResolvedValue({
+      total: 2,
+      records: [
+        { id: 101, sourceId: 5, sourceNo: 'YS-202611-01', sourceType: 2, commissionOrderCount: 18, serviceFee: 36, poolAmount: 5.4, status: 2 },
+        { id: 102, sourceId: 5, sourceNo: 'ERP-002', sourceType: 2, commissionOrderCount: 1, serviceFee: 2, poolAmount: 0.3, status: 2 }
+      ]
+    })
+    mktOrderApi.splits.mockImplementation(async id => id === 101
+      ? [{ id: 1, promoterId: 4, positionCode: 'P4', sign: 1, amount: 5.13, status: 2, withdrawalId: null }]
+      : [{ id: 2, promoterId: 4, positionCode: 'P4', sign: 1, amount: 0.285, status: 4, withdrawalId: 88 }]
+    )
+    mktOrderApi.void.mockResolvedValue(null)
+
+    const wrapper = mount(); await flushPromises()
+    await wrapper.vm.openOrderDrawer({ contractId: 5, contractNo: 'CS-5', customerName: '测试客户', signMode: 1 })
+    expect(mktOrderApi.page).toHaveBeenCalledWith(expect.objectContaining({ sourceId: 5, contractNo: 'CS-5' }))
+    expect(wrapper.vm.orderDrawer.list).toHaveLength(2)
+
+    await wrapper.vm.toggleSplits(wrapper.vm.orderDrawer.list[0])
+    expect(mktOrderApi.splits).toHaveBeenCalledWith(101)
+    expect(wrapper.vm.splitsCache[101]).toHaveLength(1)
+
+    // 已提现关联订单不允许进入作废确认弹窗
+    await wrapper.vm.openVoidDialog(wrapper.vm.orderDrawer.list[1])
+    expect(wrapper.vm.voidDialog.visible).toBe(false)
+
+    // 未提现订单必填原因后作废冲正
+    await wrapper.vm.openVoidDialog(wrapper.vm.orderDrawer.list[0])
+    expect(wrapper.vm.voidDialog.visible).toBe(true)
+    await wrapper.vm.submitVoidOrder()
+    expect(mktOrderApi.void).not.toHaveBeenCalled()
+    wrapper.vm.voidDialog.reason = '  重复汇总单冲正  '
+    await wrapper.vm.submitVoidOrder()
+    expect(mktOrderApi.void).toHaveBeenCalledWith(101, { reason: '重复汇总单冲正' })
   })
 })

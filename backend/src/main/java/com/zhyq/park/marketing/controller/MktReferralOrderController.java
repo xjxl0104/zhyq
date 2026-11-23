@@ -233,27 +233,55 @@ public class MktReferralOrderController {
         return Result.ok(enrich(o));
     }
 
-    @Operation(summary = "合同佣金分配视图:邀请链路成员+当前每单金额配置(仅P4可改)")
+    @Operation(summary = "合同佣金分配视图:邀请链路成员+当前每单金额配置(仅P4或超管代负责P4可改)")
     @PreAuthorize("hasAuthority('crm:marketing:order:query')")
     @GetMapping("/contract-pricing")
     public Result<com.zhyq.park.marketing.service.MktCustomerPricingService.ContractPricingView> contractPricing(@RequestParam Long contractId) {
-        return Result.ok(pricingService.contractView(contractId, adminActorService.currentPromoter()));
+        MktPromoter actor = adminActorService.currentPromoter();
+        if (actor == null && isConsoleSuperAdmin()) {
+            actor = pricingService.resolveContractOwnerP4(contractId);
+        }
+        return Result.ok(pricingService.contractView(contractId, actor));
     }
 
     public record ContractPricingSave(Long contractId, BigDecimal totalPerOrder, BigDecimal ownerPerOrder,
                                       List<com.zhyq.park.marketing.service.MktCustomerPricingService.BeneficiaryInput> beneficiaries) {}
 
-    @Operation(summary = "保存合同佣金分配(仅P4;生成不可变新版本,只影响之后产生的出库单)")
+    @Operation(summary = "保存合同佣金分配(仅P4或超管代负责P4;生成不可变新版本,只影响之后产生的出库单)")
     @PreAuthorize("hasAuthority('crm:marketing:order:edit')")
     @PostMapping("/contract-pricing")
     public Result<com.zhyq.park.marketing.service.MktCustomerPricingService.ContractPricingView> saveContractPricing(
             @RequestBody ContractPricingSave body) {
         if (body == null || body.contractId() == null) throw new BizException("请选择服务合同");
         MktPromoter actor = adminActorService.currentPromoter();
+        boolean adminProxy = false;
+        if (actor == null && isConsoleSuperAdmin()) {
+            actor = pricingService.resolveContractOwnerP4(body.contractId());
+            if (actor == null) {
+                throw new BizException("该合同尚未归属正常状态的 P4 伙伴，无法设置佣金分配");
+            }
+            adminProxy = true;
+        }
         if (actor == null) throw new BizException("当前后台账号未关联伙伴档案，无法设置佣金分配；请先用相同手机号注册伙伴");
-        return Result.ok(pricingService.saveContract(actor.getId(), body.contractId(),
+        var saved = pricingService.saveContract(actor.getId(), body.contractId(),
                 new com.zhyq.park.marketing.service.MktCustomerPricingService.PricingInput(
-                        body.totalPerOrder(), body.ownerPerOrder(), body.beneficiaries())));
+                        body.totalPerOrder(), body.ownerPerOrder(), body.beneficiaries()));
+        if (adminProxy) {
+            auditService.log("pricing.contract.admin_proxy", "service_contract", body.contractId(),
+                    "超级管理员代负责 P4(" + actor.getId() + ")保存合同佣金分配");
+        }
+        return Result.ok(saved);
+    }
+
+    private static boolean isConsoleSuperAdmin() {
+        var auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || !auth.isAuthenticated() || auth.getAuthorities() == null) return false;
+        String name = auth.getName();
+        if (name == null || "anonymousUser".equals(name) || name.startsWith("mp:") || name.startsWith("wh:")) return false;
+        boolean hasMpOrWh = auth.getAuthorities().stream()
+                .anyMatch(a -> "ROLE_MP".equals(a.getAuthority()) || "ROLE_WH".equals(a.getAuthority()));
+        if (hasMpOrWh) return false;
+        return auth.getAuthorities().stream().anyMatch(a -> "ROLE_admin".equals(a.getAuthority()));
     }
 
     @Operation(summary = "合同链路已产生佣金(按成员汇总,含各状态金额)")
@@ -261,12 +289,13 @@ public class MktReferralOrderController {
     @GetMapping("/contract-commissions")
     public Result<List<Map<String, Object>>> contractCommissions(@RequestParam Long contractId) {
         List<MktPromoterCommission> rows = commissionMapper.selectList(new LambdaQueryWrapper<MktPromoterCommission>()
+                .ne(MktPromoterCommission::getStatus, MktCommissionService.C_VOID)
                 .inSql(MktPromoterCommission::getReferralOrderId,
                         "SELECT id FROM crm_referral_order WHERE deleted = 0 AND source_type = "
                                 + MktCommissionService.SOURCE_OUTBOUND + " AND source_id = " + contractId));
         Map<Long, Map<String, Object>> byPromoter = new HashMap<>();
         for (MktPromoterCommission c : rows) {
-            if (c.getPromoterId() == null) continue;
+            if (c.getPromoterId() == null || Integer.valueOf(MktCommissionService.C_VOID).equals(c.getStatus())) continue;
             Map<String, Object> m = byPromoter.computeIfAbsent(c.getPromoterId(), k -> {
                 Map<String, Object> n = new HashMap<>();
                 n.put("promoterId", k);

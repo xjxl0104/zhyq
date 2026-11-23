@@ -139,9 +139,38 @@ test('ERP 可在没有同步订单时保持正式签名连接，停用凭证优�
   const { run } = harness('erp', { erp: async () => ({configured:true,status:1,env:2,erpStatus:2,lastHeartbeatAt:'2026-10-15 09:00:00',lastSyncAt:null}) })
   await run('load()')
   assert.equal(run('statusText.value'), '正式连接正常')
+  assert.equal(run('envStageText.value'), '正式上线')
   assert.equal(run('erp.lastSyncAt'), null)
   run('erp.status = 0')
   assert.equal(run('statusText.value'), '接入凭证已停用')
+})
+
+test('ERP 双轨模式清晰区分云山同步与 Webhook 四态，沙箱自测后引导联系后台切换正式环境与货主编码映射', async () => {
+  let erpState = { configured: false }
+  let mode = 'yunshan'
+  const { run } = harness('erp', {
+    erp: async () => ({ ...erpState }),
+    dashboard: async () => ({ orderMode: mode }),
+    testOrders: async events => ({ accepted: events.length, rejected: 0 }),
+  })
+  await run('load()')
+  assert.equal(run('isYunshanMode.value'), true)
+  assert.equal(run('envStageText.value'), '云山同步')
+
+  mode = 'erp'
+  erpState = { configured: true, status: 1, env: 1, erpStatus: 0, appId: 'wh-demo-1' }
+  await run('load()')
+  assert.equal(run('isYunshanMode.value'), false)
+  assert.equal(run('envStageText.value'), '沙箱联调')
+  assert.equal(run('sandboxReady.value'), false)
+  await run('runSelfTest()')
+  assert.equal(run('sandboxReady.value'), true)
+  assert.match(run('goLiveGuideText.value'), /单量与ERP对接 › 通用 ERP Webhook/)
+  assert.match(run('goLiveGuideText.value'), /货主编码映射/)
+
+  erpState = { configured: true, status: 1, env: 2, erpStatus: 3, appId: 'wh-demo-1' }
+  await run('load()')
+  assert.equal(run('envStageText.value'), '心跳离线')
 })
 
 const contractApi = (extra = {}) => ({ contracts: empty, agreement: async () => ({joinStatus:4}), customers: empty, ...extra })
