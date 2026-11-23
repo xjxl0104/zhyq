@@ -1,6 +1,7 @@
 package com.zhyq.park.marketing.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.zhyq.park.common.exception.BizException;
 import com.zhyq.park.marketing.entity.MktPromoter;
 import com.zhyq.park.marketing.mapper.MktPromoterMapper;
 import com.zhyq.park.marketing.mapper.MktWarehouseMapper;
@@ -45,7 +46,8 @@ class MktReferralLinkServiceTest {
         assertThat(service.submit(token, body).get("customerId")).isEqualTo(42);
         verify(referrals, times(1)).create(anyLong(), anyMap());
         body.put("name", "另一个客户");
-        assertThatThrownBy(() -> service.submit(token, body)).hasMessageContaining("已处理");
+        assertThatThrownBy(() -> service.submit(token, body)).isInstanceOfSatisfying(BizException.class,
+                error -> assertThat(error.getCode()).isEqualTo(500)).hasMessageContaining("已处理");
     }
     @Test void malformedDeletedAndFrozenLinksCannotSubmit() {
         assertThatThrownBy(() -> service.submit("7", body)).hasMessageContaining("不可用");
@@ -63,9 +65,29 @@ class MktReferralLinkServiceTest {
     }
     @Test void submissionNeedsConsentAndStableId() {
         body.remove("agreed");
-        assertThatThrownBy(() -> service.submit(token, body)).hasMessageContaining("授权");
+        assertThatThrownBy(() -> service.submit(token, body)).isInstanceOfSatisfying(BizException.class,
+                error -> assertThat(error.getCode()).isEqualTo(400)).hasMessageContaining("授权");
         body.put("agreed", true); body.put("submissionId", "x");
-        assertThatThrownBy(() -> service.submit(token, body)).hasMessageContaining("重新打开");
+        assertThatThrownBy(() -> service.submit(token, body)).isInstanceOfSatisfying(BizException.class,
+                error -> assertThat(error.getCode()).isEqualTo(400)).hasMessageContaining("重新打开");
         verifyNoInteractions(referrals);
+    }
+
+    @Test void unreadableSavedReceiptKeepsServerErrorInsteadOfAllowingAnotherSubmission() {
+        final Map<String,Object>[] saved = new Map[]{null};
+        when(jdbc.update(startsWith("INSERT INTO mkt_customer_referral_submission"), any(Object[].class))).thenAnswer(i -> {
+            saved[0] = Map.of("request_hash", i.getArgument(3), "result_json", "not-json"); return 1;
+        });
+        service.submit(token, body);
+        when(jdbc.queryForList(startsWith("SELECT request_hash"), eq(token), anyString())).thenReturn(List.of(saved[0]));
+        assertThatThrownBy(() -> service.submit(token, body)).isInstanceOfSatisfying(BizException.class,
+                error -> assertThat(error.getCode()).isEqualTo(500)).hasMessageContaining("结果暂不可读取");
+        verify(referrals, times(1)).create(anyLong(), anyMap());
+    }
+
+    @Test void storageFailureIsNotConvertedIntoEditableInputError() {
+        var failure = new org.springframework.dao.DataAccessResourceFailureException("storage unavailable");
+        when(jdbc.update(startsWith("INSERT INTO mkt_customer_referral_submission"), any(Object[].class))).thenThrow(failure);
+        assertThatThrownBy(() -> service.submit(token, body)).isSameAs(failure);
     }
 }

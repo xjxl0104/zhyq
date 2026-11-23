@@ -42,23 +42,23 @@ public class MktReferralService {
 
     private Map<String,Object> createInternal(Long promoterId, Long projectId, Map<String,Object> body) {
         MktPromoter me = promoters.selectForUpdate(promoterId);
-        if (me == null || !Integer.valueOf(1).equals(me.getStatus())) throw new BizException("伙伴不存在或状态异常，不能推荐客户");
-        if (projectId != null && me.getProjectId() != null && !projectId.equals(me.getProjectId())) throw new BizException("不能跨园区指定推荐伙伴");
+        if (me == null || !Integer.valueOf(1).equals(me.getStatus())) throw new BizException(403, "伙伴不存在或状态异常，不能推荐客户");
+        if (projectId != null && me.getProjectId() != null && !projectId.equals(me.getProjectId())) throw new BizException(403, "不能跨园区指定推荐伙伴");
         Long effectiveProject = projectId == null ? me.getProjectId() : projectId;
         String name = text(body, "name", 100, "客户名称");
-        if (name == null) throw new BizException("客户名称必填");
+        if (name == null) throw new BizException(400, "客户名称必填");
         String phone = text(body, "phone", 32, "联系手机");
-        if (phone != null && !phone.matches("^1\\d{10}$")) throw new BizException("请填写正确的 11 位手机号，或留空");
-        if (phone != null && phone.equals(me.getPhone())) throw new BizException("不能自我推荐");
+        if (phone != null && !phone.matches("^1\\d{10}$")) throw new BizException(400, "请填写正确的 11 位手机号，或留空");
+        if (phone != null && phone.equals(me.getPhone())) throw new BizException(400, "不能自我推荐");
         int cap = settings.getInt("marketing", "daily_referral_cap", 20);
         if (customers.countReferralsSince(promoterId, LocalDate.now().atStartOfDay()) >= cap)
-            throw new BizException("今日推荐已达上限 " + cap + " 个");
+            throw new BizException(429, "今日推荐已达上限 " + cap + " 个");
         Long tenantId = me.getTenantId() == null ? com.zhyq.park.common.config.MyMetaObjectHandler.DEFAULT_TENANT_ID : me.getTenantId();
         intakeGuard.lock(tenantId);
         if (customers.selectCount(new LambdaQueryWrapper<Customer>().eq(Customer::getTenantId, tenantId).eq(Customer::getName, name)) > 0)
-            throw new BizException("该客户已在系统中(已被推荐)");
+            throw new BizException(409, "该客户已在系统中(已被推荐)");
         if (phone != null && customers.selectCount(new LambdaQueryWrapper<Customer>().eq(Customer::getPhone, phone)) > 0)
-            throw new BizException("该客户已在系统中(已被推荐)");
+            throw new BizException(409, "该客户已在系统中(已被推荐)");
         Customer c = new Customer();
         c.setTenantId(tenantId); c.setProjectId(effectiveProject);
         c.setName(name); c.setPhone(phone); c.setContact(text(body, "contact", 100, "联系人"));
@@ -71,15 +71,15 @@ public class MktReferralService {
         Object rawType = body.get("serviceType");
         int type;
         try { type = rawType == null ? 2 : Integer.parseInt(rawType.toString()); }
-        catch (NumberFormatException e) { throw new BizException("需求类型不正确"); }
-        if (type < 1 || type > 4) throw new BizException("需求类型不正确");
+        catch (NumberFormatException e) { throw new BizException(400, "需求类型不正确"); }
+        if (type < 1 || type > 4) throw new BizException(400, "需求类型不正确");
         c.setServiceType(type); c.setBizLine(type == 4 ? 1 : 2);
         Object rawWarehouse = body.get("warehouseId");
         if (rawWarehouse != null && StringUtils.hasText(rawWarehouse.toString())) {
             Long wid;
             try { wid = Long.valueOf(rawWarehouse.toString()); }
-            catch (NumberFormatException e) { throw new BizException("意向云仓不正确"); }
-            if (type == 4) throw new BizException("园区入驻需求不选择云仓");
+            catch (NumberFormatException e) { throw new BizException(400, "意向云仓不正确"); }
+            if (type == 4) throw new BizException(400, "园区入驻需求不选择云仓");
             var warehouse = assignment.requireAvailableWarehouse(wid, effectiveProject);
             Long warehouseTenant = warehouse.getTenantId() == null
                     ? com.zhyq.park.common.config.MyMetaObjectHandler.DEFAULT_TENANT_ID : warehouse.getTenantId();
@@ -90,7 +90,7 @@ public class MktReferralService {
         c.setReferrerId(promoterId); c.setStatus(1); c.setOwner("待分配");
         c.setAttributionNote("客户推荐，伙伴 " + me.getInviteCode());
         try { customers.insert(c); }
-        catch (DuplicateKeyException e) { throw new BizException("该客户已在系统中(已被推荐)"); }
+        catch (DuplicateKeyException e) { throw new BizException(409, "该客户已在系统中(已被推荐)"); }
         progress.created(c.getId());
         var lock = locks.prelock(c.getId(), promoterId);
         audit.log("referral.create", "customer", c.getId(), "客户推荐，伙伴 " + promoterId);

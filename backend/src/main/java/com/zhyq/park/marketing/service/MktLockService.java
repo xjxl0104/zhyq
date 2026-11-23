@@ -281,7 +281,7 @@ public class MktLockService {
                 .eq(MktCustomerLock::getPromoterId, p.getId())
                 .in(MktCustomerLock::getStatus, LS_PRELOCK, LS_LOCKED));
         if (used != null && used >= cap) {
-            throw new BizException("已达岗位锁定上限 " + cap + " 个,请先释放或等到期");
+            throw new BizException(409, "已达岗位锁定上限 " + cap + " 个,请先释放或等到期");
         }
     }
 

@@ -55,6 +55,7 @@ export function referralPayload(form) {
   if (productWeights.some(x => !WEIGHT_RANGES.includes(x.range)) || new Set(productWeights.map(x => x.range)).size !== productWeights.length) throw new Error('请选择有效的重量段')
   if (productWeights.some(x => x.percentage !== null)) {
     if (productWeights.some(x => x.percentage === null || !Number.isFinite(x.percentage) || x.percentage < 0 || x.percentage > 100)) throw new Error('请为每个已选重量段填写 0–100 的占比')
+    if (productWeights.some(x => !/^\d+(\.\d{1,2})?$/.test(String(x.percentage)))) throw new Error('重量占比最多填写两位小数')
     if (Math.abs(productWeights.reduce((sum, x) => sum + x.percentage, 0) - 100) > 0.000001) throw new Error('重量段占比合计应为 100%')
   }
   for (const [key, ranges] of Object.entries({ productCount: COUNT_RANGES, skuCount: COUNT_RANGES, dailyOrders: ORDER_RANGES })) {

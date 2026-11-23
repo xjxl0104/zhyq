@@ -20,7 +20,7 @@
       </checkbox-group>
       <input v-if="form.requirements.productCategories.includes('其他')" class="input" v-model="form.requirements.productCategoryOther" maxlength="100" placeholder="请填写其他销售品类" />
       <view v-for="field in rangeFields" :key="field.key">
-        <view class="sub-title">{{ field.label }} <text class="muted">单选</text></view>
+        <view class="sub-title">{{ field.label }} <text class="muted">单选</text><text v-if="form.requirements[field.key]" class="clear-choice" @click="clearRange(field.key)">清除</text></view>
         <radio-group class="choices" @change="e => form.requirements[field.key] = e.detail.value">
           <label v-for="option in field.options" :key="option.value" class="choice"><radio :value="option.value" :checked="(form.requirements[field.key] || '') === option.value" color="#3857f5" /><text>{{ option.label }}</text></label>
         </radio-group>
@@ -87,7 +87,8 @@ const rangeFields = [
   { key: 'skuCount', label: 'SKU 数量', unit: '个', ranges: COUNT_RANGES },
   { key: 'dailyOrders', label: '日均单量', unit: '单', ranges: ORDER_RANGES },
   { key: 'itemsPerParcelRange', label: '平均包裹产品数量', ranges: ITEMS_PER_PARCEL_RANGES, labelFor: itemsPerParcelLabel }
-].map(f => ({ ...f, options: [{ value: '', label: '暂不填写' }, ...f.ranges.map(value => ({ value, label: f.labelFor ? f.labelFor(value) : rangeLabel(value, f.unit) }))] }))
+].map(f => ({ ...f, options: f.ranges.map(value => ({ value, label: f.labelFor ? f.labelFor(value) : rangeLabel(value, f.unit) })) }))
+function clearRange(key) { props.form.requirements[key] = '' }
 const warehouseModeOptions = [{ value: '', label: '暂不填写' }, ...WAREHOUSE_MODES.map(value => ({ value, label: value }))]
 const selectedIndex = (options, value, key = 'value') => Math.max(0, options.findIndex(option => option[key] === value))
 const selectedWeight = range => props.form.requirements.productWeights.some(x => x.range === range)
@@ -108,6 +109,7 @@ function submit() {
 .pair{display:flex;gap:16rpx}.pair .input{flex:1;min-width:0}
 .select{display:flex;align-items:center;justify-content:space-between;gap:16rpx}.sel-label{flex-shrink:0}.sel-value{color:var(--park-text);text-align:right;font-weight:600}.sel-value.empty{color:var(--park-muted);font-weight:400}
 .sub-title{font-size:26rpx;font-weight:600;margin:28rpx 0 12rpx}.sub-title .muted{font-weight:400;font-size:22rpx;margin-left:12rpx}.sub-title.first-sub{margin-top:12rpx}
+.clear-choice{float:right;padding:0 12rpx;color:var(--park-blue);font-size:22rpx;font-weight:400;line-height:40rpx}
 .choices{display:flex;flex-wrap:wrap;gap:20rpx 28rpx}.choice{display:flex;align-items:center;gap:8rpx;min-height:60rpx}.choice checkbox,.choice radio{transform:scale(.82);transform-origin:left center;width:42rpx}
 .weight-row{display:flex;align-items:center;justify-content:space-between;gap:12rpx;min-height:72rpx}.percentage{display:flex;align-items:center;gap:8rpx;width:180rpx}.percentage input{width:145rpx;padding:10rpx;border:1rpx solid var(--park-line);border-radius:10rpx;background:var(--park-bg);font-size:24rpx}
 </style>
