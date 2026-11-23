@@ -13,6 +13,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 
@@ -82,6 +83,7 @@ public class ArcFolderController {
 
     @Operation(summary = "新建文件夹")
     @PostMapping
+    @Transactional(rollbackFor = Exception.class)
     public Result<ArcFolder> create(@RequestBody FolderReq req) {
         String name = cleanName(req.getName());
         Long parentId = req.getParentId() == null || req.getParentId() <= 0 ? null : req.getParentId();
@@ -166,6 +168,7 @@ public class ArcFolderController {
 
     @Operation(summary = "同层级文件夹拖动排序")
     @PutMapping("/sort")
+    @Transactional(rollbackFor = Exception.class)
     public Result<Void> sort(@RequestBody SortReq req) {
         List<Long> ids = req.getIds();
         if (ids == null || ids.isEmpty()) return Result.ok();
@@ -199,6 +202,7 @@ public class ArcFolderController {
 
     @Operation(summary = "把文件夹移动到另一个文件夹(改变层级,子孙一起带走)")
     @PutMapping("/move")
+    @Transactional(rollbackFor = Exception.class)
     public Result<Void> move(@RequestBody MoveReq req) {
         if (req.getId() == null) throw new BizException("缺少文件夹");
         ArcFolder self = folderMapper.selectById(req.getId());
