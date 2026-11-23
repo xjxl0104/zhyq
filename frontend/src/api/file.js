@@ -4,9 +4,10 @@ import request from '@/utils/request'
 export const uploadUrl = '/api/file/upload'
 
 export const fileApi = {
-  upload(formData) {
+  upload(formData, { timeout } = {}) {
     return request.post('/file/upload', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' }
+      headers: { 'Content-Type': 'multipart/form-data' },
+      ...(timeout === undefined ? {} : { timeout })
     })
   },
   uploadBatch(formData) {

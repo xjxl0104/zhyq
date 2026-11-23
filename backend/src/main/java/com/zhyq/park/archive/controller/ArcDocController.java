@@ -29,6 +29,7 @@ import org.springframework.web.bind.annotation.*;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 
@@ -231,17 +232,24 @@ public class ArcDocController {
     @PutMapping("/move")
     @Transactional(rollbackFor = Exception.class)
     public Result<Void> move(@RequestBody MoveReq req) {
-        List<Long> ids = new ArrayList<>();
+        LinkedHashSet<Long> uniqueIds = new LinkedHashSet<>();
         if (req.getIds() != null) {
-            for (Long id : req.getIds()) if (id != null) ids.add(id);
+            for (Long id : req.getIds()) {
+                if (id == null || id <= 0) throw new BizException(400, "资料编号不正确，请刷新后重新选择");
+                uniqueIds.add(id);
+            }
         }
-        if (ids.isEmpty() && req.getId() != null) ids.add(req.getId());
+        if (uniqueIds.isEmpty() && req.getId() != null) {
+            if (req.getId() <= 0) throw new BizException(400, "资料编号不正确，请刷新后重新选择");
+            uniqueIds.add(req.getId());
+        }
+        List<Long> ids = new ArrayList<>(uniqueIds);
         if (ids.isEmpty()) throw new BizException("请选择要移动的资料");
         if (ids.size() > 500) throw new BizException("一次最多移动 500 份资料");
         Long target = req.getFolderId() == null || req.getFolderId() <= 0 ? null : req.getFolderId();
         if (target != null && folderMapper.selectById(target) == null) throw new BizException("目标文件夹不存在");
         long exists = docMapper.selectCount(new LambdaQueryWrapper<ArcDoc>().in(ArcDoc::getId, ids));
-        if (exists == 0) throw new BizException("资料不存在");
+        if (exists != ids.size()) throw new BizException(409, "部分资料已不存在，请刷新后重新选择，未移动任何资料");
         docMapper.update(null, new LambdaUpdateWrapper<ArcDoc>()
             .in(ArcDoc::getId, ids).set(ArcDoc::getFolderId, target));
         return Result.ok();

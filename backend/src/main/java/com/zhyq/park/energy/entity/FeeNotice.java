@@ -1,6 +1,7 @@
 package com.zhyq.park.energy.entity;
 
 import com.baomidou.mybatisplus.annotation.TableField;
+import com.baomidou.mybatisplus.annotation.FieldStrategy;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.zhyq.park.common.base.BaseEntity;
 import lombok.Data;
@@ -45,6 +46,9 @@ public class FeeNotice extends BaseEntity {
     /** 费用小计 */
     private BigDecimal subtotal;
     private BigDecimal paidAmount;
+    /** 缴费登记状态：0=未缴费，1=已缴费。独立于费用计算，只由缴费接口显式更新。 */
+    @TableField(updateStrategy = FieldStrategy.NEVER)
+    private Integer paymentStatus;
     private BigDecimal priorArrears;
     /** 本期应收合计 = 小计 − 已付 + 前期欠费 */
     private BigDecimal totalDue;
