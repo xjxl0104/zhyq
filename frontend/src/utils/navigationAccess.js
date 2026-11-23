@@ -2,6 +2,7 @@ import { menuTree } from '../layout/menu'
 import { buildPermissionTree, permissionIds } from './permissionTree'
 
 const SHARED_PATHS = {
+  'crm:marketing:warehouse:query': ['/crm/marketing/quote-rates'],
   budget: ['/budget/annual', '/budget/monthly'],
   'pur:plan': ['/budget/plan-year', '/budget/plan-month'],
   'pur:request': ['/budget/plan-year', '/budget/plan-month'],
