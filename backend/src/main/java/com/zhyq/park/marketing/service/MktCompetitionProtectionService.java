@@ -128,7 +128,7 @@ public class MktCompetitionProtectionService {
             if (entries.selectCount(new LambdaQueryWrapper<MktCompetitionProtection>()
                     .eq(MktCompetitionProtection::getTenantId, tenant(tenantId))
                     .eq(MktCompetitionProtection::getNameFingerprint, fingerprint)) > 0)
-                throw new BizException("该客户暂不可进入营销推荐流程，请联系园区运营核验");
+                throw new BizException(403, "该客户暂不可进入营销推荐流程，请联系园区运营核验");
         }
     }
 

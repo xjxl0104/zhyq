@@ -56,13 +56,15 @@ public class MktReferralLinkService {
         // Same partner-row lock as direct referral: protects quota and concurrent double taps.
         active(promoters.selectForUpdate(partnerId));
         String requestId = MktReferralRequirements.text(body.get("submissionId"), 64, "提交编号");
-        if (requestId == null || !requestId.matches("[A-Za-z0-9_-]{16,64}")) throw new BizException("请重新打开填报页面后提交");
-        if (!Boolean.TRUE.equals(body.get("agreed"))) throw new BizException("请先确认信息提交授权");
+        if (requestId == null || !requestId.matches("[A-Za-z0-9_-]{16,64}")) throw new BizException(400, "请重新打开填报页面后提交");
+        if (!Boolean.TRUE.equals(body.get("agreed"))) throw new BizException(400, "请先确认信息提交授权");
         String hash = hash(body);
         List<Map<String,Object>> receipts = jdbc.queryForList(
                 "SELECT request_hash,result_json FROM mkt_customer_referral_submission WHERE token=? AND submission_id=?", token, requestId);
         if (!receipts.isEmpty()) {
             var saved = receipts.get(0);
+            // A receipt already exists: keep this as an unresolved submission for the client,
+            // never signal the editable 4xx rejection used when no customer was created.
             if (!hash.equals(saved.get("request_hash"))) throw new BizException("该提交已处理，请勿重复修改提交");
             try { return json.readValue(saved.get("result_json").toString(), new TypeReference<Map<String,Object>>() {}); }
             catch (Exception e) { throw new BizException("提交结果暂不可读取，请联系运营"); }
@@ -92,6 +94,6 @@ public class MktReferralLinkService {
         try {
             byte[] bytes = json.copy().configure(SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS, true).writeValueAsBytes(body);
             return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes));
-        } catch (Exception e) { throw new BizException("填报内容格式不正确"); }
+        } catch (Exception e) { throw new BizException(400, "填报内容格式不正确"); }
     }
 }
