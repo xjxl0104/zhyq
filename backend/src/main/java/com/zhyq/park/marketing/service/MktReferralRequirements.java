@@ -23,7 +23,7 @@ public final class MktReferralRequirements {
 
     public static String normalize(Object input) {
         if (input == null) return null;
-        if (!(input instanceof Map<?, ?> fields) || fields.size() > 30) throw new BizException("仓配需求格式不正确");
+        if (!(input instanceof Map<?, ?> fields) || fields.size() > 30) throw new BizException(400, "仓配需求格式不正确");
         Map<String,Object> out = new LinkedHashMap<>();
         List<String> platforms = choices(fields.get("salesPlatforms"), PLATFORMS, "销售平台");
         List<String> categories = choices(fields.get("productCategories"), PRODUCT_CATEGORIES, "销售品类");
@@ -45,11 +45,11 @@ public final class MktReferralRequirements {
         out.put("couriers", couriers);
         out.put("courierOther", other(fields.get("courierOther"), couriers, "其他快递承运商"));
         Object invoice = fields.get("invoiceRequired");
-        if (invoice != null && !(invoice instanceof Boolean)) throw new BizException("请选择是否开发票");
+        if (invoice != null && !(invoice instanceof Boolean)) throw new BizException(400, "请选择是否开发票");
         out.put("invoiceRequired", invoice);
         // 现有仓配现状
         String mode = text(fields.get("warehouseMode"), 20, "目前仓配方式");
-        if (mode != null && !WAREHOUSE_MODES.contains(mode)) throw new BizException("目前仓配方式选项不正确");
+        if (mode != null && !WAREHOUSE_MODES.contains(mode)) throw new BizException(400, "目前仓配方式选项不正确");
         out.put("warehouseMode", mode);
         List<String> current = choices(fields.get("currentCouriers"), COURIERS, "目前合作快递");
         out.put("currentCouriers", current);
@@ -69,66 +69,66 @@ public final class MktReferralRequirements {
 
     public static String text(Object input, int max, String label) {
         if (input == null) return null;
-        if (!(input instanceof String value)) throw new BizException(label + "格式不正确");
+        if (!(input instanceof String value)) throw new BizException(400, label + "格式不正确");
         String result = value.trim();
-        if (result.length() > max) throw new BizException(label + "最多 " + max + " 字");
+        if (result.length() > max) throw new BizException(400, label + "最多 " + max + " 字");
         return result.isEmpty() ? null : result;
     }
     private static List<String> choices(Object input, Set<String> valid, String label) {
         if (input == null) return List.of();
-        if (!(input instanceof List<?> list) || list.size() > valid.size()) throw new BizException(label + "选项不正确");
+        if (!(input instanceof List<?> list) || list.size() > valid.size()) throw new BizException(400, label + "选项不正确");
         LinkedHashSet<String> result = new LinkedHashSet<>();
         for (Object item : list) {
-            if (!(item instanceof String str) || !valid.contains(str) || !result.add(str)) throw new BizException(label + "选项不正确");
+            if (!(item instanceof String str) || !valid.contains(str) || !result.add(str)) throw new BizException(400, label + "选项不正确");
         }
-        if (result.contains("无") && result.size() > 1) throw new BizException(label + "选了“无”，就不能再选其他选项");
+        if (result.contains("无") && result.size() > 1) throw new BizException(400, label + "选了“无”，就不能再选其他选项");
         return List.copyOf(result);
     }
     private static String other(Object value, List<String> selected, String label) {
         String result = text(value, 100, label);
         if (!selected.contains("其他")) return null;
-        if (result == null) throw new BizException("请填写" + label);
+        if (result == null) throw new BizException(400, "请填写" + label);
         return result;
     }
     private static String range(Object value, Set<String> valid, String label) {
         String result = text(value, 40, label);
-        if (result != null && !valid.contains(result)) throw new BizException(label + "选项不正确");
+        if (result != null && !valid.contains(result)) throw new BizException(400, label + "选项不正确");
         return result;
     }
     private static BigDecimal itemsPerParcel(Object value) {
         if (value == null || (value instanceof String s && s.isBlank())) return null;
         BigDecimal result;
         try { result = new BigDecimal(value.toString().trim()); }
-        catch (NumberFormatException e) { throw new BizException("平均包裹产品数量须为数字"); }
+        catch (NumberFormatException e) { throw new BizException(400, "平均包裹产品数量须为数字"); }
         if (result.signum() <= 0 || result.compareTo(new BigDecimal("9999")) > 0 || result.stripTrailingZeros().scale() > 2)
-            throw new BizException("平均包裹产品数量应大于 0，最多两位小数");
+            throw new BizException(400, "平均包裹产品数量应大于 0，最多两位小数");
         return result;
     }
     private static List<Map<String,Object>> weights(Object input) {
         if (input == null) return List.of();
-        if (!(input instanceof List<?> list) || list.size() > WEIGHTS.size()) throw new BizException("产品重量格式不正确");
+        if (!(input instanceof List<?> list) || list.size() > WEIGHTS.size()) throw new BizException(400, "产品重量格式不正确");
         List<Map<String,Object>> result = new ArrayList<>();
         Set<String> seen = new HashSet<>();
         BigDecimal total = BigDecimal.ZERO;
         int percentages = 0;
         for (Object item : list) {
-            if (!(item instanceof Map<?,?> entry)) throw new BizException("产品重量格式不正确");
+            if (!(item instanceof Map<?,?> entry)) throw new BizException(400, "产品重量格式不正确");
             String key = range(entry.get("range"), WEIGHTS, "产品重量");
-            if (key == null || !seen.add(key)) throw new BizException("请选择不同的产品重量段");
+            if (key == null || !seen.add(key)) throw new BizException(400, "请选择不同的产品重量段");
             BigDecimal percent = null;
             Object value = entry.get("percentage");
             if (value != null) {
-                if (!(value instanceof Number)) throw new BizException("重量占比须为数字");
+                if (!(value instanceof Number)) throw new BizException(400, "重量占比须为数字");
                 try { percent = new BigDecimal(value.toString()); }
-                catch (NumberFormatException e) { throw new BizException("重量占比须为数字"); }
+                catch (NumberFormatException e) { throw new BizException(400, "重量占比须为数字"); }
                 if (percent.compareTo(BigDecimal.ZERO) < 0 || percent.compareTo(new BigDecimal("100")) > 0 || percent.scale() > 2)
-                    throw new BizException("重量占比应为 0–100，最多两位小数");
+                    throw new BizException(400, "重量占比应为 0–100，最多两位小数");
                 total = total.add(percent); percentages++;
             }
             Map<String,Object> row = new LinkedHashMap<>(); row.put("range", key); row.put("percentage", percent); result.add(row);
         }
         if (percentages > 0 && (percentages != result.size() || total.compareTo(new BigDecimal("100")) != 0))
-            throw new BizException("填写重量占比时，请填写所有已选重量段且合计为 100%");
+            throw new BizException(400, "填写重量占比时，请填写所有已选重量段且合计为 100%");
         return result;
     }
 }

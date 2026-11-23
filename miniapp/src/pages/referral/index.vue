@@ -14,7 +14,7 @@
     </view>
     <view class="card">
       <view class="muted">推荐后直接锁定 3 个自然月；签约成交后，推荐归属长期有效。</view>
-      <ReferralForm :form="form" :warehouses="warehouses" :loading="loading" @submit="submit" />
+      <ReferralForm :form="form" :warehouses="warehouses" :loading="loading" :disabled="submitted" @submit="submit" />
     </view>
   </view>
 </template>
@@ -25,7 +25,7 @@ import { bizApi } from '@/api'
 import { downloadReferralCode } from '@/utils/request'
 import { newReferralForm, referralShare } from '@/utils/referral-intake.mjs'
 import ReferralForm from '@/components/ReferralForm.vue'
-const warehouses = ref([]), loading = ref(false), form = reactive(newReferralForm())
+const warehouses = ref([]), loading = ref(false), submitted = ref(false), form = reactive(newReferralForm())
 const link = ref({}), linkError = ref(''), linkLoading = ref(false), codeLoading = ref(false), codeImage = ref('')
 onLoad(async () => {
   await Promise.all([loadLink(), bizApi.warehouses().then(items => { warehouses.value = items }).catch(() => {})])
@@ -65,10 +65,11 @@ async function saveCode() {
   // #endif
 }
 async function submit(body) {
-  if (loading.value) return
+  if (loading.value || submitted.value) return
   loading.value = true
   try {
     const r = await bizApi.referral(body)
+    submitted.value = true
     uni.showModal({ title: '推荐成功', content: `客户已锁定${r.lockUntil ? '至 ' + r.lockUntil.slice(0, 10) : ' 3 个自然月'}，签约成交后长期有效。园区专员将跟进您的客户。`, showCancel: false,
       success: () => uni.switchTab({ url: '/pages/customers/index' }) })
   } catch (e) { uni.showToast({ title: e.message || '推荐提交失败，请重试', icon: 'none' }) }

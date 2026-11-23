@@ -5,6 +5,13 @@ import { readFileSync } from 'node:fs'
 import { newReferralForm, referralPayload, parseReferralToken, referralShare, requirementRows, newSubmissionId } from '../src/utils/referral-intake.mjs'
 const TOKEN = '0123456789abcdef0123456789abcdef'
 const form = () => ({ ...newReferralForm(), name: '测试客户' })
+test('weight percentage precision matches backend before submitting', () => {
+  const f = form()
+  f.requirements.productWeights = [{ range: '0-0.3', percentage: '33.333' }, { range: '0.3-0.5', percentage: '66.667' }]
+  assert.throws(() => referralPayload(f), /两位小数/)
+  f.requirements.productWeights = [{ range: '0-0.3', percentage: '33.33' }, { range: '0.3-0.5', percentage: '66.67' }]
+  assert.deepEqual(referralPayload(f).requirements.productWeights.map(x => x.percentage), [33.33, 66.67])
+})
 test('new fields are optional; invoice is not silently false', () => {
   const r = referralPayload(form())
   assert.equal(r.requirements.invoiceRequired, null)

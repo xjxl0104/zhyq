@@ -34,13 +34,13 @@ public class MktCustomerAssignmentService {
     private final MktCustomerProgressService progress;
 
     public MktWarehouse requireAvailableWarehouse(Long warehouseId, Long projectId) {
-        if (warehouseId == null || warehouseId <= 0) throw new BizException("请选择承接云仓");
+        if (warehouseId == null || warehouseId <= 0) throw new BizException(400, "请选择承接云仓");
         MktWarehouse warehouse = warehouses.selectForUpdate(warehouseId);
         if (warehouse == null || !Integer.valueOf(MktWarehouseOnboardingService.JS_ONLINE).equals(warehouse.getJoinStatus())) {
-            throw new BizException("云仓不存在或尚未上线，不能接收客户");
+            throw new BizException(409, "云仓不存在或尚未上线，不能接收客户");
         }
         if (!MktWarehouseOnboardingService.isYunshanMode(warehouse.getOrderMode()) && !Integer.valueOf(MktWarehouseOnboardingService.ERP_LIVE).equals(warehouse.getErpStatus())) {
-            throw new BizException("云仓尚未配置可用订单模式，请先选择人工导入或完成 ERP 接入");
+            throw new BizException(409, "云仓尚未配置可用订单模式，请先选择人工导入或完成 ERP 接入");
         }
         if (projectId != null && warehouse.getProjectId() != null && !projectId.equals(warehouse.getProjectId())) {
             throw new BizException(403, "不能跨园区分派客户");

@@ -98,31 +98,45 @@ test('warehouse picker reopens at selected value and can return to first option'
     assert.equal(vm.runInContext(value.exp.content, context), 0)
   }
 })
-test('business scale uses visible choices and each range submits one selected value or empty', () => {
+test('optional business ranges start empty, show only real choices, and can be cleared', () => {
   const form = intake.newReferralForm(); form.name = '扫码客户'
   let emitted
   const context = vm.createContext({ ...intake, form, defineProps: () => ({ form }),
     defineEmits: () => (_event, body) => { emitted = body }, uni: { showToast() {} } })
   vm.runInContext(script(formSource), context)
-  const groups = [], pickers = []
+  const groups = [], pickers = [], clearButtons = []
   const visit = node => {
     if (node.tag === 'radio-group') groups.push(node)
     if (node.tag === 'picker') pickers.push(node)
+    if (node.tag === 'text' && node.props.some(prop => prop.type === 6 && prop.name === 'class' && prop.value?.content === 'clear-choice')) clearButtons.push(node)
     for (const child of node.children || []) visit(child)
   }
   visit(parse(formSource).descriptor.template.ast)
   assert.equal(groups.length, 1)
+  assert.equal(clearButtons.length, 1)
   assert.equal(pickers.length, 1) // Only existing warehouse-mode picker remains outside business scale.
   const change = groups[0].props.find(prop => prop.type === 7 && prop.name === 'on' && prop.arg?.content === 'change')
+  const clear = clearButtons[0].props.find(prop => prop.type === 7 && prop.name === 'on' && prop.arg?.content === 'click')
+  const clearVisible = clearButtons[0].props.find(prop => prop.type === 7 && prop.name === 'if')
   const fields = vm.runInContext('rangeFields', context)
   assert.deepEqual(Array.from(fields, field => field.key), ['skuCount', 'dailyOrders', 'itemsPerParcelRange'])
   for (const field of fields) {
     context.field = field
-    for (const option of [field.options[1], field.options[2], field.options[0]]) {
+    assert.equal(form.requirements[field.key], '')
+    assert.equal(Boolean(vm.runInContext(clearVisible.exp.content, context)), false)
+    assert.ok(field.options.every(option => option.value && option.label !== '暂不填写'))
+    vm.runInContext('submit()', context)
+    assert.equal(emitted.requirements[field.key], '')
+    for (const option of [field.options[0], field.options.at(-1)]) {
       context.next = option.value
       vm.runInContext(`(${change.exp.content})({detail:{value:next}})`, context)
       vm.runInContext('submit()', context)
       assert.equal(emitted.requirements[field.key], option.value)
     }
+    assert.equal(Boolean(vm.runInContext(clearVisible.exp.content, context)), true)
+    vm.runInContext(clear.exp.content, context)
+    vm.runInContext('submit()', context)
+    assert.equal(emitted.requirements[field.key], '')
+    assert.equal(Boolean(vm.runInContext(clearVisible.exp.content, context)), false)
   }
 })

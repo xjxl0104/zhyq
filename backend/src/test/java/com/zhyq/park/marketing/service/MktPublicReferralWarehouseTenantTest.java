@@ -107,4 +107,45 @@ class MktPublicReferralWarehouseTenantTest {
         verify(customers).insert(saved.capture());
         assertThat(saved.getValue().getIntendedWarehouseId()).isNull();
     }
+
+    static Stream<Map<String,Object>> invalidFields() {
+        return Stream.of(Map.of("name", " "), Map.of("phone", "123"),
+                Map.of("requirements", Map.of("productCategories", List.of("其他"))),
+                Map.of("requirements", Map.of("skuCount", "not-a-range")),
+                Map.of("requirements", Map.of("productWeights", List.of(Map.of("range", ">=3", "percentage", 90)))),
+                Map.of("serviceType", 9), Map.of("warehouseId", "bad-id"));
+    }
+
+    @ParameterizedTest @MethodSource("invalidFields")
+    void rejectedInputReturnsEditableErrorWithoutCreatingCustomerOrReceipt(Map<String,Object> changes) {
+        body.putAll(changes);
+        assertThatThrownBy(() -> links.submit(token, body)).isInstanceOfSatisfying(BizException.class,
+                error -> assertThat(error.getCode()).isEqualTo(400));
+        verify(customers, never()).insert(any(Customer.class));
+        verifyNoInteractions(locks, progress, audit);
+        verify(jdbc, never()).update(startsWith("INSERT INTO mkt_customer_referral_submission"), any(Object[].class));
+    }
+
+    @Test void selfReferralRejectionLetsCustomerCorrectPhone() {
+        partner.setPhone("13800000007");
+        body.put("phone", "13800000007");
+        assertThatThrownBy(() -> links.submit(token, body)).isInstanceOfSatisfying(BizException.class,
+                error -> assertThat(error.getCode()).isEqualTo(400)).hasMessageContaining("自我推荐");
+        verify(customers, never()).insert(any(Customer.class));
+        body.put("phone", "13800000008");
+        assertThat(links.submit(token, body).get("customerId")).isEqualTo(42L);
+        verify(customers, times(1)).insert(any(Customer.class));
+    }
+
+    @Test void existingCustomerAndDailyQuotaAreExplicitRejections() {
+        when(customers.selectCount(any())).thenReturn(1L);
+        assertThatThrownBy(() -> links.submit(token, body)).isInstanceOfSatisfying(BizException.class,
+                error -> assertThat(error.getCode()).isEqualTo(409));
+        when(customers.selectCount(any())).thenReturn(0L);
+        when(customers.countReferralsSince(eq(7L), any())).thenReturn(20L);
+        assertThatThrownBy(() -> links.submit(token, body)).isInstanceOfSatisfying(BizException.class,
+                error -> assertThat(error.getCode()).isEqualTo(429));
+        verify(customers, never()).insert(any(Customer.class));
+        verify(jdbc, never()).update(startsWith("INSERT INTO mkt_customer_referral_submission"), any(Object[].class));
+    }
 }
