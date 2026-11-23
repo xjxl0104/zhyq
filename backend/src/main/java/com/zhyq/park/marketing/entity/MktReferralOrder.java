@@ -41,8 +41,12 @@ public class MktReferralOrder extends BaseEntity {
     private Long pricingId;
     private BigDecimal commissionUnitPrice;
     private Integer commissionOrderCount;
-    /** 公司留存，不生成个人佣金流水。 */
+    /** 平台留存合计（服务费 + 未分配余额），保留旧计佣池对账含义。 */
     private BigDecimal companyPerOrder;
+    /** 新计佣记录的平台服务费快照，精确到 0.0001 元；历史未记录的保持空。 */
+    private BigDecimal platformServiceFeePerOrder;
+    /** 平台服务费之外尚未分配的金额，包含不足个人输入精度的尾差。 */
+    private BigDecimal unallocatedPerOrder;
     private Integer qty;
     private Integer packages;
     /** 园区按合同单价表自算的服务费 */

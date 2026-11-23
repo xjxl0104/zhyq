@@ -206,6 +206,8 @@ public class MpBizController {
         m.put("grade", c.getGrade()); m.put("serviceType", c.getServiceType()); m.put("status", c.getStatus()); m.put("createTime", c.getCreateTime());
         m.put("brandName", c.getBrandName()); m.put("demand", c.getDemandArea()); m.put("remark", c.getIntakeRemark());
         m.put("requirements", com.zhyq.park.marketing.service.MktReferralRequirements.parse(c.getFulfillmentRequirements()));
+        m.put("warehouseSalespersonId", c.getWarehouseSalespersonId());
+        m.put("warehouseSalesStage", c.getWarehouseSalesStage());
         m.putAll(assignmentService.assignmentView(c));
         MktCustomerLock lock = lockService.displayLockOf(c.getId());
         if (lock != null) {

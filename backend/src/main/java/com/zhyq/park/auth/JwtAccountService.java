@@ -28,6 +28,7 @@ public class JwtAccountService {
     private final MktWarehouseMapper warehouses;
     private final MktCredentialMapper credentials;
     private final com.zhyq.park.marketing.admin.MktAccountControl accountControl;
+    private final com.zhyq.park.marketing.mapper.MktWarehouseContactMapper warehouseContacts;
 
     public record Account(String type, Long id, String subject, List<String> authorities, String credentialState) {
         @Override public String toString() { return "Account[type=" + type + ", id=" + id + "]"; }
@@ -35,6 +36,24 @@ public class JwtAccountService {
 
     public Account load(String type, Long id) {
         if (id == null || id <= 0) throw unavailable();
+        if ("wh_contact".equals(type)) {
+            var contact = warehouseContacts.selectById(id);
+            if (contact == null || !Integer.valueOf(1).equals(contact.getStatus())
+                    || contact.getWarehouseId() == null
+                    || !("owner".equals(contact.getRole()) || "member".equals(contact.getRole()))) throw unavailable();
+            // The parent's current account control and password revision remain authoritative.
+            Account parent = load("wh", contact.getWarehouseId());
+            var warehouse = warehouses.selectById(contact.getWarehouseId());
+            if (warehouse == null || (warehouse.getProjectId() != null && !warehouse.getProjectId().equals(contact.getProjectId()))
+                    || (warehouse.getTenantId() != null && !warehouse.getTenantId().equals(contact.getTenantId()))) throw unavailable();
+            if (contact.getPhone() == null || !contact.getPhone().matches("^1\\d{10}$") || contact.getName() == null || contact.getName().isBlank()) throw unavailable();
+            if ("owner".equals(contact.getRole()) && !java.util.Objects.equals(warehouse.getPhone(), contact.getPhone())) throw unavailable();
+            String subject = "wh:" + contact.getWarehouseId() + ":contact:" + id;
+            String state = parent.credentialState() + ":contact:" + id + ":" + contact.getRole()
+                    + ":" + contact.getPhone() + ":" + contact.getOpenid() + ":" + contact.getAuthRevision();
+            return new Account(type, id, subject, List.of("ROLE_WH",
+                    "owner".equals(contact.getRole()) ? "ROLE_WH_OWNER" : "ROLE_WH_MEMBER"), state);
+        }
         if ("admin".equals(type)) {
             SysUser u = users.selectById(id);
             if (u == null || !Integer.valueOf(1).equals(u.getStatus()) || reservedUsername(u.getUsername())) throw unavailable();

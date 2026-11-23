@@ -14,15 +14,15 @@ import java.util.Map;
 @RequiredArgsConstructor
 @PreAuthorize("hasRole('WH')")
 public class WhMeController {
-    private final MktSelfProfileService profiles;
+    private final WhWorkspaceService workspace;
 
     @Operation(summary = "本云仓个人信息") @GetMapping("/me")
     public Result<Map<String, Object>> me() {
-        return Result.ok(profiles.warehouseProfile(WhAuthContext.currentWarehouseId()));
+        return Result.ok(workspace.profile());
     }
 
     @Operation(summary = "补充本云仓个人信息，不变更审核状态") @PutMapping("/me")
     public Result<Map<String, Object>> updateMe(@RequestBody Map<String, String> body) {
-        return Result.ok(profiles.updateWarehouse(WhAuthContext.currentWarehouseId(), body));
+        return Result.ok(workspace.updateProfile(body));
     }
 }

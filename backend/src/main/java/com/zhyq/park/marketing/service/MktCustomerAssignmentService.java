@@ -61,6 +61,7 @@ public class MktCustomerAssignmentService {
         MktWarehouse warehouse = warehouseId == null ? null : requireAvailableWarehouse(warehouseId, customer.getProjectId());
         LambdaUpdateWrapper<Customer> update = versionGuard(customer)
                 .set(Customer::getAssignedWarehouseId, warehouseId)
+                .set(Customer::getWarehouseSalespersonId, null).set(Customer::getWarehouseSalesStage,0)
                 .set(Customer::getWarehouseAssignmentStatus, warehouseId == null ? UNASSIGNED : PENDING);
         if (customer.getProjectId() == null && warehouse != null && warehouse.getProjectId() != null) {
             update.set(Customer::getProjectId, warehouse.getProjectId());
@@ -164,6 +165,7 @@ public class MktCustomerAssignmentService {
             LambdaUpdateWrapper<Customer> update = versionGuard(customer);
             if (signed) update.set(Customer::getStatus, 1);
             if (releaseAssignment) update.set(Customer::getAssignedWarehouseId, null)
+                    .set(Customer::getWarehouseSalespersonId,null).set(Customer::getWarehouseSalesStage,0)
                     .set(Customer::getWarehouseAssignmentStatus, UNASSIGNED);
             requireUpdated(customers.update(null, update));
             int remainingStage = releaseAssignment ? 0 : Integer.valueOf(ACCEPTED).equals(customer.getWarehouseAssignmentStatus()) ? 60

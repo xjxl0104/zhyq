@@ -9,6 +9,7 @@ import com.zhyq.park.common.setting.BizSettings;
 import com.zhyq.park.marketing.entity.MktPromoter;
 import com.zhyq.park.marketing.mapper.MktPromoterMapper;
 import com.zhyq.park.marketing.service.MktPromoterService;
+import com.zhyq.park.marketing.service.LoginProfileRequirements;
 import io.jsonwebtoken.Claims;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -16,6 +17,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
@@ -73,6 +75,9 @@ public class MpAuthService {
             return new LoginResult(false, null, openid, null, mockLogin ? null : loginTickets.issue(session));
         }
         JwtAccountService.assertPromoterActive(p);
+        if (!LoginProfileRequirements.complete(p.getName(), p.getPhone())) {
+            return new LoginResult(false, null, openid, null, mockLogin ? null : loginTickets.issue(session));
+        }
         touchLogin(p);
         return new LoginResult(true, issue(p), openid, p);
     }
@@ -81,11 +86,13 @@ public class MpAuthService {
      * 手机号授权注册/绑定:openid 未注册 → 用手机号 + 邀请码建伙伴;
      * 手机号已被后台手工录入过(openid 为空)→ 把 openid 绑上去(后台先录、伙伴后来扫码的场景)。
      */
+    @Transactional
     public LoginResult bindPhone(String openid, String phone, String inviteCode, String name) {
         if (!mockLogin) throw new BizException("真实模式必须使用微信手机号授权");
         return bindPhoneInternal(openid, phone, inviteCode, name);
     }
 
+    @Transactional
     public LoginResult bindPhoneAuthorized(String openid, String loginTicket, String phoneCode,
                                            String encryptedData, String iv, String inviteCode, String name) {
         if (mockLogin) throw new BizException("mock 模式请使用明文手机号");
@@ -110,9 +117,11 @@ public class MpAuthService {
 
     private LoginResult bindPhoneInternal(String openid, String phone, String inviteCode, String name) {
         if (!StringUtils.hasText(openid)) throw new BizException("请先完成微信登录");
+        phone = LoginProfileRequirements.requirePhone(phone);
         MktPromoter byOpenid = promoterMapper.selectOne(new LambdaQueryWrapper<MktPromoter>()
                 .eq(MktPromoter::getOpenid, openid).last("limit 1"));
         if (byOpenid != null) {
+            completeVerifiedProfile(byOpenid, phone, name);
             return new LoginResult(true, issue(byOpenid), openid, byOpenid);
         }
         MktPromoter byPhone = promoterMapper.selectOne(new LambdaQueryWrapper<MktPromoter>()
@@ -121,8 +130,10 @@ public class MpAuthService {
             JwtAccountService.assertPromoterActive(byPhone);
             phoneBindingGuard.assertCanBind("mp", byPhone.getId());
             if (StringUtils.hasText(byPhone.getOpenid())) throw new BizException("该手机号已绑定其他微信");
+            completeVerifiedProfile(byPhone, phone, name);
             int updated = promoterMapper.update(null, new LambdaUpdateWrapper<MktPromoter>()
                     .eq(MktPromoter::getId, byPhone.getId()).isNull(MktPromoter::getOpenid)
+                    .in(MktPromoter::getStatus, 1, 3)
                     .set(MktPromoter::getOpenid, openid).set(MktPromoter::getLastLogin, LocalDateTime.now()));
             if (updated == 0) throw new BizException("该手机号已绑定其他微信");
             byPhone.setOpenid(openid);
@@ -132,7 +143,7 @@ public class MpAuthService {
         MktPromoter p = new MktPromoter();
         p.setOpenid(openid);
         p.setPhone(phone);
-        p.setName(StringUtils.hasText(name) ? name : "伙伴" + phone.substring(7));
+        p.setName(LoginProfileRequirements.requireName(name));
         p.setLastLogin(LocalDateTime.now());
         try {
             promoterService.register(p, inviteCode, "mp");
@@ -143,6 +154,43 @@ public class MpAuthService {
             throw e;
         }
         return new LoginResult(true, issue(p), openid, p);
+    }
+
+    /** A verified phone may complete missing fields, but never silently switch an existing identity. */
+    public void completeVerifiedProfile(MktPromoter promoter, String verifiedPhone, String suppliedName) {
+        JwtAccountService.assertPromoterActive(promoter);
+        String currentPhone = StringUtils.hasText(promoter.getPhone()) ? promoter.getPhone().trim() : null;
+        if (verifiedPhone != null && currentPhone != null && !currentPhone.equals(verifiedPhone))
+            throw new BizException(409, "授权手机号与当前微信绑定账号不一致，请使用原手机号或联系园区运营");
+        boolean fillPhone = currentPhone == null;
+        boolean fillName = LoginProfileRequirements.missingName(promoter.getName());
+        String phone = fillPhone ? LoginProfileRequirements.requirePhone(verifiedPhone) : currentPhone;
+        String name = fillName ? LoginProfileRequirements.requireName(suppliedName) : promoter.getName();
+        if (!fillPhone && !fillName) return;
+        if (fillPhone) {
+            MktPromoter occupied = promoterMapper.selectOne(new LambdaQueryWrapper<MktPromoter>()
+                    .eq(MktPromoter::getPhone, phone).last("limit 1"));
+            if (occupied != null && !promoter.getId().equals(occupied.getId()))
+                throw new BizException(409, "该手机号已有伙伴账号，请联系园区运营核验，不能自动合并");
+            phoneBindingGuard.assertCanBind("mp", promoter.getId());
+        }
+        LambdaUpdateWrapper<MktPromoter> update = new LambdaUpdateWrapper<MktPromoter>()
+                .eq(MktPromoter::getId, promoter.getId()).in(MktPromoter::getStatus, 1, 3);
+        if (promoter.getOpenid() == null) update.isNull(MktPromoter::getOpenid);
+        else update.eq(MktPromoter::getOpenid, promoter.getOpenid());
+        if (fillPhone) {
+            if (promoter.getPhone() == null) update.isNull(MktPromoter::getPhone);
+            else update.eq(MktPromoter::getPhone, promoter.getPhone());
+            update.set(MktPromoter::getPhone, phone);
+        }
+        if (fillName) {
+            if (promoter.getName() == null) update.isNull(MktPromoter::getName);
+            else update.eq(MktPromoter::getName, promoter.getName());
+            update.set(MktPromoter::getName, name);
+        }
+        if (promoterMapper.update(null, update) != 1)
+            throw new BizException(409, "账号资料已变化，请重新登录后确认");
+        promoter.setPhone(phone); promoter.setName(name);
     }
 
     /** 兼容历史无邀请码账号在原宽限期内补填；新注册必须填写邀请码。 */

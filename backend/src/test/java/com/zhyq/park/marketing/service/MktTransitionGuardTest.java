@@ -280,7 +280,7 @@ class MktTransitionGuardTest {
 
         @BeforeEach
         void setUp() {
-            service = new MktWarehouseOnboardingService(warehouseMapper, stepMapper, auditService);
+            service = new MktWarehouseOnboardingService(warehouseMapper, stepMapper, auditService, org.mockito.Mockito.mock(WhPhoneClaimService.class));
             captor = ArgumentCaptor.forClass(Wrapper.class);
             when(warehouseMapper.update(isNull(), captor.capture())).thenReturn(1);
             MktWarehouse w = new MktWarehouse(); w.setId(3L); w.setJoinStatus(JS_PAUSED); w.setErpStatus(ERP_LIVE); w.setName("测试仓"); w.setContact("联系人"); w.setPhone("13800000000"); w.setRegion("杭州"); w.setAddress("杭州园区");

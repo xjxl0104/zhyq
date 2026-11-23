@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 import java.util.Map;
 
+@org.springframework.security.access.prepost.PreAuthorize("hasRole('WH_OWNER')")
 @RestController @RequestMapping("/wh/v1") @RequiredArgsConstructor
 public class WhBillingController {
     private final MktServiceFeeBillMapper bills;

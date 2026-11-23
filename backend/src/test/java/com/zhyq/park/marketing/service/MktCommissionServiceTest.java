@@ -87,6 +87,10 @@ class MktCommissionServiceTest {
         var order = service.createAndSplit(ev);
         assertThat(order.getBaseMode()).isEqualTo(2); assertThat(order.getPricingId()).isEqualTo(20L);
         assertThat(order.getCompanyPerOrder()).isEqualByComparingTo("0.199");
+        assertThat(order.getPlatformServiceFeePerOrder()).isEqualByComparingTo("0.0300");
+        assertThat(order.getUnallocatedPerOrder()).isEqualByComparingTo("0.1690");
+        assertThat(order.getPlatformServiceFeePerOrder().add(order.getUnallocatedPerOrder()))
+                .isEqualByComparingTo(order.getCompanyPerOrder());
         assertThat(order.getCommissionUnitPrice()).isEqualByComparingTo("0.300");
         ArgumentCaptor<MktPromoterCommission> cap = ArgumentCaptor.forClass(MktPromoterCommission.class);
         verify(commissionMapper,times(3)).insert(cap.capture());

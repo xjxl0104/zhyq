@@ -10,7 +10,7 @@
 <script setup>
 import { computed } from 'vue'
 import { requirementRows } from '@/utils/referral-intake.mjs'
-const props = defineProps({ requirements: { type: Object, default: () => ({}) }, demand: String, remark: String })
+const props = defineProps({ requirements: { type: [Object, String], default: () => ({}) }, demand: String, remark: String })
 const rows = computed(() => requirementRows(props.requirements || {}))
 </script>
-<style scoped>.detail{display:flex;justify-content:space-between;gap:24rpx;margin-top:20rpx;line-height:1.7}.detail text:last-child{max-width:65%;text-align:right;white-space:pre-wrap;overflow-wrap:anywhere}.empty{margin-top:20rpx}</style>
+<style scoped>.title{font-size:36rpx}.detail{display:flex;justify-content:space-between;gap:24rpx;margin-top:20rpx;line-height:1.7}.detail text:first-child{flex-shrink:0;max-width:40%;font-size:28rpx}.detail text:last-child{max-width:65%;text-align:right;white-space:pre-wrap;overflow-wrap:anywhere}.empty{margin-top:20rpx}</style>

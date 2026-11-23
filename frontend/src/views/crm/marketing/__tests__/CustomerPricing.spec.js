@@ -17,7 +17,7 @@ const customer = { id: 17, name: '品牌甲', referrerId: 30, referrerName: '推
 const configured = {
   customerId: 17, customerName: '品牌甲', pricingId: 8, configured: true, canEdit: false,
   ownerPromoterId: 40, ownerName: '定价伙伴', totalPerOrder: '0.030', ownerPerOrder: '0.006',
-  allocatedPerOrder: '0.013', companyPerOrder: '0.011', remainingPerOrder: '0.011',
+  allocatedPerOrder: '0.013', companyPerOrder: '0.011', remainingPerOrder: '0.011', platformServiceFeePerOrder: '0.0030', unallocatedPerOrder: '0.0080',
   beneficiaries: [
     { promoterId: 31, promoterName: '受益人甲', positionCode: 'P1', amountPerOrder: '0.004' },
     { promoterId: 32, promoterName: '受益人乙', positionCode: 'P3', amountPerOrder: '0.009' }
@@ -58,7 +58,7 @@ describe('管理端查看 P4 按单佣金', () => {
     expect(wrapper.text()).toContain('一号云仓')
     expect(wrapper.text()).toContain('定价伙伴 · P4 #40')
     const amounts = Object.fromEntries(wrapper.findAll('.pricing-amounts > div').map(row => [row.get('dt').text(), row.get('dd').text()]))
-    expect(amounts).toEqual({ 总佣金单价: '0.030', 'P4 本人金额': '0.006', 其他受益人合计: '0.013', 公司剩余额: '0.011' })
+    expect(amounts).toEqual({ 总佣金单价: '0.030', 'P4 本人金额': '0.006', 其他受益人合计: '0.013', '平台服务费（10%）': '0.0030', 剩余未分配: '0.0080' })
     expect(wrapper.text()).toContain('受益人甲')
     expect(wrapper.text()).toContain('0.004')
     expect(wrapper.findAll('input, select, textarea')).toHaveLength(0)

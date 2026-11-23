@@ -21,6 +21,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 import java.util.Map;
 
+@org.springframework.security.access.prepost.PreAuthorize("hasRole('WH_OWNER')")
 @RestController
 @RequestMapping("/wh/v1")
 @RequiredArgsConstructor
@@ -32,6 +33,8 @@ public class WhOnboardingController {
     private final MktWarehouseFileService files;
     private final ObjectMapper json;
     private final MktSelfProfileService profiles;
+    @org.springframework.beans.factory.annotation.Autowired
+    private WhIdentityService identities;
 
     @GetMapping("/apply")
     public Result<MktWarehouse> apply() { return Result.ok(WhAuthContext.requireWarehouse(warehouseMapper)); }
@@ -41,13 +44,15 @@ public class WhOnboardingController {
     @Transactional
     public Result<MktWarehouse> saveApply(@RequestBody MktWarehouse body) {
         Long id = WhAuthContext.currentWarehouseId();
+        MktWarehouseOnboardingService.validateProfile(body);
+        identities.maintainOwner(id,body.getContact(),body.getPhone(),false);
         MktWarehouse before = warehouseMapper.selectOne(new LambdaQueryWrapper<MktWarehouse>()
                 .eq(MktWarehouse::getId, id).last("FOR UPDATE"));
         JwtAccountService.assertWarehouseActive(before);
         if (!Integer.valueOf(1).equals(before.getJoinStatus()) && !Integer.valueOf(2).equals(before.getJoinStatus()))
             throw new BizException("资质已审核，资料修改请联系园区运营");
         MktWarehouseOnboardingService.validateProfile(body);
-        profiles.prepareWarehousePhoneChange(before, body.getPhone());
+        if (!java.util.Objects.equals(before.getPhone(), body.getPhone())) throw new BizException(403,"登录手机号不可通过加盟资料修改，请联系园区运营核验");
         int changed = warehouseMapper.update(null, new LambdaUpdateWrapper<MktWarehouse>()
                 .eq(MktWarehouse::getId, id).in(MktWarehouse::getJoinStatus, 1, 2)
                 .set(MktWarehouse::getName, body.getName().trim()).set(MktWarehouse::getRegion, body.getRegion().trim())

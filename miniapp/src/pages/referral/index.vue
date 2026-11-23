@@ -14,7 +14,8 @@
     </view>
     <view class="card">
       <view class="muted">推荐后直接锁定 3 个自然月；签约成交后，推荐归属长期有效。</view>
-      <ReferralForm :form="form" :warehouses="warehouses" :loading="loading" :disabled="submitted" @submit="submit" />
+      <view class="muted qr-note">先填写公司名称、品牌名称、对接人和电话即可推荐；详细需求可按实际情况展开补充。</view>
+      <ReferralForm :form="form" :warehouses="warehouses" :loading="loading" :disabled="submitted" progressive @submit="submit" />
     </view>
   </view>
 </template>

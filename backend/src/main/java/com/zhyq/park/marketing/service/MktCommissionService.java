@@ -137,6 +137,8 @@ public class MktCommissionService {
             order.setCommissionUnitPrice(pricing.totalPerOrder());
             order.setCommissionOrderCount(orderCount);
             order.setCompanyPerOrder(pricing.companyPerOrder());
+            order.setPlatformServiceFeePerOrder(pricing.platformServiceFeePerOrder());
+            order.setUnallocatedPerOrder(pricing.unallocatedPerOrder());
         }
         try {
             orderMapper.insert(order);

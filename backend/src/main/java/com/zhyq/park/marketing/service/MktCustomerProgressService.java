@@ -39,6 +39,12 @@ public class MktCustomerProgressService {
         if (!StringUtils.hasText(summary) || summary.trim().length() > 500)
             throw new BizException("请填写可向伙伴公开的跟进进度（1–500 字）");
         boolean signed = Integer.valueOf(2).equals(customer.getStatus());
+        if (customer.getWarehouseSalespersonId() != null) {
+            int actual = stagePercentage(customer);
+            if (percentage != null && percentage != actual) throw new BizException("已分配业务员的客户请按实际业务阶段更新进度");
+            record(customer,actual,summary.trim(),"warehouse_sales_" + customer.getWarehouseSalesStage(),source);
+            return;
+        }
         if (percentage != null && (percentage < 0 || percentage > (signed ? 100 : 99)))
             throw new BizException("未签约客户进度可填写 0–99%，签约后自动更新为 100%");
         int next = signed ? 100 : percentage == null ? Math.min(currentPercentage(customer), 99) : percentage;
@@ -72,6 +78,7 @@ public class MktCustomerProgressService {
     }
 
     public static int stagePercentage(Customer customer) {
+        if (customer.getWarehouseSalespersonId() != null) return Math.max(0, Math.min(5, customer.getWarehouseSalesStage() == null ? 0 : customer.getWarehouseSalesStage())) * 20;
         if (Integer.valueOf(2).equals(customer.getStatus())) return 100;
         if (Integer.valueOf(MktCustomerAssignmentService.ACCEPTED).equals(customer.getWarehouseAssignmentStatus())) return 60;
         if (Integer.valueOf(MktCustomerAssignmentService.PENDING).equals(customer.getWarehouseAssignmentStatus())) return 30;
@@ -79,10 +86,17 @@ public class MktCustomerProgressService {
     }
 
     private int currentPercentage(Customer customer) {
+        if (customer.getWarehouseSalespersonId() != null) return stagePercentage(customer);
         return customer.getProgressPercentage() == null ? stagePercentage(customer) : customer.getProgressPercentage();
     }
 
     private void record(Customer customer, int percentage, String summary, String stage, String source) {
+        // Contract state is separate from fulfilment; signing must not jump a new workflow to shipped.
+        if (customer.getWarehouseSalespersonId() != null) {
+            percentage = stagePercentage(customer);
+            if (percentage < 100 && "signed".equals(stage) && "system".equals(source))
+                summary = "服务合同已签约生效，后续继续跟进入仓和发货";
+        }
         LocalDateTime now = LocalDateTime.now();
         int changed = customers.update(null, new LambdaUpdateWrapper<Customer>()
                 .eq(Customer::getId, customer.getId())

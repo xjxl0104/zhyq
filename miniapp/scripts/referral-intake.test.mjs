@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import vm from 'node:vm'
 import { readFileSync } from 'node:fs'
-import { newReferralForm, referralPayload, parseReferralToken, referralShare, requirementRows, newSubmissionId } from '../src/utils/referral-intake.mjs'
+import { newReferralForm, referralPayload, parseReferralToken, referralShare, requirementRows, newSubmissionId, ITEMS_PER_PARCEL_RANGES, itemsPerParcelLabel } from '../src/utils/referral-intake.mjs'
 const TOKEN = '0123456789abcdef0123456789abcdef'
 const form = () => ({ ...newReferralForm(), name: '测试客户' })
 test('weight percentage precision matches backend before submitting', () => {
@@ -47,9 +47,48 @@ test('parcel item ranges cover fractional averages and preserve legacy numeric r
     assert.equal(requirementRows(payload.requirements).find(row => row.label === '平均包裹产品数量').value, label)
   }
   f.requirements.itemsPerParcelRange = 'not-a-range'
-  assert.throws(() => referralPayload(f), /平均包裹产品数量范围/)
+  assert.throws(() => referralPayload(f), /平均包裹产品数量/)
   f.requirements.itemsPerParcelRange = ''; f.requirements.itemsPerParcel = 1.5
   assert.equal(requirementRows(referralPayload(f).requirements).find(row => row.label === '平均包裹产品数量').value, '1.5 件')
+})
+test('company and brand remain independent and exact parcel quantities survive the submitted detail payload', () => {
+  const f = form()
+  Object.assign(f, { name: ' 示例公司 ', brandName: ' 示例品牌 ', contact: ' 对接人 ', phone: '' })
+  assert.deepEqual(ITEMS_PER_PARCEL_RANGES, ['1', '2', '3', '4', '5', '>=6'])
+  for (const range of ITEMS_PER_PARCEL_RANGES) {
+    f.requirements.itemsPerParcelRange = range
+    const payload = referralPayload(f)
+    assert.equal(payload.name, '示例公司')
+    assert.equal(payload.brandName, '示例品牌')
+    assert.equal(payload.contact, '对接人')
+    assert.equal(payload.phone, null)
+    assert.equal(requirementRows(JSON.stringify(payload.requirements)).find(row => row.label === '平均包裹产品数量').value, itemsPerParcelLabel(range))
+  }
+  assert.equal(itemsPerParcelLabel('>=6'), '6 件及以上')
+  f.brandName = 'x'.repeat(101)
+  assert.throws(() => referralPayload(f), /品牌名称最多/)
+})
+test('all submitted logistics details remain visible, including false invoice and legacy values', () => {
+  const f = form()
+  Object.assign(f.requirements, {
+    contactPosition: '运营', salesPlatforms: ['天猫', '其他'], salesPlatformOther: '自营站',
+    productCategories: ['食品饮料', '其他'], productCategoryOther: '鲜花',
+    productWeights: [{ range: '0-0.3', percentage: '25' }, { range: '>=3', percentage: '75' }],
+    storageArea: '50-200', productCount: '10-20', skuCount: '20-50', dailyOrders: '200-1000', itemsPerParcelRange: '3',
+    packaging: '纸箱加缓冲材料', couriers: ['中通', '其他'], courierOther: '德邦', invoiceRequired: false,
+    warehouseMode: '外包云仓', currentCouriers: ['顺丰'], painPoints: ['其他'], painPointOther: '退货处理慢'
+  })
+  const body = referralPayload(f)
+  const detail = Object.fromEntries(requirementRows(JSON.stringify(body.requirements)).map(row => [row.label, row.value]))
+  assert.deepEqual(Object.keys(detail), ['对接人职位', '销售平台', '产品重量', '仓储面积', '销售品类', '销售产品种类数（历史填写）', 'SKU 数量', '日均单量', '平均包裹产品数量', '打包方式', '指定快递承运商', '是否开发票', '目前仓配方式', '目前合作快递', '最头疼的问题'])
+  assert.equal(detail['销售平台'], '天猫、其他：自营站')
+  assert.equal(detail['产品重量'], '0–＜0.3kg（25%）；≥ 3kg（75%）')
+  assert.equal(detail['平均包裹产品数量'], '3 件')
+  assert.equal(detail['是否开发票'], '否')
+  assert.equal(detail['最头疼的问题'], '其他：退货处理慢')
+  assert.deepEqual(requirementRows(null), [])
+  assert.deepEqual(requirementRows('{broken'), [])
+  assert.doesNotThrow(() => requirementRows({ productWeights: [null], salesPlatforms: '旧异常数据' }))
 })
 test('other options require text and stale hidden text is dropped', () => {
   const f = form(); f.requirements.salesPlatforms = ['其他']
