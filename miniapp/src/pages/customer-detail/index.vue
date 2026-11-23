@@ -15,6 +15,7 @@
         <view class="row"><text class="muted">承接状态</text><text>{{ ASSIGN[c.warehouseAssignmentStatus || 0] }}</text></view>
         <view class="row"><text class="muted">推荐时间</text><text>{{ c.createTime?.slice(0, 16) }}</text></view>
       </view>
+      <view class="card"><view class="title">报价需求</view><button class="btn secondary" @click="navigateTo('/pages/customer-quote/index?id=' + c.id)">客户意向与填写码</button></view>
       <CustomerRequirements :requirements="c.requirements || c.fulfillmentRequirements" :demand="c.demand || c.demandArea" :remark="c.remark || c.intakeRemark" />
       <view v-if="Number(me.status) === 1" class="card">
         <view class="title">客户分佣</view>

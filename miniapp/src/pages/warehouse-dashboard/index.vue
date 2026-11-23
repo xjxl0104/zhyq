@@ -55,6 +55,7 @@ const loading = ref(false)
 const error = ref('')
 const ERP = { 0: '未接入', 1: '沙箱联调', 2: '正式联通', 3: '连接中断' }
 const entries = [
+  { page: 'warehouse-rate-card', title: '报价体系', note: '维护全国配送、仓内操作和增值服务价格' },
   { page: 'warehouse-staff', title: '业务员管理', note: '维护业务员姓名、手机号及账号启停' },
   { page: 'warehouse-profile', title: '个人信息', note: '补充云仓名称、联系人和联系电话' },
   { page: 'warehouse-apply', title: '加盟申请', note: '完善资料与上传资质附件' },
@@ -69,7 +70,7 @@ const entries = [
   { page: 'account-security', title: '账号与密码', note: '设置或修改登录密码' }
 ]
 
-const visibleEntries = computed(() => entries.filter(item => isWarehouseOwner(profile.value) || ['warehouse-profile', 'warehouse-customers', 'warehouse-orders'].includes(item.page)))
+const visibleEntries = computed(() => entries.filter(item => item.page === 'warehouse-rate-card' ? isWarehouseOwner(profile.value) && Number(stats.joinStatus) === 5 : isWarehouseOwner(profile.value) || ['warehouse-profile', 'warehouse-customers', 'warehouse-orders'].includes(item.page)))
 async function load() {
   if (loading.value) return
   loading.value = true

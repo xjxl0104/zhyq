@@ -47,6 +47,7 @@ export const menuTree = [
           { title: '云仓管理', path: '/crm/marketing/warehouse', group: '云仓' },
           { title: '加盟申请', path: '/crm/marketing/onboarding', group: '云仓' },
           { title: 'ERP 对接', path: '/crm/marketing/erp', group: '云仓' },
+          { title: '报价体系', path: '/crm/marketing/quote-rates', group: '云仓' },
           { title: '服务合同', path: '/crm/marketing/contract', group: '合同' },
           { title: '合同模板', path: '/crm/marketing/template', group: '合同' },
           { title: '计佣订单', path: '/crm/marketing/order', group: '结算' },

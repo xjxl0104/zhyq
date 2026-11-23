@@ -9,50 +9,7 @@
       <input class="input" v-model="form.phone" type="number" maxlength="11" placeholder="联系手机（选填）" />
     </view>
 
-    <view v-if="progressive" class="details-toggle" @click="detailsExpanded = !detailsExpanded">
-      <text>{{ detailsExpanded ? '收起详细需求' : '补充详细需求（选填）' }}</text><text>{{ detailsExpanded ? '收起 ∧' : '展开 ∨' }}</text>
-    </view>
-    <view v-if="!progressive || detailsExpanded">
-    <!-- 2 业务规模 -->
-    <view class="group">
-      <view class="group-title"><text class="bar" />业务规模 <text class="muted">选填</text></view>
-      <input class="input" v-model="form.requirements.contactPosition" maxlength="50" placeholder="对接人职位（选填）" />
-      <view class="sub-title first-sub">销售品类 <text class="muted">可多选</text></view>
-      <checkbox-group class="choices" @change="e => form.requirements.productCategories = e.detail.value">
-        <label v-for="item in PRODUCT_CATEGORIES" :key="item" class="choice"><checkbox :value="item" :checked="form.requirements.productCategories.includes(item)" color="#3857f5" /><text>{{ item }}</text></label>
-      </checkbox-group>
-      <input v-if="form.requirements.productCategories.includes('其他')" class="input" v-model="form.requirements.productCategoryOther" maxlength="100" placeholder="请填写其他销售品类" />
-      <view v-for="field in rangeFields" :key="field.key">
-        <view class="sub-title">{{ field.label }} <text class="muted">单选</text><text v-if="form.requirements[field.key]" class="clear-choice" @click="clearRange(field.key)">清除</text></view>
-        <radio-group class="choices" @change="e => setRange(field.key, e.detail.value)">
-          <label v-for="option in field.options" :key="option.value" class="choice"><radio :value="option.value" :checked="(form.requirements[field.key] || '') === option.value" color="#3857f5" /><text>{{ option.label }}</text></label>
-        </radio-group>
-      </view>
-      <view class="sub-title">产品重量 <text class="muted">可多选；填写占比时合计需为 100%</text></view>
-      <checkbox-group class="choices" @change="changeWeights">
-        <label v-for="range in WEIGHT_RANGES" :key="range" class="choice"><checkbox :value="range" :checked="selectedWeight(range)" color="#3857f5" /><text>{{ rangeLabel(range, 'kg') }}</text></label>
-      </checkbox-group>
-      <view v-if="form.requirements.productWeights.length" class="weight-percentages">
-        <view v-for="weight in form.requirements.productWeights" :key="weight.range" class="percentage"><text>{{ rangeLabel(weight.range, 'kg') }}</text><input type="digit" :value="weight.percentage ?? ''" maxlength="6" placeholder="占比选填" @input="e => setPercentage(weight.range, e.detail.value)" /><text>%</text></view>
-      </view>
-    </view>
-
-    <!-- 3 销售与发货 -->
-    <view class="group">
-      <view class="group-title"><text class="bar" />销售与发货</view>
-      <view class="sub-title first-sub">销售平台 <text class="muted">可多选，选填</text></view>
-      <checkbox-group class="choices" @change="e => form.requirements.salesPlatforms = e.detail.value">
-        <label v-for="item in SALES_PLATFORMS" :key="item" class="choice"><checkbox :value="item" :checked="form.requirements.salesPlatforms.includes(item)" color="#3857f5" /><text>{{ item }}</text></label>
-      </checkbox-group>
-      <input v-if="form.requirements.salesPlatforms.includes('其他')" class="input" v-model="form.requirements.salesPlatformOther" maxlength="100" placeholder="请填写其他销售平台" />
-      <view class="sub-title">指定快递承运商 <text class="muted">可多选，选填</text></view>
-      <checkbox-group class="choices" @change="e => form.requirements.couriers = exclusiveNone(form.requirements.couriers, e.detail.value)">
-        <label v-for="item in COURIERS" :key="item" class="choice"><checkbox :value="item" :checked="form.requirements.couriers.includes(item)" color="#3857f5" /><text>{{ item }}</text></label>
-      </checkbox-group>
-      <input v-if="form.requirements.couriers.includes('其他')" class="input" v-model="form.requirements.courierOther" maxlength="100" placeholder="请填写其他快递承运商" />
-    </view>
-
-    <!-- 4 现有仓配现状 -->
+    <!-- 现有仓配现状 -->
     <view class="group">
       <view class="group-title"><text class="bar" />现有仓配现状 <text class="muted">选填</text></view>
       <view class="sub-title first-sub">目前仓配方式 <text class="muted">单选</text><text v-if="form.requirements.warehouseMode" class="clear-choice" @click="clearRange('warehouseMode')">清除</text></view>
@@ -71,38 +28,15 @@
       <input v-if="form.requirements.painPoints.includes('其他')" class="input" v-model="form.requirements.painPointOther" maxlength="100" placeholder="请填写其他头疼的问题" />
     </view>
 
-    <!-- 5 备注 + 提交 -->
-    <view class="group">
-      <view class="group-title"><text class="bar" />备注 <text class="muted">选填</text></view>
-      <textarea class="input" v-model="form.remark" maxlength="1000" placeholder="还有什么需要补充的" style="height:160rpx" />
-    </view>
-    </view>
     <slot />
     <button class="btn" :loading="loading" :disabled="loading || disabled" @click="submit">{{ submitLabel }}</button>
   </view>
 </template>
 <script setup>
-import { ref } from 'vue'
-import { SALES_PLATFORMS, PRODUCT_CATEGORIES, ITEMS_PER_PARCEL_RANGES, itemsPerParcelLabel, COURIERS, WEIGHT_RANGES, COUNT_RANGES, ORDER_RANGES, WAREHOUSE_MODES, PAIN_POINTS, rangeLabel, referralPayload, exclusiveNone } from '@/utils/referral-intake.mjs'
-const props = defineProps({ form: { type: Object, required: true }, warehouses: { type: Array, default: () => [] }, progressive: Boolean, loading: Boolean, disabled: Boolean, submitLabel: { type: String, default: '提交推荐' } })
+import { WAREHOUSE_MODES, PAIN_POINTS, COURIERS, referralPayload, exclusiveNone } from '@/utils/referral-intake.mjs'
+const props = defineProps({ form: { type: Object, required: true }, loading: Boolean, disabled: Boolean, submitLabel: { type: String, default: '提交推荐' } })
 const emit = defineEmits(['submit'])
-const detailsExpanded = ref(false)
-const rangeFields = [
-  { key: 'skuCount', label: 'SKU 数量', unit: '个', ranges: COUNT_RANGES },
-  { key: 'dailyOrders', label: '日均单量', unit: '单', ranges: ORDER_RANGES },
-  { key: 'itemsPerParcelRange', label: '平均包裹产品数量', ranges: ITEMS_PER_PARCEL_RANGES, labelFor: itemsPerParcelLabel }
-].map(f => ({ ...f, options: f.ranges.map(value => ({ value, label: f.labelFor ? f.labelFor(value) : rangeLabel(value, f.unit) })) }))
-function setRange(key, value) {
-  props.form.requirements[key] = value
-  if (key === 'itemsPerParcelRange') props.form.requirements.itemsPerParcel = ''
-}
-function clearRange(key) { setRange(key, '') }
-const selectedWeight = range => props.form.requirements.productWeights.some(x => x.range === range)
-const weightPercentage = range => props.form.requirements.productWeights.find(x => x.range === range)?.percentage ?? ''
-function changeWeights(e) {
-  props.form.requirements.productWeights = WEIGHT_RANGES.filter(range => e.detail.value.includes(range)).map(range => ({ range, percentage: weightPercentage(range) }))
-}
-function setPercentage(range, value) { const item = props.form.requirements.productWeights.find(x => x.range === range); if (item) item.percentage = value }
+const clearRange = key => { props.form.requirements[key] = '' }
 function submit() {
   if (props.loading || props.disabled) return
   try { emit('submit', referralPayload(props.form)) } catch (e) { uni.showToast({ title: e.message, icon: 'none' }) }
@@ -112,11 +46,7 @@ function submit() {
 .group{margin-top:36rpx;padding-top:32rpx;border-top:1rpx solid var(--park-line)}.group.first{margin-top:24rpx;padding-top:0;border-top:0}
 .group-title{display:flex;align-items:center;font-size:36rpx;font-weight:700;margin-bottom:12rpx}.group-title .muted{font-weight:400;font-size:24rpx;margin-left:12rpx}
 .bar{width:8rpx;height:30rpx;margin-right:14rpx;border-radius:4rpx;background:var(--park-blue)}
-.pair{display:flex;gap:16rpx}.pair .input{flex:1;min-width:0}
-.select{display:flex;align-items:center;justify-content:space-between;gap:16rpx}.sel-label{flex-shrink:0}.sel-value{color:var(--park-text);text-align:right;font-weight:600}.sel-value.empty{color:var(--park-muted);font-weight:400}
 .sub-title{font-size:31rpx;font-weight:600;margin:30rpx 0 16rpx}.sub-title .muted{font-weight:400;font-size:24rpx;margin-left:12rpx}.sub-title.first-sub{margin-top:12rpx}
 .clear-choice{float:right;padding:0 12rpx;color:var(--park-blue);font-size:22rpx;font-weight:400;line-height:40rpx}
 .choices{display:flex;flex-wrap:wrap;gap:20rpx 28rpx}.choice{display:flex;align-items:center;gap:8rpx;min-height:60rpx}.choice checkbox,.choice radio{transform:scale(.82);transform-origin:left center;width:42rpx}
-.details-toggle{display:flex;align-items:center;justify-content:space-between;gap:16rpx;margin-top:28rpx;padding:24rpx 0;color:var(--park-blue);font-size:28rpx}
-.weight-percentages{display:flex;flex-wrap:wrap;gap:16rpx 24rpx;margin-top:20rpx}.percentage{display:flex;align-items:center;gap:8rpx;font-size:24rpx}.percentage input{width:110rpx;padding:10rpx;border:1rpx solid var(--park-line);border-radius:10rpx;background:var(--park-bg);font-size:24rpx}
 </style>

@@ -31,15 +31,12 @@ async function renderComponent(source, props) {
   vm.runInContext(code, context)
   return renderToString(Vue.createSSRApp(context.Component, props))
 }
-test('partner recommendation initially renders four basic fields; public intake renders full requirements', async () => {
-  const form = intake.newReferralForm()
-  const basic = await renderComponent(formSource, { form, progressive: true })
+test('partner and public reports both collect basic customer information and current operations', async () => {
+  const basic = await renderComponent(formSource, { form: intake.newReferralForm() })
   assert.equal((basic.match(/<input\b/g) || []).length, 4)
-  for (const label of ['公司名称', '品牌名称', '对接人', '联系手机', '补充详细需求']) assert.ok(basic.includes(label), label)
-  for (const label of ['业务规模', '销售品类', '现有仓配现状']) assert.equal(basic.includes(label), false)
-  const complete = await renderComponent(formSource, { form, progressive: false })
-  for (const label of ['业务规模', '销售品类', '现有仓配现状', '6 件及以上']) assert.ok(complete.includes(label), label)
-  assert.equal(complete.includes('<picker'), false)
+  for (const label of ['公司名称', '品牌名称', '对接人', '联系手机', '现有仓配现状', '目前仓配方式', '目前合作的快递公司', '目前最头疼的问题']) assert.ok(basic.includes(label), label)
+  for (const source of [pageSource, read('pages/referral/index.vue')]) assert.match(source, /<ReferralForm\b/)
+  for (const label of ['补充详细需求', '业务规模', '销售品类', 'SKU 数量', '<picker']) assert.equal(basic.includes(label), false)
 })
 test('customer requirement card renders submitted JSON fields and clearly labels missing details', async () => {
   const source = read('components/CustomerRequirements.vue')
@@ -70,8 +67,7 @@ test('WeChat artifact gate rejects the exact missing usingComponents registratio
   const form = join(build, 'components/ReferralForm.wxml')
   writeFileSync(form, '<view><slot /></view>')
   assert.throws(() => verifyWechatComponents(source, build), /缺少表单内容/)
-  writeFileSync(form, '<view><input placeholder="公司名称"/><input placeholder="品牌名称"/><input placeholder="对接人职位"/><input placeholder="联系手机"/>销售品类 销售平台 产品重量 指定快递承运商 现有仓配现状<radio-group bindchange="change"/><slot/><button bindtap="submit">提交需求</button></view>')
-  writeFileSync(join(build, 'components/ReferralForm.js'), 'const fields=["SKU 数量","日均单量","平均包裹产品数量"]')
+  writeFileSync(form, '<view><input placeholder="公司名称"/><input placeholder="品牌名称"/><input placeholder="对接人职位"/><input placeholder="联系手机"/>目前合作的快递公司 目前最头疼的问题 现有仓配现状<radio-group bindchange="change"/><slot/><button bindtap="submit">提交需求</button></view>')
   assert.equal(verifyWechatComponents(source, build), 1)
 })
 
@@ -98,6 +94,7 @@ test('anonymous QR scene loads form, submit records consent, and optional phone 
     uni: { showToast() {} }
   })
   vm.runInContext(script(formSource), component)
+  Object.assign(form.requirements, { warehouseMode: '外包云仓', currentCouriers: ['其他'], currentCourierOther: '合作快递', painPoints: ['其他'], painPointOther: '退件上架慢' })
   vm.runInContext('submit()', component)
   await Promise.all(pending)
   assert.equal(calls.length, 2)
@@ -105,6 +102,8 @@ test('anonymous QR scene loads form, submit records consent, and optional phone 
   assert.equal(calls[1][2].name, '示例客户')
   assert.equal(calls[1][2].phone, null)
   assert.equal(calls[1][2].agreed, true)
+  const { warehouseMode, currentCourierOther, painPointOther } = calls[1][2].requirements
+  assert.deepEqual([warehouseMode, currentCourierOther, painPointOther], ['外包云仓', '合作快递', '退件上架慢'])
   assert.equal(vm.runInContext('submitted.value', page), true)
 })
 
@@ -127,46 +126,4 @@ test('warehouse mode is an inline choice that can be selected and cleared', () =
   assert.equal(clearButtons.length, 1)
   vm.runInContext("clearRange('warehouseMode')", context)
   assert.equal(form.requirements.warehouseMode, '')
-})
-test('optional business ranges start empty, show only real choices, and can be cleared', () => {
-  const form = intake.newReferralForm(); form.name = '扫码客户'
-  let emitted
-  const context = vm.createContext({ ...intake, ref, form, defineProps: () => ({ form }),
-    defineEmits: () => (_event, body) => { emitted = body }, uni: { showToast() {} } })
-  vm.runInContext(script(formSource), context)
-  const groups = [], pickers = [], clearButtons = []
-  const visit = node => {
-    if (node.tag === 'radio-group') groups.push(node)
-    if (node.tag === 'picker') pickers.push(node)
-    if (node.tag === 'text' && node.props.some(prop => prop.type === 6 && prop.name === 'class' && prop.value?.content === 'clear-choice')) clearButtons.push(node)
-    for (const child of node.children || []) visit(child)
-  }
-  visit(parse(formSource).descriptor.template.ast)
-  assert.equal(groups.length, 2)
-  assert.equal(clearButtons.length, 2)
-  assert.equal(pickers.length, 0)
-  const change = groups[0].props.find(prop => prop.type === 7 && prop.name === 'on' && prop.arg?.content === 'change')
-  const clear = clearButtons[0].props.find(prop => prop.type === 7 && prop.name === 'on' && prop.arg?.content === 'click')
-  const clearVisible = clearButtons[0].props.find(prop => prop.type === 7 && prop.name === 'if')
-  const fields = vm.runInContext('rangeFields', context)
-  assert.deepEqual(Array.from(fields, field => field.key), ['skuCount', 'dailyOrders', 'itemsPerParcelRange'])
-  for (const field of fields) {
-    context.field = field
-    assert.equal(form.requirements[field.key], '')
-    assert.equal(Boolean(vm.runInContext(clearVisible.exp.content, context)), false)
-    assert.ok(field.options.every(option => option.value && option.label !== '暂不填写'))
-    vm.runInContext('submit()', context)
-    assert.equal(emitted.requirements[field.key], '')
-    for (const option of [field.options[0], field.options.at(-1)]) {
-      context.next = option.value
-      vm.runInContext(`(${change.exp.content})({detail:{value:next}})`, context)
-      vm.runInContext('submit()', context)
-      assert.equal(emitted.requirements[field.key], option.value)
-    }
-    assert.equal(Boolean(vm.runInContext(clearVisible.exp.content, context)), true)
-    vm.runInContext(clear.exp.content, context)
-    vm.runInContext('submit()', context)
-    assert.equal(emitted.requirements[field.key], '')
-    assert.equal(Boolean(vm.runInContext(clearVisible.exp.content, context)), false)
-  }
 })

@@ -82,6 +82,11 @@ public class DefaultWxSessionClient implements WxSessionClient {
             throw new BizException("客户填报码或版本无效");
         return miniappCode(appId, appSecret, token, "pages/customer-intake/index", env);
     }
+    public byte[] customerQuoteCode(String appId, String appSecret, String token, String env) {
+        if (token == null || !token.matches("[a-f0-9]{32}") || !java.util.Set.of("release", "trial", "develop").contains(env))
+            throw new BizException("报价填报码或版本无效");
+        return miniappCode(appId, appSecret, token, "pages/quote-intake/index", env);
+    }
     private byte[] miniappCode(String appId, String appSecret, String scene, String page, String env) {
         try {
             String token = accessToken(appId, appSecret);
