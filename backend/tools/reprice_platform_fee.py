@@ -232,13 +232,16 @@ def sql_value(value):
         return 'NULL'
     if isinstance(value, (int, D)):
         return str(value)
-    return "CONVERT(0x" + str(value).encode('utf-8').hex() + " USING utf8mb4)"
+    # MySQL 8 uses default_collation_for_utf8mb4 for CONVERT(), even after
+    # SET NAMES. Match the audited tables explicitly so run-key comparisons
+    # do not fail with unicode_ci versus 0900_ai_ci before (or after) apply.
+    return "(CONVERT(0x" + str(value).encode('utf-8').hex() + " USING utf8mb4) COLLATE utf8mb4_unicode_ci)"
 
 
 class Mysql:
     def __init__(self):
         self.process = subprocess.Popen(['docker', 'exec', '-i', 'zhyq-mysql', 'sh', '-c',
-            'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" exec mysql -uroot --batch --raw --skip-column-names --unbuffered zhyq_park'],
+            'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" exec mysql -uroot --default-character-set=utf8mb4 --batch --raw --skip-column-names --unbuffered zhyq_park'],
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding='utf-8')
 
     def sql(self, query):
@@ -257,9 +260,12 @@ class Mysql:
             rows.append(line)
 
     def close(self):
-        if self.process.poll() is None:
+        try:
             self.process.stdin.close()
-            self.process.wait(timeout=10)
+            if self.process.poll() is None:
+                self.process.wait(timeout=10)
+        finally:
+            self.process.stdout.close()
 
 
 def load_data(db, apply):
