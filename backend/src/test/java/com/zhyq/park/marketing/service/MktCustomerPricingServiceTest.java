@@ -38,7 +38,7 @@ class MktCustomerPricingServiceTest {
 
     @BeforeAll static void metadata() {
         var a = new MapperBuilderAssistant(new MybatisConfiguration(), "");
-        for (Class<?> c : List.of(MktCustomerPricing.class, MktPromoter.class, Customer.class)) TableInfoHelper.initTableInfo(a,c);
+        for (Class<?> c : List.of(MktCustomerPricing.class, MktPromoter.class, Customer.class, MktServiceContract.class)) TableInfoHelper.initTableInfo(a,c);
     }
     @BeforeEach void setup() {
         service = new MktCustomerPricingService(pricingMapper, customerMapper, promoterMapper, contractMapper, audit, new ObjectMapper(), positionService);
@@ -147,14 +147,53 @@ class MktCustomerPricingServiceTest {
         verify(pricingMapper,times(2)).insert(any(MktCustomerPricing.class));
         verify(pricingMapper,never()).updateById(any(MktCustomerPricing.class));
     }
-    @Test void platformKeepsFivePercentOfEveryOrderCommission() {
-        var ok = service.save(4L,10L,new PricingInput(bd("0.300"), bd("0.285"), List.of()));
-        assertThat(ok.companyPerOrder()).isEqualByComparingTo("0.015");
-        assertThatThrownBy(() -> service.save(4L,10L,new PricingInput(bd("0.300"), bd("0.286"), List.of())))
-                .hasMessageContaining("5%").hasMessageContaining("0.285");
+    @Test void platformServiceFeeIsExactlyTenPercentOfEveryOrderCommission() {
+        var ok = service.save(4L,10L,new PricingInput(bd("0.300"), bd("0.270"), List.of()));
+        assertThat(ok.platformServiceFeePerOrder()).isEqualByComparingTo("0.0300");
+        assertThat(ok.unallocatedPerOrder()).isZero();
+        assertThatThrownBy(() -> service.save(4L,10L,new PricingInput(bd("0.300"), bd("0.271"), List.of())))
+                .hasMessageContaining("10%").hasMessageContaining("0.270");
         assertThatThrownBy(() -> service.save(4L,10L,new PricingInput(bd("1"), bd("0.9"), List.of(new BeneficiaryInput(1L,bd("0.051"))))))
-                .hasMessageContaining("5%");
+                .hasMessageContaining("10%");
         verify(pricingMapper, times(1)).insert(any(MktCustomerPricing.class));
+    }
+    @Test void feeKeepsFourthDecimalAndSeparatesUnallocatedRemainder() throws Exception {
+        var view = service.save(4L, 10L, new PricingInput(bd("0.005"), bd("0.004"), List.of()));
+        assertThat(view.platformServiceFeePerOrder()).isEqualByComparingTo("0.0005");
+        assertThat(view.allocatablePerOrder()).isEqualByComparingTo("0.0045");
+        assertThat(view.unallocatedPerOrder()).isEqualByComparingTo("0.0005");
+        assertThat(new ObjectMapper().writeValueAsString(view)).contains("\"platformServiceFeePerOrder\":0.0005");
+        assertThatThrownBy(() -> service.save(4L,10L,new PricingInput(bd("0.005"),bd("0.005"),List.of())))
+                .hasMessageContaining("10%");
+    }
+    @Test void lowerRolesSeeOnlyOwnGrantedContractAmountAndCannotReadFullConfiguration() throws Exception {
+        var contract = new MktServiceContract(); contract.setId(100L); contract.setContractNo("CS-X");
+        contract.setCustomerId(10L); contract.setPartnerId(2L); contract.setStatus(4);
+        when(contractMapper.selectList(any())).thenReturn(List.of(contract));
+        when(contractMapper.selectById(100L)).thenReturn(contract);
+        var pricing = new MktCustomerPricing(); pricing.setId(30L); pricing.setContractId(100L); pricing.setCustomerId(10L);
+        pricing.setOwnerPromoterId(4L); pricing.setTotalPerOrder(bd(".100")); pricing.setOwnerPerOrder(bd(".050"));
+        pricing.setBeneficiariesJson("[{\"promoterId\":1,\"amountPerOrder\":0.020}]");
+        when(pricingMapper.selectOne(any())).thenReturn(pricing);
+        var result = service.allocations(1L);
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).amountPerOrder()).isEqualByComparingTo(".020");
+        assertThat(result.get(0).canEdit()).isFalse();
+        assertThat(new ObjectMapper().writeValueAsString(result)).doesNotContain("totalPerOrder", "beneficiaries", "ownerName");
+        assertThat(service.allocations(3L)).isEmpty();
+        assertThatThrownBy(() -> service.getContractForP4(1L,100L)).hasMessageContaining("P4");
+        assertThatThrownBy(() -> service.getContractForP4(8L,100L)).hasMessageContaining("范围");
+    }
+    @Test void contractListRequiresSignedContractAndEndedContractCannotBeModified() {
+        var contract = new MktServiceContract(); contract.setId(100L); contract.setCustomerId(10L); contract.setPartnerId(2L); contract.setStatus(1);
+        when(contractMapper.selectList(any())).thenReturn(List.of(contract));
+        when(contractMapper.selectById(100L)).thenReturn(contract);
+        assertThat(service.allocations(4L)).isEmpty();
+        assertThatThrownBy(() -> service.getContractForP4(4L,100L)).hasMessageContaining("已签约");
+        contract.setStatus(7);
+        assertThat(service.allocations(4L)).hasSize(1).allMatch(row -> !row.canEdit());
+        assertThatThrownBy(() -> service.saveContractForP4(4L,100L,new PricingInput(bd(".1"),bd(".09"),List.of()))).hasMessageContaining("到期");
+        verify(pricingMapper, never()).insert(any(MktCustomerPricing.class));
     }
     @Test void promotionMovesMemberUnderNearestHigherParent() {
         ReflectionTestUtils.setField(service, "promoterService", promoterService);

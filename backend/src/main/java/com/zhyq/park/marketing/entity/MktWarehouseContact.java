@@ -20,5 +20,10 @@ public class MktWarehouseContact extends BaseEntity {
     private String role;
     /** 1 正常 0 停用 */
     private Integer status;
+    /** Monotonic revision prevents old sessions reviving after disable/enable. */
+    private Long authRevision;
+    /** Admin reviewed a replacement owner phone; login still requires WeChat phone verification. */
+    private Boolean phoneBindingApproved;
+    private Boolean passwordResetRequired;
     private Long projectId;
 }

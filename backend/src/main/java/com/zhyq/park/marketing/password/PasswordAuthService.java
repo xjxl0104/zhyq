@@ -19,6 +19,9 @@ import com.zhyq.park.marketing.service.MktAuditService;
 import com.zhyq.park.marketing.service.MktPromoterService;
 import com.zhyq.park.marketing.service.MktWarehouseOnboardingService;
 import com.zhyq.park.marketing.service.MktSelfProfileService;
+import com.zhyq.park.marketing.service.LoginProfileRequirements;
+import com.zhyq.park.marketing.wh.WhAuthService;
+import com.zhyq.park.marketing.wh.WhAuthContext;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.security.core.Authentication;
@@ -71,6 +74,8 @@ public class PasswordAuthService {
     private final PasswordEncoder encoder;
     private final JwtService jwt;
     private final PasswordAttemptLimiter limiter;
+    private final WhAuthService whAuth;
+    private final com.zhyq.park.marketing.service.WhPhoneClaimService warehousePhoneClaims;
     // A valid BCrypt hash makes unknown-user attempts perform the same expensive verification.
     private static final String DUMMY_HASH = "$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy";
     private static final String PASSWORD_HASH_PREFIX = "{bcrypt-sha256}";
@@ -101,27 +106,27 @@ public class PasswordAuthService {
         limiter.check("register:ip:" + remoteAddress, 10);
         String username = username(request.username());
         requirePassword(request.password());
-        String phone = MktSelfProfileService.optionalPhone(request.phone());
-        String name = MktSelfProfileService.optionalText(request.name(), "姓名", 32);
+        String phone = LoginProfileRequirements.requirePhone(request.phone());
+        String name = LoginProfileRequirements.requireName(request.name());
         if (!Boolean.TRUE.equals(request.agreed())) throw new BizException(400, "请先同意用户协议和隐私政策");
         String invite = identity == Identity.MP
                 ? MktPromoterService.requireRegistrationInvite(request.inviteCode()) : null;
         if (findByUsername(identity, username) != null) throw new BizException(409, "该账号已注册，请直接登录");
-        if (phone != null) rejectExistingPhone(identity, phone);
+        if (identity == Identity.WH) warehousePhoneClaims.reserve(phone,null,null);
+        else rejectExistingPhone(identity, phone);
         // Hash before creating business records; the surrounding transaction also rolls back conflicts.
         String hash = encodePassword(request.password());
         Long identityId;
         if (identity == Identity.MP) {
             MktPromoter promoter = new MktPromoter();
-            promoter.setName(name == null ? "园区伙伴" : name);
+            promoter.setName(name);
             promoter.setPhone(phone);
             promoter.setLastLogin(LocalDateTime.now());
             promoter.setAgreementVersion("v1");
             promoter.setAgreedAt(LocalDateTime.now());
             promoter.setIdVerified(0);
             promoter.setRemark("账号密码自助注册；联系电话未经手机验证");
-            if (phone == null) promoterService.registerWithoutPhone(promoter, invite);
-            else promoterService.register(promoter, invite, "mp");
+            promoterService.register(promoter, invite, "mp");
             identityId = promoter.getId();
         } else {
             MktWarehouse warehouse = new MktWarehouse();
@@ -152,7 +157,8 @@ public class PasswordAuthService {
         Long identityId = currentIdentityId(identity);
         requireActiveIdentity(identity, identityId);
         MktCredential credential = findByIdentity(identity, identityId);
-        return Map.of("configured", credential != null, "username", credential == null ? "" : credential.getUsername());
+        boolean reset = identity == Identity.WH && whAuth.ownerPasswordResetRequired(identityId);
+        return Map.of("configured", credential != null && !reset, "username", credential == null ? "" : credential.getUsername(), "passwordResetRequired", reset);
     }
 
     @Transactional
@@ -160,6 +166,7 @@ public class PasswordAuthService {
         Long identityId = currentIdentityId(identity);
         if (identity == Identity.MP) JwtAccountService.assertPromoterActive(promoters.selectForUpdate(identityId));
         else requireActiveIdentity(identity, identityId);
+        boolean verifiedPhoneReset = identity == Identity.WH && whAuth.beginOwnerPasswordSetup(identityId);
         limiter.check("setup:ip:" + remoteAddress, 30);
         String attemptKey = "setup:" + identity.code + ":" + identityId;
         limiter.check(attemptKey, 10);
@@ -168,8 +175,8 @@ public class PasswordAuthService {
         MktCredential credential = findByIdentity(identity, identityId);
         if (credential != null) {
             if (!Integer.valueOf(1).equals(credential.getStatus())) throw new BizException(403, "账号已停用，请联系园区运营");
-            if (request.currentPassword() == null || request.currentPassword().isEmpty()) throw new BizException(400, "请填写当前密码");
-            if (!matchesPassword(request.currentPassword(), credential.getPasswordHash())) {
+            if (!verifiedPhoneReset && (request.currentPassword() == null || request.currentPassword().isEmpty())) throw new BizException(400, "请填写当前密码");
+            if (!verifiedPhoneReset && !matchesPassword(request.currentPassword(), credential.getPasswordHash())) {
                 throw new BizException(400, "当前密码不正确");
             }
         }
@@ -195,6 +202,7 @@ public class PasswordAuthService {
             throw new BizException(409, "账号已被使用或已设置，请刷新后重试");
         }
         auditService.log("password.setup", identity == Identity.MP ? "promoter" : "warehouse", identityId, "设置账号密码");
+        if (identity == Identity.WH) whAuth.finishOwnerPasswordSetup(identityId);
         limiter.clear(attemptKey);
     }
 
@@ -215,7 +223,7 @@ public class PasswordAuthService {
         Object business = requireActiveIdentity(identity, identityId);
         Map<String, Object> result = new HashMap<>();
         result.put("registered", true);
-        result.put("token", jwt.issueForIdentity(identity.code, identityId));
+        result.put("token", identity == Identity.WH ? whAuth.issueOwnerToken(identityId) : jwt.issueForIdentity(identity.code, identityId));
         result.put("openid", null);
         Map<String, Object> profile = new HashMap<>();
         profile.put("id", identityId);
@@ -232,6 +240,7 @@ public class PasswordAuthService {
             profile.put("joinStatus", warehouse.getJoinStatus());
             result.put("warehouse", profile);
             result.put("warehouseId", identityId);
+            result.put("warehouseRole", "owner");
         }
         return result;
     }
@@ -258,6 +267,10 @@ public class PasswordAuthService {
     }
 
     private Long currentIdentityId(Identity identity) {
+        if (identity == Identity.WH) {
+            WhAuthContext.requireOwner();
+            return WhAuthContext.currentWarehouseId();
+        }
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication == null || !authentication.isAuthenticated() || authentication.getName() == null
                 || !authentication.getName().startsWith(identity.code + ":")

@@ -36,6 +36,14 @@ public class WhAuthService {
     private final WxPhoneDecryptor wxPhoneDecryptor;
     private final MktWarehouseContactMapper contactMapper;
     private final WxPhoneBindingGuard phoneBindingGuard;
+    private WhIdentityService identityService;
+    @org.springframework.beans.factory.annotation.Autowired
+    public void setIdentityService(WhIdentityService value) { this.identityService = value; }
+    public java.util.Map<String, Object> quickLoginIdentity(String openid, String phone, String name) { return identityService.quickLoginIdentity(openid, phone, name); }
+    public String issueOwnerToken(Long warehouseId) { return identityService.issueOwnerToken(warehouseId); }
+    public boolean ownerPasswordResetRequired(Long warehouseId) { return identityService.ownerPasswordResetRequired(warehouseId); }
+    public boolean beginOwnerPasswordSetup(Long warehouseId) { return identityService.beginOwnerPasswordSetup(warehouseId); }
+    public void finishOwnerPasswordSetup(Long warehouseId) { identityService.finishOwnerPasswordSetup(warehouseId); }
     private final WxLoginTickets loginTickets = new WxLoginTickets();
     // 按身份显式配置凭据;共用同一小程序时配置同一组 AppID/Secret,不自动跨端回落
     @Value("${zhyq.wh.mock-login:false}") private boolean mockLogin;
@@ -64,38 +72,32 @@ public class WhAuthService {
     /** Optional warehouse id is only a lookup hint; ownership still requires a contact row (or legacy contact_openid) match. */
     public LoginResult wxLogin(Long requestedWarehouseId, String jsCode) { return wxLogin(requestedWarehouseId, jsCode, null); }
 
+    @org.springframework.transaction.annotation.Transactional
     public LoginResult wxLogin(Long requestedWarehouseId, String jsCode, String clientAppId) {
         if (!mockLogin && StringUtils.hasText(clientAppId) && !clientAppId.equals(appId))
             throw new BizException("当前小程序 AppID 与云仓商家服务配置不一致,请联系管理员检查配置");
         WxSessionClient.Session session = code2Session(jsCode);
-        MktWarehouse w = resolveWarehouseByOpenid(session.openid(), requestedWarehouseId);
-        if (w == null) return new LoginResult(false, null, session.openid(), null, mockLogin ? null : loginTickets.issue(session));
-        JwtAccountService.assertWarehouseActive(w);
-        touchLogin(w);
-        return new LoginResult(true, issue(w), session.openid(), w);
-    }
-
-    /** 按 openid 找云仓:优先联系人表(P2-5 多联系人),回落到旧列 contact_openid(过渡期兼容)。 */
-    private MktWarehouse resolveWarehouseByOpenid(String openid, Long requestedWarehouseId) {
-        if (!StringUtils.hasText(openid)) return null;
-        MktWarehouseContact contact = contactMapper.selectOne(new LambdaQueryWrapper<MktWarehouseContact>()
-                .eq(MktWarehouseContact::getOpenid, openid).last("limit 1"));
-        if (contact != null) {
-            if (!Integer.valueOf(1).equals(contact.getStatus())) throw new BizException(403, "云仓联系人已停用，请联系园区运营");
-            if (requestedWarehouseId != null && !requestedWarehouseId.equals(contact.getWarehouseId())) return null;
-            return warehouseMapper.selectById(contact.getWarehouseId());
-        }
-        LambdaQueryWrapper<MktWarehouse> q = new LambdaQueryWrapper<MktWarehouse>().eq(MktWarehouse::getContactOpenid, openid).last("limit 1");
-        if (requestedWarehouseId != null) q.eq(MktWarehouse::getId, requestedWarehouseId);
-        return warehouseMapper.selectOne(q);
+        WhIdentityService.Identity identity = identityService.findByOpenid(session.openid(), requestedWarehouseId);
+        if (identity == null) return new LoginResult(false, null, session.openid(), null, mockLogin ? null : loginTickets.issue(session));
+        return identityResult(identity, session.openid());
     }
 
     public LoginResult bindPhone(String openid, String phone) {
+        return bindPhoneWithName(openid, phone, null);
+    }
+
+    @org.springframework.transaction.annotation.Transactional
+    public LoginResult bindPhoneWithName(String openid, String phone, String name) {
         if (!mockLogin) throw new BizException("真实模式必须使用微信手机号授权");
-        return bindPhoneInternal(openid, phone);
+        return bindPhoneInternal(openid, phone, name);
     }
 
     public LoginResult bindPhoneAuthorized(String openid, String loginTicket, String phoneCode, String encryptedData, String iv) {
+        return bindPhoneAuthorized(openid, loginTicket, phoneCode, encryptedData, iv, null);
+    }
+
+    @org.springframework.transaction.annotation.Transactional
+    public LoginResult bindPhoneAuthorized(String openid, String loginTicket, String phoneCode, String encryptedData, String iv, String name) {
         if (mockLogin) throw new BizException("mock 模式请使用明文手机号");
         if (!StringUtils.hasText(phoneCode) && (!StringUtils.hasText(encryptedData) || !StringUtils.hasText(iv)))
             throw new BizException("缺少 phoneCode 或 encryptedData/iv 手机号授权参数");
@@ -103,53 +105,21 @@ public class WhAuthService {
         String phone = StringUtils.hasText(phoneCode)
                 ? wxSessionClient.exchangePhone(appId, appSecret, phoneCode)
                 : wxPhoneDecryptor.decryptPhoneNumber(sessionKey, encryptedData, iv, appId);
-        return bindPhoneInternal(openid, phone);
+        return bindPhoneInternal(openid, phone, name);
     }
 
     public LoginResult bindPhone(String openid, String encryptedData, String iv) {
         return bindPhoneAuthorized(openid, null, null, encryptedData, iv);
     }
 
-    private LoginResult bindPhoneInternal(String openid, String phone) {
-        if (!StringUtils.hasText(openid) || phone == null || !phone.matches("^1\\d{10}$")) throw new BizException("手机号格式不正确");
-        // Resolve only warehouse ownership; a separate partner identity may use the same verified phone.
-        MktWarehouse w = warehouseMapper.selectOne(new LambdaQueryWrapper<MktWarehouse>().eq(MktWarehouse::getPhone, phone).last("limit 1"));
-        if (w == null) return new LoginResult(false, null, openid, null);
-        JwtAccountService.assertWarehouseActive(w);
-        phoneBindingGuard.assertCanBind("wh", w.getId());
-
-        // 该 openid 已作为某云仓联系人 → 幂等返回;已被别的 openid 认领联系人则冲突
-        MktWarehouseContact existingContact = contactMapper.selectOne(new LambdaQueryWrapper<MktWarehouseContact>()
-                .eq(MktWarehouseContact::getOpenid, openid).last("limit 1"));
-        if (existingContact != null) {
-            if (!Integer.valueOf(1).equals(existingContact.getStatus())) throw new BizException(403, "云仓联系人已停用，请联系园区运营");
-            if (!existingContact.getWarehouseId().equals(w.getId())) throw new BizException(409, "该微信已绑定其他云仓");
-            return new LoginResult(true, issue(w), openid, w);
-        }
-        // 旧列兼容:已绑过旧列且是同一 openid → 幂等;绑了别的 openid → 冲突
-        if (StringUtils.hasText(w.getContactOpenid()) && !openid.equals(w.getContactOpenid())) throw new BizException(409, "该云仓主联系人已绑定其他微信");
-
-        // 绑定为 member 联系人(多联系人)。openid 唯一键:并发下可能撞唯一键,捕获后按冲突处理。
-        MktWarehouseContact c = new MktWarehouseContact();
-        c.setWarehouseId(w.getId()); c.setOpenid(openid); c.setPhone(phone);
-        c.setName(w.getContact()); c.setRole(StringUtils.hasText(w.getContactOpenid()) ? "member" : "owner");
-        c.setStatus(1); c.setProjectId(w.getProjectId());
-        try {
-            contactMapper.insert(c);
-        } catch (org.springframework.dao.DuplicateKeyException dup) {
-            throw new BizException(409, "该微信已绑定其他云仓");
-        }
-        // 旧列仍写首次绑定者,过渡期兼容
-        if (!StringUtils.hasText(w.getContactOpenid())) {
-            warehouseMapper.update(null, new LambdaUpdateWrapper<MktWarehouse>().eq(MktWarehouse::getId, w.getId()).isNull(MktWarehouse::getContactOpenid).set(MktWarehouse::getContactOpenid, openid));
-        }
-        auditService.log("warehouse.bind", "warehouse", w.getId(), "微信手机号绑定(联系人)");
-        return new LoginResult(true, issue(w), openid, w);
+    private LoginResult bindPhoneInternal(String openid, String phone, String name) {
+        WhIdentityService.Identity identity = identityService.bindVerifiedPhone(openid, phone, name);
+        return identity == null ? new LoginResult(false, null, openid, null) : identityResult(identity, openid);
     }
 
-    private void touchLogin(MktWarehouse w) { /* contact_openid is the only persisted identity marker in this schema */ }
-
-    private String issue(MktWarehouse w) { JwtAccountService.assertWarehouseActive(w); return jwtService.issueForIdentity("wh", w.getId()); }
+    private LoginResult identityResult(WhIdentityService.Identity identity, String openid) {
+        return new LoginResult(true, identityService.issueToken(identity.contact()), openid, WhIdentityService.safeWarehouse(identity.warehouse()));
+    }
 
     WxSessionClient.Session code2Session(String jsCode) {
         if (!StringUtils.hasText(jsCode)) throw new BizException("缺少 js_code");

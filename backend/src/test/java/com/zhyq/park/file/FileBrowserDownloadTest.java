@@ -41,6 +41,7 @@ class FileBrowserDownloadTest {
     @Autowired ObjectMapper json;
     @Autowired JwtService jwt;
     @MockBean com.zhyq.park.marketing.service.MktDocumentRetentionService retention;
+    @MockBean com.zhyq.park.energy.service.FeeNoticePaymentService feeNoticePayments;
     @MockBean com.zhyq.park.file.mapper.FileBusinessAccessMapper businessAccess;
     @MockBean SysFileMapper files;
     @MockBean FileStorageService storage;

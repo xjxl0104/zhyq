@@ -10,6 +10,10 @@ export const warehouseAuthApi = {
   bindPhone: (data) => whPost('/auth/bind-phone', data)
 }
 export const warehouseApi = {
+  staff: () => whGet('/staff'),
+  saveStaff: (id, data) => id ? whPut(`/staff/${id}`, data) : whPost('/staff', data),
+  customerDetail: id => whGet(`/customers/${id}`),
+  assignSalesperson: (id, contactId) => whPut(`/customers/${id}/salesperson`, { contactId }),
   protection: () => whGet('/competition-protection'),
   addProtection: name => whPost('/competition-protection', { name }),
   removeProtection: id => whPost(`/competition-protection/${id}/remove`),

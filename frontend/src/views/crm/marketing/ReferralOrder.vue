@@ -69,7 +69,7 @@
             <el-input-number v-if="alloc.view.canEdit" v-model="alloc.form.totalPerOrder" :min="0" :step="0.001" :precision="3" :controls="false" size="small" style="width: 110px" />
             <span v-else>{{ alloc.view.totalPerOrder != null ? Number(alloc.view.totalPerOrder).toFixed(3) : '未配置' }}</span>
           </el-descriptions-item>
-          <el-descriptions-item label="平台固定留存">{{ PLATFORM_PCT }}%（{{ fixed3(Number(allocTotal) * PLATFORM_PCT / 100) }} 元/单）</el-descriptions-item>
+          <el-descriptions-item label="平台服务费">{{ PLATFORM_PCT }}%（{{ allocServiceFee }} 元/单）</el-descriptions-item>
         </el-descriptions>
 
         <el-table :data="alloc.form.members" size="small" border>
@@ -101,9 +101,9 @@
           <span v-if="!addableMembers.length" class="hint">本人团队里暂无可添加的其他正常成员。</span>
         </div>
         <p class="hint alloc-sum">
-          成员分成合计 <span :class="{ neg: allocOver }">{{ allocPct }}%</span>（上限 {{ 100 - PLATFORM_PCT }}%，平台固定留存 {{ PLATFORM_PCT }}%）,
+          成员分成合计 <span :class="{ neg: allocOver }">{{ allocPct }}%</span>（上限 {{ 100 - PLATFORM_PCT }}%，平台服务费 {{ PLATFORM_PCT }}%）,
           折合每单 {{ allocSum }} 元 / 每单总佣金 {{ allocTotal }} 元,
-          平台和未分配部分合计 {{ allocCompany }} 元
+          平台服务费 {{ allocServiceFee }} 元，剩余未分配 {{ allocUnallocated }} 元
           <template v-if="allocOver">(成员分成超过 {{ 100 - PLATFORM_PCT }}%,无法保存)</template>。
           比例乘以每单总佣金后向下取到 0.001 元。配置保存后只对之后产生的出库单生效,历史订单不重算；成员被调整层级前签的合同会保留其原有分成。
         </p>
@@ -193,8 +193,8 @@ function addMember() {
 }
 function removeMember(row) { alloc.form.members = alloc.form.members.filter(m => m !== row) }
 const fixed3 = (v) => Number(v || 0).toFixed(3)
-// 平台固定留存每单总佣金的 5%，其余 95% 由 P4 按比例分给链路成员；比例乘总佣金后向下取到 0.001 元
-const PLATFORM_PCT = 5
+// 平台服务费精确为 10%，其余 90% 由 P4 分配；个人输入维持 0.001 元精度。
+const PLATFORM_PCT = 10
 const amountOf = (pct) => Math.floor(Number(alloc.form.totalPerOrder || 0) * Number(pct || 0) / 100 * 1000 + 1e-6) / 1000
 const pctOf = (amount, total) => total > 0 ? Math.round(Number(amount || 0) / total * 10000) / 100 : 0
 const allocPctRaw = computed(() => alloc.form.members.reduce((a, m) => a + Number(m.pct || 0), 0))
@@ -204,6 +204,8 @@ const allocSumNumber = computed(() => alloc.form.members.reduce((a, m) => a + am
 const allocSum = computed(() => fixed3(allocSumNumber.value))
 const allocTotal = computed(() => fixed3(alloc.form.totalPerOrder))
 const allocCompany = computed(() => fixed3(Number(alloc.form.totalPerOrder || 0) - allocSumNumber.value))
+const allocServiceFee = computed(() => (Number(alloc.form.totalPerOrder || 0) * PLATFORM_PCT / 100).toFixed(4))
+const allocUnallocated = computed(() => (Number(allocCompany.value) - Number(allocServiceFee.value)).toFixed(4))
 
 async function openAlloc(row) {
   Object.assign(alloc, { visible: true, view: null, saving: false, commissions: [], commissionLoading: false, addId: null, form: { totalPerOrder: 0, members: [] } })
@@ -217,7 +219,7 @@ async function openAlloc(row) {
       pct: pctOf(m.amountPerOrder, alloc.form.totalPerOrder)
     }))
     if (view.canEdit && !view.configured) {
-      // 未配置过:默认把可分配的 95% 全给 P4 本人(平台固定留存 5%),其他成员 0,由 P4 自行调整
+      // 未配置过:可分配的 90% 默认给 P4 本人，其余成员 0，由 P4 自行调整。
       const owner = alloc.form.members.find(m => m.isOwner)
       if (owner) owner.pct = 100 - PLATFORM_PCT
     }
@@ -233,7 +235,7 @@ async function openAlloc(row) {
 
 async function saveAlloc() {
   if (!alloc.view?.canEdit || alloc.saving) return
-  if (allocOver.value) return ElMessage.warning(`成员分成合计不能超过 ${100 - PLATFORM_PCT}%（平台固定留存 ${PLATFORM_PCT}%）`)
+  if (allocOver.value) return ElMessage.warning(`成员分成合计不能超过 ${100 - PLATFORM_PCT}%（平台服务费 ${PLATFORM_PCT}%）`)
   if (!(Number(alloc.form.totalPerOrder) > 0)) return ElMessage.warning('请先填写每单总佣金')
   const owner = alloc.form.members.find(m => m.isOwner)
   const beneficiaries = alloc.form.members

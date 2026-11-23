@@ -45,7 +45,10 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                 boolean whPath = path.equals("/wh/v1") || path.startsWith("/wh/v1/");
                 boolean allowed = switch (account.type()) {
                     case "mp" -> mpPath;
-                    case "wh" -> whPath;
+                    // Old tokens represented only a warehouse, so a former member could
+                    // otherwise retain owner access. All portal sessions now identify a contact.
+                    case "wh_contact" -> whPath;
+                    case "wh" -> false;
                     case "admin" -> !mpPath && !whPath;
                     default -> false;
                 };

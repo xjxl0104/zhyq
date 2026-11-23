@@ -18,7 +18,8 @@ public final class MktReferralRequirements {
     private static final Set<String> AREA = Set.of("0-50", "50-200", "200-1000", "1000-3000", "3000-5000", ">=5000");
     private static final Set<String> COUNTS = Set.of("0-10", "10-20", "20-50", "50-100", "100-500", ">=500");
     private static final Set<String> ORDERS = Set.of("0-200", "200-1000", "1000-3000", "3000-5000", "5000-10000", ">=10000");
-    private static final Set<String> ITEMS_PER_PARCEL_RANGES = Set.of("0-2", "2-5", "5-10", "10-20", ">=20");
+    // New forms collect exact counts; retain old ranges while older clients remain in use.
+    private static final Set<String> ITEMS_PER_PARCEL_RANGES = Set.of("1", "2", "3", "4", "5", ">=6", "0-2", "2-5", "5-10", "10-20", ">=20");
     private MktReferralRequirements() {}
 
     public static String normalize(Object input) {

@@ -30,6 +30,7 @@ import java.util.List;
 import java.util.Map;
 
 @Tag(name = "云仓端-ERP 自助")
+@org.springframework.security.access.prepost.PreAuthorize("hasRole('WH_OWNER')")
 @RestController
 @RequestMapping("/wh/v1/erp")
 @RequiredArgsConstructor

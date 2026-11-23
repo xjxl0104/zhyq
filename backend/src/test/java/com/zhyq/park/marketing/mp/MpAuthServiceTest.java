@@ -78,7 +78,7 @@ class MpAuthServiceTest {
         existing.setOpenid("other");
         when(promoters.selectOne(any())).thenReturn(null, null, existing);
         doThrow(new BizException("生成邀请码失败,请重试")).when(promoterService).register(any(), any(), any());
-        assertThatThrownBy(() -> service.bindPhone("openid", "13800138000", "ABCD2345", null))
+        assertThatThrownBy(() -> service.bindPhone("openid", "13800138000", "ABCD2345", "测试伙伴"))
                 .isInstanceOf(BizException.class).hasMessageContaining("已绑定其他微信");
     }
     @Test void mismatchedAppIdFailsBeforeWechatCall() {
@@ -131,6 +131,7 @@ class MpAuthServiceTest {
         service.setMockLogin(true);
         var existing = new com.zhyq.park.marketing.entity.MktPromoter();
         existing.setId(9L); existing.setStatus(1); existing.setOpenid("existing-openid");
+        existing.setName("已有伙伴"); existing.setPhone("13800138000");
         when(promoters.selectOne(any())).thenReturn(existing);
         assertThat(service.bindPhone("existing-openid", "13800138000", null, null).registered()).isTrue();
         verify(promoterService, never()).register(any(), any(), any());
@@ -167,5 +168,27 @@ class MpAuthServiceTest {
         assertThatThrownBy(() -> service.bindPhone("openid", "13800138000", null, null)).isInstanceOf(BizException.class).hasMessageContaining("冻结");
         org.mockito.Mockito.verifyNoInteractions(jwt);
         verify(promoters, never()).update(any(), any());
+    }
+    @Test void legacyWechatEndpointDoesNotIssueTokenUntilMissingContactDetailsAreCompleted() {
+        var p = new com.zhyq.park.marketing.entity.MktPromoter();
+        p.setId(7L); p.setStatus(1); p.setName("园区伙伴"); p.setOpenid("existing-openid");
+        when(promoters.selectOne(any())).thenReturn(p);
+        MpAuthService service = new MpAuthService(jwt, promoters, promoterService, settings,
+                (a, s, c) -> new WxSessionClient.Session("existing-openid", "session"), (k, e, i) -> "unused", phoneBindingGuard);
+        service.setMockLogin(false); service.setAppId("app"); service.setAppSecret("secret");
+        var result = service.wxLogin("code", "app");
+        assertThat(result.registered()).isFalse(); assertThat(result.token()).isNull();
+        assertThat(result.loginTicket()).isNotBlank();
+        org.mockito.Mockito.verifyNoInteractions(jwt);
+    }
+    @Test void legacyNewRegistrationRequiresAnExplicitNameAndValidPhone() {
+        MpAuthService service = new MpAuthService(jwt, promoters, promoterService, settings,
+                (a, s, c) -> null, (k, e, i) -> "unused", phoneBindingGuard);
+        service.setMockLogin(true);
+        assertThatThrownBy(() -> service.bindPhone("openid", "13800138000", "ABCD2345", null)).hasMessageContaining("姓名");
+        assertThatThrownBy(() -> service.bindPhone("openid", "13800138000", "ABCD2345", "园区伙伴")).hasMessageContaining("姓名");
+        assertThatThrownBy(() -> service.bindPhone("openid", "", "ABCD2345", "测试伙伴")).hasMessageContaining("手机号");
+        verify(promoterService, never()).register(any(), any(), any());
+        org.mockito.Mockito.verifyNoInteractions(jwt);
     }
 }

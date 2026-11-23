@@ -2,11 +2,12 @@
   <view class="page-wrap">
     <view class="card hero-card">
       <view class="hero-title">{{ profile?.warehouseName || '云仓工作台' }}</view>
+      <view class="hero-subtitle">{{ profile?.isOwner ? '主账号 · 本仓全部业务' : '业务员 · 仅本人分配客户' }}</view>
       <view class="hero-subtitle">{{ JOIN[stats.joinStatus] || '正在读取状态' }} · {{ ['yunshan', 'manual'].includes(stats.orderMode) ? '云山发货量同步' : '外部 ERP 接入' }}</view>
     </view>
-    <view v-if="profile && !profile.profileComplete && profile.profileEditable" class="card profile-prompt">
-      <view class="wh-item-title">个人信息可稍后补充</view>
-      <view class="wh-note">先使用工作台，需要时再填写云仓名称、联系人和联系电话。</view>
+    <view v-if="profile?.isOwner && !profile.profileComplete && profile.profileEditable" class="card profile-prompt">
+      <view class="wh-item-title">完善云仓信息</view>
+      <view class="wh-note">主账号可维护云仓资料，并为业务员分配客户。</view>
       <button class="wh-secondary" @click="go('warehouse-profile')">完善个人信息</button>
     </view>
     <view v-if="error" class="card">
@@ -25,9 +26,9 @@
     </view>
     <view class="card">
       <view class="wh-item-title">业务办理</view>
-      <button v-for="item in entries" :key="item.page" class="entry" @click="go(item.page)">
+      <button v-for="item in visibleEntries" :key="item.page" class="entry" @click="go(item.page)">
         <view>{{ item.title }}</view>
-        <view class="wh-note">{{ item.note }}</view>
+        <view class="wh-note">{{ item.page === 'warehouse-profile' ? (profile?.isOwner ? '维护云仓名称和本人姓名，查看登录手机号' : '维护本人姓名，查看云仓与登录手机号') : item.note }}</view>
       </button>
       <button class="wh-secondary" @click="logout">退出登录</button>
     </view>
@@ -41,10 +42,11 @@ export default { mixins: [appShareMixin] }
 </script>
 
 <script setup>
-import { reactive, ref } from 'vue'
+import { computed, reactive, ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import { warehouseApi } from '@/api/warehouse'
 import { warehouseToken } from '@/utils/request'
+import { isWarehouseOwner } from '@/utils/warehouse-workspace.mjs'
 import { JOIN } from '@/utils/warehouse-ui'
 
 const stats = reactive({})
@@ -53,6 +55,7 @@ const loading = ref(false)
 const error = ref('')
 const ERP = { 0: '未接入', 1: '沙箱联调', 2: '正式联通', 3: '连接中断' }
 const entries = [
+  { page: 'warehouse-staff', title: '业务员管理', note: '维护业务员姓名、手机号及账号启停' },
   { page: 'warehouse-profile', title: '个人信息', note: '补充云仓名称、联系人和联系电话' },
   { page: 'warehouse-apply', title: '加盟申请', note: '完善资料与上传资质附件' },
   { page: 'warehouse-protection', title: '竞争保护白名单', note: '仅填品牌或公司名称，名单仅本云仓可见' },
@@ -66,6 +69,7 @@ const entries = [
   { page: 'account-security', title: '账号与密码', note: '设置或修改登录密码' }
 ]
 
+const visibleEntries = computed(() => entries.filter(item => isWarehouseOwner(profile.value) || ['warehouse-profile', 'warehouse-customers', 'warehouse-orders'].includes(item.page)))
 async function load() {
   if (loading.value) return
   loading.value = true

@@ -22,12 +22,13 @@
     <el-form-item label="平均包裹产品数量">
       <div class="range-options"><el-checkbox v-for="v in itemsPerParcelRanges" :key="v" :model-value="modelValue.itemsPerParcelRange === v" @change="setItemsPerParcel($event ? v : '')">{{ itemsPerParcelLabel(v) }}</el-checkbox>
         <div class="field-hint">选填，单选；再次点击可取消</div>
-        <div v-if="!modelValue.itemsPerParcelRange && modelValue.itemsPerParcel != null && modelValue.itemsPerParcel !== ''" class="field-hint">历史填写：{{ modelValue.itemsPerParcel }} 件；选择区间后替换</div>
+        <div v-if="modelValue.itemsPerParcelRange && !itemsPerParcelRanges.includes(modelValue.itemsPerParcelRange)" class="field-hint">历史填写：{{ itemsPerParcelLabel(modelValue.itemsPerParcelRange) }}；选择新的数量后替换</div>
+        <div v-else-if="!modelValue.itemsPerParcelRange && modelValue.itemsPerParcel != null && modelValue.itemsPerParcel !== ''" class="field-hint">历史填写：{{ modelValue.itemsPerParcel }} 件；选择新的数量后替换</div>
       </div>
     </el-form-item>
     <el-form-item label="指定快递承运商"><el-checkbox-group :model-value="modelValue.couriers" @update:model-value="update('couriers', exclusiveNone(modelValue.couriers, $event))"><el-checkbox v-for="v in courierOptions" :key="v" :value="v" :label="v" /></el-checkbox-group><el-input v-if="modelValue.couriers.includes('其他')" :model-value="modelValue.courierOther" @update:model-value="update('courierOther', $event)" maxlength="100" placeholder="其他快递承运商" /></el-form-item>
     <el-divider content-position="left">现有仓配现状</el-divider>
-    <el-form-item label="目前仓配方式"><el-select :model-value="modelValue.warehouseMode" @update:model-value="update('warehouseMode', $event || '')" clearable placeholder="自建仓还是外包云仓（选填）" style="width:100%"><el-option v-for="v in warehouseModeOptions" :key="v" :value="v" :label="v" /></el-select></el-form-item>
+    <el-form-item label="目前仓配方式"><div class="range-options"><el-checkbox v-for="v in warehouseModeOptions" :key="v" :model-value="modelValue.warehouseMode === v" @change="update('warehouseMode', $event ? v : '')">{{ v }}</el-checkbox><div class="field-hint">选填，单选；再次点击可取消</div></div></el-form-item>
     <el-form-item label="目前合作快递"><el-checkbox-group :model-value="modelValue.currentCouriers || []" @update:model-value="update('currentCouriers', exclusiveNone(modelValue.currentCouriers || [], $event))"><el-checkbox v-for="v in courierOptions" :key="v" :value="v" :label="v" /></el-checkbox-group><el-input v-if="(modelValue.currentCouriers || []).includes('其他')" :model-value="modelValue.currentCourierOther" @update:model-value="update('currentCourierOther', $event)" maxlength="100" placeholder="其他快递" /></el-form-item>
     <el-form-item label="最头疼的问题"><el-checkbox-group :model-value="modelValue.painPoints || []" @update:model-value="update('painPoints', $event)"><el-checkbox v-for="v in painPointOptions" :key="v" :value="v" :label="v" /></el-checkbox-group><el-input v-if="(modelValue.painPoints || []).includes('其他')" :model-value="modelValue.painPointOther" @update:model-value="update('painPointOther', $event)" maxlength="100" placeholder="其他问题" /></el-form-item>
   </template>
@@ -48,6 +49,6 @@ function setPercentage(range, percentage) {
 }
 </script>
 <style scoped>
-.weight-options { width:100%; }.weight-row { display:flex; align-items:center; gap:8px; }.weight-row .el-checkbox { min-width:180px; }.weight-row .el-input-number { width:110px; }.field-hint { color:var(--el-text-color-secondary); font-size:12px; }.requirements-detail { overflow-wrap:anywhere; }
+.weight-options { width:100%; display:flex; flex-wrap:wrap; gap:8px 24px; }.weight-options > .field-hint { width:100%; }.weight-row { display:flex; align-items:center; gap:8px; }.weight-row .el-checkbox { min-width:130px; }.weight-row .el-input-number { width:110px; }.field-hint { color:var(--el-text-color-secondary); font-size:12px; }.requirements-detail { overflow-wrap:anywhere; }
 .range-options { width:100%; }.range-options .el-checkbox { margin-right:20px; }
 </style>

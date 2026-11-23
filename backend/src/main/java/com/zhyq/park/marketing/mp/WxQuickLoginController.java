@@ -17,7 +17,7 @@ public class WxQuickLoginController {
     private final WxQuickLoginService service;
     private final ClientAddressResolver clientAddresses;
 
-    @Operation(summary = "伙伴微信快捷登录；手机号授权可选，资料可后补")
+    @Operation(summary = "伙伴姓名与微信手机号授权登录")
     @PostMapping("/mp/v1/auth/quick-login")
     public Result<Map<String, Object>> partner(@RequestBody WxQuickLoginService.Request body, HttpServletRequest request) {
         return Result.ok(service.login(WxQuickLoginService.Identity.MP, body, clientAddresses.resolve(request)));

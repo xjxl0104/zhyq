@@ -1,5 +1,8 @@
 <template>
   <view class="page-wrap home-page">
+    <view v-if="me.superAdmin" class="view-toolbar"><text class="caption">{{ viewLabel }}</text><button class="view-switch" @click="chooseView">切换总览 ▾</button></view>
+    <AdminOverview v-if="me.superAdmin && activeView !== 'personal'" :view="activeView" :refresh-key="overviewRefresh" />
+    <template v-if="activeView === 'personal' || !me.superAdmin">
     <view v-if="error" class="card"><view class="muted">{{ error }}</view><button class="btn" :disabled="loading" @click="load">重新加载</button></view>
     <view v-if="loading" class="card muted">正在读取收益…</view>
     <view v-if="home" class="card hero-card">
@@ -46,8 +49,8 @@
       <view class="quick-card pressable" @click="go('/pages/settlement/index')">
         <view class="quick-icon">结</view><view><view class="quick-title">结算提现</view><view class="quick-desc">可提 {{ fmt(home?.withdrawable) }} · 自动结算</view></view>
       </view>
-      <view v-if="me.positionCode === 'P4' && Number(me.status) === 1" class="quick-card pressable" @click="go('/pages/allocation/index')">
-        <view class="quick-icon">价</view><view><view class="quick-title">客户定价与分佣</view><view class="quick-desc">按客户自定义每单金额</view></view>
+      <view v-if="Number(me.status) === 1" class="quick-card pressable" @click="go('/pages/allocation/index')">
+        <view class="quick-icon">佣</view><view><view class="quick-title">客户分佣</view><view class="quick-desc">{{ me.positionCode === 'P4' ? '合同客户 / 分佣管理' : '合同客户 / 我的每单金额' }}</view></view>
       </view>
     </view>
 
@@ -59,6 +62,7 @@
         <text class="money" :class="{ negative: r.amount < 0 }">{{ fmt(r.amount) }}</text>
       </view>
     </view>
+    </template>
   </view>
 </template>
 
@@ -75,10 +79,21 @@ import { meApi } from '@/api'
 import { navigateTo, switchTab } from '@/utils/nav.mjs'
 import { token } from '@/utils/request'
 import { shipmentNavigation } from '@/utils/shipments.mjs'
+import AdminOverview from '@/components/AdminOverview.vue'
+import { ADMIN_VIEWS } from '@/utils/admin-overview.mjs'
 
 const STATUS = { 1: '冻结', 2: '可结算', 3: '已结算', 4: '已提现', 5: '作废' }
 const home = ref(null)
 const me = ref({})
+const activeView = ref('personal'), overviewRefresh = ref(0)
+const viewLabel = computed(() => ADMIN_VIEWS.find(item => item.value === activeView.value)?.label || '个人总览')
+function chooseView() {
+  if (!me.value.superAdmin) return
+  uni.showActionSheet({ itemList: ADMIN_VIEWS.map(item => item.label), success(result) {
+    if (!me.value.superAdmin || !ADMIN_VIEWS[result.tapIndex]) return
+    activeView.value = ADMIN_VIEWS[result.tapIndex].value
+  } })
+}
 const shipmentEntry = computed(() => shipmentNavigation(me.value))
 const error = ref(''), loading = ref(false)
 const SOURCE = { 1: '园区入驻', 2: '出库单', 3: '平台费', 4: '签约奖' }
@@ -90,13 +105,13 @@ const sources = computed(() => (bench.value?.bySource || [])
   .map(row => ({ label: SOURCE[row.sourceType] || '其他', amount: Number(row.amount) }))
   .filter(row => row.amount !== 0))
 const go = (url) => uni.navigateTo({ url })
-let requestNo = 0
+let requestNo = 0, validatedToken = ''
 
 async function load() {
   const request = ++requestNo
   home.value = null
   bench.value = null
-  me.value = {}
+  if (token.get() !== validatedToken) { me.value = {}; activeView.value = 'personal' }
   error.value = ''
   loading.value = false
   if (!token.get()) return uni.reLaunch({ url: '/pages/login/index' })
@@ -106,6 +121,8 @@ async function load() {
     if (request !== requestNo) return
     home.value = summary
     me.value = profile
+    validatedToken = token.get()
+    if (!profile.superAdmin) activeView.value = 'personal'
     bench.value = workbench
   } catch (failure) {
     if (request === requestNo) error.value = failure.message || '收益读取失败，请重新加载'
@@ -126,7 +143,7 @@ async function refresh() {
   } catch (failure) { /* 下一轮重试 */ }
 }
 function stopRefresh() { if (timer) { clearInterval(timer); timer = null } }
-onShow(() => { stopRefresh(); timer = setInterval(refresh, REFRESH_MS); return load() })
+onShow(() => { stopRefresh(); overviewRefresh.value++; timer = setInterval(refresh, REFRESH_MS); return load() })
 onHide(stopRefresh)
 onUnmounted(() => { stopRefresh(); requestNo++ })
 </script>
@@ -137,4 +154,7 @@ onUnmounted(() => { stopRefresh(); requestNo++ })
 .activity-card { padding-top: 14rpx; padding-bottom: 14rpx; }
 .negative { color: #c84b5c; }
 .bench-grid { margin-top: 20rpx; }
+.view-toolbar { display: flex; align-items: center; justify-content: flex-end; gap: 20rpx; margin: 8rpx 24rpx 24rpx; }
+.view-switch { margin: 0; padding: 10rpx 20rpx; color: #3857f5; background: #fff; border-radius: 14rpx; font-size: 26rpx; line-height: 1.5; }
+.view-switch::after { border-color: #d8def7; }
 </style>
