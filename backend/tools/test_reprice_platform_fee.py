@@ -1,7 +1,9 @@
 import copy
 from decimal import Decimal as D
+import os
+import subprocess
 import unittest
-from reprice_platform_fee import GuardError, json_exact, make_plan, scaled_rates
+from reprice_platform_fee import GuardError, Mysql, RUN_KEY, json_exact, make_plan, scaled_rates, sql_value
 
 
 def fixture():
@@ -126,6 +128,64 @@ class RepriceTest(unittest.TestCase):
         self.assertEqual(after['crm_promoter_commission'][0]['status'], 5)
         self.assertEqual(after['crm_settle_batch'][0]['cnt'], 1)
         self.assertEqual(after['crm_settle_batch'][0]['total_amount'], D('1.800'))
+
+
+@unittest.skipUnless(os.environ.get('REPRICE_TEST_MYSQL_DEFAULTS'),
+                     'set REPRICE_TEST_MYSQL_DEFAULTS for isolated localhost MySQL regression')
+class MysqlCollationTest(unittest.TestCase):
+    """Real MySQL regression; only connection-local temporary tables are changed."""
+
+    def setUp(self):
+        self.db = Mysql.__new__(Mysql)
+        self.db.process = subprocess.Popen([
+            os.environ.get('REPRICE_TEST_MYSQL_EXECUTABLE', 'mysql'),
+            '--defaults-extra-file=' + os.environ['REPRICE_TEST_MYSQL_DEFAULTS'],
+            '--host=127.0.0.1', '--port=13326', '--protocol=TCP',
+            '--default-character-set=utf8mb4', '--batch', '--raw',
+            '--skip-column-names', '--unbuffered', 'warehouse_http_it'],
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            text=True, encoding='utf-8')
+        self.addCleanup(self.db.close)
+        self.db.sql('CREATE TEMPORARY TABLE fee_reprice_collation_it ('
+                    'run_key VARCHAR(64) COLLATE utf8mb4_unicode_ci PRIMARY KEY, '
+                    'summary_json JSON) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci')
+
+    def test_set_names_alone_does_not_repair_mysql8_convert_comparison(self):
+        self.db.sql('SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci')
+        self.assertEqual(self.db.sql('SELECT COLLATION(CONVERT(0x616263 USING utf8mb4))'),
+                         ['utf8mb4_0900_ai_ci'])
+        with self.assertRaisesRegex(GuardError, 'ERROR 1267'):
+            self.db.sql('SELECT COUNT(*) FROM fee_reprice_collation_it '
+                        'WHERE run_key=CONVERT(0x616263 USING utf8mb4)')
+
+    def test_run_key_lookup_and_chinese_audit_json_round_trip(self):
+        payload = json_exact({'name': '客户分佣：谢总', 'note': "引号'与反斜线\\及😀", 'fee': D('.0001')})
+        self.db.sql('INSERT INTO fee_reprice_collation_it VALUES ('
+                    + sql_value(RUN_KEY) + ',' + sql_value(payload) + ')')
+        self.assertEqual(self.db.sql('SELECT COUNT(*) FROM fee_reprice_collation_it WHERE run_key='
+                                    + sql_value(RUN_KEY)), ['1'])
+        self.assertEqual(self.db.sql('SELECT HEX(JSON_UNQUOTE(JSON_EXTRACT(summary_json,\'$.name\'))) '
+                                    'FROM fee_reprice_collation_it'),
+                         ['客户分佣：谢总'.encode('utf-8').hex().upper()])
+        self.assertEqual(self.db.sql('SELECT HEX(JSON_UNQUOTE(JSON_EXTRACT(summary_json,\'$.note\'))) '
+                                    'FROM fee_reprice_collation_it'),
+                         ["引号'与反斜线\\及😀".encode('utf-8').hex().upper()])
+        self.assertEqual(self.db.sql('SELECT COLLATION(' + sql_value(RUN_KEY) + ')'),
+                         ['utf8mb4_unicode_ci'])
+
+    def test_audit_lookup_before_apply_after_rollback_and_after_commit(self):
+        lookup = 'SELECT COUNT(*) FROM fee_reprice_collation_it WHERE run_key=' + sql_value(RUN_KEY)
+        insert = 'INSERT INTO fee_reprice_collation_it VALUES (' + sql_value(RUN_KEY) + ',\'{"fee":0.1}\')'
+        self.assertEqual(self.db.sql(lookup), ['0'])
+        self.db.sql('START TRANSACTION')
+        self.db.sql(insert)
+        self.assertEqual(self.db.sql(lookup), ['1'])
+        self.db.sql('ROLLBACK')
+        self.assertEqual(self.db.sql(lookup), ['0'])
+        self.db.sql('START TRANSACTION')
+        self.db.sql(insert)
+        self.db.sql('COMMIT')
+        self.assertEqual(self.db.sql(lookup), ['1'])
 
 
 if __name__ == '__main__':
