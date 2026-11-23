@@ -62,17 +62,39 @@ public class QuoteAdviceClient {
     }
     List<String> assess(List<Candidate> candidates) throws IOException,InterruptedException {
         if (!configured() || candidates.isEmpty()) throw new IllegalStateException("报价 AI 未就绪");
+        String body = requestBody(candidates);
+        var request=HttpRequest.newBuilder(URI.create(endpoint)).timeout(Duration.ofSeconds(40))
+            .header("Authorization","Bearer "+key).header("Content-Type","application/json")
+            .POST(HttpRequest.BodyPublishers.ofString(body)).build();
+        var response=client.send(request,HttpResponse.BodyHandlers.ofString());
+        if (response.statusCode()!=200 || response.body().length()>100000) throw new IOException("报价评估服务不可用");
+        return readResponse(candidates,response.body());
+    }
+
+    String requestBody(List<Candidate> candidates) throws IOException {
         String prompt="根据匿名云仓报价，给运营选出最多三项值得进一步核价的方案。票价、月仓租、月增值费用单位不同，不可直接相加。缺失数字不能按零处理，优先选数据完整且价格有竞争力的方案。只返回JSON对象，shortlist为方案id的整数数组，checks从weights,materials,scope,volume,storage,extras,tax选择最多三项。";
         String data=json.writeValueAsString(candidates.stream().map(Candidate::numbers).toList());
         if(data.length()>60000) throw new IOException("候选方案超出单次评估容量");
-        var body=Map.of("model",model,"messages",List.of(Map.of("role","system","content",prompt),Map.of("role","user","content",data)),
-            "temperature",0.1,"max_tokens",768);
-        var request=HttpRequest.newBuilder(URI.create(endpoint)).timeout(Duration.ofSeconds(40))
-            .header("Authorization","Bearer "+key).header("Content-Type","application/json")
-            .POST(HttpRequest.BodyPublishers.ofString(json.writeValueAsString(body))).build();
-        var response=client.send(request,HttpResponse.BodyHandlers.ofString());
-        if (response.statusCode()!=200 || response.body().length()>100000) throw new IOException("报价评估服务不可用");
-        String output=json.readTree(response.body()).path("choices").path(0).path("message").path("content").asText("").trim();
+        var body=json.createObjectNode();
+        body.put("model",model);
+        var messages=body.putArray("messages");
+        messages.addObject().put("role","system").put("content",prompt);
+        messages.addObject().put("role","user").put("content",data);
+        body.put("temperature",0.1);
+        // The gateway counts DeepSeek reasoning and the final answer against this shared limit.
+        body.put("max_tokens","deepseek-flash".equals(model) ? 4096 : 768);
+        return json.writeValueAsString(body);
+    }
+
+    List<String> readResponse(List<Candidate> candidates,String responseBody) throws IOException {
+        JsonNode response=json.readTree(responseBody);
+        if (response==null) throw new IOException("报价评估服务返回了空响应");
+        var choice=response.path("choices").path(0);
+        if ("length".equals(choice.path("finish_reason").asText())) {
+            throw new IOException("报价评估达到输出上限，未取得完整建议");
+        }
+        String output=choice.path("message").path("content").asText("").trim();
+        if (output.isEmpty()) throw new IOException("报价评估服务未返回建议内容");
         if (output.startsWith("```json") && output.endsWith("```")) output=output.substring(7,output.length()-3).trim();
         return suggestions(candidates,json.readTree(output));
     }
