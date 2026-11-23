@@ -63,6 +63,7 @@ public class FeeNoticeService {
     private final JdbcTemplate jdbc;
     private final FeeSnapshotMapper snapshotMapper;
     private final ObjectMapper objectMapper;
+    private final FeeNoticePaymentService payments;
 
     /** 一种能源的工作表:行 + 汇总,给 电费 / 水费 页面 */
     public record Sheet(FeePeriod period, String energyType, BigDecimal total, String totalSource,
@@ -207,7 +208,9 @@ public class FeeNoticeService {
 
     @Transactional(rollbackFor = Exception.class)
     public void delete(Long id) {
+        payments.lockPeriod(id);
         requireDraft(id);
+        payments.assertCanDelete(noticeMapper.selectList(new LambdaQueryWrapper<FeeNotice>().eq(FeeNotice::getFeePeriodId, id)));
         itemMapper.delete(new LambdaQueryWrapper<FeeNoticeItem>().eq(FeeNoticeItem::getFeePeriodId, id));
         noticeMapper.delete(new LambdaQueryWrapper<FeeNotice>().eq(FeeNotice::getFeePeriodId, id));
         snapshotMapper.delete(new LambdaQueryWrapper<FeeSnapshot>().eq(FeeSnapshot::getFeePeriodId, id));
@@ -519,6 +522,7 @@ public class FeeNoticeService {
     /** 按当前读数与录入项重新生成全部通知单(幂等:先清后插,手工字段按户保留) */
     @Transactional(rollbackFor = Exception.class)
     public GenerateResult generate(Long periodId) {
+        payments.lockPeriod(periodId);
         FeePeriod p = requireDraft(periodId);
         Sheet water = sheet(p, FeeNoticeCalculator.TYPE_WATER);
         Sheet electric = sheet(p, FeeNoticeCalculator.TYPE_ELECTRIC);
@@ -542,12 +546,14 @@ public class FeeNoticeService {
         }
         // 旧版是按楼层/区域分开出的,一个租户可能有好几张;按租户归并后再找回手工内容
         NoticeBatch batch = FeeNoticeCalculator.buildNotices(p, wr, er, FeeNoticeCalculator.mergePrevious(olds));
+        Map<String, List<Long>> paymentSources = payments.prepareRegeneration(olds, batch.notices());
 
         itemMapper.delete(new LambdaQueryWrapper<FeeNoticeItem>().eq(FeeNoticeItem::getFeePeriodId, periodId));
         noticeMapper.delete(new LambdaQueryWrapper<FeeNotice>().eq(FeeNotice::getFeePeriodId, periodId));
         BigDecimal totalAmount = BigDecimal.ZERO;
         for (FeeNotice n : batch.notices()) {
             noticeMapper.insert(n);
+            payments.moveAttachments(paymentSources, n);
             for (FeeNoticeItem it : n.getItems()) {
                 it.setNoticeId(n.getId());
                 it.setFeePeriodId(periodId);
@@ -579,7 +585,7 @@ public class FeeNoticeService {
             return list;
         }
         Map<Long, FeeNotice> byId = new LinkedHashMap<>();
-        list.forEach(n -> byId.put(n.getId(), n));
+        list.forEach(n -> byId.put(n.getId(), FeeNoticePaymentService.normalizeStatus(n)));
         for (FeeNoticeItem it : itemMapper.selectList(new LambdaQueryWrapper<FeeNoticeItem>()
                 .eq(FeeNoticeItem::getFeePeriodId, periodId).orderByAsc(FeeNoticeItem::getSort))) {
             FeeNotice n = byId.get(it.getNoticeId());
@@ -710,7 +716,7 @@ public class FeeNoticeService {
         FeeNoticeCalculator.recalcTotals(n);
         noticeMapper.updateById(n);
         n.setItems(after);
-        return n;
+        return FeeNoticePaymentService.normalizeStatus(n);
     }
 
     // ------------------------------------------------------------------ 出账
@@ -1000,6 +1006,7 @@ public class FeeNoticeService {
      */
     @Transactional(rollbackFor = Exception.class)
     public Map<String, Object> deleteNotices(Long periodId, List<Long> ids, boolean all) {
+        payments.lockPeriod(periodId);
         FeePeriod p = require(periodId);
         LambdaQueryWrapper<FeeNotice> qw = new LambdaQueryWrapper<FeeNotice>().eq(FeeNotice::getFeePeriodId, periodId);
         if (!all) {
@@ -1015,6 +1022,7 @@ public class FeeNoticeService {
             m.put("bills", 0);
             return m;
         }
+        payments.assertCanDelete(targets);
         int paid = 0;
         for (FeeNotice n : targets) {
             Bill b = n.getBillId() == null ? null : billMapper.lockActive(n.getBillId());

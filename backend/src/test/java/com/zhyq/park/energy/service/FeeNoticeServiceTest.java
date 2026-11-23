@@ -19,6 +19,9 @@ import com.zhyq.park.energy.mapper.ReadingMapper;
 import com.zhyq.park.energy.service.FeeNoticeCalculator.SheetRow;
 import com.zhyq.park.finance.entity.Bill;
 import com.zhyq.park.finance.mapper.BillMapper;
+import com.zhyq.park.file.entity.SysFile;
+import com.zhyq.park.file.mapper.SysFileMapper;
+import com.zhyq.park.file.service.FileStorageService;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -43,6 +46,8 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.mock;
+import static org.mockito.ArgumentMatchers.*;
 
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
@@ -56,6 +61,7 @@ class FeeNoticeServiceTest {
     @Mock private BillMapper billMapper;
     @Mock private JdbcTemplate jdbc;
     @Mock private FeeSnapshotMapper snapshotMapper;
+    @Mock private FeeNoticePaymentService payments;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
     private FeeNoticeService service;
@@ -64,7 +70,7 @@ class FeeNoticeServiceTest {
     @BeforeAll
     static void initTableInfo() {
         MapperBuilderAssistant assistant = new MapperBuilderAssistant(new MybatisConfiguration(), "");
-        for (Class<?> c : new Class<?>[]{FeePeriod.class, FeeNotice.class, Meter.class, Reading.class}) {
+        for (Class<?> c : new Class<?>[]{FeePeriod.class, FeeNotice.class, FeeNoticeItem.class, SysFile.class, Meter.class, Reading.class}) {
             TableInfoHelper.initTableInfo(assistant, c);
         }
     }
@@ -72,7 +78,7 @@ class FeeNoticeServiceTest {
     @BeforeEach
     void setUp() {
         service = new FeeNoticeService(periodMapper, noticeMapper, itemMapper, meterMapper, readingMapper,
-                billMapper, jdbc, snapshotMapper, objectMapper);
+                billMapper, jdbc, snapshotMapper, objectMapper, payments);
     }
 
     private static FeePeriod period(String status) {
@@ -90,6 +96,63 @@ class FeeNoticeServiceTest {
         n.setBillId(billId);
         n.setTotalDue(new BigDecimal("10"));
         return n;
+    }
+
+    @Test
+    void noticesPresentLegacyNullPaymentStatusAsUnpaid() {
+        FeeNotice n = notice(11L, null);
+        when(noticeMapper.selectList(any())).thenReturn(List.of(n));
+        assertThat(service.notices(1L).get(0).getPaymentStatus()).isZero();
+    }
+
+    @Test
+    void regenerationRefusesToLosePaidHouseholdOrPaymentAttachmentsBeforeDeletingAnything() {
+        SysFileMapper files = mock(SysFileMapper.class);
+        FeeNoticePaymentService realPayments = new FeeNoticePaymentService(jdbc, noticeMapper, itemMapper, files, mock(FileStorageService.class));
+        service = new FeeNoticeService(periodMapper, noticeMapper, itemMapper, meterMapper, readingMapper,
+                billMapper, jdbc, snapshotMapper, objectMapper, realPayments);
+        when(jdbc.queryForList(contains("FOR UPDATE"), eq(Long.class), eq(1L))).thenReturn(List.of(1L));
+        FeePeriod p = period(FeePeriod.ST_DRAFT); p.setWaterTotalUsage(BigDecimal.ZERO);
+        when(periodMapper.selectById(1L)).thenReturn(p);
+        FeeNotice old = notice(11L, null); old.setTenantRefId(7L); old.setTenantName("原租户"); old.setPaymentStatus(1);
+        when(noticeMapper.selectList(any())).thenReturn(List.of(old));
+        assertThatThrownBy(() -> service.generate(1L)).isInstanceOf(BizException.class).hasMessageContaining("原租户");
+        old.setPaymentStatus(0);
+        SysFile evidence = new SysFile(); evidence.setBizId(11L);
+        when(files.selectList(any())).thenReturn(List.of(evidence));
+        assertThatThrownBy(() -> service.generate(1L)).hasMessageContaining("附件");
+        verify(itemMapper, never()).delete(any());
+        verify(noticeMapper, never()).delete(any());
+        verify(noticeMapper, never()).insert(any(FeeNotice.class));
+    }
+
+    @Test
+    void regenerationPreservesPaymentStatusAndMovesEvidenceToReplacementNotice() {
+        SysFileMapper files = mock(SysFileMapper.class);
+        FeeNoticePaymentService realPayments = new FeeNoticePaymentService(jdbc, noticeMapper, itemMapper, files, mock(FileStorageService.class));
+        service = new FeeNoticeService(periodMapper, noticeMapper, itemMapper, meterMapper, readingMapper,
+                billMapper, jdbc, snapshotMapper, objectMapper, realPayments);
+        when(jdbc.queryForList(contains("FOR UPDATE"), eq(Long.class), eq(1L))).thenReturn(List.of(1L));
+        FeePeriod p = period(FeePeriod.ST_DRAFT); p.setWaterTotalUsage(BigDecimal.ZERO);
+        when(periodMapper.selectById(1L)).thenReturn(p);
+        Meter meter = new Meter(); meter.setId(7L); meter.setArea("1层A区"); meter.setCustomerName("原租户");
+        meter.setEnergyType("水"); meter.setMeterRole("TENANT"); meter.setSharePublic(0); meter.setLastReading(BigDecimal.ZERO);
+        when(meterMapper.selectList(any())).thenReturn(List.of(meter), List.of());
+        FeeNotice old = notice(11L, null); old.setTenantName("原租户"); old.setPaymentStatus(1);
+        when(noticeMapper.selectList(any())).thenReturn(List.of(old));
+        SysFile evidence = new SysFile(); evidence.setBizId(11L);
+        when(files.selectList(any())).thenReturn(List.of(evidence));
+        when(noticeMapper.insert(any(FeeNotice.class))).thenAnswer(call -> {
+            call.<FeeNotice>getArgument(0).setId(42L); return 1;
+        });
+        var result = service.generate(1L);
+        assertThat(result.notices()).hasSize(1);
+        assertThat(result.notices().get(0).getId()).isEqualTo(42L);
+        assertThat(result.notices().get(0).getPaymentStatus()).isEqualTo(1);
+        var changes = org.mockito.ArgumentCaptor.forClass(com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper.class);
+        verify(files).update(isNull(), changes.capture());
+        changes.getValue().getSqlSegment();
+        assertThat(changes.getValue().getParamNameValuePairs().values()).contains(11L, 42L, FeeNoticePaymentService.BIZ_TYPE);
     }
 
     @Test

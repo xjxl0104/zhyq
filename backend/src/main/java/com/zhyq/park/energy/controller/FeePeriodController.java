@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.zhyq.park.common.audit.OperationLog;
+import com.zhyq.park.common.exception.BizException;
 import com.zhyq.park.common.result.PageResult;
 import com.zhyq.park.common.result.Result;
 import com.zhyq.park.energy.entity.FeeNotice;
@@ -12,6 +13,7 @@ import com.zhyq.park.energy.entity.Meter;
 import com.zhyq.park.energy.mapper.FeePeriodMapper;
 import com.zhyq.park.energy.service.FeeNoticeExportService;
 import com.zhyq.park.energy.service.FeeNoticeService;
+import com.zhyq.park.energy.service.FeeNoticePaymentService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.Data;
@@ -42,6 +44,7 @@ public class FeePeriodController {
     private final FeePeriodMapper periodMapper;
     private final FeeNoticeService service;
     private final FeeNoticeExportService exportService;
+    private final FeeNoticePaymentService payments;
 
     @Data
     public static class OpenRequest {
@@ -177,6 +180,17 @@ public class FeePeriodController {
     @GetMapping("/{id}/notices")
     public Result<List<FeeNotice>> notices(@PathVariable Long id) {
         return Result.ok(service.notices(id));
+    }
+
+    public record PaymentRequest(Object paymentStatus) {}
+
+    @Operation(summary = "记录通知单缴费状态，不修改账单或已付金额")
+    @OperationLog(module = "缴费账期", action = "记录缴费状态")
+    @PutMapping("/notice/{id}/payment")
+    public Result<FeeNotice> payment(@PathVariable Long id, @RequestBody PaymentRequest request) {
+        if (request == null || !(request.paymentStatus() instanceof Integer status))
+            throw new BizException(400, "缴费状态只能选择未缴或已缴");
+        return Result.ok(payments.updateStatus(id, status));
     }
 
     @Operation(summary = "修改通知单的手工项(已付/前期欠费/其他费用/名称/备注)")

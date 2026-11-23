@@ -37,6 +37,7 @@ public class MktDocumentAccessService {
             // 缴费账期的三种供应商账单(南网/自来水公司/垃圾清理供应商),单据留存
             Map.entry("energy_fee_electric", "energy:feebill"), Map.entry("energy_fee_water", "energy:feebill"),
             Map.entry("energy_fee_garbage", "energy:feebill"),
+            Map.entry("fee_notice_payment", "energy:feebill"),
             // 资料管理:资料库里的归档文件
             Map.entry("archive_doc", "archive:doc"));
 
