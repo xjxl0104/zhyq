@@ -9,6 +9,7 @@ import org.springframework.web.bind.annotation.*;
 import java.time.LocalDate;
 
 /** Warehouse users submit their own ERP export; only park ERP administrators confirm it. */
+@org.springframework.security.access.prepost.PreAuthorize("hasRole('WH_OWNER')")
 @RestController @RequestMapping("/wh/v1/erp/reconciliation") @RequiredArgsConstructor
 public class WhErpReconciliationController {
     private final WhAuthContext auth;

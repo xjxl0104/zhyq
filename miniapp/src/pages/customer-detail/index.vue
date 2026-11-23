@@ -5,6 +5,7 @@
     <template v-if="c">
       <view class="card">
         <view class="title">{{ c.name }}</view>
+        <view class="row"><text class="muted">品牌名称</text><text>{{ c.brandName || '未填写' }}</text></view>
         <view class="row"><text class="muted">联系人</text><text>{{ c.contact || '未填写' }} {{ c.phone }}</text></view>
         <view class="row"><text class="muted">评级</text><text>{{ c.grade || '未评级' }}</text></view>
         <view class="row"><text class="muted">状态</text><text>{{ STATUS[c.status] || '待确认' }}</text></view>
@@ -14,11 +15,12 @@
         <view class="row"><text class="muted">承接状态</text><text>{{ ASSIGN[c.warehouseAssignmentStatus || 0] }}</text></view>
         <view class="row"><text class="muted">推荐时间</text><text>{{ c.createTime?.slice(0, 16) }}</text></view>
       </view>
-      <CustomerRequirements :requirements="c.requirements" :demand="c.demand || c.demandArea" :remark="c.remark" />
-      <view v-if="me.positionCode === 'P4' && Number(me.status) === 1" class="card">
-        <view class="title">客户定价与分佣</view>
-        <view class="muted" style="margin-top:16rpx">由您自定义总佣金、P4 本人和具体受益人的每单金额。</view>
-        <button class="btn secondary" @click="navigateTo('/pages/allocation/index?customerId=' + c.id)">设置每单金额</button>
+      <view class="card"><view class="title">报价需求</view><button class="btn secondary" @click="navigateTo('/pages/customer-quote/index?id=' + c.id)">客户意向与填写码</button></view>
+      <CustomerRequirements :requirements="c.requirements || c.fulfillmentRequirements" :demand="c.demand || c.demandArea" :remark="c.remark || c.intakeRemark" />
+      <view v-if="Number(me.status) === 1" class="card">
+        <view class="title">客户分佣</view>
+        <view class="muted" style="margin-top:16rpx">{{ me.positionCode === 'P4' ? '按签约合同查看并设置每单分佣金额。' : '查看该客户合同分配给您的每单佣金。' }}</view>
+        <button class="btn secondary" @click="navigateTo('/pages/allocation/index?customerId=' + c.id)">查看客户分佣</button>
       </view>
       <CustomerProgress :customer="c" />
       <button class="btn ghost" :disabled="loading" @click="load()">刷新进度</button>

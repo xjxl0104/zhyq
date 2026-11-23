@@ -42,7 +42,7 @@
         <button class="menu-row" @click="go(shipmentEntry.url)">{{ shipmentEntry.title }} <text>{{ shipmentEntry.description }} ›</text></button>
         <button class="menu-row" @click="go('/pages/team/index')">我的团队 <text>›</text></button>
         <button class="menu-row" @click="go('/pages/position/index')">我的称号 <text>›</text></button>
-        <button v-if="me.positionCode === 'P4' && Number(me.status) === 1" class="menu-row" @click="go('/pages/allocation/index')">客户定价与分佣 <text>自定义金额 ›</text></button>
+        <button v-if="Number(me.status) === 1" class="menu-row" @click="go('/pages/allocation/index')">客户分佣 <text>{{ me.positionCode === 'P4' ? '分佣管理' : '我的每单金额' }} ›</text></button>
         <button class="menu-row" @click="go('/pages/invite/index')">邀请伙伴 <text>分享与海报 ›</text></button>
         <button class="menu-row" @click="go('/pages/notices/index')">消息通知 <text>›</text></button>
         <button class="menu-row" @click="logout">切换身份 / 退出登录 <text>›</text></button>

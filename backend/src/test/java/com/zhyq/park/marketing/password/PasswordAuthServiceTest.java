@@ -51,20 +51,26 @@ class PasswordAuthServiceTest {
     @Mock MktWarehouseOnboardingService warehouseService;
     @Mock MktAuditService auditService;
     @Mock BizSettings settings;
+    @Mock com.zhyq.park.marketing.wh.WhAuthService whAuth;
     private final BCryptPasswordEncoder encoder = new BCryptPasswordEncoder(4);
     private JwtService jwt;
     private PasswordAuthService service;
+    private com.zhyq.park.marketing.service.WhPhoneClaimService phoneClaims;
 
     @BeforeEach void setup() {
         var control = mock(com.zhyq.park.marketing.admin.MktAccountControl.class);
         lenient().when(control.state(anyString(), anyLong())).thenReturn(new com.zhyq.park.marketing.admin.MktAccountControl.State(false, false, 0));
         jwt = new JwtService("test-secret-for-password-tests-32-bytes-long", 3600,
                 new com.zhyq.park.auth.JwtAccountService(mock(com.zhyq.park.system.mapper.SysUserMapper.class),
-                        mock(com.zhyq.park.auth.mapper.AuthQueryMapper.class), promoters, warehouses, credentials, control));
+                        mock(com.zhyq.park.auth.mapper.AuthQueryMapper.class), promoters, warehouses, credentials, control, contacts));
+        phoneClaims = spy(new com.zhyq.park.marketing.service.WhPhoneClaimService(mock(org.springframework.jdbc.core.JdbcTemplate.class), warehouses, contacts));
         service = new PasswordAuthService(credentials, promoters, warehouses, contacts, promoterService,
-                warehouseService, auditService, settings, encoder, jwt, new PasswordAttemptLimiter());
+                warehouseService, auditService, settings, encoder, jwt, new PasswordAttemptLimiter(), whAuth, phoneClaims);
+        lenient().when(whAuth.issueOwnerToken(anyLong())).thenAnswer(call -> "owner-token:" + call.getArgument(0));
         TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new MybatisConfiguration(), "test"), MktCredential.class);
         TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new MybatisConfiguration(), "test"), MktPromoter.class);
+        TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new MybatisConfiguration(), "test"), MktWarehouse.class);
+        TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new MybatisConfiguration(), "test"), com.zhyq.park.marketing.entity.MktWarehouseContact.class);
     }
     @AfterEach void clear() { SecurityContextHolder.clearContext(); }
 
@@ -117,48 +123,25 @@ class PasswordAuthServiceTest {
         assertThat(profile.getValue().getContactOpenid()).isNull();
         assertThat(profile.getValue().getRemark()).contains("未经手机验证");
         assertThat(((Map<?, ?>) result.get("warehouse")).get("joinStatus")).isEqualTo(2);
-        assertThat(jwt.parse((String) result.get("token")).getSubject()).isEqualTo("wh:41");
-        var claims = jwt.parse((String) result.get("token"));
-        assertThat(claims).doesNotContainKey("auth");
-        assertThat(claims.get("subjectType")).isEqualTo("wh");
-        assertThat(jwt.authenticate(claims).authorities()).containsExactly("ROLE_WH");
+        assertThat(result).containsEntry("token", "owner-token:41").containsEntry("warehouseRole", "owner");
+        verify(whAuth).issueOwnerToken(41L);
         verifyNoInteractions(promoters, promoterService);
     }
 
     @ParameterizedTest
     @EnumSource(PasswordAuthService.Identity.class)
-    void minimalRegistrationDefersContactDetailsWithoutGrantingApproval(PasswordAuthService.Identity identity) {
-        if (identity == MP) {
-            when(promoterService.registerWithoutPhone(any(), eq("ABCD2345"))).thenAnswer(invocation -> {
-                MktPromoter promoter = invocation.getArgument(0);
-                assertThat(promoter.getPhone()).isNull();
-                assertThat(promoter.getName()).isEqualTo("园区伙伴");
-                promoter.setId(31L); promoter.setStatus(1);
-                when(promoters.selectById(31L)).thenReturn(promoter);
-                return promoter;
-            });
-        } else {
-            when(warehouseService.apply(any())).thenAnswer(invocation -> {
-                MktWarehouse warehouse = invocation.getArgument(0);
-                assertThat(warehouse.getPhone()).isNull();
-                assertThat(warehouse.getContact()).isNull();
-                assertThat(warehouse.getName()).isEqualTo("待完善云仓");
-                warehouse.setId(41L); warehouse.setJoinStatus(2);
-                when(warehouses.selectById(41L)).thenReturn(warehouse);
-                return warehouse;
-            });
+    void registrationRequiresNameAndPhoneForBothIdentities(PasswordAuthService.Identity identity) {
+        for (String phone : new String[] { null, "", "abc" }) {
+            assertThatThrownBy(() -> service.register(identity,
+                    new PasswordAuthService.RegisterRequest("新账号", "123", phone, "测试用户", "ABCD2345", null, true), "ip"))
+                    .hasMessageContaining("手机号");
         }
-        var request = new PasswordAuthService.RegisterRequest("新账号", "123", null, null, "ABCD2345", null, true);
-        Map<String, Object> result = service.register(identity, request, "ip");
-        assertThat(result).containsKey("token");
-        ArgumentCaptor<MktCredential> saved = ArgumentCaptor.forClass(MktCredential.class);
-        verify(credentials).insert(saved.capture());
-        assertThat(saved.getValue().getRegistrationPhone()).isNull();
-        assertThat(saved.getValue().getAgreedAt()).isNotNull();
-        verify(promoters, never()).selectCount(any());
-        verify(warehouses, never()).selectCount(any());
-        verifyNoInteractions(contacts);
-        if (identity == WH) assertThat(((Map<?, ?>) result.get("warehouse")).get("joinStatus")).isEqualTo(2);
+        for (String name : new String[] { null, "", "园区伙伴", "伙伴8000" }) {
+            assertThatThrownBy(() -> service.register(identity,
+                    new PasswordAuthService.RegisterRequest("新账号", "123", "13800138000", name, "ABCD2345", null, true), "ip"))
+                    .hasMessageContaining("姓名");
+        }
+        verifyNoInteractions(credentials, promoterService, warehouseService, whAuth);
     }
 
     @Test void unverifiedPhoneCannotClaimExistingPartner() {
@@ -169,8 +152,8 @@ class PasswordAuthServiceTest {
     }
 
     @Test void unverifiedPhoneCannotClaimExistingWarehouseContact() {
-        when(contacts.selectCount(any())).thenReturn(1L);
-        assertThatThrownBy(() -> service.register(WH, registration(), "ip")).isInstanceOf(BizException.class).hasMessageContaining("已有业务档案");
+        when(contacts.selectList(any())).thenReturn(List.of(new com.zhyq.park.marketing.entity.MktWarehouseContact()));
+        assertThatThrownBy(() -> service.register(WH, registration(), "ip")).isInstanceOfSatisfying(BizException.class,e -> assertThat(e.getCode()).isEqualTo(409)).hasMessageContaining("已关联云仓账号");
         verifyNoInteractions(warehouseService);
     }
 
@@ -212,7 +195,7 @@ class PasswordAuthServiceTest {
     @ParameterizedTest
     @EnumSource(PasswordAuthService.Identity.class)
     void bothIdentitiesCanSetupAndChangeShortPasswordToFullLongPassword(PasswordAuthService.Identity identity) {
-        authenticate(identity.code + ":31", identity.role);
+        authenticate(identity == WH ? "wh:31:contact:101" : "mp:31", identity == WH ? "ROLE_WH_OWNER" : "ROLE_MP");
         if (identity == MP) {
             when(promoters.selectForUpdate(31L)).thenReturn(activePromoter());
             when(promoters.selectById(31L)).thenReturn(activePromoter());
@@ -304,7 +287,8 @@ class PasswordAuthServiceTest {
         MktWarehouse warehouse = new MktWarehouse(); warehouse.setId(31L); warehouse.setJoinStatus(2);
         when(warehouses.selectById(31L)).thenReturn(warehouse);
         Map<String, Object> result = service.login(WH, new PasswordAuthService.LoginRequest(" DEMO_USER ", "Passw0rd123"), "ip");
-        assertThat(jwt.parse((String) result.get("token")).getSubject()).isEqualTo("wh:31");
+        assertThat(result).containsEntry("token", "owner-token:31");
+        verify(whAuth).issueOwnerToken(31L);
         verifyNoInteractions(promoters);
     }
 
@@ -431,6 +415,33 @@ class PasswordAuthServiceTest {
         verifyNoInteractions(credentials, auditService);
     }
 
+    @Test void warehouseMemberCannotReadOrResetMainAccountPassword() {
+        authenticate("wh:31:contact:102", "ROLE_WH_MEMBER");
+        assertThatThrownBy(() -> service.status(WH)).hasMessageContaining("主账号");
+        assertThatThrownBy(() -> service.setup(WH, new PasswordAuthService.SetupRequest("owner", "new", null), "ip")).hasMessageContaining("主账号");
+        verifyNoInteractions(credentials, whAuth, auditService, warehouses);
+    }
+    @Test void changedOwnerPhoneRequiresVerifiedWechatResetAndKeepsCredentialRow() {
+        authenticate("wh:31:contact:102", "ROLE_WH_OWNER");
+        MktWarehouse w=new MktWarehouse();w.setId(31L);w.setJoinStatus(5);when(warehouses.selectById(31L)).thenReturn(w);
+        MktCredential credential=credential();credential.setIdentityType("wh");when(credentials.selectOne(any())).thenReturn(credential);
+        when(whAuth.ownerPasswordResetRequired(31L)).thenReturn(true);
+        assertThat(service.status(WH)).containsEntry("configured",false).containsEntry("passwordResetRequired",true);
+        when(whAuth.beginOwnerPasswordSetup(31L)).thenReturn(true);when(credentials.update(isNull(),any())).thenReturn(1);
+        service.setup(WH,new PasswordAuthService.SetupRequest("demo_user","new-password",null),"ip");
+        verify(whAuth).finishOwnerPasswordSetup(31L);verify(credentials,never()).insert(any(MktCredential.class));
+    }
+    @Test void ordinaryWarehousePasswordChangesStillRequireCurrentPassword() {
+        authenticate("wh:31:contact:102", "ROLE_WH_OWNER");
+        MktWarehouse w=new MktWarehouse();w.setId(31L);w.setJoinStatus(5);when(warehouses.selectById(31L)).thenReturn(w);when(credentials.selectOne(any())).thenReturn(credential());
+        assertThatThrownBy(()->service.setup(WH,new PasswordAuthService.SetupRequest("demo_user","new-password",null),"ip")).hasMessageContaining("当前密码");
+        verify(whAuth,never()).finishOwnerPasswordSetup(anyLong());verify(credentials,never()).update(any(),any());
+    }
+    @Test void warehouseRegistrationAcquiresPhoneClaimBeforeCreatingBusinessRecord() {
+        doThrow(new com.zhyq.park.common.exception.BizException(409,"已关联云仓账号")).when(phoneClaims).reserve("13800138000",null,null);
+        assertThatThrownBy(()->service.register(WH,registration(),"ip")).hasMessageContaining("已关联");
+        verifyNoInteractions(warehouseService);verify(credentials,never()).insert(any(MktCredential.class));
+    }
     private MktCredential credential() {
         MktCredential c = new MktCredential(); c.setId(2L); c.setIdentityType("mp"); c.setIdentityId(31L);
         c.setUsername("demo_user"); c.setPasswordHash(encoder.encode("Passw0rd123")); c.setStatus(1); return c;

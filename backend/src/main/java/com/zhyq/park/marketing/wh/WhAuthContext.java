@@ -18,8 +18,23 @@ public class WhAuthContext {
         Authentication a = SecurityContextHolder.getContext().getAuthentication();
         if (a == null || a.getName() == null || !a.getName().startsWith(WhAuthService.SUBJECT_PREFIX))
             throw new BizException(401, "请先登录云仓");
-        try { return Long.valueOf(a.getName().substring(WhAuthService.SUBJECT_PREFIX.length())); }
+        try { return Long.valueOf(a.getName().substring(WhAuthService.SUBJECT_PREFIX.length()).split(":contact:", -1)[0]); }
         catch (NumberFormatException e) { throw new BizException(401, "云仓身份无效"); }
+    }
+    public static Long currentContactId() {
+        Authentication a = SecurityContextHolder.getContext().getAuthentication();
+        if (a == null || a.getName() == null || !a.getName().matches("^wh:[1-9][0-9]*:contact:[1-9][0-9]*$"))
+            throw new BizException(401, "云仓登录已更新，请重新登录");
+        try { return Long.valueOf(a.getName().substring(a.getName().lastIndexOf(':') + 1)); }
+        catch (NumberFormatException e) { throw new BizException(401, "云仓身份无效"); }
+    }
+    public static boolean isOwner() {
+        Authentication a = SecurityContextHolder.getContext().getAuthentication();
+        return a != null && a.getAuthorities().stream().anyMatch(x -> "ROLE_WH_OWNER".equals(x.getAuthority()));
+    }
+    public static void requireOwner() {
+        currentContactId();
+        if (!isOwner()) throw new BizException(403, "仅云仓主账号可以操作");
     }
 
     public MktWarehouse requireWarehouse() { return requireWarehouse(warehouseMapper, currentWarehouseId()); }

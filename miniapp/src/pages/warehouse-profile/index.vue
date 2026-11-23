@@ -4,19 +4,19 @@
       <view class="wh-title">个人信息</view>
       <view v-if="loading && !ready" class="wh-note" role="status">正在读取个人信息…</view>
       <template v-if="ready">
-        <view v-if="profile.profileEditable" class="wh-note">云仓名称和联系方式可稍后补充，工作台已可使用。</view>
+        <view v-if="profile.profileEditable" class="wh-note">{{ profile.isOwner ? '主账号可维护云仓名称和本人姓名。' : '仅可维护本人姓名；云仓及登录手机号由主账号核验。' }}</view>
         <view v-if="!profile.profileEditable" class="profile-notice">
           资质已完成审核；如需变更资料，请联系园区运营。{{ dirty ? '当前填写的内容尚未保存。' : '' }}
         </view>
         <view v-if="loading" class="wh-note" role="status">正在更新资料状态…</view>
 
         <label class="wh-label" for="warehouse-name">云仓名称</label>
-        <input id="warehouse-name" v-model="form.warehouseName" class="wh-field" maxlength="100" placeholder="填写云仓名称，可稍后补充" placeholder-class="profile-placeholder" :disabled="!profile.profileEditable || busy" aria-label="云仓名称" />
+        <input id="warehouse-name" v-model="form.warehouseName" class="wh-field" maxlength="100" placeholder="填写云仓名称，可稍后补充" placeholder-class="profile-placeholder" :disabled="!profile.isOwner || !profile.profileEditable || busy" aria-label="云仓名称" />
         <label class="wh-label" for="contact-name">联系人</label>
-        <input id="contact-name" v-model="form.name" class="wh-field" maxlength="32" placeholder="填写联系人姓名，可稍后补充" placeholder-class="profile-placeholder" :disabled="!profile.profileEditable || busy" aria-label="联系人" />
+        <input id="contact-name" v-model="form.name" class="wh-field" maxlength="32" placeholder="填写本人真实姓名" placeholder-class="profile-placeholder" :disabled="!profile.profileEditable || busy" aria-label="联系人" />
         <label class="wh-label" for="contact-phone">联系电话</label>
         <input id="contact-phone" v-model="form.phone" class="wh-field" type="number" maxlength="11" placeholder="填写 11 位手机号，可稍后补充" placeholder-class="profile-placeholder" :disabled="!profile.phoneEditable || !profile.profileEditable || busy" aria-label="联系电话" />
-        <view v-if="profile.profileEditable && !profile.phoneEditable" class="wh-note">此号码用于微信登录绑定；如需变更，请联系园区运营。</view>
+        <view v-if="profile.profileEditable && !profile.phoneEditable" class="wh-note">此号码用于微信登录绑定；业务员如需变更请联系云仓主账号，主账号请联系园区运营。</view>
         <view v-if="profile.profileEditable" class="wh-note">保存后仅更新个人信息，不会提交加盟审核。</view>
       </template>
 
@@ -84,6 +84,8 @@ async function save() {
   error.value = ''
   const data = values()
   if (!profile.phoneEditable) delete data.phone
+  if (!profile.isOwner) delete data.warehouseName
+  if (!data.name) { error.value = '请填写本人真实姓名'; return }
   if (data.phone && !/^1\d{10}$/.test(data.phone)) {
     error.value = '请输入正确的 11 位手机号，或留空稍后补充'
     return

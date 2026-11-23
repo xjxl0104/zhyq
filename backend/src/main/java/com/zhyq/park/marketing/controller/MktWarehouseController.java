@@ -41,6 +41,8 @@ public class MktWarehouseController {
     private final MktWarehouseFileService files;
     private final com.zhyq.park.marketing.service.MktWarehouseDeletionService deletion;
     private final org.springframework.jdbc.core.JdbcTemplate jdbc;
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.zhyq.park.marketing.wh.WhIdentityService identities;
 
     @Operation(summary = "删除云仓：立即归档并停用关联访问权限")
     @PreAuthorize("hasRole('admin')") @DeleteMapping("/{id}")
@@ -135,11 +137,11 @@ public class MktWarehouseController {
     }
 
     @Operation(summary = "编辑资料(不改状态)") @PreAuthorize("hasAuthority('crm:marketing:warehouse:edit')") @PutMapping
+    @org.springframework.transaction.annotation.Transactional
     public Result<Void> update(@RequestBody MktWarehouse w) {
         MktWarehouseOnboardingService.validateProfile(w);
         validateRates(w);
-        MktWarehouse before = warehouseMapper.selectById(w.getId());
-        if (before == null) throw new BizException("云仓不存在");
+        MktWarehouse before = identities.maintainOwner(w.getId(),w.getContact(),w.getPhone(),true);
         int updated = warehouseMapper.update(null, new LambdaUpdateWrapper<MktWarehouse>()
                 .eq(MktWarehouse::getId, w.getId()).notIn(MktWarehouse::getJoinStatus, 7, 8)
                 .set(MktWarehouse::getName, w.getName()).set(MktWarehouse::getRegion, w.getRegion())

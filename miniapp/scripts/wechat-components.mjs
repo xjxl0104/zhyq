@@ -49,14 +49,10 @@ export function verifyWechatComponents(sourceRoot, buildRoot) {
       const componentPath = registered.startsWith('/') ? join(buildRoot, registered.slice(1)) : resolve(dirname(outputPath), registered)
       const componentWxml = readFileSync(componentPath + '.wxml', 'utf8')
       if (name === 'ReferralForm') {
-        for (const label of ['公司 / 品牌名称', '对接人职位', '联系手机', '销售品类', '销售平台', '产品重量', '指定快递承运商', '现有仓配现状']) {
+        for (const label of ['公司名称', '品牌名称', '对接人', '联系手机', '现有仓配现状', '目前合作的快递公司', '目前最头疼的问题']) {
           if (!componentWxml.includes(label)) throw new Error(`ReferralForm 构建缺少表单内容：${label}`)
         }
-        const componentJs = readFileSync(componentPath + '.js', 'utf8')
-        for (const label of ['SKU 数量', '日均单量', '平均包裹产品数量']) {
-          if (!componentJs.includes(label) && !componentWxml.includes(label)) throw new Error(`ReferralForm 构建缺少业务规模选项：${label}`)
-        }
-        if (!/<radio-group\b[^>]*bindchange=/.test(componentWxml)) throw new Error('ReferralForm 构建缺少业务规模单选控件')
+        if (!/<radio-group\b[^>]*bindchange=/.test(componentWxml)) throw new Error('ReferralForm 构建缺少仓配方式单选控件')
         if (!/<slot\b/.test(componentWxml) || !/<button\b[^>]*bindtap=/.test(componentWxml)) {
           throw new Error('ReferralForm 构建缺少同意插槽或提交按钮')
         }

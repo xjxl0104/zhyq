@@ -1,7 +1,7 @@
 <template>
   <view>
     <view class="title">{{ registering ? '注册' + roleName : '账号密码登录' }}</view>
-    <view class="auth-caption">{{ registering ? (warehouse ? '只需账号和密码，其他资料可登录后补充。' : '填写账号、密码和上级邀请码，其他资料可登录后补充。') : '使用为当前身份注册或设置的账号。' }}</view>
+    <view class="auth-caption">{{ registering ? (warehouse ? '填写账号、密码、姓名和手机号。' : '填写账号、密码、姓名、手机号和上级邀请码。') : '使用为当前身份注册或设置的账号。' }}</view>
     <view class="field-label">登录账号</view>
     <input class="input" v-model="form.username" :maxlength="-1" placeholder="请输入账号" :disabled="busy" aria-label="登录账号" />
     <view class="field-label">{{ registering ? '设置密码' : '密码' }}</view>
@@ -10,6 +10,10 @@
       <button class="password-toggle" :disabled="busy" @click="showPassword = !showPassword">{{ showPassword ? '隐藏' : '显示' }}</button>
     </view>
     <template v-if="registering">
+      <view class="field-label">姓名（必填）</view>
+      <input class="input" v-model="form.name" maxlength="50" placeholder="请输入您的姓名" :disabled="busy" aria-label="姓名" aria-required="true" />
+      <view class="field-label">手机号（必填）</view>
+      <input class="input" v-model="form.phone" type="number" maxlength="11" placeholder="请输入联系手机号" :disabled="busy" aria-label="手机号" aria-required="true" />
       <template v-if="!warehouse">
         <view class="field-label">上级邀请码（必填）</view>
         <input class="input" v-model="form.inviteCode" maxlength="8" placeholder="请输入邀请人提供的邀请码" :disabled="busy" aria-label="上级邀请码" aria-required="true" />
@@ -43,7 +47,7 @@ const registering = ref(false)
 const busy = ref(false)
 const error = ref('')
 const showPassword = ref(false)
-const form = reactive({ username: '', password: '', inviteCode: '', agreed: false })
+const form = reactive({ username: '', password: '', name: '', phone: '', inviteCode: '', agreed: false })
 const roleName = computed(() => props.warehouse ? '云仓商家' : '园区伙伴')
 watch(() => props.inviteCode, value => { form.inviteCode = value }, { immediate: true })
 function toggle() { registering.value = !registering.value; error.value = ''; form.password = ''; showPassword.value = false }
@@ -55,6 +59,8 @@ async function submit() {
   if (!form.password) { error.value = '请输入密码'; return }
   if (registering.value) {
     if (!form.agreed) { error.value = '请先阅读并同意协议'; return }
+    if (!form.name.trim() || form.name.trim().length > 50) { error.value = '请填写您的姓名，最多 50 字'; return }
+    if (!/^1\d{10}$/.test(form.phone.trim())) { error.value = '请输入有效的手机号'; return }
     if (!props.warehouse && !form.inviteCode.trim()) { error.value = '请填写上级邀请码'; return }
     if (!props.warehouse && !/^[A-Z2-9]{6,8}$/.test(form.inviteCode.trim().toUpperCase())) { error.value = '请输入有效的 6–8 位上级邀请码'; return }
   }
@@ -63,7 +69,7 @@ async function submit() {
   try {
     const api = props.warehouse ? warehouseAuthApi : authApi
     const result = registering.value
-      ? await api.passwordRegister({ username, password: form.password, agreed: form.agreed, ...(!props.warehouse ? { inviteCode: form.inviteCode.trim().toUpperCase() } : {}) })
+      ? await api.passwordRegister({ username, password: form.password, name: form.name.trim(), phone: form.phone.trim(), agreed: form.agreed, ...(!props.warehouse ? { inviteCode: form.inviteCode.trim().toUpperCase() } : {}) })
       : await api.passwordLogin({ username, password: form.password })
     if (!result?.token) throw new Error('登录未完成，请重试')
     form.password = ''; showPassword.value = false

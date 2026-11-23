@@ -20,7 +20,7 @@ import java.util.*;
 @RestController
 @RequestMapping("/wh/v1/files")
 @RequiredArgsConstructor
-@PreAuthorize("hasRole('WH')")
+@PreAuthorize("hasRole('WH_OWNER')")
 public class WhFileController {
     private final MktWarehouseMapper warehouses;
     private final MktWarehouseFileService documents;

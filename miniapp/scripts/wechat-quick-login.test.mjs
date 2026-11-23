@@ -33,64 +33,54 @@ function harness({ warehouse = false, mock = false, agreed = true, inviteCode = 
     defineProps: () => ({ warehouse, inviteCode }),
     defineEmits: () => (...args) => calls.emitted.push(args),
     partnerMock: warehouse ? false : mock, warehouseMock: warehouse ? mock : false,
-    authApi: api('mp'), warehouseAuthApi: api('wh'),
+    authApi: api('mp'), warehouseAuthApi: api('wh'), AUTH: { phoneCode: 'authorized-phone' },
     uni: {
       login: options => { calls.login.push(clone(options)); return uniLogin ? uniLogin(calls.login.length) : Promise.resolve({ code: `wx-code-${calls.login.length}` }) },
       getAccountInfoSync: () => { calls.accountInfo++; return { miniProgram: { appId: 'wx-test-app' } } },
     },
   })
   vm.runInContext(helperSource + '\n' + scriptOf(component), context)
-  vm.runInContext(`agreed.value=${agreed};testCode.value='  mock-identity  ';testPhone.value='13800138000';`, context)
+  vm.runInContext(`agreed.value=${agreed};testCode.value='  mock-identity  ';testPhone.value='13800138000';fullName.value=' 测试用户 ';`, context)
   const run = value => vm.runInContext(value, context)
   return { calls, run }
 }
 
 for (const warehouse of [false, true]) {
   const role = warehouse ? '云仓' : '伙伴'
-  test(`${role}微信一键登录无需手机号，只调用本身份 quick-login`, async () => {
+  test(`${role}姓名和手机号授权缺一不可，缺少时不调用微信或后端`, async () => {
     const { calls, run } = harness({ warehouse })
     await run('login()')
-    assert.deepEqual(calls.login, [{ provider: 'weixin' }])
-    assert.deepEqual(calls.quick, [{ role: warehouse ? 'wh' : 'mp', data: { jsCode: 'wx-code-1', appId: 'wx-test-app', agreed: true } }])
-    assert.equal(calls.oldLogin, 0)
-    assert.deepEqual(calls.emitted, [['busy', true], ['authenticated', warehouse ? 'wh-token' : 'mp-token'], ['busy', false]])
-    assert.equal(run('busy.value'), false)
+    assert.match(run('error.value'), /授权手机号/)
+    run("fullName.value=' '")
+    await run('login(AUTH)')
+    assert.match(run('error.value'), /姓名/)
+    assert.equal(calls.login.length, 0); assert.equal(calls.quick.length, 0)
+    assert.equal(component.includes('@click="login()"'), false)
   })
-
-  test(`${role}手机号授权后重新取微信 code，并使用同一 quick-login 接口`, async () => {
+  test(`${role}姓名和手机号授权发送本身份接口，每次重新取得微信code`, async () => {
     const { calls, run } = harness({ warehouse })
-    await run('login()')
     await run("onPhone({detail:{errMsg:'getPhoneNumber:ok',code:'phone-authorization-1'}})")
-    assert.equal(calls.login.length, 2)
-    assert.equal(calls.oldLogin, 0)
-    assert.deepEqual(calls.quick[1], { role: warehouse ? 'wh' : 'mp', data: {
-      jsCode: 'wx-code-2', appId: 'wx-test-app', agreed: true, phoneCode: 'phone-authorization-1',
+    assert.deepEqual(calls.quick[0], { role: warehouse ? 'wh' : 'mp', data: {
+      jsCode: 'wx-code-1', appId: 'wx-test-app', agreed: true, name: '测试用户', phoneCode: 'phone-authorization-1',
     } })
-    assert.equal(Object.hasOwn(calls.quick[1].data, 'phone'), false)
+    await run("onPhone({detail:{errMsg:'getPhoneNumber:ok',code:'phone-authorization-2'}})")
+    assert.equal(calls.login.length, 2); assert.equal(calls.oldLogin, 0)
+    assert.equal(calls.quick[1].data.jsCode, 'wx-code-2')
+    assert.equal(Object.hasOwn(calls.quick[0].data, 'phone'), false)
   })
-
-  test(`${role}拒绝、取消或缺失手机号授权时不登录，并允许改用微信登录`, async () => {
-    for (const detail of [
-      { errMsg: 'getPhoneNumber:fail user deny' },
-      { errMsg: 'getPhoneNumber:fail user cancel', code: 'must-not-use' },
-      { errMsg: 'getPhoneNumber:ok' },
-      {},
-    ]) {
+  test(`${role}拒绝或缺失手机号授权不能绕过，重新授权后才能登录`, async () => {
+    for (const detail of [{ errMsg: 'getPhoneNumber:fail user deny' }, { errMsg: 'getPhoneNumber:fail user cancel', code: 'must-not-use' }, { errMsg: 'getPhoneNumber:ok' }, {}]) {
       const { calls, run } = harness({ warehouse })
-      await run(`onPhone(${JSON.stringify({ detail })})`)
-      assert.equal(calls.login.length, 0)
-      assert.equal(calls.quick.length, 0)
-      assert.equal(calls.emitted.length, 0)
-      assert.match(run('error.value'), /微信一键登录/)
-      await run('login()')
-      assert.equal(calls.quick.length, 1)
-      assert.equal(Object.hasOwn(calls.quick[0].data, 'phoneCode'), false)
+      await run('onPhone(' + JSON.stringify({ detail }) + ')')
+      assert.equal(calls.login.length, 0); assert.equal(calls.quick.length, 0); assert.equal(calls.emitted.length, 0)
+      assert.match(run('error.value'), /手机号授权/)
+      await run('login()'); assert.equal(calls.quick.length, 0)
+      await run('login(AUTH)'); assert.equal(calls.quick.length, 1)
       assert.equal(run('error.value'), '')
     }
   })
-
   test(`${role}未同意协议时，两种登录均不调用微信或后端`, async () => {
-    for (const action of ['login()', "onPhone({detail:{errMsg:'getPhoneNumber:ok',code:'phone-code'}})", 'loginWithTestPhone()']) {
+    for (const action of ['login(AUTH)', "onPhone({detail:{errMsg:'getPhoneNumber:ok',code:'phone-code'}})", 'loginWithTestPhone()']) {
       const { calls, run } = harness({ warehouse, mock: action === 'loginWithTestPhone()', agreed: false })
       await run(action)
       assert.equal(calls.login.length, 0)
@@ -104,9 +94,9 @@ for (const warehouse of [false, true]) {
   test(`${role}登录忙时重复点击或手机号回调不能发起第二次请求`, async () => {
     const pending = deferred()
     const { calls, run } = harness({ warehouse, uniLogin: () => pending.promise })
-    const first = run('login()')
+    const first = run('login(AUTH)')
     assert.equal(run('busy.value'), true)
-    await run('login()')
+    await run('login(AUTH)')
     await run("onPhone({detail:{errMsg:'getPhoneNumber:ok',code:'another-phone-code'}})")
     assert.equal(calls.login.length, 1)
     assert.equal(calls.quick.length, 0)
@@ -137,12 +127,12 @@ for (const warehouse of [false, true]) {
   test(`${role}微信取 code 失败或无 code 不调接口，重试重新登录`, async () => {
     for (const failure of [() => Promise.reject(new Error('微信连接失败')), () => Promise.resolve({})]) {
       const { calls, run } = harness({ warehouse, uniLogin: count => count === 1 ? failure() : Promise.resolve({ code: 'fresh-code' }) })
-      await run('login()')
+      await run('login(AUTH)')
       assert.equal(calls.quick.length, 0)
       assert.equal(calls.emitted.some(event => event[0] === 'authenticated'), false)
       assert.equal(run('busy.value'), false)
       assert.ok(run('error.value'))
-      await run('login()')
+      await run('login(AUTH)')
       assert.equal(calls.login.length, 2)
       assert.equal(calls.quick[0].data.jsCode, 'fresh-code')
     }
@@ -151,7 +141,7 @@ for (const warehouse of [false, true]) {
   test(`${role}响应缺少 token 时提示重试，不能发登录成功事件`, async () => {
     for (const response of [null, {}, { registered: true }, { token: '' }]) {
       const { calls, run } = harness({ warehouse, quickLogin: async () => response })
-      await run('login()')
+      await run('login(AUTH)')
       assert.equal(calls.emitted.some(event => event[0] === 'authenticated'), false)
       assert.equal(run('busy.value'), false)
       assert.match(run('error.value'), /登录未完成.*重新/)
@@ -164,7 +154,7 @@ for (const warehouse of [false, true]) {
     assert.equal(calls.login.length, 0)
     assert.equal(calls.accountInfo, 0)
     assert.deepEqual(calls.quick[0], { role: warehouse ? 'wh' : 'mp', data: {
-      jsCode: 'mock-identity', appId: '', agreed: true, phone: '13800138000',
+      jsCode: 'mock-identity', appId: '', agreed: true, name: '测试用户', phone: '13800138000',
     } })
     const production = harness({ warehouse })
     await production.run('loginWithTestPhone()')
@@ -177,7 +167,7 @@ for (const warehouse of [false, true]) {
 test('邀请码只传入伙伴 quick-login，云仓不接收伙伴邀请', async () => {
   for (const warehouse of [false, true]) {
     const { calls, run } = harness({ warehouse, inviteCode: 'ABCD2345' })
-    await run('login()')
+    await run('login(AUTH)')
     assert.equal(calls.quick[0].data.inviteCode, warehouse ? undefined : 'ABCD2345')
   }
 })
@@ -232,12 +222,12 @@ test('新微信伙伴缺少邀请码时提示填写，重试带邀请码且重�
     if (!data.inviteCode) throw new Error('请填写上级邀请码')
     return { token: 'new-partner-token' }
   } })
-  await run('login()')
+  await run('login(AUTH)')
   assert.equal(calls.emitted.some(event => event[0] === 'authenticated'), false)
   assert.equal(run('needsInvite.value'), true)
-  await run('login()')
+  await run('login(AUTH)')
   assert.equal(calls.quick.length, 1)
-  await run("invite.value = ' abcd2345 '; login()")
+  await run("invite.value = ' abcd2345 '; login(AUTH)")
   assert.equal(calls.quick.length, 2)
   assert.equal(calls.quick[1].data.inviteCode, 'ABCD2345')
   assert.equal(calls.login.length, 2)

@@ -27,6 +27,7 @@ import static org.mockito.Mockito.*;
 @ExtendWith(MockitoExtension.class)
 class WhOnboardingControllerTest {
     @Mock MktWarehouseMapper warehouses;
+    @Mock WhIdentityService identities;
     @Mock MktWarehouseOnboardingMapper steps;
     @Mock MktWarehouseOnboardingService onboarding;
     @Mock MktAuditService audit;
@@ -42,7 +43,7 @@ class WhOnboardingControllerTest {
     @Test void saveApplyDerivesWarehouseFromTokenAndIgnoresBodyId() {
         SecurityContextHolder.getContext().setAuthentication(
                 new UsernamePasswordAuthenticationToken("wh:11", null, List.of()));
-        MktWarehouse current = new MktWarehouse(); current.setId(11L); current.setJoinStatus(1); current.setProjectId(7L);
+        MktWarehouse current = new MktWarehouse(); current.setId(11L); current.setJoinStatus(1); current.setProjectId(7L); current.setPhone("13800000000");
         MktWarehouse body = new MktWarehouse(); body.setId(99L); body.setName("更新后"); body.setRegion("杭州"); body.setPhone("13800000000"); body.setContact("联系人"); body.setAddress("杭州园区");
         when(warehouses.selectOne(any())).thenAnswer(invocation -> {
             com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<MktWarehouse> query = invocation.getArgument(0);
@@ -52,12 +53,13 @@ class WhOnboardingControllerTest {
         });
         when(warehouses.update(any(), any())).thenReturn(1);
         WhOnboardingController controller = new WhOnboardingController(warehouses, steps, onboarding, audit, files, new com.fasterxml.jackson.databind.ObjectMapper(), profiles);
+        org.springframework.test.util.ReflectionTestUtils.setField(controller,"identities",identities);
         MktWarehouse result = controller.saveApply(body).getData();
         assertThat(result.getId()).isEqualTo(11L);
         assertThat(result.getName()).isEqualTo("更新后");
         verify(warehouses, never()).selectById(99L);
         verify(warehouses).update(any(), any());
-        verify(profiles).prepareWarehousePhoneChange(current, "13800000000");
+        verify(identities).maintainOwner(11L,"联系人","13800000000",false);
     }
 
     @Test void fullApplicationEditorCannotBypassPhoneBindingGuard() {
@@ -65,10 +67,10 @@ class WhOnboardingControllerTest {
         MktWarehouse current = new MktWarehouse(); current.setId(11L); current.setJoinStatus(2); current.setContactOpenid("wx-owner");
         MktWarehouse body = new MktWarehouse(); body.setName("云仓"); body.setRegion("杭州"); body.setAddress("园区");
         body.setPhone("13800000000"); body.setContact("联系人");
-        when(warehouses.selectOne(any())).thenReturn(current);
         doThrow(new com.zhyq.park.common.exception.BizException("微信绑定手机号不能修改"))
-                .when(profiles).prepareWarehousePhoneChange(current, "13800000000");
+                .when(identities).maintainOwner(11L,"联系人","13800000000",false);
         WhOnboardingController controller = new WhOnboardingController(warehouses, steps, onboarding, audit, files, new com.fasterxml.jackson.databind.ObjectMapper(), profiles);
+        org.springframework.test.util.ReflectionTestUtils.setField(controller,"identities",identities);
         org.assertj.core.api.Assertions.assertThatThrownBy(() -> controller.saveApply(body)).hasMessageContaining("微信绑定");
         verify(warehouses, never()).update(any(), any());
         verifyNoInteractions(onboarding, audit);
@@ -80,6 +82,7 @@ class WhOnboardingControllerTest {
         body.setName("替换主体"); body.setContact("联系人"); body.setPhone("13800000000"); body.setRegion("杭州"); body.setAddress("杭州园区");
         when(warehouses.selectOne(any())).thenReturn(current);
         WhOnboardingController controller = new WhOnboardingController(warehouses, steps, onboarding, audit, files, new com.fasterxml.jackson.databind.ObjectMapper(), profiles);
+        org.springframework.test.util.ReflectionTestUtils.setField(controller,"identities",identities);
         org.assertj.core.api.Assertions.assertThatThrownBy(() -> controller.saveApply(body)).isInstanceOf(com.zhyq.park.common.exception.BizException.class);
         verifyNoInteractions(onboarding, audit);
         verify(warehouses, never()).selectById(99L);

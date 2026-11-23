@@ -29,6 +29,7 @@ import static org.mockito.Mockito.*;
 @ExtendWith(MockitoExtension.class)
 class WhDashboardControllerTest {
     @Mock MktWarehouseMapper warehouses;
+    @Mock WhWorkspaceService workspace;
     @Mock MktCustomerErpMapMapper mappings;
     @Mock CustomerMapper customers;
     @Mock MktReferralOrderMapper orders;
@@ -50,9 +51,12 @@ class WhDashboardControllerTest {
         MktWarehouse current = new MktWarehouse(); current.setId(11L); current.setProjectId(7L);
         current.setCode("WH-11"); current.setName("A"); current.setJoinStatus(5); current.setErpStatus(2);
         when(warehouses.selectById(11L)).thenReturn(current);
+        var contact = new com.zhyq.park.marketing.entity.MktWarehouseContact(); contact.setRole("owner");
+        when(workspace.current()).thenReturn(new WhIdentityService.Identity(current,contact));
         when(customers.selectCount(any())).thenReturn(0L);
+        when(workspace.customerScope(any())).thenAnswer(x -> new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<com.zhyq.park.crm.entity.Customer>().eq(com.zhyq.park.crm.entity.Customer::getAssignedWarehouseId,11L));
         when(orders.selectCount(any())).thenReturn(0L);
-        WhDashboardController controller = new WhDashboardController(warehouses, mappings, customers, orders, assignments);
+        WhDashboardController controller = new WhDashboardController(warehouses, mappings, customers, orders, assignments, workspace);
         Object data = controller.dashboard().getData();
         assertThat(data.toString()).contains("warehouseId=11", "WH-11");
         verify(warehouses, never()).selectById(99L);
@@ -65,13 +69,15 @@ class WhDashboardControllerTest {
                 new UsernamePasswordAuthenticationToken("wh:11", null, List.of()));
         MktWarehouse current = new MktWarehouse(); current.setId(11L); current.setProjectId(7L);
         when(warehouses.selectById(11L)).thenReturn(current);
+        var contact = new com.zhyq.park.marketing.entity.MktWarehouseContact(); contact.setRole("owner");
+        when(workspace.current()).thenReturn(new WhIdentityService.Identity(current,contact));
         when(orders.selectPage(any(),any())).thenAnswer(inv -> {
             com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<MktReferralOrder> query = inv.getArgument(1);
             assertThat(query.getSqlSegment()).contains("warehouse_id =", "project_id =", "source_type =");
             assertThat(query.getParamNameValuePairs()).containsValues(11L,7L,2);
             IPage<MktReferralOrder> page = inv.getArgument(0); page.setRecords(List.of()); return page;
         });
-        WhDashboardController controller = new WhDashboardController(warehouses,mappings,customers,orders,assignments);
+        WhDashboardController controller = new WhDashboardController(warehouses,mappings,customers,orders,assignments,workspace);
         assertThat(controller.orders(1,20,null).getData().getTotal()).isZero();
         verify(orders).selectPage(any(),any());
     }

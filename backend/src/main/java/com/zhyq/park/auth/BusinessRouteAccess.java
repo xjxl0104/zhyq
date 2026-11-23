@@ -36,6 +36,16 @@ public final class BusinessRouteAccess {
             return true;
         }
 
+        if (path.startsWith("/crm/marketing/quote/warehouses/")) {
+            return switch (method) {
+                case "GET" -> grants.contains("crm:marketing:warehouse:query");
+                case "PUT" -> grants.contains("crm:marketing:warehouse:edit");
+                default -> false;
+            };
+        }
+        if (path.startsWith("/crm/marketing/quote/customers/"))
+            return "GET".equals(method) && grants.contains("crm:marketing:customer:query");
+
         String[] parts = path.split("/");
         if (parts.length < 2) return false;
         String area = parts[1];

@@ -2,10 +2,11 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import vm from 'node:vm'
+import { isWarehouseOwner } from '../src/utils/warehouse-workspace.mjs'
 
 const source = readFileSync(new URL('../src/pages/warehouse-profile/index.vue', import.meta.url), 'utf8')
   .split('<script setup>')[1].split('</script>')[0].replace(/^import .*$/gm, '')
-const emptyProfile = { warehouseName: '', name: '', phone: null, profileEditable: true, phoneEditable: true, profileComplete: false, joinStatus: 1 }
+const emptyProfile = { warehouseName: '原云仓', name: '原姓名', phone: '13800138000', warehouseRole: 'owner', isOwner: true, profileEditable: true, phoneEditable: false, profileComplete: true, joinStatus: 1 }
 const deferred = () => {
   let resolve, reject
   const promise = new Promise((yes, no) => { resolve = yes; reject = no })
@@ -29,12 +30,12 @@ function harness(api = {}) {
   return { calls, context, run: script => vm.runInContext(script, context) }
 }
 
-test('可只补充一个字段，并保留其他空项；保存不提交加盟申请', async () => {
+test('主账号可单独维护姓名；保存不提交加盟申请或覆盖已验证手机号', async () => {
   const { calls, run } = harness()
   await calls.onShow()
   run("form.name = '  张三  '")
   await run('save()')
-  assert.deepEqual(JSON.parse(JSON.stringify(calls.saves)), [{ warehouseName: '', name: '张三', phone: '' }])
+  assert.deepEqual(JSON.parse(JSON.stringify(calls.saves)), [{ warehouseName: '原云仓', name: '张三' }])
   assert.equal(run('dirty.value'), false)
   assert.equal(run('profile.joinStatus'), 1)
   assert.equal(calls.toasts.length, 1)
@@ -77,14 +78,14 @@ test('微信绑定电话只读，保存联系人不会提交或覆盖电话', as
   assert.equal(Object.hasOwn(calls.saves[0], 'phone'), false)
 })
 
-test('手机号可留空；填写了不完整手机号时给出纠正提示', async () => {
+test('已验证姓名不可清空；登录手机号始终不随资料表单更改', async () => {
   const { calls, run } = harness()
   await calls.onShow()
-  run("form.phone='123'")
+  run("form.name=''")
   await run('save()')
   assert.equal(calls.saves.length, 0)
-  assert.match(run('error.value'), /11 位手机号/)
-  run("form.phone='';form.name='张三'")
+  assert.match(run('error.value'), /真实姓名/)
+  run("form.phone='123';form.name='张三'")
   await run('save()')
   assert.equal(calls.saves.length, 1)
 })
@@ -130,7 +131,7 @@ test('工作台即使资料读取失败，仍保留业务数据和个人信息�
   const dashboard = readFileSync(new URL('../src/pages/warehouse-dashboard/index.vue', import.meta.url), 'utf8')
     .split('<script setup>')[1].split('</script>')[0].replace(/^import .*$/gm, '')
   let route
-  const context = vm.createContext({ ref: value => ({ value }), reactive: value => value, onShow: () => {},
+  const context = vm.createContext({ ref: value => ({ value }), reactive: value => value, computed: get => ({ get value() { return get() } }), isWarehouseOwner, onShow: () => {},
     warehouseApi: { dashboard: async () => ({ customerCount: 2 }), me: async () => { throw new Error('资料读取超时') } },
     warehouseToken: {}, uni: { navigateTo: options => { route = options.url } },
   })
@@ -139,7 +140,7 @@ test('工作台即使资料读取失败，仍保留业务数据和个人信息�
   assert.equal(vm.runInContext('stats.customerCount', context), 2)
   assert.equal(vm.runInContext('loading.value', context), false)
   assert.equal(vm.runInContext('error.value', context), '资料读取超时')
-  assert.equal(vm.runInContext("entries[0].page", context), 'warehouse-profile')
+  assert.equal(vm.runInContext("visibleEntries.value[0].page", context), 'warehouse-profile')
   vm.runInContext("go('warehouse-profile')", context)
   assert.equal(route, '/pages/warehouse-profile/index')
 })

@@ -28,6 +28,7 @@ import java.util.stream.Collectors;
 
 /** Warehouse-scoped read models. Sensitive promoter/phone/commission columns are never serialized. */
 @Tag(name = "云仓端-看板")
+@org.springframework.security.access.prepost.PreAuthorize("hasRole('WH')")
 @RestController
 @RequestMapping("/wh/v1")
 @RequiredArgsConstructor
@@ -37,6 +38,7 @@ public class WhDashboardController {
     private final CustomerMapper customerMapper;
     private final MktReferralOrderMapper orderMapper;
     private final MktCustomerAssignmentService assignments;
+    private final WhWorkspaceService workspace;
 
     @Operation(summary = "当前云仓运营汇总")
     @GetMapping("/dashboard")
@@ -53,6 +55,7 @@ public class WhDashboardController {
         out.put("customerCount", customerMapper.selectCount(customerScope(w).eq(Customer::getWarehouseAssignmentStatus, 2)));
         out.put("pendingCustomers", customerMapper.selectCount(customerScope(w).eq(Customer::getWarehouseAssignmentStatus, 1)));
         out.put("todayOrders", today); out.put("monthOrders", month);
+        out.put("isOwner", "owner".equals(workspace.current().contact().getRole()));
         out.put("erpStatus", w.getErpStatus()); out.put("joinStatus", w.getJoinStatus()); out.put("orderMode", w.getOrderMode());
         return Result.ok(out);
     }
@@ -63,7 +66,7 @@ public class WhDashboardController {
                                                               @RequestParam(defaultValue="20") int pageSize) {
         MktWarehouse w = WhAuthContext.requireWarehouse(warehouseMapper);
         IPage<Customer> page = customerMapper.selectPage(new Page<>(Math.max(1, pageNo), Math.min(100, Math.max(1, pageSize))), customerScope(w).orderByDesc(Customer::getId));
-        List<Map<String,Object>> rows = page.getRecords().stream().map(assignments::warehouseView).collect(Collectors.toList());
+        List<Map<String,Object>> rows = page.getRecords().stream().map(workspace::customerView).collect(Collectors.toList());
         return Result.ok(PageResult.of(page.getTotal(), rows));
     }
 
@@ -80,26 +83,42 @@ public class WhDashboardController {
     }
 
     @PostMapping("/customers/{id}/accept")
-    public Result<Void> accept(@PathVariable Long id) { assignments.accept(id, WhAuthContext.currentWarehouseId()); return Result.ok(); }
+    public Result<Void> accept(@PathVariable Long id) { workspace.accept(id); return Result.ok(); }
 
     @PostMapping("/customers/{id}/reject")
     public Result<Void> reject(@PathVariable Long id, @RequestBody Map<String, String> body) {
+        workspace.owner(); workspace.requireCustomer(id,true);
         assignments.reject(id, WhAuthContext.currentWarehouseId(), body.get("reason")); return Result.ok();
     }
 
     @PostMapping("/customers/{id}/progress")
     public Result<Void> progress(@PathVariable Long id, @RequestBody Map<String, Object> body) {
-        assignments.updateWarehouseProgress(id, WhAuthContext.currentWarehouseId(),
-                com.zhyq.park.marketing.service.MktReferralRequirements.text(body.get("summary"), 500, "公开进度"),
-                com.zhyq.park.marketing.service.MktCustomerProgressService.requestPercentage(body.get("percentage"))); return Result.ok();
+        workspace.updateStage(id, WhWorkspaceService.integer(body.get("stage"), null),
+                com.zhyq.park.marketing.service.MktReferralRequirements.text(body.get("summary"), 450, "跟进说明")); return Result.ok();
+    }
+
+    @GetMapping("/customers/{id}")
+    public Result<Map<String,Object>> detail(@PathVariable Long id) { return Result.ok(workspace.detail(id)); }
+
+    @PutMapping("/customers/{id}/salesperson")
+    @org.springframework.security.access.prepost.PreAuthorize("hasRole('WH_OWNER')")
+    public Result<Map<String,Object>> assignStaff(@PathVariable Long id, @RequestBody Map<String,Long> body) {
+        return Result.ok(workspace.assignStaff(id,body.get("contactId")));
     }
 
     private LambdaQueryWrapper<Customer> customerScope(MktWarehouse w) {
-        return new LambdaQueryWrapper<Customer>().eq(Customer::getAssignedWarehouseId, w.getId())
-                .eq(w.getProjectId() != null, Customer::getProjectId, w.getProjectId());
+        return workspace.customerScope(workspace.current());
     }
     private LambdaQueryWrapper<MktReferralOrder> orderScope(MktWarehouse w) {
-        return new LambdaQueryWrapper<MktReferralOrder>().eq(MktReferralOrder::getWarehouseId, w.getId()).eq(w.getProjectId()!=null, MktReferralOrder::getProjectId, w.getProjectId());
+        var who = workspace.current();
+        var q = new LambdaQueryWrapper<MktReferralOrder>().eq(MktReferralOrder::getWarehouseId, w.getId())
+                .eq(w.getProjectId()!=null, MktReferralOrder::getProjectId,w.getProjectId())
+                .eq(w.getTenantId()!=null,MktReferralOrder::getTenantId,w.getTenantId());
+        if (!"owner".equals(who.contact().getRole())) {
+            List<Long> ids = customerMapper.selectList(workspace.customerScope(who)).stream().map(Customer::getId).toList();
+            if (ids.isEmpty()) q.eq(MktReferralOrder::getId,-1L); else q.in(MktReferralOrder::getCustomerId,ids);
+        }
+        return q;
     }
     private Map<String,Object> orderView(MktReferralOrder o) {
         Map<String,Object> v = new HashMap<>(); v.put("id",o.getId()); v.put("sourceNo",o.getSourceNo()); v.put("customerId",o.getCustomerId()); v.put("customerCode",o.getCustomerCode());

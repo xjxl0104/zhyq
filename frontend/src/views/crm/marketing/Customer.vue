@@ -88,6 +88,7 @@
             <el-descriptions-item label="需求">{{ detail.row.demand || '未填写' }}</el-descriptions-item>
           </el-descriptions>
           <CustomerRequirements :model-value="detail.row.requirements || {}" readonly />
+          <CustomerQuotePanel v-if="detail.visible && projectStore.currentProjectId" :key="`${projectStore.currentProjectId}/${detail.row.id}`" :customer-id="detail.row.id" :project-id="projectStore.currentProjectId" />
           <el-descriptions :column="1" border style="margin-top:12px"><el-descriptions-item label="备注">{{ detail.row.remark || '未填写' }}</el-descriptions-item></el-descriptions>
           <div class="detail-progress"><h4>当前跟进进度</h4><el-progress :percentage="progressPercent(detail.row)" :stroke-width="12" /><p>{{ detail.row.publicProgress || '暂无进度说明' }}</p></div>
           <CustomerProgressHistory :items="detail.row.progressHistory || []" :has-more="detail.row.progressHistoryHasMore" />
@@ -237,6 +238,7 @@ import { useProjectStore } from '@/stores/project'
 import CustomerPricingDrawer from './CustomerPricingDrawer.vue'
 import CustomerCreateDialog from './CustomerCreateDialog.vue'
 import CustomerRequirements from './CustomerRequirements.vue'
+import CustomerQuotePanel from './CustomerQuotePanel.vue'
 import CustomerProgressHistory from './CustomerProgressHistory.vue'
 import PromoterSelect from './PromoterSelect.vue'
 

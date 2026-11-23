@@ -35,8 +35,6 @@ public class MktSettingController {
     private static final String WINDOW_END_REMARK = "提现申请开放截止日（1–31，起始日为 0 时忽略）";
     private static final String AUTO_WITHDRAW_KEY = "auto_withdraw_day";
     private static final String AUTO_WITHDRAW_REMARK = "每月自动提现日：当天 10:00 自动将可提现余额发起提现申请（0 关闭，1–28）";
-    private static final String PLATFORM_RETAIN_KEY = "platform_retain_rate";
-    private static final String PLATFORM_RETAIN_REMARK = "平台保底留存比例（如 0.05 表示固定留存总佣金的 5%，个人可分配上限 95%）";
 
     /** 后端 0 次读取的幽灵历史参数:查询时不展示以防误导管理员。 */
     public static final Set<String> RETIRED_GHOST_KEYS = Set.of(
@@ -48,7 +46,7 @@ public class MktSettingController {
             "daily_referral_cap", "clawback_days",
             "old_channel_exclusive", "tax_mode", "tax_rate",
             "lock_cooldown_days", "lease_clawback_days",
-            WINDOW_START_KEY, WINDOW_END_KEY, AUTO_WITHDRAW_KEY, PLATFORM_RETAIN_KEY, ARRIVAL_TIME);
+            WINDOW_START_KEY, WINDOW_END_KEY, AUTO_WITHDRAW_KEY, ARRIVAL_TIME);
 
     private final JdbcTemplate jdbc;
     private final MktAuditService auditService;
@@ -69,7 +67,6 @@ public class MktSettingController {
         ensureVirtualDefault(rows, WINDOW_START_KEY, "0", WINDOW_START_REMARK);
         ensureVirtualDefault(rows, WINDOW_END_KEY, "31", WINDOW_END_REMARK);
         ensureVirtualDefault(rows, AUTO_WITHDRAW_KEY, "10", AUTO_WITHDRAW_REMARK);
-        ensureVirtualDefault(rows, PLATFORM_RETAIN_KEY, "0.05", PLATFORM_RETAIN_REMARK);
         return Result.ok(rows);
     }
 
@@ -118,11 +115,6 @@ public class MktSettingController {
                 upsertSetting(AUTO_WITHDRAW_KEY, String.valueOf(day), AUTO_WITHDRAW_REMARK, "自动提现日设置已变化，请刷新页面后重试");
                 continue;
             }
-            if (PLATFORM_RETAIN_KEY.equals(key)) {
-                String normalized = parseRetainRate(value);
-                upsertSetting(PLATFORM_RETAIN_KEY, normalized, PLATFORM_RETAIN_REMARK, "平台保底留存比例设置已变化，请刷新页面后重试");
-                continue;
-            }
             String before = jdbc.query("SELECT svalue FROM biz_setting WHERE module = ? AND skey = ? AND deleted = 0 LIMIT 1",
                     rs -> rs.next() ? rs.getString(1) : null, MODULE, key);
             if (value != null && !value.equals(before)) {
@@ -143,22 +135,6 @@ public class MktSettingController {
             throw new BizException(errorMsg);
         }
         return parsed;
-    }
-
-    private static String parseRetainRate(String raw) {
-        if (raw == null || raw.trim().isEmpty()) {
-            throw new BizException("平台保底留存比例须填写 0 到 0.50 之间的数值");
-        }
-        BigDecimal rate;
-        try {
-            rate = new BigDecimal(raw.trim());
-        } catch (NumberFormatException ex) {
-            throw new BizException("平台保底留存比例须填写 0 到 0.50 之间的数值");
-        }
-        if (rate.signum() < 0 || rate.compareTo(new BigDecimal("0.50")) > 0 || rate.stripTrailingZeros().scale() > 4) {
-            throw new BizException("平台保底留存比例须在 0 到 0.50 之间（最多 4 位小数）");
-        }
-        return raw.trim();
     }
 
     private void saveArrivalTime(String input) {

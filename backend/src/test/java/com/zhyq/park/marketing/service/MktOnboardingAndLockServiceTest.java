@@ -65,6 +65,7 @@ class MktOnboardingAndLockServiceTest {
         @Mock MktWarehouseMapper warehouseMapper;
         @Mock MktWarehouseOnboardingMapper stepMapper;
         @Mock MktAuditService auditService;
+        @Mock WhPhoneClaimService phoneClaims;
         @InjectMocks MktWarehouseOnboardingService service;
 
         private MktWarehouse completeWarehouse() {
@@ -74,11 +75,14 @@ class MktOnboardingAndLockServiceTest {
 
         @Test
         void applyCreatesFiveStepsAndMovesToQualifying() {
-            MktWarehouse w = new MktWarehouse(); w.setCode("WH-1"); w.setName("杭州仓"); w.setFeeModel("");
+            MktWarehouse w = new MktWarehouse(); w.setCode("WH-1"); w.setName("杭州仓"); w.setFeeModel(""); w.setPhone("13800138000");
             when(warehouseMapper.insert(any(MktWarehouse.class))).thenAnswer(inv -> { w.setId(7L); return 1; });
             when(warehouseMapper.update(isNull(), any(Wrapper.class))).thenReturn(1);
 
             service.apply(w);
+            org.mockito.InOrder claimOrder = org.mockito.Mockito.inOrder(phoneClaims, warehouseMapper);
+            claimOrder.verify(phoneClaims).reserve("13800138000",null,null);
+            claimOrder.verify(warehouseMapper).insert(w);
 
             assertThat(w.getJoinStatus()).isEqualTo(MktWarehouseOnboardingService.JS_QUALIFYING);
             assertThat(w.getFeeModel()).isNull();

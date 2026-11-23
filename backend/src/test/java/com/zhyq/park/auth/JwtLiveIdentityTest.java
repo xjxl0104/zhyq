@@ -35,7 +35,8 @@ class JwtLiveIdentityTest {
     MktWarehouseMapper warehouses = mock(MktWarehouseMapper.class);
     MktCredentialMapper credentials = mock(MktCredentialMapper.class);
     com.zhyq.park.marketing.admin.MktAccountControl control = mock(com.zhyq.park.marketing.admin.MktAccountControl.class);
-    JwtAccountService accounts = new JwtAccountService(users, permissions, promoters, warehouses, credentials, control);
+    MktWarehouseContactMapper warehouseContacts = mock(MktWarehouseContactMapper.class);
+    JwtAccountService accounts = new JwtAccountService(users, permissions, promoters, warehouses, credentials, control, warehouseContacts);
     JwtService jwt = new JwtService(SECRET, 3600, accounts);
     SysUser user;
 
@@ -48,6 +49,21 @@ class JwtLiveIdentityTest {
         when(permissions.selectPermsByUserId(1L)).thenReturn(List.of("system:user:edit"));
     }
     @AfterEach void clear() { SecurityContextHolder.clearContext(); }
+
+    @Test void warehouseContactRoleAndRevisionAreRecheckedAndOldSharedTokenRejected() throws Exception {
+        var warehouse=new MktWarehouse(); warehouse.setId(11L);warehouse.setJoinStatus(5);warehouse.setPhone("13800138000");
+        when(warehouses.selectById(11L)).thenReturn(warehouse);
+        var contact=new com.zhyq.park.marketing.entity.MktWarehouseContact();contact.setId(5L);contact.setWarehouseId(11L);contact.setName("张三");contact.setPhone("13900139000");contact.setRole("member");contact.setStatus(1);contact.setAuthRevision(0L);
+        when(warehouseContacts.selectById(5L)).thenReturn(contact);
+        String token=jwt.issueForIdentity("wh_contact",5L);
+        assertThat(authenticate(token,"/wh/v1/dashboard").getName()).isEqualTo("wh:11:contact:5");
+        assertThat(authenticate(token,"/wh/v1/dashboard").getAuthorities()).extracting(Object::toString).contains("ROLE_WH_MEMBER").doesNotContain("ROLE_WH_OWNER");
+        contact.setStatus(0);assertThat(authenticate(token,"/wh/v1/dashboard")).isNull();
+        contact.setStatus(1);contact.setAuthRevision(2L);assertThat(authenticate(token,"/wh/v1/dashboard")).isNull();
+        assertThat(authenticate(jwt.issueForIdentity("wh_contact",5L),"/wh/v1/dashboard")).isNotNull();
+        assertThat(authenticate(jwt.issueForIdentity("wh",11L),"/wh/v1/dashboard")).isNull();
+        String current=jwt.issueForIdentity("wh_contact",5L);contact.setPhone("13700137000");assertThat(authenticate(current,"/wh/v1/dashboard")).isNull();
+    }
 
     @Test void marketingDisableAndRestoreNeverReviveOldTokens() {
         MktPromoter p = new MktPromoter(); p.setId(7L); p.setStatus(1);
@@ -149,10 +165,13 @@ class JwtLiveIdentityTest {
     }
 
     @Test void warehouseTokenCannotCrossRolePathsAndExitedWarehouseIsRejected() throws Exception {
-        MktWarehouse warehouse = new MktWarehouse(); warehouse.setId(11L); warehouse.setJoinStatus(5);
+        MktWarehouse warehouse = new MktWarehouse(); warehouse.setId(11L); warehouse.setJoinStatus(5); warehouse.setPhone("13800138000");
         when(warehouses.selectById(11L)).thenReturn(warehouse);
-        String token = jwt.issueForIdentity("wh", 11L);
-        assertThat(authenticate(token, "/wh/v1/apply").getName()).isEqualTo("wh:11");
+        var owner=new com.zhyq.park.marketing.entity.MktWarehouseContact();owner.setId(5L);owner.setWarehouseId(11L);owner.setRole("owner");owner.setStatus(1);owner.setName("负责人");owner.setPhone("13800138000");
+        when(warehouseContacts.selectById(5L)).thenReturn(owner);
+        assertThat(authenticate(jwt.issueForIdentity("wh",11L),"/wh/v1/apply")).isNull();
+        String token = jwt.issueForIdentity("wh_contact", 5L);
+        assertThat(authenticate(token, "/wh/v1/apply").getName()).isEqualTo("wh:11:contact:5");
         assertThat(authenticate(token, "/mp/v1/me")).isNull();
         assertThat(authenticate(token, "/crm/customer/page")).isNull();
         assertThat(authenticate(token, "/other/wh/v1/apply")).isNull();

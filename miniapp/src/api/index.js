@@ -32,6 +32,9 @@ export const meApi = {
   poster: () => get('/poster')
 }
 export const pricingApi = {
+  allocations: () => get('/pricing/allocations'),
+  contract: id => get(`/pricing/contract/${id}`),
+  saveContract: (id, data) => put(`/pricing/contract/${id}`, data),
   customers: () => get('/pricing/customers'),
   beneficiaries: () => get('/pricing/beneficiaries'),
   team: () => get('/pricing/team'),
@@ -70,6 +73,10 @@ export const accountAdminApi = {
   invite: (id, data) => put(`/admin/accounts/mp/${id}/invite-code`, data),
   status: (type, id, data) => put(`/admin/accounts/${type}/${id}/login-status`, data),
   remove: (type, id, reason) => request('DELETE', `/admin/accounts/${type}/${id}`, { reason })
+}
+export const adminOverviewApi = {
+  overview: params => get('/admin/overview', params),
+  customer: (id, params) => get(`/admin/overview/customer/${id}`, params)
 }
 export const publicReferralApi = {
   info: token => get(`/public/referral/${encodeURIComponent(token)}`),

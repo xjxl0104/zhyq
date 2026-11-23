@@ -1,8 +1,8 @@
 <template>
   <view class="page-wrap">
     <view class="card">
-      <view class="title">我的客户填写码</view>
-      <view class="muted qr-note">发给客户，客户扫码即可自行填写需求，推荐归属自动记在您名下。</view>
+      <view class="title">客户报备码</view>
+      <view class="muted qr-note">发给客户，客户扫码即可自行报备，推荐归属自动记在您名下。</view>
       <view v-if="linkError" class="error">{{ linkError }}</view>
       <button v-if="!link.token" class="btn ghost" :loading="linkLoading" :disabled="linkLoading" @click="loadLink">重新读取专属二维码</button>
       <button v-if="link.token" class="btn ghost" :loading="codeLoading" :disabled="codeLoading" @click="makeCode">{{ codeImage ? '重新生成二维码' : '生成我的专属二维码' }}</button>
@@ -14,7 +14,8 @@
     </view>
     <view class="card">
       <view class="muted">推荐后直接锁定 3 个自然月；签约成交后，推荐归属长期有效。</view>
-      <ReferralForm :form="form" :warehouses="warehouses" :loading="loading" :disabled="submitted" @submit="submit" />
+      <view class="muted qr-note">公司名称必填，仓配现状可在报备时一并勾选。</view>
+      <ReferralForm :form="form" :loading="loading" :disabled="submitted" @submit="submit" />
     </view>
   </view>
 </template>
@@ -25,11 +26,9 @@ import { bizApi } from '@/api'
 import { downloadReferralCode } from '@/utils/request'
 import { newReferralForm, referralShare } from '@/utils/referral-intake.mjs'
 import ReferralForm from '@/components/ReferralForm.vue'
-const warehouses = ref([]), loading = ref(false), submitted = ref(false), form = reactive(newReferralForm())
+const loading = ref(false), submitted = ref(false), form = reactive(newReferralForm())
 const link = ref({}), linkError = ref(''), linkLoading = ref(false), codeLoading = ref(false), codeImage = ref('')
-onLoad(async () => {
-  await Promise.all([loadLink(), bizApi.warehouses().then(items => { warehouses.value = items }).catch(() => {})])
-})
+onLoad(loadLink)
 onShareAppMessage(() => referralShare(link.value.token))
 onUnload(releaseImage)
 function releaseImage() {
@@ -57,7 +56,7 @@ async function makeCode() {
 const preview = () => uni.previewImage({ urls: [codeImage.value] })
 async function saveCode() {
   // #ifdef H5
-  const a = document.createElement('a'); a.href = codeImage.value; a.download = '客户填写专属二维码.png'; a.click()
+  const a = document.createElement('a'); a.href = codeImage.value; a.download = '客户报备专属二维码.png'; a.click()
   // #endif
   // #ifdef MP-WEIXIN
   try { await uni.saveImageToPhotosAlbum({ filePath: codeImage.value }); uni.showToast({ title: '已保存' }) }

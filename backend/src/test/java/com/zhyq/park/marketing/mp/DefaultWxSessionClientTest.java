@@ -75,6 +75,13 @@ class DefaultWxSessionClientTest {
         assertThat(body.path("page").asText()).isEqualTo("pages/customer-intake/index");
         assertThat(body.path("check_path").asBoolean()).isTrue();
         assertThatThrownBy(() -> client.customerReferralCode("app", "secret", "7", "release")).isInstanceOf(BizException.class);
+        assertThat(client.customerQuoteCode("app", "secret", token, "trial")).hasSize(9);
+        var quote = mapper.readTree(requestBody.get());
+        assertThat(quote.path("scene").asText()).isEqualTo(token);
+        assertThat(quote.path("page").asText()).isEqualTo("pages/quote-intake/index");
+        assertThat(quote.path("env_version").asText()).isEqualTo("trial");
+        assertThatThrownBy(() -> client.customerQuoteCode("app", "secret", "7", "release")).isInstanceOf(BizException.class);
+        assertThatThrownBy(() -> client.customerQuoteCode("app", "secret", token, "invalid")).isInstanceOf(BizException.class);
     }
     @AfterEach void stop() { server.stop(0); }
 

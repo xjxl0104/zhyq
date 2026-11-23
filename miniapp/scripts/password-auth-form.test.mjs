@@ -6,7 +6,7 @@ import vm from 'node:vm'
 const component = readFileSync(new URL('../src/components/PasswordAuthForm.vue', import.meta.url), 'utf8')
 const source = component.split('<script setup>')[1].split('</script>')[0].replace(/^import .*$/gm, '')
 
-function harness({ warehouse = false, registering = false, username = '123', password = '123', agreed = true, inviteCode = 'ABCD2345' } = {}) {
+function harness({ warehouse = false, registering = false, username = '123', password = '123', agreed = true, inviteCode = 'ABCD2345', name = '测试用户', phone = '13800138000' } = {}) {
   const calls = [], events = []
   const api = role => ({
     passwordLogin: async data => { calls.push({ role, action: 'login', data }); return { token: 'ok' } },
@@ -15,7 +15,7 @@ function harness({ warehouse = false, registering = false, username = '123', pas
   const context = vm.createContext({
     defineProps: () => ({ warehouse, inviteCode: '' }), defineEmits: () => (...args) => { events.push(args); if (args[0] === 'authenticated') calls.push({ emitted: args }) },
     ref: value => ({ value }), reactive: value => value, computed: get => ({ get value() { return get() } }), watch: () => {},
-    authApi: api('mp'), warehouseAuthApi: api('wh'), values: { username, password, agreed, inviteCode },
+    authApi: api('mp'), warehouseAuthApi: api('wh'), values: { username, password, agreed, inviteCode, name, phone },
   })
   vm.runInContext(source + `\nregistering.value=${registering};Object.assign(form,values);`, context)
   return { calls, context, events }
@@ -69,6 +69,20 @@ test('登录注册保留账号密码必填，注册必须同意协议', async ()
     assert.equal(vm.runInContext('error.value', context), message)
   }
 })
+test('两个身份新注册必须填写姓名和有效手机号，已配置账号密码登录保持兼容', async () => {
+  for (const warehouse of [false, true]) {
+    for (const [values, message] of [[{ name: '' }, /姓名/], [{ phone: '' }, /手机号/], [{ phone: '123' }, /手机号/]]) {
+      const { calls, context } = harness({ warehouse, registering: true, ...values })
+      await vm.runInContext('submit()', context)
+      assert.equal(calls.length, 0)
+      assert.match(vm.runInContext('error.value', context), message)
+    }
+    const { calls, context } = harness({ warehouse, registering: false, name: '', phone: '' })
+    await vm.runInContext('submit()', context)
+    assert.equal(calls[0].action, 'login')
+    assert.equal(Object.hasOwn(calls[0].data, 'phone'), false)
+  }
+})
 
 test('所有账号和密码输入框显式取消uni-app默认长度上限，避免静默截断', () => {
   const security = readFileSync(new URL('../src/pages/account-security/index.vue', import.meta.url), 'utf8')
@@ -80,10 +94,10 @@ test('所有账号和密码输入框显式取消uni-app默认长度上限，避�
 })
 
 for (const warehouse of [false, true]) {
-  test(`${warehouse ? '云仓' : '伙伴'}无需业务资料即可注册`, async () => {
+  test(`${warehouse ? '云仓' : '伙伴'}注册必须发送姓名和手机号`, async () => {
     const { calls, context } = harness({ warehouse, registering: true })
     await vm.runInContext('submit()', context)
-    assert.deepEqual(JSON.parse(JSON.stringify(calls[0]?.data)), { username: '123', password: '123', agreed: true, ...(!warehouse ? { inviteCode: 'ABCD2345' } : {}) })
+    assert.deepEqual(JSON.parse(JSON.stringify(calls[0]?.data)), { username: '123', password: '123', name: '测试用户', phone: '13800138000', agreed: true, ...(!warehouse ? { inviteCode: 'ABCD2345' } : {}) })
     assert.equal(calls[1]?.emitted[2], true)
   })
 }

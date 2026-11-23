@@ -28,9 +28,9 @@ function sessionError(auth, sentToken, loginPath, statusCode, bodyCode) {
   return null
 }
 
-function requestWith(base, auth, loginPath, method, url, data = {}) {
-  const sentToken = auth.get()
-  const publicIntake = base === BASE && ['GET', 'POST'].includes(method) && /^\/public\/referral\/[a-f0-9]{32}$/.test(url)
+function requestWith(base, auth, loginPath, method, url, data = {}, anonymous = false) {
+  const sentToken = anonymous ? null : auth.get()
+  const publicIntake = anonymous || base === BASE && ['GET', 'POST'].includes(method) && /^\/public\/referral\/[a-f0-9]{32}$/.test(url)
   const publicAuth = publicIntake || /^\/auth\/(quick-login|wx-login|bind-phone|password-login|password-register)$/.test(url)
   return new Promise((resolve, reject) => {
     uni.request({
@@ -60,6 +60,11 @@ function requestWith(base, auth, loginPath, method, url, data = {}) {
 }
 export function request(method, url, data = {}) {
   return requestWith(BASE, token, '/pages/login/index', method, url, data)
+}
+export function publicQuoteRequest(method, tokenValue, data) {
+  if (!/^[a-f0-9]{32}$/.test(tokenValue) || !['GET', 'POST'].includes(method)) return Promise.reject(new Error('报价填写入口无效'))
+  const quoteBase = BASE.replace(/\/mp\/v1\/?$/, '/open/quote-intake')
+  return requestWith(quoteBase, token, '', method, '/' + tokenValue, data, true)
 }
 export function warehouseRequest(method, url, data = {}) {
   return requestWith(WH_BASE, warehouseToken, '/pages/warehouse-login/index', method, url, data)
@@ -125,6 +130,7 @@ export async function openWarehouseFile(id, name = '附件') {
 
 export const downloadInvitationCode = (env = 'release') => downloadPartnerCode('/poster/code', env)
 export const downloadReferralCode = (env = 'release') => downloadPartnerCode('/referral-link/code', env)
+export const downloadQuoteCode = (id, env) => downloadPartnerCode('/quote/customers/' + encodeURIComponent(id) + '/code', env)
 async function downloadPartnerCode(path, env) {
   if (!['release', 'trial', 'develop'].includes(env)) throw new Error('小程序版本无效')
   const sentToken = token.get()

@@ -29,32 +29,32 @@ beforeEach(() => {
 })
 afterEach(() => wrappers.splice(0).forEach(wrapper => wrapper.unmount()))
 
-describe('合同佣金分配：平台固定 5% + 按比例分成', () => {
-  it('未配置时默认把 95% 给 P4 本人，保存按比例折算金额并向下取到 0.001 元', async () => {
+describe('合同佣金分配：平台服务费 10% + 按比例分成', () => {
+  it('未配置时默认把 90% 给 P4 本人，保存按比例折算金额并向下取到 0.001 元', async () => {
     mktOrderApi.contractPricing.mockResolvedValue({ contractId: 5, contractNo: 'CS-1', partnerId: 2, ownerPromoterId: 4, canEdit: true, configured: false, totalPerOrder: null, chain })
     const wrapper = mount(); await flushPromises()
     await wrapper.vm.openAlloc({ contractId: 5 }); await flushPromises()
     const members = wrapper.vm.alloc.form.members
-    expect(members.find(m => m.promoterId === 4)).toMatchObject({ isOwner: true, pct: 95 })
+    expect(members.find(m => m.promoterId === 4)).toMatchObject({ isOwner: true, pct: 90 })
     wrapper.vm.alloc.form.totalPerOrder = 0.3
     members.find(m => m.promoterId === 2).pct = 30
     members.find(m => m.promoterId === 3).pct = 20
-    members.find(m => m.promoterId === 4).pct = 45
+    members.find(m => m.promoterId === 4).pct = 40
     expect(wrapper.vm.allocOver).toBe(false)
     await wrapper.vm.saveAlloc()
     expect(mktOrderApi.saveContractPricing).toHaveBeenCalledWith({
-      contractId: 5, totalPerOrder: 0.3, ownerPerOrder: 0.135,
+      contractId: 5, totalPerOrder: 0.3, ownerPerOrder: 0.12,
       beneficiaries: [{ promoterId: 2, amountPerOrder: 0.09 }, { promoterId: 3, amountPerOrder: 0.06 }]
     })
   })
 
-  it('成员分成合计超过 95% 不能保存', async () => {
+  it('成员分成合计超过 90% 不能保存', async () => {
     mktOrderApi.contractPricing.mockResolvedValue({ contractId: 5, contractNo: 'CS-1', partnerId: 2, ownerPromoterId: 4, canEdit: true, configured: false, chain })
     const wrapper = mount(); await flushPromises()
     await wrapper.vm.openAlloc({ contractId: 5 }); await flushPromises()
     wrapper.vm.alloc.form.totalPerOrder = 0.3
     wrapper.vm.alloc.form.members.find(m => m.promoterId === 2).pct = 10
-    expect(wrapper.vm.allocPct).toBe('105.00')
+    expect(wrapper.vm.allocPct).toBe('100.00')
     expect(wrapper.vm.allocOver).toBe(true)
     await wrapper.vm.saveAlloc()
     expect(mktOrderApi.saveContractPricing).not.toHaveBeenCalled()
@@ -64,16 +64,16 @@ describe('合同佣金分配：平台固定 5% + 按比例分成', () => {
     mktOrderApi.contractPricing.mockResolvedValue({
       contractId: 5, contractNo: 'CS-1', partnerId: 2, ownerPromoterId: 4, canEdit: true, configured: true, totalPerOrder: 0.3,
       chain: [
-        { ...chain[0], amountPerOrder: 0.09 }, { ...chain[2], isOwner: true, amountPerOrder: 0.15 },
+        { ...chain[0], amountPerOrder: 0.09 }, { ...chain[2], isOwner: true, amountPerOrder: 0.135 },
         { ...chain[1], former: true, amountPerOrder: 0.045 }
       ]
     })
     const wrapper = mount(); await flushPromises()
     await wrapper.vm.openAlloc({ contractId: 5 }); await flushPromises()
     const members = wrapper.vm.alloc.form.members
-    expect(members.map(m => m.pct)).toEqual([30, 50, 15])
+    expect(members.map(m => m.pct)).toEqual([30, 45, 15])
     expect(members[2].former).toBe(true)
-    expect(wrapper.vm.allocPct).toBe('95.00')
+    expect(wrapper.vm.allocPct).toBe('90.00')
     await wrapper.vm.saveAlloc()
     expect(mktOrderApi.saveContractPricing.mock.calls[0][0].beneficiaries).toEqual([
       { promoterId: 2, amountPerOrder: 0.09 }, { promoterId: 3, amountPerOrder: 0.045 }

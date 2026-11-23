@@ -40,16 +40,15 @@ class MktWithdrawalSettingTest {
     @Test void readingMissingArrivalPolicyShowsEditableDefaultWithoutWritingIt() {
         when(jdbc.queryForList(anyString(), eq("marketing"))).thenReturn(List.of());
         var rows = controller.all().getData();
-        assertThat(rows).hasSize(5);
+        assertThat(rows).hasSize(4);
         assertThat(rows).extracting(r -> r.get("skey")).containsExactly(
                 "withdraw_arrival_time", "withdraw_window_start_day", "withdraw_window_end_day",
-                "auto_withdraw_day", "platform_retain_rate");
+                "auto_withdraw_day");
         assertThat(rows.get(0)).containsEntry("skey", "withdraw_arrival_time")
                 .containsEntry("svalue", MktWithdrawalService.DEFAULT_ARRIVAL_TIME);
         assertThat(rows.get(1)).containsEntry("skey", "withdraw_window_start_day").containsEntry("svalue", "0");
         assertThat(rows.get(2)).containsEntry("skey", "withdraw_window_end_day").containsEntry("svalue", "31");
         assertThat(rows.get(3)).containsEntry("skey", "auto_withdraw_day").containsEntry("svalue", "10");
-        assertThat(rows.get(4)).containsEntry("skey", "platform_retain_rate").containsEntry("svalue", "0.05");
         verify(jdbc, never()).update(anyString(), any(Object[].class));
         verifyNoInteractions(audit);
     }
@@ -60,7 +59,7 @@ class MktWithdrawalSettingTest {
         var rows = controller.all().getData();
         assertThat(rows.stream().filter(r -> "withdraw_arrival_time".equals(r.get("skey"))).toList())
                 .containsExactly(existing);
-        assertThat(rows).hasSize(5);
+        assertThat(rows).hasSize(4);
     }
 
     @Test void retiredGhostKeysAreFilteredOutFromSettingsList() {
@@ -69,23 +68,21 @@ class MktWithdrawalSettingTest {
         var active = Map.<String, Object>of("skey", "freeze_days", "svalue", "7", "remark", "冻结天数");
         when(jdbc.queryForList(anyString(), eq("marketing"))).thenReturn(List.of(ghost1, ghost2, active));
         var keys = controller.all().getData().stream().map(r -> String.valueOf(r.get("skey"))).toList();
-        assertThat(keys).contains("freeze_days", "withdraw_window_start_day", "platform_retain_rate")
+        assertThat(keys).contains("freeze_days", "withdraw_window_start_day")
                 .doesNotContainAnyElementsOf(MktSettingController.RETIRED_GHOST_KEYS);
     }
 
-    @Test void windowAndAutoWithdrawAndRetainRateSupportSafeUpsertAndValidation() {
+    @Test void windowAndAutoWithdrawSupportSafeUpsertAndValidation() {
         when(jdbc.queryForList(contains("FOR UPDATE"), eq("marketing"), anyString())).thenReturn(List.of());
         when(jdbc.update(startsWith("INSERT"), any(Object[].class))).thenReturn(1);
 
         controller.update(List.of(
                 Map.of("skey", "withdraw_window_start_day", "svalue", "0"),
                 Map.of("skey", "withdraw_window_end_day", "svalue", "31"),
-                Map.of("skey", "auto_withdraw_day", "svalue", "10"),
-                Map.of("skey", "platform_retain_rate", "svalue", "0.08")));
+                Map.of("skey", "auto_withdraw_day", "svalue", "10")));
         verify(audit).log("setting.change", "setting", null, "withdraw_window_start_day", null, "0");
         verify(audit).log("setting.change", "setting", null, "withdraw_window_end_day", null, "31");
         verify(audit).log("setting.change", "setting", null, "auto_withdraw_day", null, "10");
-        verify(audit).log("setting.change", "setting", null, "platform_retain_rate", null, "0.08");
 
         assertThatThrownBy(() -> controller.update(List.of(Map.of("skey", "withdraw_window_start_day", "svalue", "29"))))
                 .isInstanceOf(BizException.class).hasMessageContaining("0–28");
@@ -93,10 +90,6 @@ class MktWithdrawalSettingTest {
                 .isInstanceOf(BizException.class).hasMessageContaining("1–31");
         assertThatThrownBy(() -> controller.update(List.of(Map.of("skey", "auto_withdraw_day", "svalue", "29"))))
                 .isInstanceOf(BizException.class).hasMessageContaining("0–28");
-        assertThatThrownBy(() -> controller.update(List.of(Map.of("skey", "platform_retain_rate", "svalue", "0.51"))))
-                .isInstanceOf(BizException.class).hasMessageContaining("0.50");
-        assertThatThrownBy(() -> controller.update(List.of(Map.of("skey", "platform_retain_rate", "svalue", "-0.01"))))
-                .isInstanceOf(BizException.class).hasMessageContaining("0.50");
     }
 
     @Test void savingTheVirtualDefaultActuallyInsertsAndAuditsTheMissingRow() {

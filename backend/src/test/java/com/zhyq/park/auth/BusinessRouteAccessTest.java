@@ -7,6 +7,15 @@ import java.util.Set;
 import static org.assertj.core.api.Assertions.assertThat;
 
 class BusinessRouteAccessTest {
+    @Test void quotationRoutesUseTheMatchingBusinessPermissions() {
+        String card="/crm/marketing/quote/warehouses/2/rate-card";
+        String comparison="/crm/marketing/quote/customers/3/comparison";
+        var warehouse=Set.of("crm:marketing:warehouse:query");
+        assertThat(BusinessRouteAccess.allowed(card,"GET",warehouse)).isTrue();
+        assertThat(BusinessRouteAccess.allowed(card,"PUT",warehouse)).isFalse();
+        assertThat(BusinessRouteAccess.allowed(comparison,"GET",warehouse)).isFalse();
+        assertThat(BusinessRouteAccess.allowed(comparison,"GET",Set.of("crm:marketing:customer:query"))).isTrue();
+    }
     private final Set<String> repair = Set.of("MENU:/property/workorder", "property:workorder:query",
             "property:workorder:edit");
 

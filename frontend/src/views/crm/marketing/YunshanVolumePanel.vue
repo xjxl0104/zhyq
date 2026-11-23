@@ -120,7 +120,8 @@
               <el-descriptions-item label="成交伙伴">{{ part.sellerName || '—' }}</el-descriptions-item>
               <el-descriptions-item label="回补范围">{{ part.firstDay }} 至 {{ part.lastDay }}，{{ part.days }} 天 / {{ formatCount(part.tickets) }} 票</el-descriptions-item>
               <el-descriptions-item label="每单总佣金">{{ part.totalPerOrder == null ? '—' : `${part.totalPerOrder} 元` }}</el-descriptions-item>
-              <el-descriptions-item label="平台/公司留存">{{ part.platformPerOrder == null ? '—' : `${part.platformPerOrder} 元/单` }}</el-descriptions-item>
+              <el-descriptions-item label="平台服务费（10%）">{{ part.totalPerOrder == null ? '—' : `${(Number(part.totalPerOrder) * 0.1).toFixed(4)} 元/单` }}</el-descriptions-item>
+              <el-descriptions-item label="剩余未分配">{{ part.platformPerOrder == null || part.totalPerOrder == null ? '—' : `${(Number(part.platformPerOrder) - Number(part.totalPerOrder) * 0.1).toFixed(4)} 元/单` }}</el-descriptions-item>
               <el-descriptions-item label="成员合计">{{ part.memberPerOrder == null ? '—' : `${part.memberPerOrder} 元/单` }}</el-descriptions-item>
             </el-descriptions>
             <el-alert v-if="part.blocked" type="error" :closable="false" :title="`无法回补：${part.blocked}。请先到“结算 → 计佣订单 → 佣金分配”配置后再回来。`" />
@@ -131,10 +132,10 @@
               <el-table-column prop="perOrder" label="每单（元）" width="110" align="right" />
               <el-table-column prop="estimated" label="预计回补（元）" width="130" align="right" />
             </el-table>
-            <p v-if="!part.blocked" class="hint">预计佣金合计（总佣金）{{ part.estimatedTotal }} 元，其中成员 {{ part.estimatedMembers }} 元，平台/公司留存 {{ (Number(part.estimatedTotal) - Number(part.estimatedMembers)).toFixed(3) }} 元。</p>
+            <p v-if="!part.blocked" class="hint">预计佣金合计（总佣金）{{ part.estimatedTotal }} 元，其中成员 {{ part.estimatedMembers }} 元，平台服务费 {{ (Number(part.estimatedTotal) * 0.1).toFixed(4) }} 元，剩余未分配 {{ (Number(part.estimatedTotal) * 0.9 - Number(part.estimatedMembers)).toFixed(4) }} 元。</p>
           </div>
           <p class="hint">注意：回补使用的是现在的每单金额和分成链路，不是发货当天的；回补后已生成的佣金不会因日后改价自动重算。如需调整，请先到“佣金分配”修改，再回来重新预览。</p>
-          <el-checkbox v-model="backfill.confirmed">我已核对以上每单金额、平台留存和各成员分成，同意按此回补</el-checkbox>
+          <el-checkbox v-model="backfill.confirmed">我已核对以上每单金额、平台服务费和各成员分成，同意按此回补</el-checkbox>
         </template>
       </div>
       <template #footer>

@@ -1,7 +1,8 @@
 export const platformOptions = ['天猫', '京东', '拼多多', '有赞', '抖音', '视频号', '其他']
 export const productCategoryOptions = ['食品饮料', '美妆护肤', '日化清洁', '服装鞋帽', '家居家纺', '母婴用品', '宠物用品', '数码家电', '文体办公', '箱包配饰', '五金汽配', '其他']
-export const itemsPerParcelRanges = ['0-2', '2-5', '5-10', '10-20', '>=20']
-export const itemsPerParcelLabel = value => ({ '0-2': '少于 2 件', '2-5': '2–小于 5 件', '5-10': '5–小于 10 件', '10-20': '10–小于 20 件', '>=20': '≥20 件' })[value] || ''
+export const itemsPerParcelRanges = ['1', '2', '3', '4', '5', '>=6']
+const legacyItemsPerParcelRanges = ['0-2', '2-5', '5-10', '10-20', '>=20']
+export const itemsPerParcelLabel = value => ({ '1': '1 件', '2': '2 件', '3': '3 件', '4': '4 件', '5': '5 件', '>=6': '6 件及以上', '0-2': '少于 2 件', '2-5': '2–小于 5 件', '5-10': '5–小于 10 件', '10-20': '10–小于 20 件', '>=20': '≥20 件' })[value] || ''
 export const courierOptions = ['圆通', '中通', '顺丰', '申通', '韵达', '极兔', '京东', '邮政', '其他', '无']
 // “无”与其他快递互斥
 export function exclusiveNone(previous = [], next = []) {
@@ -21,7 +22,7 @@ export const emptyRequirements = () => ({ contactPosition: '', salesPlatforms: [
 export function validateRequirements(value) {
   if ((value.productCategories || []).some(category => !productCategoryOptions.includes(category))) return '销售品类选项不正确'
   if ((value.productCategories || []).includes('其他') && !(value.productCategoryOther || '').trim()) return '请填写其他销售品类'
-  if (value.itemsPerParcelRange && !itemsPerParcelRanges.includes(value.itemsPerParcelRange)) return '平均包裹产品数量选项不正确'
+  if (value.itemsPerParcelRange && !itemsPerParcelRanges.includes(value.itemsPerParcelRange) && !legacyItemsPerParcelRanges.includes(value.itemsPerParcelRange)) return '平均包裹产品数量选项不正确'
   if (value.salesPlatforms.includes('其他') && !value.salesPlatformOther.trim()) return '请填写其他销售平台'
   if (value.couriers.includes('其他') && !value.courierOther.trim()) return '请填写其他快递承运商'
   if ((value.currentCouriers || []).includes('其他') && !(value.currentCourierOther || '').trim()) return '请填写目前合作的其他快递'

@@ -1,7 +1,10 @@
 export const SALES_PLATFORMS = ['天猫', '京东', '拼多多', '有赞', '抖音', '视频号', '其他']
 export const PRODUCT_CATEGORIES = ['食品饮料', '美妆护肤', '日化清洁', '服装鞋帽', '家居家纺', '母婴用品', '宠物用品', '数码家电', '文体办公', '箱包配饰', '五金汽配', '其他']
-export const ITEMS_PER_PARCEL_RANGES = ['0-2', '2-5', '5-10', '10-20', '>=20']
+export const ITEMS_PER_PARCEL_RANGES = ['1', '2', '3', '4', '5', '>=6']
+const LEGACY_ITEMS_PER_PARCEL_RANGES = ['0-2', '2-5', '5-10', '10-20', '>=20']
 export function itemsPerParcelLabel(value) {
+  if (['1', '2', '3', '4', '5'].includes(String(value))) return `${value} 件`
+  if (value === '>=6') return '6 件及以上'
   return value === '0-2' ? '少于 2 件' : rangeLabel(value, '件')
 }
 export const COURIERS = ['圆通', '中通', '顺丰', '申通', '韵达', '极兔', '京东', '邮政', '其他', '无']
@@ -32,8 +35,10 @@ export function newReferralForm() {
 const text = value => String(value ?? '').trim()
 export function referralPayload(form) {
   const name = text(form.name), phone = text(form.phone)
-  if (!name) throw new Error('请填客户名称')
-  if (name.length > 100) throw new Error('客户名称最多 100 字')
+  if (!name) throw new Error('请填公司名称')
+  if (name.length > 100) throw new Error('公司名称最多 100 字')
+  if (text(form.brandName).length > 100) throw new Error('品牌名称最多 100 字')
+  if (text(form.contact).length > 50) throw new Error('对接人最多 50 字')
   if (phone && !/^1\d{10}$/.test(phone)) throw new Error('手机号格式不对')
   const r = form.requirements || newReferralForm().requirements
   if (r.productCategories != null && !Array.isArray(r.productCategories)) throw new Error('请选择有效的销售品类')
@@ -43,7 +48,7 @@ export function referralPayload(form) {
   if (productCategories.includes('其他') && !productCategoryOther) throw new Error('请填写其他销售品类')
   if (productCategoryOther.length > 100) throw new Error('其他销售品类最多 100 字')
   const itemsPerParcelRange = text(r.itemsPerParcelRange)
-  if (itemsPerParcelRange && !ITEMS_PER_PARCEL_RANGES.includes(itemsPerParcelRange)) throw new Error('请选择有效的平均包裹产品数量范围')
+  if (itemsPerParcelRange && !ITEMS_PER_PARCEL_RANGES.includes(itemsPerParcelRange) && !LEGACY_ITEMS_PER_PARCEL_RANGES.includes(itemsPerParcelRange)) throw new Error('请选择有效的平均包裹产品数量')
   const salesPlatforms = [...new Set(r.salesPlatforms || [])], couriers = [...new Set(r.couriers || [])]
   if (salesPlatforms.some(x => !SALES_PLATFORMS.includes(x)) || couriers.some(x => !COURIERS.includes(x))) throw new Error('请选择有效的平台和快递')
   if (couriers.includes('无') && couriers.length > 1) throw new Error('指定快递选了“无”，就不能再选其他快递')
@@ -89,7 +94,7 @@ export function parseReferralToken(query = {}) {
 }
 export function referralShare(token) {
   const valid = parseReferralToken({ token })
-  return { title: '邀请您填写仓储发货需求', path: valid ? `/pages/customer-intake/index?token=${valid}` : '/pages/entry/index', imageUrl: '/static/share/app-card.png' }
+  return { title: '邀请您填写客户报备资料', path: valid ? `/pages/customer-intake/index?token=${valid}` : '/pages/entry/index', imageUrl: '/static/share/app-card.png' }
 }
 export function newSubmissionId() {
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, x => {
@@ -97,12 +102,19 @@ export function newSubmissionId() {
     return (x === 'x' ? n : ((n & 3) | 8)).toString(16)
   })
 }
-export function requirementRows(r = {}) {
-  const multi = (items, other) => (items || []).map(x => x === '其他' && other ? `其他：${other}` : x).join('、')
+export function parseRequirements(value) {
+  if (typeof value === 'string') {
+    try { value = JSON.parse(value) } catch (_) { return {} }
+  }
+  return value && typeof value === 'object' && !Array.isArray(value) ? value : {}
+}
+export function requirementRows(value = {}) {
+  const r = parseRequirements(value)
+  const multi = (items, other) => (Array.isArray(items) ? items : []).filter(x => typeof x === 'string').map(x => x === '其他' && other ? `其他：${other}` : x).join('、')
   return [
     ['对接人职位', r.contactPosition],
     ['销售平台', multi(r.salesPlatforms, r.salesPlatformOther)],
-    ['产品重量', (r.productWeights || []).map(x => `${rangeLabel(x.range, 'kg')}${x.percentage == null ? '' : `（${x.percentage}%）`}`).join('；')],
+    ['产品重量', (Array.isArray(r.productWeights) ? r.productWeights : []).filter(x => x && typeof x.range === 'string').map(x => `${rangeLabel(x.range, 'kg')}${x.percentage == null || x.percentage === '' ? '' : `（${x.percentage}%）`}`).join('；')],
     // 表单已不再收集仓储面积，只在历史数据有值时显示
     ['仓储面积', r.storageArea && rangeLabel(r.storageArea, '㎡')],
     ['销售品类', multi(r.productCategories, r.productCategoryOther)],
