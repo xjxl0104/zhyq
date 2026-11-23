@@ -104,7 +104,7 @@ public class QuoteRateService {
         var demand=jdbc.queryForList("""
             SELECT CAST(q.requirements_json AS CHAR CHARACTER SET utf8mb4) AS requirementsJson,q.submitted_at AS submittedAt
             FROM crm_customer c JOIN biz_project p ON p.id=c.project_id AND p.tenant_id=c.tenant_id AND p.deleted=0
-            LEFT JOIN crm_quote_intake q ON q.customer_id=c.id AND q.tenant_id=c.tenant_id AND q.project_id=c.project_id AND q.promoter_id=c.referrer_id
+            LEFT JOIN crm_quote_intake q ON q.customer_id=c.id AND q.tenant_id=c.tenant_id AND q.project_id=c.project_id
             WHERE c.id=? AND c.project_id=? AND c.tenant_id=? AND c.deleted=0
             """,customerId,projectId,tenantId);
         if(demand.isEmpty())throw new BizException(404,"客户不存在或不属于当前园区");

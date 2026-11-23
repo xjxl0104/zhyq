@@ -119,8 +119,7 @@ class QuoteRateServiceMysqlTest {
         assertThatExceptionOfType(BizException.class).isThrownBy(() -> service.comparisonForSubmission(2L,1L,12L))
                 .extracting(BizException::getCode).isEqualTo(409);
         jdbc.update("UPDATE crm_customer SET referrer_id=8 WHERE id=1");
-        assertThatExceptionOfType(BizException.class).isThrownBy(() -> service.comparison(1L,11L))
-                .extracting(BizException::getCode).isEqualTo(409);
+        assertThat(service.comparison(1L,11L)).isEqualTo(result);
         jdbc.update("UPDATE crm_customer SET deleted=1 WHERE id=1");
         assertThatExceptionOfType(BizException.class).isThrownBy(() -> service.comparison(1L,11L))
                 .extracting(BizException::getCode).isEqualTo(404);
