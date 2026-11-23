@@ -20,12 +20,13 @@ class WhPhoneClaimServiceTest {
         var order=inOrder(jdbc,warehouses,contacts);
         order.verify(jdbc).update(anyString(),eq("13900139000"));
         order.verify(jdbc).queryForObject(contains("FOR UPDATE"),eq(String.class),eq("13900139000"));
-        order.verify(warehouses).selectCount(any());order.verify(contacts).selectCount(any());
+        order.verify(warehouses).selectList(argThat(q->q.getSqlSegment().contains("FOR UPDATE")));
+        order.verify(contacts).selectList(argThat(q->q.getSqlSegment().contains("FOR UPDATE")));
     }
-    @Test void staffClaimCommittedBeforePasswordOrAdminRegistrationCausesConflict(){when(contacts.selectCount(any())).thenReturn(1L);assertThatThrownBy(()->claims.reserve("13900139000",null,null)).isInstanceOf(BizException.class).hasMessageContaining("已关联");}
+    @Test void staffClaimCommittedBeforePasswordOrAdminRegistrationCausesConflict(){when(contacts.selectList(any())).thenReturn(java.util.List.of(new MktWarehouseContact()));assertThatThrownBy(()->claims.reserve("13900139000",null,null)).isInstanceOf(BizException.class).hasMessageContaining("已关联");}
     @Test void adminOwnerUpdateExcludesOnlyTheSameWarehouseAndOwner(){
-        when(warehouses.selectCount(any())).thenAnswer(inv->{var q=(com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<?>)inv.getArgument(0);assertThat(q.getSqlSegment()).contains("id <>");assertThat(q.getParamNameValuePairs()).containsValues(11L,"13800138000");return 0L;});
-        when(contacts.selectCount(any())).thenAnswer(inv->{var q=(com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<?>)inv.getArgument(0);assertThat(q.getSqlSegment()).contains("id <>");assertThat(q.getParamNameValuePairs()).containsValues(5L,"13800138000");return 0L;});
+        when(warehouses.selectList(any())).thenAnswer(inv->{var q=(com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<?>)inv.getArgument(0);assertThat(q.getSqlSegment()).contains("id <>","FOR UPDATE");assertThat(q.getParamNameValuePairs()).containsValues(11L,"13800138000");return java.util.List.of();});
+        when(contacts.selectList(any())).thenAnswer(inv->{var q=(com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<?>)inv.getArgument(0);assertThat(q.getSqlSegment()).contains("id <>","FOR UPDATE");assertThat(q.getParamNameValuePairs()).containsValues(5L,"13800138000");return java.util.List.of();});
         claims.reserve("13800138000",11L,5L);
     }
 }

@@ -69,6 +69,8 @@ class PasswordAuthServiceTest {
         lenient().when(whAuth.issueOwnerToken(anyLong())).thenAnswer(call -> "owner-token:" + call.getArgument(0));
         TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new MybatisConfiguration(), "test"), MktCredential.class);
         TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new MybatisConfiguration(), "test"), MktPromoter.class);
+        TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new MybatisConfiguration(), "test"), MktWarehouse.class);
+        TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new MybatisConfiguration(), "test"), com.zhyq.park.marketing.entity.MktWarehouseContact.class);
     }
     @AfterEach void clear() { SecurityContextHolder.clearContext(); }
 
@@ -150,7 +152,7 @@ class PasswordAuthServiceTest {
     }
 
     @Test void unverifiedPhoneCannotClaimExistingWarehouseContact() {
-        when(contacts.selectCount(any())).thenReturn(1L);
+        when(contacts.selectList(any())).thenReturn(List.of(new com.zhyq.park.marketing.entity.MktWarehouseContact()));
         assertThatThrownBy(() -> service.register(WH, registration(), "ip")).isInstanceOfSatisfying(BizException.class,e -> assertThat(e.getCode()).isEqualTo(409)).hasMessageContaining("已关联云仓账号");
         verifyNoInteractions(warehouseService);
     }

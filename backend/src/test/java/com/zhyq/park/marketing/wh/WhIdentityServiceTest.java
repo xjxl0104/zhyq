@@ -68,7 +68,25 @@ class WhIdentityServiceTest {
     }
     @Test void missingNameOrVerifiedPhoneCannotCreateWarehouse(){
         assertThatThrownBy(()->service.quickLoginIdentity("wx",null,"张三")).isInstanceOf(BizException.class);
-        assertThatThrownBy(()->service.quickLoginIdentity("wx","13900139000"," ")).isInstanceOf(BizException.class);verifyNoInteractions(onboarding,jwt,phoneClaims);
+        assertThatThrownBy(()->service.quickLoginIdentity("wx","13900139000"," ")).isInstanceOf(BizException.class);
+        verifyNoInteractions(onboarding,jwt);verify(phoneClaims).lock("13900139000");
+    }
+    @Test void oldClientMayReuseCompleteNameOnlyAfterVerifiedPhoneAndBindingChecks(){
+        member.setOpenid("wx-member");when(contacts.selectList(any())).thenReturn(List.of(member));
+        assertThat(service.quickLoginIdentity("wx-member","13900139000",null)).containsEntry("token","contact-token");
+        assertThat(member.getName()).isEqualTo("张三");
+        member.setRole("owner");member.setPhone(warehouse.getPhone());warehouse.setContactOpenid("wx-member");
+        assertThat(service.quickLoginIdentity("wx-member",warehouse.getPhone(),null)).containsEntry("warehouseRole","owner");
+    }
+    @Test void oldClientCannotFillIncompleteOrPlaceholderNameOrSwitchWechat(){
+        when(contacts.selectList(any())).thenReturn(List.of(member));
+        member.setName(null);
+        assertThatThrownBy(()->service.quickLoginIdentity("wx","13900139000",null)).hasMessageContaining("姓名");
+        member.setName("园区伙伴");
+        assertThatThrownBy(()->service.quickLoginIdentity("wx","13900139000",null)).hasMessageContaining("姓名");
+        member.setName("张三");member.setOpenid("original");
+        assertThatThrownBy(()->service.quickLoginIdentity("other","13900139000",null)).hasMessageContaining("其他微信");
+        verifyNoInteractions(jwt,onboarding);
     }
     @Test void ownerComesFromOriginalWarehouseRecord(){
         when(warehouses.selectList(any())).thenReturn(List.of(warehouse));

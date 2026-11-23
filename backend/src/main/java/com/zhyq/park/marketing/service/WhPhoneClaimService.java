@@ -26,10 +26,14 @@ public class WhPhoneClaimService {
     @Transactional(propagation=Propagation.MANDATORY)
     public void reserve(String phone, Long ownWarehouseId, Long ownContactId) {
         lock(phone);
-        if (warehouses.selectCount(new LambdaQueryWrapper<MktWarehouse>().eq(MktWarehouse::getPhone,phone)
-                .ne(ownWarehouseId!=null,MktWarehouse::getId,ownWarehouseId))>0
-                || contacts.selectCount(new LambdaQueryWrapper<MktWarehouseContact>().eq(MktWarehouseContact::getPhone,phone)
-                .ne(ownContactId!=null,MktWarehouseContact::getId,ownContactId))>0)
+        // Callers may already have an RR snapshot before waiting for this phone lock.
+        // A locking/current read must see the claim committed by the previous lock holder.
+        if (!warehouses.selectList(new LambdaQueryWrapper<MktWarehouse>().select(MktWarehouse::getId)
+                .eq(MktWarehouse::getPhone,phone).ne(ownWarehouseId!=null,MktWarehouse::getId,ownWarehouseId)
+                .last("LIMIT 1 FOR UPDATE")).isEmpty()
+                || !contacts.selectList(new LambdaQueryWrapper<MktWarehouseContact>().select(MktWarehouseContact::getId)
+                .eq(MktWarehouseContact::getPhone,phone).ne(ownContactId!=null,MktWarehouseContact::getId,ownContactId)
+                .last("LIMIT 1 FOR UPDATE")).isEmpty())
             throw new BizException(409,"该手机号已关联云仓账号，请核验后使用其他手机号");
     }
 }

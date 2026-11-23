@@ -52,14 +52,14 @@ public class WhIdentityService {
     private Identity phoneIdentity(String openid, String phone, String name, boolean allowCreate) {
         if (!StringUtils.hasText(openid)) throw new BizException(400, "缺少已验证的微信身份");
         phone = requirePhone(phone);
-        name = requireName(name);
+        name = StringUtils.hasText(name) ? requireName(name) : null;
         lockPhone(phone);
         MktWarehouseContact byOpenid = contacts.selectOne(new LambdaQueryWrapper<MktWarehouseContact>()
                 .eq(MktWarehouseContact::getOpenid, openid).last("limit 1"));
         if (byOpenid != null) {
             active(byOpenid);
             if ("owner".equals(byOpenid.getRole()) && !StringUtils.hasText(byOpenid.getPhone()))
-                return completeLegacyOwner(byOpenid,openid,phone,name);
+                return completeLegacyOwner(byOpenid,openid,phone,requireName(name));
             if (!phone.equals(byOpenid.getPhone())) throw new BizException(409, "本次授权手机号与绑定账号不一致，请联系云仓主账号核验");
         }
         List<MktWarehouseContact> phoneContacts = contacts.selectList(new LambdaQueryWrapper<MktWarehouseContact>()
@@ -81,6 +81,7 @@ public class WhIdentityService {
             active(contact);
             if (!phone.equals(contact.getPhone()) || !Objects.equals(warehouse.getId(),contact.getWarehouseId())) throw conflict();
             if ("owner".equals(contact.getRole()) && !phone.equals(warehouse.getPhone())) throw conflict();
+            name = existingVerifiedName(name,contact);
             bindOpenid(contact, warehouse, openid);
             updateName(contact, warehouse, name);
             return new Identity(warehouse, contact);
@@ -92,12 +93,14 @@ public class WhIdentityService {
             contact = ownerContact(warehouse);
             active(contact);
             if (!phone.equals(contact.getPhone())) throw conflict();
+            name = existingVerifiedName(name,contact);
             bindOpenid(contact, warehouse, openid);
             updateName(contact, warehouse, name);
             audit.log("warehouse.bind", "warehouse", warehouse.getId(), "主账号使用微信验证手机号登录");
             return new Identity(warehouse, contact);
         }
         if (!allowCreate) return null;
+        name = requireName(name);
         MktWarehouse warehouse = new MktWarehouse();
         warehouse.setCode("WH-" + UUID.randomUUID().toString().replace("-", "").substring(0,20).toUpperCase(Locale.ROOT));
         warehouse.setName(MktSelfProfileService.PENDING_WAREHOUSE_NAME);
@@ -110,6 +113,14 @@ public class WhIdentityService {
         contact = ownerContact(warehouse);
         audit.log("warehouse.wechat.register", "warehouse", warehouse.getId(), "实名及微信手机号授权注册主账号");
         return new Identity(warehouse, contact);
+    }
+
+    private static String existingVerifiedName(String requested, MktWarehouseContact contact) {
+        // Previously released clients omit name. Only a complete, phone-verified existing
+        // identity may reuse its saved real name; incomplete/new registrations still fail.
+        if (requested == null && com.zhyq.park.marketing.service.LoginProfileRequirements.complete(contact.getName(),contact.getPhone()))
+            return requireName(contact.getName());
+        return requireName(requested);
     }
 
     /** Completes an existing WeChat owner, never adopts another person's warehouse by a typed phone. */
