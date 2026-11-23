@@ -76,7 +76,7 @@
 
         <!-- 各户通知单 -->
         <h4 class="section-title">缴费通知单（{{ viewNotices.length }}{{ filterActive ? ` / ${notices.length}` : '' }} 张）</h4>
-        <el-table ref="noticeTable" :data="viewNotices" border size="small" row-key="id" :row-class-name="({ row }) => bandClass(row)"
+        <el-table ref="noticeTable" :data="viewNotices" border size="small" row-key="id" class="notice-table" :row-class-name="({ row }) => noticeRowClass(row)"
                   show-summary :summary-method="noticeSummary" @selection-change="(rows) => (selected = rows)">
           <el-table-column type="selection" width="45" />
           <el-table-column type="index" label="序号" width="55" />
@@ -98,8 +98,12 @@
           <el-table-column label="账单" width="80" align="center">
             <template #default="{ row }"><el-tag v-if="row.billId" size="small" type="success" effect="plain">已出账</el-tag><span v-else>-</span></template>
           </el-table-column>
-          <el-table-column label="操作" width="240" fixed="right">
+          <el-table-column label="缴费状态" width="90" align="center">
+            <template #default="{ row }"><el-tag :type="Number(row.paymentStatus) === 1 ? 'success' : 'info'" size="small">{{ Number(row.paymentStatus) === 1 ? '已缴费' : '未缴费' }}</el-tag></template>
+          </el-table-column>
+          <el-table-column label="操作" width="290" fixed="right">
             <template #default="{ row }">
+              <el-button link type="success" @click="openPayment(row)">缴费</el-button>
               <el-button link type="primary" @click="preview(row)">预览</el-button>
               <el-button link type="primary" @click="printOne(row)">打印</el-button>
               <el-button link type="primary" :disabled="locked" @click="edit(row)">调整</el-button>
@@ -217,6 +221,7 @@
         <el-button type="primary" @click="printOne(previewDialog.notice)">打印</el-button>
       </template>
     </el-dialog>
+    <FeeNoticePayment v-model="paymentDialog.visible" :notice="paymentDialog.notice" @saved="paymentSaved" />
   </div>
 </template>
 
@@ -230,6 +235,7 @@ import FeeFilterBar from './components/FeeFilterBar.vue'
 import { noticeHtml, NOTICE_CSS, printNotices } from './noticePrint'
 import FeeMonthPicker from './components/FeeMonthPicker.vue'
 import FeeBillFiles from './components/FeeBillFiles.vue'
+import FeeNoticePayment from './components/FeeNoticePayment.vue'
 
 const notices = ref([])
 const selected = ref([])
@@ -282,6 +288,18 @@ const opts = computed(() => filterOptions(notices.value, companyOf, unitOf))
 const filterActive = computed(() => !!(filter.company || filter.floor))
 const viewNotices = computed(() => applyFilter(notices.value, filter, companyOf, unitOf))
 const bandClass = computed(() => floorBandClass(notices.value, (n) => n.noticeNo))
+const paymentDialog = reactive({ visible: false, notice: null })
+function noticeRowClass(row) {
+  return Number(row.paymentStatus) === 1 ? 'notice-payment-paid' : bandClass.value(row)
+}
+function openPayment(row) {
+  paymentDialog.notice = row
+  paymentDialog.visible = true
+}
+function paymentSaved({ id, paymentStatus }) {
+  const row = notices.value.find(item => String(item.id) === String(id))
+  if (row) row.paymentStatus = paymentStatus
+}
 const matrix = computed(() => (viewNotices.value.length ? MATRIX_ROWS : []))
 // 合计列 = 各户金额逐个相加(分为单位取整,避免浮点尾数),与通知单列表、导出 Excel 同源
 const sumOf = (list) => {
@@ -490,4 +508,7 @@ async function revoke() {
 .edit-total { display: flex; justify-content: flex-end; align-items: baseline; gap: 22px; margin-top: 12px; font-size: 13px; font-variant-numeric: tabular-nums; }
 .edit-total .due strong { font-size: 18px; color: var(--el-color-danger); }
 .preview-frame { width: 100%; height: 70vh; border: 1px solid var(--el-border-color-lighter); background: #fff; }
+.notice-table :deep(.el-table__body tr.notice-payment-paid > td.el-table__cell) { background-color: var(--el-color-success-light-9) !important; }
+.notice-table :deep(.el-table__body tr.notice-payment-paid.hover-row > td.el-table__cell),
+.notice-table :deep(.el-table__body tr.notice-payment-paid:hover > td.el-table__cell) { background-color: var(--el-color-success-light-8) !important; }
 </style>

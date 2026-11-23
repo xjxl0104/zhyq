@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { archiveApi, folderApi, fmtSize } from '@/api/archive'
 import { startFileDownload } from '@/utils/fileDownload'
@@ -18,6 +18,10 @@ const dragOver = ref(false)
 const keyword = ref('')
 const query = reactive({ pageNo: 1, pageSize: 20 })
 const fileInput = ref()
+const expandedKeys = ref([])
+let treeInitialized = false
+let treeRequest = 0, breadcrumbRequest = 0, filesRequest = 0
+let active = true
 
 const subFolders = computed(() => {
   if (currentFolderId.value === null) return folderTree.value
@@ -30,12 +34,6 @@ const currentFolderName = computed(() => {
 /** 树上的 count 是「含子文件夹」的合计，根目录用它的总和展示全库资料量 */
 const docsInTree = computed(() => folderTree.value.reduce((s, n) => s + (n.count || 0), 0))
 const isRoot = computed(() => currentFolderId.value === null)
-/** 默认展开一级文件夹 + 当前所在路径,免得一进来只看到 11 个折叠节点 */
-const expandedKeys = computed(() => {
-  const ids = folderTree.value.map((n) => n.id)
-  for (const b of breadcrumb.value) if (!ids.includes(b.id)) ids.push(b.id)
-  return ids
-})
 const emptyHint = computed(() =>
   isRoot.value
     ? `根目录没有直接存放的文件，资料都归在各文件夹里（共 ${docsInTree.value} 份），点开上面的文件夹即可查看`
@@ -50,14 +48,63 @@ function findNode(nodes, id) {
   }
   return null
 }
+function folderPath(nodes, id) {
+  for (const node of nodes || []) {
+    if (node.id === id) return [node]
+    const childPath = folderPath(node.children, id)
+    if (childPath.length) return [node, ...childPath]
+  }
+  return []
+}
+function revealFolder(id) {
+  const path = folderPath(folderTree.value, id)
+  expandedKeys.value = [...new Set([...expandedKeys.value, ...path.map(node => node.id)])]
+}
+function onNodeExpand(node) {
+  if (!expandedKeys.value.includes(node.id)) expandedKeys.value = [...expandedKeys.value, node.id]
+}
+function onNodeCollapse(node) {
+  expandedKeys.value = expandedKeys.value.filter(id => id !== node.id)
+}
 
 async function loadTree() {
-  folderTree.value = (await folderApi.tree()) || []
+  const request = ++treeRequest
+  try {
+    const tree = (await folderApi.tree()) || []
+    if (!active || request !== treeRequest) return false
+    folderTree.value = tree
+    expandedKeys.value = treeInitialized
+      ? expandedKeys.value.filter(id => findNode(tree, id))
+      : tree.map(node => node.id)
+    treeInitialized = true
+    if (currentFolderId.value !== null && !findNode(tree, currentFolderId.value)) {
+      currentFolderId.value = null
+      breadcrumb.value = []
+      breadcrumbRequest++
+      filesRequest++
+      files.value = []
+      total.value = 0
+      selected.value = []
+      query.pageNo = 1
+    }
+    return true
+  } catch (e) {
+    if (active && request === treeRequest) ElMessage.error(e?.message || '文件夹读取失败，请重试')
+    return false
+  }
 }
 async function loadBreadcrumb() {
-  breadcrumb.value = currentFolderId.value === null ? [] : (await folderApi.breadcrumb(currentFolderId.value)) || []
+  const request = ++breadcrumbRequest, folderId = currentFolderId.value
+  if (folderId === null) { breadcrumb.value = []; return }
+  try {
+    const path = (await folderApi.breadcrumb(folderId)) || []
+    if (active && request === breadcrumbRequest && folderId === currentFolderId.value) breadcrumb.value = path
+  } catch (e) {
+    if (active && request === breadcrumbRequest) ElMessage.error(e?.message || '目录路径读取失败，请重试')
+  }
 }
 async function loadFiles() {
+  const request = ++filesRequest
   loading.value = true
   selected.value = []
   try {
@@ -65,20 +112,36 @@ async function loadFiles() {
     if (currentFolderId.value !== null) params.folderId = currentFolderId.value
     else if (!keyword.value) params.folderId = 0
     const res = await archiveApi.page(params)
+    if (!active || request !== filesRequest) return
+    const lastPage = Math.max(1, Math.ceil((res.total || 0) / query.pageSize))
+    if (query.pageNo > lastPage) {
+      query.pageNo = lastPage
+      await loadFiles()
+      return
+    }
     files.value = res.records || []
     total.value = res.total || 0
+  } catch (e) {
+    if (active && request === filesRequest) {
+      files.value = []
+      total.value = 0
+      ElMessage.error(e?.message || '资料读取失败，请重试')
+    }
   } finally {
-    loading.value = false
+    if (active && request === filesRequest) loading.value = false
   }
 }
 async function selectFolder(id) {
   currentFolderId.value = id
   query.pageNo = 1
+  breadcrumb.value = id === null ? [] : folderPath(folderTree.value, id)
+  files.value = []
+  total.value = 0
+  if (id !== null) revealFolder(id)
   await Promise.all([loadBreadcrumb(), loadFiles()])
 }
 async function refresh() {
-  await loadTree()
-  await loadFiles()
+  if (await loadTree() && active) await Promise.all([loadBreadcrumb(), loadFiles()])
 }
 function search() {
   query.pageNo = 1
@@ -86,16 +149,20 @@ function search() {
 }
 
 // ---------- 新建 / 重命名 / 删除 文件夹 ----------
-const folderDialog = reactive({ visible: false, mode: 'create', targetId: null, id: null, name: '', title: '' })
+const folderDialog = reactive({ visible: false, saving: false, mode: 'create', targetId: null, id: null, name: '', title: '' })
 function openFolderDialog(parentId) {
+  if (folderDialog.saving) return
   Object.assign(folderDialog, { visible: true, mode: 'create', targetId: parentId ?? null, id: null, name: '', title: '新建文件夹' })
 }
 function openRenameFolder(node) {
+  if (folderDialog.saving) return
   Object.assign(folderDialog, { visible: true, mode: 'rename', targetId: null, id: node.id, name: node.name, title: '重命名文件夹' })
 }
 async function saveFolder() {
+  if (folderDialog.saving) return
   const name = (folderDialog.name || '').trim()
   if (!name) return ElMessage.warning('请填写文件夹名称')
+  folderDialog.saving = true
   try {
     if (folderDialog.mode === 'create') {
       await folderApi.create({ parentId: folderDialog.targetId, name })
@@ -105,10 +172,11 @@ async function saveFolder() {
       ElMessage.success('已重命名')
     }
     folderDialog.visible = false
-    await loadTree()
-    if (currentFolderId.value !== null) await loadBreadcrumb()
+    await refresh()
   } catch (e) {
     ElMessage.error(e?.message || '操作失败')
+  } finally {
+    folderDialog.saving = false
   }
 }
 async function removeFolder(node) {
@@ -116,8 +184,7 @@ async function removeFolder(node) {
     await ElMessageBox.confirm(`确认删除文件夹「${node.name}」？文件夹里必须没有子文件夹和资料。`, '删除文件夹', { type: 'warning' })
     await folderApi.remove(node.id)
     ElMessage.success('已删除')
-    if (currentFolderId.value === node.id) await selectFolder(null)
-    else await loadTree()
+    await refresh()
   } catch (e) {
     if (e !== 'cancel') ElMessage.error(e?.message || '删除失败')
   }
@@ -163,11 +230,10 @@ async function onNodeDrop(draggingNode, dropNode, dropType) {
       if (!ids.length) return
       await folderApi.sort({ parentId: parent?.data?.id ?? null, ids })
     }
-    await loadTree()
-    if (currentFolderId.value !== null) await loadBreadcrumb()
+    await refresh()
   } catch (e) {
     ElMessage.error(e?.message || '调整顺序失败')
-    await loadTree()
+    await refresh()
   }
 }
 /** 树节点上的拖放:只接「从电脑拖文件进来上传」,文件夹排序交给 el-tree 自己处理 */
@@ -198,12 +264,12 @@ function onCardDragOver(e) {
   e.stopPropagation()
 }
 async function onCardDrop(e, target) {
+  e.preventDefault()
+  e.stopPropagation()
   if (hasExternalFiles(e)) {
     await onDrop(e, target.id)
     return
   }
-  e.preventDefault()
-  e.stopPropagation()
   const fromId = cardDragId.value
   cardDragId.value = null
   if (!fromId || fromId === target.id) return
@@ -233,7 +299,7 @@ function onMainLeave(e) {
 }
 /** 拖动文件夹卡片做排序时,不要亮起「上传到这里」的遮罩 */
 function onMainDragOver(e) {
-  if (cardDragId.value) return
+  if (cardDragId.value || !hasExternalFiles(e)) return
   e.preventDefault()
   dragOver.value = true
 }
@@ -251,27 +317,32 @@ function stripExt(name) {
 async function uploadFiles(list, folderId) {
   const arr = Array.from(list || [])
   if (!arr.length) return
+  uploadQueue.push({ files: arr, folderId: folderId ?? null })
+  if (uploading.value) return
   uploading.value = true
   let ok = 0
-  for (const f of arr) {
-    try {
-      const sf = await archiveApi.upload(f)
-      await archiveApi.add({
-        folderId: folderId ?? null,
-        fileId: sf.id,
-        name: stripExt(f.name)
-      })
-      ok++
-    } catch (err) {
-      ElMessage.error(`「${f.name}」上传失败：${err?.message || ''}`)
+  try {
+    while (uploadQueue.length) {
+      const batch = uploadQueue.shift()
+      for (const f of batch.files) {
+        try {
+          const sf = await archiveApi.upload(f)
+          await archiveApi.add({ folderId: batch.folderId, fileId: sf.id, name: stripExt(f.name) })
+          ok++
+        } catch (err) {
+          ElMessage.error(`「${f.name}」上传失败：${err?.message || ''}`)
+        }
+      }
     }
+  } finally {
+    uploading.value = false
   }
-  uploading.value = false
   if (ok) {
     ElMessage.success(`已上传 ${ok} 个文件`)
     await refresh()
   }
 }
+const uploadQueue = []
 
 // ---------- 文件操作 ----------
 async function download(row) {
@@ -282,20 +353,25 @@ async function download(row) {
     ElMessage.error(e?.message || '下载失败')
   }
 }
-const renameDocDialog = reactive({ visible: false, row: null, name: '' })
+const renameDocDialog = reactive({ visible: false, saving: false, row: null, name: '' })
 function openRenameDoc(row) {
+  if (renameDocDialog.saving) return
   Object.assign(renameDocDialog, { visible: true, row, name: row.name })
 }
 async function saveRenameDoc() {
+  if (renameDocDialog.saving) return
   const name = (renameDocDialog.name || '').trim()
   if (!name) return ElMessage.warning('请填写名称')
+  renameDocDialog.saving = true
   try {
     await archiveApi.update({ ...renameDocDialog.row, name })
     ElMessage.success('已重命名')
     renameDocDialog.visible = false
-    loadFiles()
+    await loadFiles()
   } catch (e) {
     ElMessage.error(e?.message || '重命名失败')
+  } finally {
+    renameDocDialog.saving = false
   }
 }
 // ---------- 批量选择 ----------
@@ -310,7 +386,7 @@ function clearSelection() {
 }
 
 // ---------- 移动到文件夹(单个 / 批量) ----------
-const moveDialog = reactive({ visible: false, rows: [], folderId: null })
+const moveDialog = reactive({ visible: false, saving: false, rows: [], folderId: null })
 const moveTreeData = computed(() => [{ value: 0, label: '根目录（不放进任何文件夹）' }, ...toSelect(folderTree.value)])
 const moveTitle = computed(() => (moveDialog.rows.length > 1
   ? `批量移动到文件夹（已选 ${moveDialog.rows.length} 份）`
@@ -319,16 +395,20 @@ function toSelect(nodes) {
   return (nodes || []).map((n) => ({ value: n.id, label: n.name, children: toSelect(n.children) }))
 }
 function openMove(row) {
+  if (moveDialog.saving) return
   Object.assign(moveDialog, { visible: true, rows: [row], folderId: row.folderId || 0 })
 }
 function openBulkMove() {
+  if (moveDialog.saving) return
   if (!selected.value.length) return ElMessage.warning('请先勾选资料')
   Object.assign(moveDialog, { visible: true, rows: [...selected.value], folderId: null })
 }
 async function saveMove() {
+  if (moveDialog.saving) return
   if (moveDialog.folderId === null || moveDialog.folderId === undefined) {
     return ElMessage.warning('请选择目标文件夹')
   }
+  moveDialog.saving = true
   try {
     await archiveApi.move({ ids: moveDialog.rows.map((r) => r.id), folderId: moveDialog.folderId })
     ElMessage.success(`已移动 ${moveDialog.rows.length} 份资料`)
@@ -337,6 +417,8 @@ async function saveMove() {
     await refresh()
   } catch (e) {
     ElMessage.error(e?.message || '移动失败')
+  } finally {
+    moveDialog.saving = false
   }
 }
 async function removeDoc(row) {
@@ -354,11 +436,14 @@ function fmtTime(t) {
   return (t || '').replace('T', ' ').slice(0, 16)
 }
 
-watch(() => project.currentProjectId, () => { selectFolder(null) })
-onMounted(async () => {
-  await loadTree()
-  await loadFiles()
+watch(() => project.currentProjectId, () => {
+  // 资料库目录是全局结构；切园区仍回根目录，但不让切换前的响应覆盖新视图。
+  treeRequest++; breadcrumbRequest++; filesRequest++
+  selectFolder(null)
+  loadTree()
 })
+onMounted(refresh)
+onBeforeUnmount(() => { active = false; treeRequest++; breadcrumbRequest++; filesRequest++ })
 </script>
 
 <template>
@@ -395,12 +480,15 @@ onMounted(async () => {
         node-key="id"
         :props="{ label: 'name', children: 'children' }"
         :default-expanded-keys="expandedKeys"
+        :auto-expand-parent="false"
         :expand-on-click-node="false"
         highlight-current
         :current-node-key="currentFolderId"
         draggable
         :allow-drop="allowDrop"
         @node-click="(n) => selectFolder(n.id)"
+        @node-expand="onNodeExpand"
+        @node-collapse="onNodeCollapse"
         @node-drop="onNodeDrop"
       >
         <template #default="{ data }">
@@ -509,31 +597,31 @@ onMounted(async () => {
     </section>
     </div>
 
-    <el-dialog v-model="folderDialog.visible" :title="folderDialog.title" width="440px">
-      <el-input v-model="folderDialog.name" placeholder="文件夹名称，如：2026年10月" maxlength="100" @keyup.enter="saveFolder" />
+    <el-dialog v-model="folderDialog.visible" :title="folderDialog.title" width="440px" :show-close="!folderDialog.saving" :close-on-click-modal="!folderDialog.saving" :close-on-press-escape="!folderDialog.saving">
+      <el-input v-model="folderDialog.name" :disabled="folderDialog.saving" placeholder="文件夹名称，如：2026年10月" maxlength="100" @keyup.enter="saveFolder" />
       <template #footer>
-        <el-button @click="folderDialog.visible = false">取消</el-button>
-        <el-button type="primary" @click="saveFolder">保存</el-button>
+        <el-button :disabled="folderDialog.saving" @click="folderDialog.visible = false">取消</el-button>
+        <el-button type="primary" :loading="folderDialog.saving" @click="saveFolder">保存</el-button>
       </template>
     </el-dialog>
 
-    <el-dialog v-model="renameDocDialog.visible" title="重命名文件" width="440px">
-      <el-input v-model="renameDocDialog.name" maxlength="200" @keyup.enter="saveRenameDoc" />
+    <el-dialog v-model="renameDocDialog.visible" title="重命名文件" width="440px" :show-close="!renameDocDialog.saving" :close-on-click-modal="!renameDocDialog.saving" :close-on-press-escape="!renameDocDialog.saving">
+      <el-input v-model="renameDocDialog.name" :disabled="renameDocDialog.saving" maxlength="200" @keyup.enter="saveRenameDoc" />
       <template #footer>
-        <el-button @click="renameDocDialog.visible = false">取消</el-button>
-        <el-button type="primary" @click="saveRenameDoc">保存</el-button>
+        <el-button :disabled="renameDocDialog.saving" @click="renameDocDialog.visible = false">取消</el-button>
+        <el-button type="primary" :loading="renameDocDialog.saving" @click="saveRenameDoc">保存</el-button>
       </template>
     </el-dialog>
 
-    <el-dialog v-model="moveDialog.visible" :title="moveTitle" width="460px">
+    <el-dialog v-model="moveDialog.visible" :title="moveTitle" width="460px" :show-close="!moveDialog.saving" :close-on-click-modal="!moveDialog.saving" :close-on-press-escape="!moveDialog.saving">
       <div v-if="moveDialog.rows.length > 1" class="move-tip">
         将把 {{ moveDialog.rows.length }} 份资料一起移动，原有编号不变。
       </div>
-      <el-tree-select v-model="moveDialog.folderId" :data="moveTreeData" check-strictly :render-after-expand="false"
+      <el-tree-select v-model="moveDialog.folderId" :disabled="moveDialog.saving" :data="moveTreeData" check-strictly :render-after-expand="false"
         placeholder="选择目标文件夹" style="width: 100%" />
       <template #footer>
-        <el-button @click="moveDialog.visible = false">取消</el-button>
-        <el-button type="primary" @click="saveMove">移动</el-button>
+        <el-button :disabled="moveDialog.saving" @click="moveDialog.visible = false">取消</el-button>
+        <el-button type="primary" :loading="moveDialog.saving" @click="saveMove">移动</el-button>
       </template>
     </el-dialog>
   </div>

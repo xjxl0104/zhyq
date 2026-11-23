@@ -259,6 +259,43 @@ class FeeNoticeCalculatorTest {
 
 
     @Test
+    @DisplayName("新通知单默认未缴费，重新生成保留登记状态而不改费用金额")
+    void paymentStatusDefaultsAndSurvivesRegenerationWithoutChangingAmounts() {
+        FeePeriod p = new FeePeriod();
+        p.setId(1L);
+        p.setPeriod("2026-10");
+        UtilityResult er = FeeNoticeCalculator.allocate("电", new BigDecimal("120"), BigDecimal.ONE,
+                new ArrayList<>(List.of(row(1, "1层A区", "客户", 1L, "电", "100", true, "3300"))));
+        UtilityResult wr = UtilityResult.empty("水", BigDecimal.ONE);
+        FeeNotice original = FeeNoticeCalculator.buildNotices(p, wr, er, Map.of()).notices().get(0);
+        assertThat(original.getPaymentStatus()).isZero();
+        original.setPaymentStatus(1);
+        FeeNotice regenerated = FeeNoticeCalculator.buildNotices(p, wr, er,
+                FeeNoticeCalculator.mergePrevious(List.of(original))).notices().get(0);
+        assertThat(regenerated.getPaymentStatus()).isEqualTo(1);
+        assertThat(regenerated.getPaidAmount()).isEqualByComparingTo(original.getPaidAmount());
+        assertThat(regenerated.getSubtotal()).isEqualByComparingTo(original.getSubtotal());
+        assertThat(regenerated.getTotalDue()).isEqualByComparingTo(original.getTotalDue());
+    }
+
+    @Test
+    @DisplayName("同租户旧单归并仅全部已缴才已缴，空状态按未缴处理")
+    void mergingNoticesRequiresEveryOldNoticeToBePaid() {
+        FeeNotice a = new FeeNotice();
+        a.setTenantRefId(8L);
+        a.setPaymentStatus(1);
+        FeeNotice b = new FeeNotice();
+        b.setTenantRefId(8L);
+        for (Integer status : java.util.Arrays.asList(null, 0, 1)) {
+            b.setPaymentStatus(status);
+            FeeNotice merged = FeeNoticeCalculator.mergePrevious(List.of(a, b)).get("T8");
+            assertThat(merged.getPaymentStatus()).isEqualTo(Integer.valueOf(1).equals(status) ? 1 : 0);
+            assertThat(a.getPaymentStatus()).isEqualTo(1);
+            assertThat(b.getPaymentStatus()).isEqualTo(status);
+        }
+    }
+
+    @Test
     @DisplayName("重新生成时找回手工新增的收费行和手改的备注,其他费用 = 手工行金额之和")
     void regenerateKeepsManualItemsAndRemarks() {
         FeePeriod p = new FeePeriod();

@@ -268,6 +268,7 @@ public final class FeeNoticeCalculator {
             // 手工填的 已付 / 前期欠费 / 其他费用 / 备注 在重新生成时保留
             FeeNotice prev = previous == null ? null : previous.get(noticeKey(n));
             n.setPaidAmount(prev == null ? BigDecimal.ZERO : nz(prev.getPaidAmount()));
+            n.setPaymentStatus(prev != null && Integer.valueOf(1).equals(prev.getPaymentStatus()) ? 1 : 0);
             n.setPriorArrears(prev == null ? BigDecimal.ZERO : nz(prev.getPriorArrears()));
             n.setRemark(prev == null ? null : prev.getRemark());
             keepRemarkEdits(items, prev);
@@ -324,6 +325,7 @@ public final class FeeNoticeCalculator {
                 head.setTenantRefId(old.getTenantRefId());
                 head.setTenantName(old.getTenantName());
                 head.setPaidAmount(nz(old.getPaidAmount()));
+                head.setPaymentStatus(Integer.valueOf(1).equals(old.getPaymentStatus()) ? 1 : 0);
                 head.setPriorArrears(nz(old.getPriorArrears()));
                 head.setOtherFee(nz(old.getOtherFee()));
                 head.setOtherFeeNote(old.getOtherFeeNote());
@@ -333,6 +335,8 @@ public final class FeeNoticeCalculator {
                 continue;
             }
             head.setPaidAmount(nz(head.getPaidAmount()).add(nz(old.getPaidAmount())));
+            head.setPaymentStatus(Integer.valueOf(1).equals(head.getPaymentStatus())
+                    && Integer.valueOf(1).equals(old.getPaymentStatus()) ? 1 : 0);
             head.setPriorArrears(nz(head.getPriorArrears()).add(nz(old.getPriorArrears())));
             head.setOtherFee(nz(head.getOtherFee()).add(nz(old.getOtherFee())));
             if (head.getRemark() == null || head.getRemark().isBlank()) {
