@@ -10,11 +10,11 @@ class QuoteAdviceClientTest {
     private final List<QuoteAdviceClient.Candidate> candidates=List.of(
             new QuoteAdviceClient.Candidate("测试仓",Map.of("id",1,"perParcelMin",2,"perParcelMax",3)));
 
-    @Test void flashDisablesThinkingAndKeepsTheConfiguredOutputBudget() throws Exception {
+    @Test void flashLeavesRoomForReasoningAndTheFinalAnswerWithoutNativeGatewayOptions() throws Exception {
         var client=new QuoteAdviceClient(json,"","","deepseek-flash",false);
         var request=json.readTree(client.requestBody(candidates));
-        assertThat(request.path("thinking")).isEqualTo(json.readTree("{\"type\":\"disabled\"}"));
-        assertThat(request.path("max_tokens").asInt()).isEqualTo(768);
+        assertThat(request.has("thinking")).isFalse();
+        assertThat(request.path("max_tokens").asInt()).isEqualTo(4096);
         var input=json.readTree(request.path("messages").get(1).path("content").asText());
         assertThat(input).isEqualTo(json.valueToTree(candidates.stream().map(QuoteAdviceClient.Candidate::numbers).toList()));
     }
@@ -24,6 +24,7 @@ class QuoteAdviceClientTest {
         var request=json.readTree(client.requestBody(candidates));
         assertThat(request.has("thinking")).isFalse();
         assertThat(request.path("model").asText()).isEqualTo("another-model");
+        assertThat(request.path("max_tokens").asInt()).isEqualTo(768);
     }
 
     @Test void truncatedAnswersAreRejectedEvenWhenTheirContentLooksComplete() throws Exception {

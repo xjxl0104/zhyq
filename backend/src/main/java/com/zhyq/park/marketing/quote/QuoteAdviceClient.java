@@ -81,9 +81,8 @@ public class QuoteAdviceClient {
         messages.addObject().put("role","system").put("content",prompt);
         messages.addObject().put("role","user").put("content",data);
         body.put("temperature",0.1);
-        body.put("max_tokens",768);
-        // This model shares its output budget with reasoning tokens by default.
-        if ("deepseek-flash".equals(model)) body.putObject("thinking").put("type","disabled");
+        // The gateway counts DeepSeek reasoning and the final answer against this shared limit.
+        body.put("max_tokens","deepseek-flash".equals(model) ? 4096 : 768);
         return json.writeValueAsString(body);
     }
 
