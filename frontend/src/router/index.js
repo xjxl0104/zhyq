@@ -44,6 +44,7 @@ const routes = [
       { path: 'crm/marketing/contract', meta: { title: '服务合同' }, component: () => import('@/views/crm/marketing/ServiceContract.vue') },
       { path: 'crm/marketing/template', meta: { title: '合同模板' }, component: () => import('@/views/crm/marketing/ContractTemplate.vue') },
       { path: 'crm/marketing/warehouse', meta: { title: '云仓管理' }, component: () => import('@/views/crm/marketing/Warehouse.vue') },
+      { path: 'crm/marketing/quote-rates', meta: { title: '报价体系' }, component: () => import('@/views/crm/marketing/QuoteRates.vue') },
       { path: 'crm/marketing/onboarding', meta: { title: '加盟申请' }, component: () => import('@/views/crm/marketing/Onboarding.vue') },
       { path: 'crm/marketing/order', meta: { title: '计佣订单' }, component: () => import('@/views/crm/marketing/ReferralOrder.vue') },
       { path: 'crm/marketing/commission', meta: { title: '佣金结算' }, component: () => import('@/views/crm/marketing/Commission.vue') },

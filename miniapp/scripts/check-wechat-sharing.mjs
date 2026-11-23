@@ -112,6 +112,23 @@ for (const page of pages) {
         assert.equal(referral.path, `/pages/customer-intake/index?token=${token}`, 'Share must retain referring partner')
         assert.equal(referral.imageUrl, defaultShare.imageUrl)
       } finally { bizApi.referralLink = oldLink; bizApi.warehouses = oldWarehouses; publicReferralApi.info = oldInfo }
+    } else if (page === 'pages/customer-quote/index') {
+      assert.deepEqual(plain, defaultShare)
+      const request = load(resolve(root, 'utils/request.js'))
+      const { bizApi } = load(resolve(root, 'api/index.js'))
+      const oldGet = request.get, oldCustomer = bizApi.customer
+      const capability = 'a'.repeat(32)
+      try {
+        request.get = async path => { assert.equal(path, '/quote/customers/12'); return {stage:'intent',token:capability} }
+        bizApi.customer = async () => ({name:'测试客户'})
+        storage.set('mp_token','partner-test')
+        await instance.onLoad({id:'12'})
+        await instance.onShow()
+        assert.equal(instance.onShareAppMessage({from:'button'}).path, '/pages/quote-intake/index?token=' + capability)
+        assert.equal(instance.onShareAppMessage({from:'menu'}).path, defaultShare.path)
+        storage.set('mp_token','other-partner')
+        assert.equal(instance.onShareAppMessage({from:'button'}).path, defaultShare.path)
+      } finally { request.get = oldGet; bizApi.customer = oldCustomer; storage.delete('mp_token') }
     } else assert.deepEqual(plain, defaultShare, `${page}: generic share must use public entry and image`)
   }
   options.lifetimes.detached?.call(instance)

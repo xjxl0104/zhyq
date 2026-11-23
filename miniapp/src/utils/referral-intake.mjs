@@ -94,7 +94,7 @@ export function parseReferralToken(query = {}) {
 }
 export function referralShare(token) {
   const valid = parseReferralToken({ token })
-  return { title: '邀请您填写仓储发货需求', path: valid ? `/pages/customer-intake/index?token=${valid}` : '/pages/entry/index', imageUrl: '/static/share/app-card.png' }
+  return { title: '邀请您填写客户报备资料', path: valid ? `/pages/customer-intake/index?token=${valid}` : '/pages/entry/index', imageUrl: '/static/share/app-card.png' }
 }
 export function newSubmissionId() {
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, x => {

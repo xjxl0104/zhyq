@@ -1,14 +1,14 @@
 <template>
   <view class="page-wrap">
     <view v-if="submitted" class="card">
-      <view class="title">需求已提交</view>
+      <view class="title">报备已提交</view>
       <view class="muted message">感谢您的填写，园区将根据需求安排跟进。</view>
       <view class="muted">推荐伙伴：{{ info.partnerName || '园区伙伴' }}</view>
     </view>
     <template v-else>
       <view class="card">
-        <view class="title">仓储发货需求</view>
-        <view v-if="info.partnerName" class="muted message">{{ info.partnerName }} 邀请您填写需求，无需注册账号。</view>
+        <view class="title">客户报备</view>
+        <view v-if="info.partnerName" class="muted message">{{ info.partnerName }} 邀请您填写客户资料，无需注册账号。</view>
         <view v-if="initialLoading" class="muted message">正在读取填写入口…</view>
         <view v-if="error" class="error">{{ error }}</view>
         <button v-if="error && referralToken" class="btn ghost" :loading="initialLoading" :disabled="initialLoading" @click="load">重新加载</button>
@@ -19,8 +19,8 @@
           <view class="muted">{{ submitting ? '正在提交，请稍候…' : '尚未确认提交结果。请再次确认，系统将核对同一次提交，避免重复推荐。' }}</view>
           <button class="btn" :loading="submitting" :disabled="submitting" @click="submit(pendingBody)">确认提交结果</button>
         </view>
-        <ReferralForm v-else :form="form" :warehouses="info.warehouses || []" :loading="submitting" submit-label="提交需求" @submit="submit">
-          <view class="consent">点击“提交需求”即表示您同意将以上信息提交给园区及推荐伙伴，用于需求对接和跟进。</view>
+        <ReferralForm v-else :form="form" :loading="submitting" submit-label="提交报备" @submit="submit">
+          <view class="consent">点击“提交报备”即表示您同意将以上信息提交给园区及推荐伙伴，用于需求对接和跟进。</view>
         </ReferralForm>
       </view>
     </template>
