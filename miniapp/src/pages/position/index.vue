@@ -8,7 +8,7 @@
       <view style="font-size:40rpx;font-weight:600">{{ p.name }} <text class="tag">{{ p.code }}</text></view>
       <view class="muted">自 {{ p.since?.slice(0, 10) }}</view>
       <view class="muted" style="margin-top:20rpx">P1–P4 的每单金额均由 P4 按客户自定义，称号不对应固定金额或比例。</view>
-      <button v-if="p.code === 'P4'" class="btn secondary" @click="navigateTo('/pages/allocation/index')">客户定价与分佣</button>
+      <button class="btn secondary" @click="navigateTo('/pages/allocation/index')">客户分佣</button>
     </view>
     <view class="card">
       <view style="font-weight:600;margin-bottom:12rpx">近 12 个月业绩</view>

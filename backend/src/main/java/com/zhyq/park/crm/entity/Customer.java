@@ -55,6 +55,12 @@ public class Customer extends BaseEntity {
     /** 0未分派 1待商家确认 2已承接 3已拒绝 */
     @JsonProperty(access = JsonProperty.Access.READ_ONLY)
     private Integer warehouseAssignmentStatus;
+    /** 本仓分配的业务员；只能经云仓主账号分配入口变更。 */
+    @JsonProperty(access = JsonProperty.Access.READ_ONLY)
+    private Long warehouseSalespersonId;
+    /** 0待业务员承接 1承接 2价格谈判 3签约 4货品入仓 5正式发货。 */
+    @JsonProperty(access = JsonProperty.Access.READ_ONLY)
+    private Integer warehouseSalesStage;
     /** 经明确发布、可向伙伴展示的进度，不复用内部备注。 */
     @JsonProperty(access = JsonProperty.Access.READ_ONLY)
     private String publicProgress;

@@ -17,6 +17,18 @@ public class MpPricingController {
     private final MktCustomerPricingService pricingService;
     private final com.zhyq.park.marketing.mapper.MktPositionMapper positionMapper;
     private final com.zhyq.park.marketing.service.MktPromoterService promoterService;
+    @GetMapping("/allocations")
+    public Result<List<AllocationItem>> allocations() {
+        return Result.ok(pricingService.allocations(MpAuthService.currentPromoterId()));
+    }
+    @GetMapping("/contract/{contractId}")
+    public Result<ContractPricingView> contract(@PathVariable Long contractId) {
+        return Result.ok(pricingService.getContractForP4(MpAuthService.currentPromoterId(), contractId));
+    }
+    @PutMapping("/contract/{contractId}")
+    public Result<ContractPricingView> saveContract(@PathVariable Long contractId, @RequestBody PricingInput input) {
+        return Result.ok(pricingService.saveContractForP4(MpAuthService.currentPromoterId(), contractId, input));
+    }
 
     @GetMapping("/positions")
     public Result<List<Map<String,String>>> positions() {

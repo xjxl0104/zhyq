@@ -4,7 +4,7 @@
     <view v-if="loading && !loaded" class="card muted">正在读取团队成员…</view>
     <view v-if="loaded" class="card">
       <view class="row team-heading"><text class="title">{{ canManage ? '邀请体系成员' : '直属成员' }} {{ list.length }} 人</text>
-        <button v-if="canManage" class="text-button" @click="navigateTo('/pages/allocation/index')">客户定价 ›</button></view>
+        <button class="text-button" @click="navigateTo('/pages/allocation/index')">客户分佣 ›</button></view>
       <view v-if="canManage" class="team-note">显示邀请体系内的正常成员。您可以设置 P1–P3 称号，金额仍按客户单独配置。P4 称号由后台管理。</view>
       <view v-if="!list.length" class="team-note">还没有可显示的成员。朋友通过您的邀请码注册后会加入团队。</view>
       <view class="row member-row" v-for="member in list" :key="member.id">

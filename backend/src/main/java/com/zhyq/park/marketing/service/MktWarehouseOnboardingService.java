@@ -52,6 +52,7 @@ public class MktWarehouseOnboardingService {
     private final MktWarehouseMapper warehouseMapper;
     private final MktWarehouseOnboardingMapper stepMapper;
     private final MktAuditService auditService;
+    private final WhPhoneClaimService phoneClaims;
 
     /** 新建云仓 = 提交加盟申请:join_status=1,建 5 行步骤,第 1 步直接通过、第 2 步进行中。 */
     @Transactional
@@ -59,6 +60,7 @@ public class MktWarehouseOnboardingService {
         if (!StringUtils.hasText(w.getCode()) || !StringUtils.hasText(w.getName())) {
             throw new BizException("云仓编码与名称必填");
         }
+        phoneClaims.reserve(LoginProfileRequirements.requirePhone(w.getPhone()), null, null);
         if (!StringUtils.hasText(w.getFeeModel())) {
             w.setFeeModel(null);
         }

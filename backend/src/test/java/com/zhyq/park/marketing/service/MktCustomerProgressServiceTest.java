@@ -93,4 +93,19 @@ class MktCustomerProgressServiceTest {
         assertThatThrownBy(() -> MktCustomerProgressService.requestPercentage(Long.MAX_VALUE)).isInstanceOf(BizException.class);
         assertThatThrownBy(() -> MktCustomerProgressService.requestPercentage("80")).isInstanceOf(BizException.class);
     }
+    @Test void newWarehouseWorkflowSigningCannotSkipGoodsArrivalAndShipping() {
+        customer.setStatus(2); customer.setProgressPercentage(100); customer.setWarehouseSalespersonId(5L); customer.setWarehouseSalesStage(3);
+        assertThat(service.view(customer)).containsEntry("progressPercentage",60);
+        service.transition(7L,100,"服务合同已签约生效","signed");
+        verify(jdbc).update(anyString(),eq(7L),eq(1L),eq(60),startsWith("服务合同已签约生效"),eq("signed"),eq("system"),any(LocalDateTime.class));
+        service.publish(7L,"等待货品入仓",null,"warehouse");
+        verify(jdbc).update(anyString(),eq(7L),eq(1L),eq(60),eq("等待货品入仓"),eq("warehouse_sales_3"),eq("warehouse"),any(LocalDateTime.class));
+        assertThatThrownBy(()->service.publish(7L,"不能直接标完成",100,"admin")).isInstanceOf(BizException.class);
+    }
+    @Test void newWarehouseWorkflowCompletesAtShippingEvenWithoutChangingFinancialContractStatus() {
+        customer.setWarehouseSalespersonId(5L); customer.setWarehouseSalesStage(5);
+        assertThat(MktCustomerProgressService.stagePercentage(customer)).isEqualTo(100);
+        service.publish(7L,"正式发货",null,"warehouse");
+        verify(jdbc).update(anyString(),eq(7L),eq(1L),eq(100),eq("正式发货"),eq("warehouse_sales_5"),eq("warehouse"),any(LocalDateTime.class));
+    }
 }

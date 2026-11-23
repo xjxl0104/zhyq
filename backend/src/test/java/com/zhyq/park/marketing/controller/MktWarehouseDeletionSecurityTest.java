@@ -21,6 +21,7 @@ import static org.mockito.Mockito.*;
 class MktWarehouseDeletionSecurityTest {
     @Configuration @EnableMethodSecurity
     static class Beans {
+        @Bean com.zhyq.park.marketing.wh.WhIdentityService identities() { return mock(com.zhyq.park.marketing.wh.WhIdentityService.class); }
         @Bean MktWarehouseDeletionService deletion() { return mock(MktWarehouseDeletionService.class); }
         @Bean MktWarehouseController controller(MktWarehouseDeletionService deletion) {
             return new MktWarehouseController(mock(MktWarehouseMapper.class), mock(MktWarehouseOnboardingMapper.class),

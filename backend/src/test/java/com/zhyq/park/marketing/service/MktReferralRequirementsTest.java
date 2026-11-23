@@ -46,7 +46,7 @@ class MktReferralRequirementsTest {
     }
 
     @Test void acceptsParcelRangesAndRejectsInvalidSelections() {
-        for (var range : List.of("0-2", "2-5", "5-10", "10-20", ">=20")) {
+        for (var range : List.of("1", "2", "3", "4", "5", ">=6", "0-2", "2-5", "5-10", "10-20", ">=20")) {
             var saved = MktReferralRequirements.parse(MktReferralRequirements.normalize(Map.of("itemsPerParcelRange", range)));
             assertThat(saved.get("itemsPerParcelRange")).isEqualTo(range);
         }

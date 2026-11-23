@@ -30,8 +30,8 @@ public class WhAuthController {
         String encrypted = text(body, "encryptedData", "encrypted_data");
         String iv = text(body, "iv");
         if (!authService.isMockLogin()) return Result.ok(authService.bindPhoneAuthorized(openid,
-                text(body, "loginTicket"), text(body, "phoneCode"), encrypted, iv));
-        return Result.ok(authService.bindPhone(openid, text(body, "phone")));
+                text(body, "loginTicket"), text(body, "phoneCode"), encrypted, iv, text(body, "name")));
+        return Result.ok(authService.bindPhoneWithName(openid, text(body, "phone"), text(body, "name")));
     }
 
     private static String text(Map<String, Object> body, String... keys) {

@@ -5,7 +5,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import vm from 'node:vm'
-import { parse } from 'vue/compiler-sfc'
+import { parse, compileScript } from 'vue/compiler-sfc'
+import * as Vue from 'vue'
+import { renderToString } from 'vue/server-renderer'
 import * as intake from '../src/utils/referral-intake.mjs'
 import { componentReferences, verifyWechatComponents, vueFiles } from './wechat-components.mjs'
 
@@ -16,6 +18,36 @@ const formSource = read('components/ReferralForm.vue')
 const script = source => source.split('<script setup>')[1].split('</script>')[0].replace(/^import .*$/gm, '')
 const ref = value => ({ value })
 const computed = get => ({ get value() { return get() } })
+let renderSequence = 0
+async function renderComponent(source, props) {
+  // compileScript transforms the cached template AST; isolate it from template interaction tests.
+  const { descriptor } = parse(`${source}\n<!-- render-${++renderSequence} -->`)
+  const code = compileScript(descriptor, { id: 'intake-render-check', inlineTemplate: true,
+    templateOptions: { compilerOptions: { isCustomElement: () => true } } }).content
+    .replace(/^import \{([^}]+)\} from ['"]vue['"];?$/gm, (_line, names) => `const { ${names.replaceAll(' as ', ': ')} } = Vue`)
+    .replace(/^import .*$/gm, '')
+    .replace('export default', 'globalThis.Component =')
+  const context = vm.createContext({ Vue, ...intake })
+  vm.runInContext(code, context)
+  return renderToString(Vue.createSSRApp(context.Component, props))
+}
+test('partner recommendation initially renders four basic fields; public intake renders full requirements', async () => {
+  const form = intake.newReferralForm()
+  const basic = await renderComponent(formSource, { form, progressive: true })
+  assert.equal((basic.match(/<input\b/g) || []).length, 4)
+  for (const label of ['公司名称', '品牌名称', '对接人', '联系手机', '补充详细需求']) assert.ok(basic.includes(label), label)
+  for (const label of ['业务规模', '销售品类', '现有仓配现状']) assert.equal(basic.includes(label), false)
+  const complete = await renderComponent(formSource, { form, progressive: false })
+  for (const label of ['业务规模', '销售品类', '现有仓配现状', '6 件及以上']) assert.ok(complete.includes(label), label)
+  assert.equal(complete.includes('<picker'), false)
+})
+test('customer requirement card renders submitted JSON fields and clearly labels missing details', async () => {
+  const source = read('components/CustomerRequirements.vue')
+  const shown = await renderComponent(source, { requirements: JSON.stringify({ productCategories: ['食品饮料'], skuCount: '10-20', itemsPerParcelRange: '4', warehouseMode: '外包云仓', invoiceRequired: false }), demand: '日常发货', remark: '周末发货' })
+  for (const label of ['食品饮料', 'SKU 数量', '4 件', '外包云仓', '是否开发票', '否', '日常发货', '周末发货']) assert.ok(shown.includes(label), label)
+  const empty = await renderComponent(source, { requirements: {} })
+  assert.ok(empty.includes('暂未补充详细需求'))
+})
 
 test('all custom components are explicitly registered; missing public form import is rejected', () => {
   for (const file of vueFiles(sourceRoot)) componentReferences(readFileSync(file, 'utf8'), file)
@@ -38,7 +70,7 @@ test('WeChat artifact gate rejects the exact missing usingComponents registratio
   const form = join(build, 'components/ReferralForm.wxml')
   writeFileSync(form, '<view><slot /></view>')
   assert.throws(() => verifyWechatComponents(source, build), /缺少表单内容/)
-  writeFileSync(form, '<view><input placeholder="公司 / 品牌名称"/><input placeholder="对接人职位"/><input placeholder="联系手机"/>销售品类 销售平台 产品重量 指定快递承运商 现有仓配现状<radio-group bindchange="change"/><slot/><button bindtap="submit">提交需求</button></view>')
+  writeFileSync(form, '<view><input placeholder="公司名称"/><input placeholder="品牌名称"/><input placeholder="对接人职位"/><input placeholder="联系手机"/>销售品类 销售平台 产品重量 指定快递承运商 现有仓配现状<radio-group bindchange="change"/><slot/><button bindtap="submit">提交需求</button></view>')
   writeFileSync(join(build, 'components/ReferralForm.js'), 'const fields=["SKU 数量","日均单量","平均包裹产品数量"]')
   assert.equal(verifyWechatComponents(source, build), 1)
 })
@@ -61,7 +93,7 @@ test('anonymous QR scene loads form, submit records consent, and optional phone 
   const form = vm.runInContext('form', page)
   form.name = '示例客户'
   const props = { form, warehouses: [], loading: false, disabled: false }
-  const component = vm.createContext({ ...intake, computed, defineProps: () => props,
+  const component = vm.createContext({ ...intake, ref, computed, defineProps: () => props,
     defineEmits: () => (_event, body) => { page.body = body; pending.push(vm.runInContext('submit(body)', page)) },
     uni: { showToast() {} }
   })
@@ -76,32 +108,30 @@ test('anonymous QR scene loads form, submit records consent, and optional phone 
   assert.equal(vm.runInContext('submitted.value', page), true)
 })
 
-test('warehouse picker reopens at selected value and can return to first option', () => {
+test('warehouse mode is an inline choice that can be selected and cleared', () => {
   const form = intake.newReferralForm()
-  form.warehouseId = 12
-  form.requirements.warehouseMode = '外包云仓'
-  // Vue templates unwrap computed refs before evaluating picker bindings.
-  const context = vm.createContext({ ...intake, form, computed: get => get(),
-    defineProps: () => ({ form, warehouses: [{ id: 12, name: '示例仓库' }] }), defineEmits: () => () => {} })
+  const context = vm.createContext({ ...intake, ref, form, defineProps: () => ({ form }), defineEmits: () => () => {} })
   vm.runInContext(script(formSource), context)
-  vm.runInContext('globalThis.field = rangeFields[0]', context)
-  const pickers = []
-  const visit = node => { if (node.tag === 'picker') pickers.push(node); for (const child of node.children || []) visit(child) }
-  visit(parse(formSource).descriptor.template.ast)
-  assert.equal(pickers.length, 1)
-  for (const [index, picker] of pickers.entries()) {
-    const value = picker.props.find(prop => prop.type === 7 && prop.name === 'bind' && prop.arg?.content === 'value')
-    assert.ok(value, `picker ${index} 必须绑定当前选择`)
-    const change = picker.props.find(prop => prop.type === 7 && prop.name === 'on' && prop.arg?.content === 'change')
-    assert.equal(vm.runInContext(value.exp.content, context), 2)
-    vm.runInContext(`(${change.exp.content})({detail:{value:0}})`, context)
-    assert.equal(vm.runInContext(value.exp.content, context), 0)
+  const groups = [], pickers = [], clearButtons = []
+  const visit = node => {
+    if (node.tag === 'radio-group') groups.push(node)
+    if (node.tag === 'picker') pickers.push(node)
+    if (node.tag === 'text' && node.props.some(p => p.type === 7 && p.name === 'on' && p.exp?.content === "clearRange('warehouseMode')")) clearButtons.push(node)
+    for (const child of node.children || []) visit(child)
   }
+  visit(parse(formSource).descriptor.template.ast)
+  assert.equal(pickers.length, 0)
+  const change = groups.find(g => g.props.some(p => p.name === 'on' && p.exp?.content.includes('warehouseMode'))).props.find(p => p.name === 'on')
+  vm.runInContext('(' + change.exp.content + ')({detail:{value:"外包云仓"}})', context)
+  assert.equal(form.requirements.warehouseMode, '外包云仓')
+  assert.equal(clearButtons.length, 1)
+  vm.runInContext("clearRange('warehouseMode')", context)
+  assert.equal(form.requirements.warehouseMode, '')
 })
 test('optional business ranges start empty, show only real choices, and can be cleared', () => {
   const form = intake.newReferralForm(); form.name = '扫码客户'
   let emitted
-  const context = vm.createContext({ ...intake, form, defineProps: () => ({ form }),
+  const context = vm.createContext({ ...intake, ref, form, defineProps: () => ({ form }),
     defineEmits: () => (_event, body) => { emitted = body }, uni: { showToast() {} } })
   vm.runInContext(script(formSource), context)
   const groups = [], pickers = [], clearButtons = []
@@ -112,9 +142,9 @@ test('optional business ranges start empty, show only real choices, and can be c
     for (const child of node.children || []) visit(child)
   }
   visit(parse(formSource).descriptor.template.ast)
-  assert.equal(groups.length, 1)
-  assert.equal(clearButtons.length, 1)
-  assert.equal(pickers.length, 1) // Only existing warehouse-mode picker remains outside business scale.
+  assert.equal(groups.length, 2)
+  assert.equal(clearButtons.length, 2)
+  assert.equal(pickers.length, 0)
   const change = groups[0].props.find(prop => prop.type === 7 && prop.name === 'on' && prop.arg?.content === 'change')
   const clear = clearButtons[0].props.find(prop => prop.type === 7 && prop.name === 'on' && prop.arg?.content === 'click')
   const clearVisible = clearButtons[0].props.find(prop => prop.type === 7 && prop.name === 'if')

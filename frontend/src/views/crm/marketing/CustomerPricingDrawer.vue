@@ -25,9 +25,10 @@
             <div><dt>总佣金单价</dt><dd>{{ perOrder(pricing.totalPerOrder) }}</dd></div>
             <div><dt>P4 本人金额</dt><dd>{{ perOrder(pricing.ownerPerOrder) }}</dd></div>
             <div><dt>其他受益人合计</dt><dd>{{ perOrder(pricing.allocatedPerOrder) }}</dd></div>
-            <div class="company-amount"><dt>公司剩余额</dt><dd>{{ perOrder(pricing.companyPerOrder ?? pricing.remainingPerOrder) }}</dd></div>
+            <div class="company-amount"><dt>平台服务费（10%）</dt><dd>{{ feeAmount(pricing.platformServiceFeePerOrder) }}</dd></div>
+            <div><dt>剩余未分配</dt><dd>{{ feeAmount(pricing.unallocatedPerOrder) }}</dd></div>
           </dl>
-          <p class="pricing-hint">公司剩余额 = 总佣金单价 − P4 本人金额 − 其他受益人合计。</p>
+          <p class="pricing-hint">平台服务费 = 总佣金单价 × 10%；剩余未分配 = 总佣金 − 平台服务费 − 个人分配合计。</p>
 
           <h3>其他受益人 <span>{{ pricing.beneficiaries?.length || 0 }} / 2 人</span></h3>
           <el-table :data="pricing.beneficiaries || []" border empty-text="未分配给其他受益人">
@@ -62,6 +63,7 @@ let requestId = 0
 const ownerLabel = computed(() => pricing.value?.ownerPromoterId
   ? `${pricing.value.ownerName || '伙伴'} · P4 #${pricing.value.ownerPromoterId}` : '暂未关联')
 const perOrder = (value) => value == null || value === '' || !Number.isFinite(Number(value)) ? '—' : Number(value).toFixed(3)
+const feeAmount = (value) => value == null || value === '' || !Number.isFinite(Number(value)) ? '—' : Number(value).toFixed(4)
 
 async function load() {
   if (!props.modelValue || !props.customer?.id) return

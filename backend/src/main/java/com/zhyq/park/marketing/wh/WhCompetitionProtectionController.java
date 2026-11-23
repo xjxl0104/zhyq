@@ -11,7 +11,7 @@ import java.util.Map;
 @RestController
 @RequestMapping("/wh/v1/competition-protection")
 @RequiredArgsConstructor
-@PreAuthorize("hasRole('WH')")
+@PreAuthorize("hasRole('WH_OWNER')")
 public class WhCompetitionProtectionController {
     private final MktCompetitionProtectionService service;
 
