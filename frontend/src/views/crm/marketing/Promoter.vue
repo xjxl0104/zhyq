@@ -32,7 +32,7 @@
     <div v-show="view === 'list'" class="table-card">
       <div class="toolbar">
         <el-button type="primary" @click="openManual"><el-icon><Plus /></el-icon>新增团队成员</el-button>
-        <span class="hint">注册时绑定上级邀请码。P4 拥有定价权，P1–P4 的按单金额由 P4 设定。</span>
+        <span class="hint">注册时绑定上级邀请码。P0 为云仓业务员（固定 0.02 元/单）；P4 拥有定价权，P1–P4 按每单具体金额分配。</span>
       </div>
       <el-table :data="list" v-loading="loading" border stripe>
         <el-table-column prop="id" label="ID" width="60" />
@@ -43,7 +43,7 @@
         </el-table-column>
         <el-table-column prop="inviteCode" label="邀请码" width="110" />
         <el-table-column label="角色 / 称号" width="160">
-          <template #default="{ row }"><el-tag>{{ row.positionCode }} · {{ positionName(row.positionCode) }}</el-tag></template>
+          <template #default="{ row }"><el-tag :type="row.positionCode === 'P0' ? 'warning' : ''">{{ row.positionCode }} · {{ positionName(row.positionCode) }}</el-tag></template>
         </el-table-column>
         <el-table-column label="状态" width="90">
           <template #default="{ row }"><el-tag :type="statusType(row.status)">{{ statusText(row.status) }}</el-tag></template>
@@ -168,7 +168,7 @@
             <el-descriptions-item label="手机">{{ maskPhone(detail.row.phone) }}</el-descriptions-item>
             <el-descriptions-item label="邀请码">{{ detail.row.inviteCode }}</el-descriptions-item>
             <el-descriptions-item label="角色 / 称号">{{ detail.row.positionCode }} · {{ positionName(detail.row.positionCode) }}</el-descriptions-item>
-            <el-descriptions-item label="定价权限" :span="2">{{ detail.row.positionCode === 'P4' ? '可在小程序内自定义所属客户的按单金额' : '每单金额由所属 P4 设置' }}</el-descriptions-item>
+            <el-descriptions-item label="定价权限" :span="2">{{ detail.row.positionCode === 'P0' ? '云仓业务员，固定按 0.02 元/单计佣' : detail.row.positionCode === 'P4' ? '可在小程序内自定义所属客户的按单金额' : '每单金额由所属 P4 设置' }}</el-descriptions-item>
             <el-descriptions-item label="上级 ID">{{ detail.row.parentId || '—(根节点)' }}</el-descriptions-item>
             <el-descriptions-item label="路径">{{ detail.row.path }}</el-descriptions-item>
             <el-descriptions-item label="状态">{{ statusText(detail.row.status) }}</el-descriptions-item>

@@ -49,8 +49,13 @@
             <div v-if="[1, 2].includes(row.lockStatus) && row.lockDaysLeft != null" class="project-note">剩余 {{ row.lockDaysLeft }} 天</div>
           </template>
         </el-table-column>
-        <el-table-column label="云仓承接" min-width="150">
-          <template #default="{ row }"><div>{{ row.assignedWarehouseName || '尚未分派' }}</div><div class="project-note">{{ ASSIGN[row.warehouseAssignmentStatus || 0] }}</div><div v-if="row.intendedWarehouseName" class="project-note">意向：{{ row.intendedWarehouseName }}</div></template>
+        <el-table-column label="云仓承接" min-width="170">
+          <template #default="{ row }">
+            <div>{{ row.assignedWarehouseName || '尚未分派' }}</div>
+            <div class="project-note">{{ ASSIGN[row.warehouseAssignmentStatus || 0] }}</div>
+            <div v-if="row.rebateUnitPrice != null" class="project-note">返点：{{ Number(row.rebateUnitPrice).toFixed(3) }} 元/单{{ row.rebateConfirmedAt ? '（已确认）' : '（待确认）' }}</div>
+            <div v-if="row.intendedWarehouseName" class="project-note">意向：{{ row.intendedWarehouseName }}</div>
+          </template>
         </el-table-column>
         <el-table-column label="伙伴可见进度" min-width="180">
           <template #default="{ row }"><el-progress :percentage="progressPercent(row)" :stroke-width="8" /><div class="project-note">{{ row.publicProgress || '待更新进度' }}</div></template>
@@ -86,6 +91,11 @@
             <el-descriptions-item label="推荐伙伴">{{ detail.row.referrerName || '园区直接客户' }}</el-descriptions-item>
             <el-descriptions-item label="需求类型">{{ SERVICE[detail.row.serviceType] || '未填写' }}</el-descriptions-item>
             <el-descriptions-item label="意向云仓">{{ detail.row.intendedWarehouseName || '不限' }}</el-descriptions-item>
+            <el-descriptions-item label="承接云仓">{{ detail.row.assignedWarehouseName || '尚未分派' }}（{{ ASSIGN[detail.row.warehouseAssignmentStatus || 0] }}）</el-descriptions-item>
+            <el-descriptions-item v-if="detail.row.rebateUnitPrice != null" label="平台服务费（返点）">
+              {{ detail.row.rebatePolicyLabel || detail.row.rebatePolicyType }} · <b>{{ Number(detail.row.rebateUnitPrice).toFixed(3) }} 元/单</b>
+              <el-tag size="small" :type="detail.row.rebateConfirmedAt ? 'success' : 'warning'" style="margin-left:8px">{{ detail.row.rebateConfirmedAt ? '云仓已确认' : '待云仓确认' }}</el-tag>
+            </el-descriptions-item>
             <el-descriptions-item label="需求">{{ detail.row.demand || '未填写' }}</el-descriptions-item>
           </el-descriptions>
           <CustomerRequirements :model-value="detail.row.requirements || {}" readonly />
@@ -110,14 +120,26 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="assignment.visible" title="分派承接云仓" width="500px">
-      <el-alert type="info" :closable="false" title="分派后商家需要确认承接。已有生效合同的客户不能更换承接仓。" />
-      <el-form label-width="90px" style="margin-top:20px">
-        <el-form-item label="承接云仓"><el-select v-model="assignment.warehouseId" filterable placeholder="选择已上线云仓" style="width:100%"><el-option v-for="w in warehouses" :key="w.id" :value="w.id" :label="w.name" /></el-select></el-form-item>
+    <el-dialog v-model="assignment.visible" title="分派承接云仓" width="min(560px, 94vw)">
+      <el-alert type="info" :closable="false" title="分派后商家需要查看并确认平台服务费（返点）后再确认承接；确认后该返点将锁定为总计佣单价（不可手动调整）。" />
+      <el-form label-width="115px" style="margin-top:20px">
+        <el-form-item label="承接云仓" required><el-select v-model="assignment.warehouseId" filterable placeholder="选择已上线云仓" style="width:100%"><el-option v-for="w in warehouses" :key="w.id" :value="w.id" :label="w.name" /></el-select></el-form-item>
+        <el-form-item label="平台服务费确认" required>
+          <el-radio-group v-model="assignment.rebatePolicyType" class="rebate-radio-group">
+            <el-radio value="BULK_5000">一、日均 5000 单及以上（大批量订单），返点 0.10 元/单</el-radio>
+            <el-radio value="STANDARD">二、日均 5000 单以下（非批量订单），返点 0.15 元/单</el-radio>
+            <el-radio value="STRATEGIC">三、战略客户返点一客一议</el-radio>
+          </el-radio-group>
+          <div v-if="assignment.rebatePolicyType === 'STRATEGIC'" class="rebate-custom-input">
+            <el-input-number v-model="assignment.rebateUnitPrice" :min="0.023" :max="999999" :step="0.001" :precision="3" :controls="false" placeholder="填写一客一议返点单价" style="width:180px" />
+            <span class="hint">元/单（最低 0.023 元/单，最多 3 位小数）</span>
+          </div>
+          <div class="project-note">依据《基准所报价收费表》点选返点并推送至承接云仓商家。</div>
+        </el-form-item>
         <template v-if="assignment.manualMessage"><el-alert type="warning" :closable="false" :title="assignment.manualMessage" />
           <el-checkbox v-model="assignment.manualConfirmed">已核实情况，确认人工分配</el-checkbox>
         </template>
-        <el-form-item :label="assignment.manualMessage ? '人工分配原因' : '分派原因'"><el-input v-model="assignment.reason" type="textarea" :maxlength="assignment.manualMessage ? 450 : 500" /></el-form-item>
+        <el-form-item :label="assignment.manualMessage ? '人工分配原因' : '分派原因'" required><el-input v-model="assignment.reason" type="textarea" :maxlength="assignment.manualMessage ? 450 : 500" /></el-form-item>
       </el-form>
       <template #footer><el-button @click="assignment.visible = false">取消</el-button><el-button type="primary" :loading="assignment.busy" @click="assignWarehouse">确认分派</el-button></template>
     </el-dialog>
@@ -313,7 +335,7 @@ async function loadProtection() {
   } catch (error) { protection.error = error?.message || '白名单读取失败，请重试' }
   finally { protection.loading = false }
 }
-const assignment = reactive({visible:false,id:null,warehouseId:null,reason:'',busy:false,manualMessage:'',manualConfirmed:false})
+const assignment = reactive({visible:false,id:null,warehouseId:null,rebatePolicyType:'STANDARD',rebateUnitPrice:null,reason:'',busy:false,manualMessage:'',manualConfirmed:false})
 const progress = reactive({visible:false,id:null,summary:'',percentage:0,history:[],hasMore:false,signed:false,busy:false,loading:false,ready:false,error:''})
 async function openAssignment(row, selectedWarehouseId) {
   let manualMessage=''
@@ -327,13 +349,23 @@ async function openAssignment(row, selectedWarehouseId) {
   }
   const rows = await mktWarehouseApi.online()
   warehouses.value = rows.filter(w=>row.projectId == null || w.projectId == null || String(w.projectId) === String(row.projectId))
-  Object.assign(assignment,{visible:true,id:row.id,warehouseId:selectedWarehouseId || row.assignedWarehouseId || row.intendedWarehouseId,reason:'',busy:false,manualMessage,manualConfirmed:false})
+  Object.assign(assignment,{visible:true,id:row.id,warehouseId:selectedWarehouseId || row.assignedWarehouseId || row.intendedWarehouseId,rebatePolicyType:row.rebatePolicyType || 'STANDARD',rebateUnitPrice:row.rebatePolicyType === 'STRATEGIC' && row.rebateUnitPrice != null ? Number(row.rebateUnitPrice) : null,reason:'',busy:false,manualMessage,manualConfirmed:false})
 }
 async function assignWarehouse() {
   if (!assignment.warehouseId || !assignment.reason.trim()) return ElMessage.error('请选择云仓并填写分派原因')
+  if (!assignment.rebatePolicyType) return ElMessage.error('请选择平台服务费（返点）政策')
+  if (assignment.rebatePolicyType === 'STRATEGIC' && !(Number(assignment.rebateUnitPrice) >= 0.023)) {
+    return ElMessage.error('战略客户请填写不低于 0.023 元/单的返点单价')
+  }
   if(assignment.manualMessage && !assignment.manualConfirmed) return ElMessage.warning('请核实报价缺项并确认人工分配')
   assignment.busy = true
-  try { await mktCustomerApi.assignWarehouse(assignment.id,{warehouseId:assignment.warehouseId,reason:assignment.reason,manualQuoteOverride:!!assignment.manualMessage && assignment.manualConfirmed}); assignment.visible=false; ElMessage.success('已分派，等待商家确认'); await load(); if(detail.visible && detail.row?.id===assignment.id) await openDetail(detail.row) }
+  try {
+    const rebateUnitPrice = assignment.rebatePolicyType === 'BULK_5000' ? 0.1
+      : assignment.rebatePolicyType === 'STANDARD' ? 0.15
+      : Number(assignment.rebateUnitPrice)
+    await mktCustomerApi.assignWarehouse(assignment.id,{warehouseId:assignment.warehouseId,reason:assignment.reason,manualQuoteOverride:!!assignment.manualMessage && assignment.manualConfirmed,rebatePolicyType:assignment.rebatePolicyType,rebateUnitPrice})
+    assignment.visible=false; ElMessage.success('已分派并推送返点政策，等待商家确认承接'); await load(); if(detail.visible && detail.row?.id===assignment.id) await openDetail(detail.row)
+  }
   finally { assignment.busy=false }
 }
 async function openProgress(row) {
@@ -482,4 +514,7 @@ onMounted(load)
 .prelock-form { display: flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap; width: 100%; }
 .delete-target { overflow-wrap: anywhere; }
 .delete-note { color: var(--el-text-color-regular); line-height: 1.7; }
+.rebate-radio-group { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+.rebate-radio-group :deep(.el-radio) { margin-right: 0; height: auto; white-space: normal; line-height: 1.5; }
+.rebate-custom-input { display: flex; align-items: center; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
 </style>

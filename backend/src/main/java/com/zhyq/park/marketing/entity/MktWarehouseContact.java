@@ -26,4 +26,6 @@ public class MktWarehouseContact extends BaseEntity {
     private Boolean phoneBindingApproved;
     private Boolean passwordResetRequired;
     private Long projectId;
+    /** 关联的全民营销伙伴 ID（P0 云仓业务员） */
+    private Long promoterId;
 }

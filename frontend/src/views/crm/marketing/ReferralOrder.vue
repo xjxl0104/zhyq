@@ -209,37 +209,43 @@
       </template>
     </el-dialog>
 
-    <!-- 合同佣金分配:链路成员每单金额(仅 P4 可改，最多 8 人) + 该合同已产生佣金 -->
+    <!-- 合同佣金分配:按每单具体金额配置(后台仅超级管理员丁超、杨洪可修改) + 该合同已产生佣金 -->
     <el-dialog v-model="alloc.visible" :title="`佣金分配 · ${alloc.view?.contractNo || ''}`" width="min(760px, 96vw)">
       <template v-if="alloc.view">
         <el-alert v-if="!alloc.view.canEdit" type="warning" :closable="false" class="mb"
-                  :title="`只读模式：${alloc.view.readOnlyReason || '仅 P4(且该合同在其邀请体系内)可以设置分配，其他账号仅可查看。'}`" show-icon />
+                  :title="`只读模式：${alloc.view.readOnlyReason || '后台仅超级管理员（丁超、杨洪）可修改佣金分配，当前账号仅可查看。'}`" show-icon />
         <el-descriptions :column="2" border size="small" class="mb">
           <el-descriptions-item label="客户">{{ alloc.view.customerName || '—' }}</el-descriptions-item>
           <el-descriptions-item label="成交伙伴">{{ alloc.view.partnerName || '—' }}</el-descriptions-item>
           <el-descriptions-item label="每单总佣金(元)">
-            <el-input-number v-if="alloc.view.canEdit" v-model="alloc.form.totalPerOrder" :min="0" :step="0.001" :precision="3" :controls="false" size="small" style="width: 110px" />
+            <template v-if="alloc.view.totalPerOrderLocked">
+              <span>{{ fixed3(alloc.form.totalPerOrder) }}</span>
+              <el-tag size="small" type="success" class="ml4">云仓确认返点·锁定</el-tag>
+            </template>
+            <el-input-number v-else-if="alloc.view.canEdit" v-model="alloc.form.totalPerOrder" :min="0" :step="0.001" :precision="3" :controls="false" size="small" style="width: 120px" />
             <span v-else>{{ alloc.view.totalPerOrder != null ? Number(alloc.view.totalPerOrder).toFixed(3) : '未配置' }}</span>
           </el-descriptions-item>
           <el-descriptions-item label="平台服务费">{{ PLATFORM_PCT }}%（{{ allocServiceFee }} 元/单）</el-descriptions-item>
+          <el-descriptions-item label="业务员佣金（P0）">
+            <span>{{ fixed3(allocSalespersonFee) }} 元/单（固定）</span>
+            <span class="sub ml4">{{ alloc.view.salespersonName ? `· ${alloc.view.salespersonName}` : '· 待云仓分配业务员' }}</span>
+          </el-descriptions-item>
+          <el-descriptions-item label="成员可分配上限">{{ allocMaxMember }} 元/单</el-descriptions-item>
         </el-descriptions>
 
         <el-table :data="alloc.form.members" size="small" border>
           <el-table-column prop="positionCode" label="岗位" width="70" align="center" />
-          <el-table-column prop="name" label="成员" min-width="130">
+          <el-table-column prop="name" label="成员" min-width="140">
             <template #default="{ row }">{{ row.name }}<el-tag v-if="row.isOwner" size="small" class="ml4" type="success">P4 本人</el-tag><el-tag v-if="row.former || row.added" size="small" class="ml4" type="warning">额外分成成员</el-tag></template>
           </el-table-column>
           <el-table-column label="关系" width="90" align="center">
             <template #default="{ row }">{{ row.former || row.added ? '团队成员' : row.promoterId === alloc.view.partnerId ? '成交' : '上级' }}</template>
           </el-table-column>
-          <el-table-column label="分成比例(%)" width="150" align="right">
+          <el-table-column label="每单金额(元)" width="170" align="right">
             <template #default="{ row }">
-              <el-input-number v-if="alloc.view.canEdit" v-model="row.pct" :min="0" :max="100 - PLATFORM_PCT" :step="1" :precision="2" :controls="false" size="small" style="width: 110px" />
-              <span v-else>{{ Number(row.pct || 0).toFixed(2) }}</span>
+              <el-input-number v-if="alloc.view.canEdit" v-model="row.amountPerOrder" :min="0" :max="allocMaxMemberNumber" :step="0.001" :precision="3" :controls="false" size="small" style="width: 130px" />
+              <span v-else>{{ fixed3(row.amountPerOrder) }}</span>
             </template>
-          </el-table-column>
-          <el-table-column label="每单金额(元)" width="130" align="right">
-            <template #default="{ row }">{{ fixed3(amountOf(row.pct)) }}</template>
           </el-table-column>
           <el-table-column v-if="alloc.view.canEdit" label="操作" width="70" align="center">
             <template #default="{ row }"><el-button v-if="!row.isOwner && (row.former || row.added)" link type="danger" @click="removeMember(row)">移除</el-button></template>
@@ -254,11 +260,10 @@
           <span v-else-if="!addableMembers.length" class="hint">本人团队里暂无可添加的其他正常成员。</span>
         </div>
         <p class="hint alloc-sum">
-          成员分成合计 <span :class="{ neg: allocOver }">{{ allocPct }}%</span>（上限 {{ 100 - PLATFORM_PCT }}%，平台服务费 {{ PLATFORM_PCT }}%，最多 {{ MAX_SPLIT_MEMBERS }} 人参与分佣）,
-          折合每单 {{ allocSum }} 元 / 每单总佣金 {{ allocTotal }} 元,
-          平台服务费 {{ allocServiceFee }} 元，剩余未分配 {{ allocUnallocated }} 元
-          <template v-if="allocOver">(成员分成超过 {{ 100 - PLATFORM_PCT }}%,无法保存)</template>。
-          比例乘以每单总佣金后向下取到 0.001 元。配置保存后只对之后产生的出库单生效,历史订单不重算；成员被调整层级前签的合同会保留其原有分成。
+          成员分配合计 <span :class="{ neg: allocOver }">{{ allocSum }} 元/单</span>（上限 {{ allocMaxMember }} 元/单，最多 {{ MAX_SPLIT_MEMBERS }} 人参与分佣），
+          每单总佣金 {{ allocTotal }} 元，平台服务费 {{ allocServiceFee }} 元（{{ PLATFORM_PCT }}%），业务员佣金（P0）{{ fixed3(allocSalespersonFee) }} 元，剩余未分配 <span :class="{ neg: allocOver }">{{ allocUnallocated }}</span> 元
+          <template v-if="allocOver">（成员分配金额超过可分配上限，无法保存）</template>。
+          与小程序口径一致，均按每单具体金额（精确到 0.001 元）配置。配置保存后只对之后产生的出库单生效，历史订单不重算；成员被调整层级前签的合同会保留其原有分成。
         </p>
 
         <el-divider content-position="left">该合同已产生佣金(按成员)</el-divider>
@@ -453,7 +458,7 @@ async function submitVoidOrder() {
   }
 }
 
-// ==================== 合同佣金分配 ====================
+// ==================== 合同佣金分配（按每单具体金额） ====================
 const alloc = reactive({ visible: false, view: null, saving: false, commissions: [], commissionLoading: false, addId: null,
   form: { totalPerOrder: 0, members: [] } })
 // P4 团队里还没出现在分成表里的正常成员，可以加进来分佣
@@ -467,40 +472,46 @@ function addMember() {
   }
   const m = (alloc.view?.teamMembers || []).find(x => String(x.id) === String(alloc.addId))
   if (!m) return
-  alloc.form.members.push({ promoterId: m.id, name: m.name || '未命名伙伴', positionCode: m.positionCode, status: 1, isOwner: false, former: false, added: true, pct: 0 })
+  alloc.form.members.push({ promoterId: m.id, name: m.name || '未命名伙伴', positionCode: m.positionCode, status: 1, isOwner: false, former: false, added: true, amountPerOrder: 0 })
   alloc.addId = null
 }
 function removeMember(row) { alloc.form.members = alloc.form.members.filter(m => m !== row) }
 const fixed3 = (v) => Number(v || 0).toFixed(3)
-// 平台服务费精确为 10%，其余 90% 由 P4 分配；个人输入维持 0.001 元精度。
+const toMills = (v) => Math.round(Number(v || 0) * 1000)
+const round3 = (v) => Math.round(Number(v || 0) * 1000) / 1000
+// 平台服务费精确为 10%，业务员（P0）固定 0.020 元/单，其余金额按 0.001 元精度直接填写。
 const PLATFORM_PCT = 10
-const amountOf = (pct) => Math.floor(Number(alloc.form.totalPerOrder || 0) * Number(pct || 0) / 100 * 1000 + 1e-6) / 1000
-const pctOf = (amount, total) => total > 0 ? Math.round(Number(amount || 0) / total * 10000) / 100 : 0
-const allocPctRaw = computed(() => alloc.form.members.reduce((a, m) => a + Number(m.pct || 0), 0))
-const allocPct = computed(() => (Math.round(allocPctRaw.value * 100) / 100).toFixed(2))
-const allocOver = computed(() => allocPctRaw.value > 100 - PLATFORM_PCT + 1e-6)
-const allocSumNumber = computed(() => alloc.form.members.reduce((a, m) => a + amountOf(m.pct), 0))
-const allocSum = computed(() => fixed3(allocSumNumber.value))
+const SALESPERSON_FIXED_FEE = 0.02
+const allocSalespersonFee = computed(() => Number(alloc.view?.salespersonCommissionPerOrder ?? SALESPERSON_FIXED_FEE))
+const totalMills = computed(() => toMills(alloc.form.totalPerOrder))
+const serviceFeeUnits = computed(() => totalMills.value) // 10% of 0.001 = 0.0001
+const salespersonFeeUnits = computed(() => Math.round(allocSalespersonFee.value * 10000))
+const allocMaxMemberUnits = computed(() => totalMills.value * 10 - serviceFeeUnits.value - salespersonFeeUnits.value)
+const allocMaxMemberNumber = computed(() => Math.max(0, Math.floor(allocMaxMemberUnits.value / 10)) / 1000)
+const allocMaxMember = computed(() => allocMaxMemberNumber.value.toFixed(3))
+const allocSumMills = computed(() => alloc.form.members.reduce((a, m) => a + toMills(m.amountPerOrder), 0))
+const allocSum = computed(() => (allocSumMills.value / 1000).toFixed(3))
 const allocTotal = computed(() => fixed3(alloc.form.totalPerOrder))
-const allocCompany = computed(() => fixed3(Number(alloc.form.totalPerOrder || 0) - allocSumNumber.value))
-const allocServiceFee = computed(() => (Number(alloc.form.totalPerOrder || 0) * PLATFORM_PCT / 100).toFixed(4))
-const allocUnallocated = computed(() => (Number(allocCompany.value) - Number(allocServiceFee.value)).toFixed(4))
+const allocServiceFee = computed(() => (serviceFeeUnits.value / 10000).toFixed(4))
+const allocUnallocatedUnits = computed(() => allocMaxMemberUnits.value - allocSumMills.value * 10)
+const allocUnallocated = computed(() => (allocUnallocatedUnits.value / 10000).toFixed(4))
+const allocOver = computed(() => allocMaxMemberUnits.value < 0 || allocUnallocatedUnits.value < 0)
 
 async function openAlloc(row) {
   Object.assign(alloc, { visible: true, view: null, saving: false, commissions: [], commissionLoading: false, addId: null, form: { totalPerOrder: 0, members: [] } })
   try {
     const view = await mktOrderApi.contractPricing({ contractId: row.contractId })
     alloc.view = view
-    alloc.form.totalPerOrder = Number(view.totalPerOrder || 0)
+    alloc.form.totalPerOrder = Number(view.totalPerOrder ?? view.lockedTotalPerOrder ?? 0)
     alloc.form.members = (view.chain || []).map(m => ({
       promoterId: m.promoterId, name: m.name, positionCode: m.positionCode,
       status: m.status, isOwner: !!m.isOwner || (view.ownerPromoterId != null && m.promoterId === view.ownerPromoterId), former: !!m.former,
-      pct: pctOf(m.amountPerOrder, alloc.form.totalPerOrder)
+      amountPerOrder: Number(m.amountPerOrder || 0)
     }))
     if (view.canEdit && !view.configured) {
-      // 未配置过:可分配的 90% 默认给 P4 本人，其余成员 0，由 P4 自行调整。
+      // 未配置过：扣除 10% 平台服务费和 0.020 元业务员佣金后的可分配金额默认给 P4 本人，其余成员为 0。
       const owner = alloc.form.members.find(m => m.isOwner)
-      if (owner) owner.pct = 100 - PLATFORM_PCT
+      if (owner) owner.amountPerOrder = allocMaxMemberNumber.value
     }
   } catch (e) {
     ElMessage.error(e?.message || '加载佣金分配失败')
@@ -514,22 +525,23 @@ async function openAlloc(row) {
 
 async function saveAlloc() {
   if (!alloc.view?.canEdit || alloc.saving) return
-  if (allocOver.value) return ElMessage.warning(`成员分成合计不能超过 ${100 - PLATFORM_PCT}%（平台服务费 ${PLATFORM_PCT}%）`)
   if (!(Number(alloc.form.totalPerOrder) > 0)) return ElMessage.warning('请先填写每单总佣金')
+  if (allocMaxMemberUnits.value < 0) return ElMessage.warning('每单总佣金不足以覆盖 10% 平台服务费和 0.020 元/单业务员佣金')
+  if (allocOver.value) return ElMessage.warning(`成员分配金额合计不能超过 ${allocMaxMember.value} 元/单（已扣除 ${PLATFORM_PCT}% 平台服务费及 ${fixed3(allocSalespersonFee.value)} 元/单业务员佣金）`)
   const owner = alloc.form.members.find(m => m.isOwner)
   const beneficiaries = alloc.form.members
-    .filter(m => !m.isOwner && amountOf(m.pct) > 0)
-    .map(m => ({ promoterId: m.promoterId, amountPerOrder: amountOf(m.pct) }))
+    .filter(m => !m.isOwner && round3(m.amountPerOrder) > 0)
+    .map(m => ({ promoterId: m.promoterId, amountPerOrder: round3(m.amountPerOrder) }))
   alloc.saving = true
   try {
     const view = await mktOrderApi.saveContractPricing({
       contractId: alloc.view.contractId,
-      totalPerOrder: Number(alloc.form.totalPerOrder || 0),
-      ownerPerOrder: owner ? amountOf(owner.pct) : 0,
+      totalPerOrder: round3(alloc.form.totalPerOrder),
+      ownerPerOrder: owner ? round3(owner.amountPerOrder) : 0,
       beneficiaries
     })
     alloc.view = view
-    ElMessage.success('佣金分配已保存,之后的出库单按新分配计佣')
+    ElMessage.success('佣金分配已保存，之后的出库单按新分配计佣')
   } finally { alloc.saving = false }
 }
 
@@ -542,7 +554,11 @@ defineExpose({
   expandedOrderId,
   splitsCache,
   addableMembers,
-  allocPct,
+  allocSum,
+  allocMaxMember,
+  allocSalespersonFee,
+  allocServiceFee,
+  allocUnallocated,
   allocOver,
   openAlloc,
   addMember,

@@ -1,6 +1,6 @@
 <template>
   <view class="page-wrap pricing-page">
-    <view class="card introduction"><view class="title">客户分佣</view><view class="pricing-note">总佣金先计提 10% 平台服务费，其余金额由 P4 分配。</view></view>
+    <view class="card introduction"><view class="title">客户分佣</view><view class="pricing-note">总佣金先计提 10% 平台服务费及 0.020 元/单业务员（P0）固定佣金，其余金额由 P4 分配。</view></view>
     <view v-if="loading" class="card status-panel">正在加载分佣资料…</view>
     <view v-else-if="loadError" class="card"><view class="error-text">{{ loadError }}</view><button class="btn secondary" @click="load">重新加载</button></view>
     <view v-else-if="!canPrice" class="card"><view class="section-title">分佣金额由负责客户的 P4 设置</view><button class="btn secondary" @click="navigateTo('/pages/allocation/index')">查看本人客户分佣</button></view>
@@ -9,10 +9,13 @@
       <view class="card">
         <view class="row form-heading"><text class="section-title">每单金额</text><text class="tag" :class="detail.configured ? 'ok' : 'warn'">{{ detail.configured ? '已配置' : '待分佣' }}</text></view>
         <view class="pricing-note">个人单价最多 3 位小数（0.001 元）；没有分配金额时填写 0。</view>
-        <view v-if="detail.requiresReallocation" class="error-text feedback">原方案超过扣除 10% 服务费后的可分配金额，请调整后保存。</view>
-        <label class="field-label" for="total-price">总佣金单价</label>
-        <view class="amount-field"><input id="total-price" class="input" v-model="form.totalPerOrder" type="digit" :disabled="!editable" placeholder="填写协商后的总额" @input="clearFeedback" /><text>元／单</text></view>
+        <view v-if="detail.requiresReallocation" class="error-text feedback">原方案超过扣除 10% 服务费及 0.020 元/单业务员佣金后的可分配金额，请调整后保存。</view>
+        <label class="field-label" for="total-price">总佣金单价<text v-if="detail.totalPerOrderLocked" class="locked-badge">已由云仓确认返点锁定</text></label>
+        <view class="amount-field"><input id="total-price" class="input" v-model="form.totalPerOrder" type="digit" :disabled="!editable || !!detail.totalPerOrderLocked" placeholder="填写协商后的总额" @input="clearFeedback" /><text>元／单</text></view>
+        <view v-if="detail.totalPerOrderLocked" class="pricing-note">该总计佣单价由云仓商家确认承接时同步确定，不可手动调整。</view>
         <view class="fee-line row"><text>平台服务费（10%）</text><text class="money">{{ feeText }} 元／单</text></view>
+        <view class="fee-line row"><text>业务员佣金（P0 固定）</text><text class="money">{{ salespersonFeeText }} 元／单</text></view>
+        <view v-if="detail.salespersonName" class="pricing-note">负责业务员：{{ detail.salespersonName }}</view>
         <label class="field-label" for="owner-price">本人单价 · {{ detail.ownerName || me.name || '本人' }}</label>
         <view class="amount-field"><input id="owner-price" class="input" v-model="form.ownerPerOrder" type="digit" :disabled="!editable" :placeholder="'最多可填 ' + maxForOwner + ' 元，可为 0'" @input="clearFeedback" /><text>元／单</text></view>
         <view class="remaining-note" :class="{ 'error-text': remainderUnits !== null && remainderUnits < 0 }">剩余可分配 {{ remainderText }} 元／单</view>
@@ -35,10 +38,11 @@
         <view class="section-title">每单金额核对</view>
         <view class="row"><text>总佣金</text><text class="money">{{ formatPerOrder(form.totalPerOrder) }} 元</text></view>
         <view class="row"><text>平台服务费（10%）</text><text class="money">{{ feeText }} 元</text></view>
+        <view class="row"><text>业务员佣金（P0 固定）</text><text class="money">{{ salespersonFeeText }} 元</text></view>
         <view class="row"><text>本人</text><text class="money">{{ formatPerOrder(form.ownerPerOrder) }} 元</text></view>
         <view class="row"><text>其他受益人合计</text><text class="money">{{ allocatedText }} 元</text></view>
         <view class="row"><text>剩余未分配</text><text class="money" :class="{ 'error-text': remainderUnits !== null && remainderUnits < 0 }">{{ remainderText }} 元</text></view>
-        <view class="pricing-note">剩余未分配 = 总佣金 − 平台服务费 − 本人金额 − 其他受益人金额。服务费精确保留 4 位小数；不足 0.001 元的余额保留在未分配金额中。</view>
+        <view class="pricing-note">剩余未分配 = 总佣金 − 平台服务费 − 业务员佣金 − 本人金额 − 其他受益人金额。服务费精确保留 4 位小数；不足 0.001 元的余额保留在未分配金额中。</view>
         <view v-if="detail.updatedAt" class="update-time">上次保存 {{ detail.updatedAt.replace('T', ' ').slice(0, 16) }}</view>
         <view v-if="formError" class="error-text feedback">{{ formError }}</view><view v-if="savedMessage" class="success-text feedback">{{ savedMessage }}</view>
         <button class="btn" :disabled="!editable" :loading="saving" @click="save">{{ saving ? '正在保存' : '保存客户分佣' }}</button>
@@ -56,7 +60,7 @@ import { computed, reactive, ref } from 'vue'
 import { onLoad, onUnload } from '@dcloudio/uni-app'
 import { meApi, pricingApi } from '@/api'
 import { navigateTo } from '@/utils/nav.mjs'
-import { amountToMills, formatPerOrder, millsToAmount, validatePricing, platformFee, pricingRemainder, unitsToAmount } from '@/utils/pricing.mjs'
+import { amountToMills, formatPerOrder, millsToAmount, validatePricing, platformFee, pricingRemainder, unitsToAmount, SALESPERSON_FEE_MILLS } from '@/utils/pricing.mjs'
 const me = ref({})
 const candidates = ref([])
 const detail = ref(null)
@@ -82,12 +86,18 @@ const allocatedMills = computed(() => {
   return Number.isSafeInteger(sum) ? sum : null
 })
 const allocatedText = computed(() => allocatedMills.value === null ? '—' : millsToAmount(allocatedMills.value))
+const salespersonFeeMills = computed(() => {
+  const custom = detail.value?.salespersonCommissionPerOrder
+  const parsed = custom == null ? null : amountToMills(custom)
+  return parsed === null ? SALESPERSON_FEE_MILLS : parsed
+})
+const salespersonFeeText = computed(() => millsToAmount(salespersonFeeMills.value))
 const feeText = computed(() => platformFee(form.totalPerOrder))
-const remainderUnits = computed(() => pricingRemainder(form.totalPerOrder, form.ownerPerOrder, activeBeneficiaries.value))
+const remainderUnits = computed(() => pricingRemainder(form.totalPerOrder, form.ownerPerOrder, activeBeneficiaries.value, salespersonFeeMills.value))
 const remainderText = computed(() => unitsToAmount(remainderUnits.value))
-const maxForOwner = computed(() => maxInput(pricingRemainder(form.totalPerOrder, '0', activeBeneficiaries.value)))
+const maxForOwner = computed(() => maxInput(pricingRemainder(form.totalPerOrder, '0', activeBeneficiaries.value, salespersonFeeMills.value)))
 function maxInput(units) { return units === null ? '—' : millsToAmount(Math.max(0, Math.floor(units / 10))) }
-function maxForBeneficiary(index) { return maxInput(pricingRemainder(form.totalPerOrder, form.ownerPerOrder, activeBeneficiaries.value.filter((_, i) => i !== index))) }
+function maxForBeneficiary(index) { return maxInput(pricingRemainder(form.totalPerOrder, form.ownerPerOrder, activeBeneficiaries.value.filter((_, i) => i !== index), salespersonFeeMills.value)) }
 onLoad(query => { customerId = String(query.customerId || ''); contractId = String(query.contractId || ''); load() })
 onUnload(() => { requestSequence += 1 })
 async function load() {
@@ -110,7 +120,8 @@ async function load() {
 }
 function applyDetail(value) {
   detail.value = value
-  form.totalPerOrder = value.totalPerOrder == null ? '' : formatPerOrder(value.totalPerOrder)
+  const initialTotal = value.totalPerOrder ?? value.lockedTotalPerOrder
+  form.totalPerOrder = initialTotal == null ? '' : formatPerOrder(initialTotal)
   form.ownerPerOrder = value.ownerPerOrder == null ? '' : formatPerOrder(value.ownerPerOrder)
   form.beneficiaries = (value.beneficiaries || []).map(row => ({ ...row, key: ++rowKey, amountPerOrder: formatPerOrder(row.amountPerOrder) }))
   distribute.value = form.beneficiaries.length > 0
@@ -125,7 +136,7 @@ function selectBeneficiary(index, event) { if (!editable.value) return; const me
 async function save() {
   if (!editable.value) return
   clearFeedback()
-  formError.value = validatePricing(form.totalPerOrder, form.ownerPerOrder, activeBeneficiaries.value, maxBeneficiaries.value)
+  formError.value = validatePricing(form.totalPerOrder, form.ownerPerOrder, activeBeneficiaries.value, maxBeneficiaries.value, salespersonFeeMills.value)
   if (formError.value) return
   saving.value = true
   const sequence = requestSequence
@@ -146,6 +157,7 @@ async function save() {
 .pricing-note { margin-top: 12rpx; color: #56627d; font-size: 25rpx; line-height: 1.7; }
 .status-panel { color: #56627d; text-align: center; }
 .field-label { display: block; margin-top: 28rpx; font-size: 29rpx; font-weight: 600; }
+.locked-badge { margin-left: 12rpx; padding: 2rpx 12rpx; border-radius: 8rpx; background: #e8f5ef; color: #116b56; font-size: 22rpx; font-weight: 500; }
 .amount-field { position: relative; }
 .amount-field .input { padding-right: 124rpx; font-variant-numeric: tabular-nums; }
 .amount-field > text { position: absolute; top: 0; right: 22rpx; color: #56627d; font-size: 24rpx; line-height: 88rpx; pointer-events: none; }

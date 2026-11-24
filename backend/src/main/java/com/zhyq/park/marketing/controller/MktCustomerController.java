@@ -163,13 +163,16 @@ public class MktCustomerController {
         return Result.ok();
     }
 
-    public record WarehouseAssignmentRequest(Long warehouseId, String reason, Boolean manualQuoteOverride) {}
+    public record WarehouseAssignmentRequest(Long warehouseId, String reason, Boolean manualQuoteOverride,
+                                             String rebatePolicyType, BigDecimal rebateUnitPrice) {}
 
-    @Operation(summary = "分派或调整承接云仓，等待商家确认")
+    @Operation(summary = "分派或调整承接云仓，并确认平台服务费（返点）政策，等待商家确认")
     @PreAuthorize("hasAuthority('crm:marketing:customer:edit')")
     @PostMapping("/{id}/assign-warehouse")
     public Result<Void> assignWarehouse(@PathVariable Long id, @RequestBody WarehouseAssignmentRequest request) {
-        assignmentService.assign(id, request.warehouseId(), request.reason(), Boolean.TRUE.equals(request.manualQuoteOverride()));
+        assignmentService.assign(id, request.warehouseId(), request.reason(),
+                Boolean.TRUE.equals(request.manualQuoteOverride()),
+                request.rebatePolicyType(), request.rebateUnitPrice());
         return Result.ok();
     }
 

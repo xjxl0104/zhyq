@@ -69,4 +69,13 @@ public class Customer extends BaseEntity {
     /** 服务对接进度百分比，仅由进度业务入口更新。 */
     @JsonProperty(access = JsonProperty.Access.READ_ONLY)
     private Integer progressPercentage;
+    /** 分派返点政策: BULK_5000 / STANDARD / STRATEGIC */
+    @JsonProperty(access = JsonProperty.Access.READ_ONLY)
+    private String rebatePolicyType;
+    /** 分派确认的返点单价(元/单)，商家确认承接后锁定为总计佣单价 */
+    @JsonProperty(access = JsonProperty.Access.READ_ONLY)
+    private java.math.BigDecimal rebateUnitPrice;
+    /** 云仓商家确认承接并确认返点的时间 */
+    @JsonProperty(access = JsonProperty.Access.READ_ONLY)
+    private LocalDateTime rebateConfirmedAt;
 }

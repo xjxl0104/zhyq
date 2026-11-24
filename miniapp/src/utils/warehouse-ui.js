@@ -4,3 +4,4 @@ export const ORDER = { 1: '待确认', 2: '已确认', 3: '已退款', 4: '已�
 export const assignmentLabel = n => ({ 1: '待确认承接', 2: '已承接', 3: '已拒绝' }[n] || '未分派')
 export function parseFiles(value) { try { const x = typeof value === 'string' ? JSON.parse(value) : value; return Array.isArray(x) ? x.filter(f => f && f.id) : [] } catch { return [] } }
 export const money = value => Number(value || 0).toFixed(2)
+export const rebateMoney = value => Number(value || 0).toFixed(3)

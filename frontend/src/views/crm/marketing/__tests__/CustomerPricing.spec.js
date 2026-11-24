@@ -58,7 +58,7 @@ describe('管理端查看 P4 按单佣金', () => {
     expect(wrapper.text()).toContain('一号云仓')
     expect(wrapper.text()).toContain('定价伙伴 · P4 #40')
     const amounts = Object.fromEntries(wrapper.findAll('.pricing-amounts > div').map(row => [row.get('dt').text(), row.get('dd').text()]))
-    expect(amounts).toEqual({ 总佣金单价: '0.030', 'P4 本人金额': '0.006', 其他受益人合计: '0.013', '平台服务费（10%）': '0.0030', 剩余未分配: '0.0080' })
+    expect(amounts).toEqual({ 总佣金单价: '0.030', '平台服务费（10%）': '0.0030', '业务员佣金（P0 固定）': '0.020', 'P4 本人金额': '0.006', 其他受益人合计: '0.013', 剩余未分配: '0.0080' })
     expect(wrapper.text()).toContain('受益人甲')
     expect(wrapper.text()).toContain('0.004')
     expect(wrapper.findAll('input, select, textarea')).toHaveLength(0)

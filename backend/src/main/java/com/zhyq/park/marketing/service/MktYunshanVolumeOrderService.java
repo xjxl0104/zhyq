@@ -245,6 +245,12 @@ public class MktYunshanVolumeOrderService {
             for (MktCustomerPricingService.Beneficiary b : pricing.beneficiaries()) {
                 members.add(new MemberShare(b.promoterId(), b.promoterName(), b.positionCode(), "链路成员", b.amountPerOrder(), b.amountPerOrder().multiply(tickets)));
             }
+            if (pricing.salespersonPromoterId() != null && pricing.salespersonPerOrder() != null
+                    && pricing.salespersonPerOrder().signum() > 0) {
+                var sp = promoterMapper.selectById(pricing.salespersonPromoterId());
+                members.add(new MemberShare(pricing.salespersonPromoterId(), sp == null ? null : sp.getName(), "P0",
+                        "云仓业务员", pricing.salespersonPerOrder(), pricing.salespersonPerOrder().multiply(tickets)));
+            }
             BigDecimal memberPerOrder = pricing.totalPerOrder().subtract(pricing.companyPerOrder());
             return new BackfillPart(contract.getId(), contract.getContractNo(), contract.getSignMode(), seller == null ? null : seller.getName(),
                     part.days, part.tickets, part.first, part.last, pricing.totalPerOrder(), pricing.companyPerOrder(), memberPerOrder,

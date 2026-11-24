@@ -233,55 +233,44 @@ public class MktReferralOrderController {
         return Result.ok(enrich(o));
     }
 
-    @Operation(summary = "合同佣金分配视图:邀请链路成员+当前每单金额配置(仅P4或超管代负责P4可改)")
+    private static final String ONLY_SUPER_ADMIN_MSG = "后台仅超级管理员（丁超、杨洪）可修改佣金分配，当前账号仅可查看";
+
+    @Operation(summary = "合同佣金分配视图:邀请链路成员+当前每单金额配置(后台仅超级管理员丁超、杨洪可修改)")
     @PreAuthorize("hasAuthority('crm:marketing:order:query')")
     @GetMapping("/contract-pricing")
     public Result<com.zhyq.park.marketing.service.MktCustomerPricingService.ContractPricingView> contractPricing(@RequestParam Long contractId) {
-        MktPromoter actor = adminActorService.currentPromoter();
-        if (actor == null && isConsoleSuperAdmin()) {
-            actor = pricingService.resolveContractOwnerP4(contractId);
+        if (!adminActorService.isCommissionSuperAdmin()) {
+            return Result.ok(pricingService.contractViewReadOnly(contractId, ONLY_SUPER_ADMIN_MSG));
         }
-        return Result.ok(pricingService.contractView(contractId, actor));
+        MktPromoter ownerP4 = pricingService.resolveContractOwnerP4(contractId);
+        if (ownerP4 == null) {
+            return Result.ok(pricingService.contractViewReadOnly(contractId, "该合同尚未归属正常状态的 P4 伙伴，无法设置佣金分配"));
+        }
+        return Result.ok(pricingService.contractView(contractId, ownerP4));
     }
 
     public record ContractPricingSave(Long contractId, BigDecimal totalPerOrder, BigDecimal ownerPerOrder,
                                       List<com.zhyq.park.marketing.service.MktCustomerPricingService.BeneficiaryInput> beneficiaries) {}
 
-    @Operation(summary = "保存合同佣金分配(仅P4或超管代负责P4;生成不可变新版本,只影响之后产生的出库单)")
+    @Operation(summary = "保存合同佣金分配(后台仅超级管理员丁超、杨洪可修改;生成不可变新版本,只影响之后产生的出库单)")
     @PreAuthorize("hasAuthority('crm:marketing:order:edit')")
     @PostMapping("/contract-pricing")
     public Result<com.zhyq.park.marketing.service.MktCustomerPricingService.ContractPricingView> saveContractPricing(
             @RequestBody ContractPricingSave body) {
         if (body == null || body.contractId() == null) throw new BizException("请选择服务合同");
-        MktPromoter actor = adminActorService.currentPromoter();
-        boolean adminProxy = false;
-        if (actor == null && isConsoleSuperAdmin()) {
-            actor = pricingService.resolveContractOwnerP4(body.contractId());
-            if (actor == null) {
-                throw new BizException("该合同尚未归属正常状态的 P4 伙伴，无法设置佣金分配");
-            }
-            adminProxy = true;
+        if (!adminActorService.isCommissionSuperAdmin()) {
+            throw new BizException(403, "后台仅超级管理员（丁超、杨洪）可修改佣金分配");
         }
-        if (actor == null) throw new BizException("当前后台账号未关联伙伴档案，无法设置佣金分配；请先用相同手机号注册伙伴");
-        var saved = pricingService.saveContract(actor.getId(), body.contractId(),
+        MktPromoter ownerP4 = pricingService.resolveContractOwnerP4(body.contractId());
+        if (ownerP4 == null) {
+            throw new BizException("该合同尚未归属正常状态的 P4 伙伴，无法设置佣金分配");
+        }
+        var saved = pricingService.saveContract(ownerP4.getId(), body.contractId(),
                 new com.zhyq.park.marketing.service.MktCustomerPricingService.PricingInput(
                         body.totalPerOrder(), body.ownerPerOrder(), body.beneficiaries()));
-        if (adminProxy) {
-            auditService.log("pricing.contract.admin_proxy", "service_contract", body.contractId(),
-                    "超级管理员代负责 P4(" + actor.getId() + ")保存合同佣金分配");
-        }
+        auditService.log("pricing.contract.admin_proxy", "service_contract", body.contractId(),
+                "超级管理员（" + MktAuditService.currentOperator() + "）保存合同佣金分配（负责 P4:" + ownerP4.getId() + "）");
         return Result.ok(saved);
-    }
-
-    private static boolean isConsoleSuperAdmin() {
-        var auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
-        if (auth == null || !auth.isAuthenticated() || auth.getAuthorities() == null) return false;
-        String name = auth.getName();
-        if (name == null || "anonymousUser".equals(name) || name.startsWith("mp:") || name.startsWith("wh:")) return false;
-        boolean hasMpOrWh = auth.getAuthorities().stream()
-                .anyMatch(a -> "ROLE_MP".equals(a.getAuthority()) || "ROLE_WH".equals(a.getAuthority()));
-        if (hasMpOrWh) return false;
-        return auth.getAuthorities().stream().anyMatch(a -> "ROLE_admin".equals(a.getAuthority()));
     }
 
     @Operation(summary = "合同链路已产生佣金(按成员汇总,含各状态金额)")

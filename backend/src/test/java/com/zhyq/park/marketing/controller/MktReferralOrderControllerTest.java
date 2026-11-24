@@ -84,7 +84,7 @@ class MktReferralOrderControllerTest {
         assertThat((BigDecimal) list.get(0).get("total")).isEqualByComparingTo("12.50");
         assertThat(list.get(0).get("count")).isEqualTo(1);
     }
-    @Test void superAdminWithoutPromoterProfileCanSaveContractPricingViaOwnerP4WhileRegularStaffCannot() {
+    @Test void onlyDesignatedCommissionSuperAdminsCanModifyContractPricingInBackend() {
         var pricing = mock(MktCustomerPricingService.class);
         var actorService = mock(MktAdminActorService.class);
         var audit = mock(MktAuditService.class);
@@ -94,20 +94,24 @@ class MktReferralOrderControllerTest {
                 mock(MktServiceFeeBillLineMapper.class), pricing, actorService);
         var req = new MktReferralOrderController.ContractPricingSave(100L, new BigDecimal("1.000"), new BigDecimal("0.500"), List.of());
 
-        // 普通后台员工未关联伙伴档案 -> 拒绝
+        // 普通后台员工或非指定超管 -> 拒绝保存，查看返回只读视图
+        when(actorService.isCommissionSuperAdmin()).thenReturn(false);
         SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(
-                "operator1", null, List.of(new SimpleGrantedAuthority("crm:marketing:order:edit"))));
+                "operator1", null, List.of(new SimpleGrantedAuthority("ROLE_admin"))));
         assertThatThrownBy(() -> ctrl.saveContractPricing(req))
-                .isInstanceOf(BizException.class).hasMessageContaining("未关联伙伴档案");
-        verifyNoInteractions(pricing);
+                .isInstanceOf(BizException.class).hasMessageContaining("丁超、杨洪");
+        ctrl.contractPricing(100L);
+        verify(pricing).contractViewReadOnly(eq(100L), contains("丁超、杨洪"));
+        verify(pricing, never()).saveContract(anyLong(), anyLong(), any());
 
-        // ROLE_admin 超级管理员未关联私人手机号 -> 代该合同负责 P4 保存并记录审计
+        // 指定超级管理员（丁超/杨洪） -> 通过该合同负责 P4 保存并记录审计
+        when(actorService.isCommissionSuperAdmin()).thenReturn(true);
         var ownerP4 = new MktPromoter(); ownerP4.setId(4L); ownerP4.setPositionCode("P4"); ownerP4.setStatus(1);
         when(pricing.resolveContractOwnerP4(100L)).thenReturn(ownerP4);
         SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(
-                "admin", null, List.of(new SimpleGrantedAuthority("ROLE_admin"))));
+                "dingchao", null, List.of(new SimpleGrantedAuthority("ROLE_admin"))));
         ctrl.saveContractPricing(req);
         verify(pricing).saveContract(eq(4L), eq(100L), any());
-        verify(audit).log(eq("pricing.contract.admin_proxy"), eq("service_contract"), eq(100L), contains("P4(4)"));
+        verify(audit).log(eq("pricing.contract.admin_proxy"), eq("service_contract"), eq(100L), contains("P4:4"));
     }
 }

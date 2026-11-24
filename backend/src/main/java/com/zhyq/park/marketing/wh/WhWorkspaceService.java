@@ -35,6 +35,10 @@ public class WhWorkspaceService {
     private final MktAuditService audit;
     private final JdbcTemplate jdbc;
     private final com.zhyq.park.marketing.quote.QuoteIntakeService quoteIntake;
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.zhyq.park.marketing.mapper.MktPromoterMapper promoterMapper;
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.zhyq.park.marketing.service.MktPromoterService promoterService;
     public static final List<String> STAGES = List.of("待业务员承接", "业务员承接", "价格谈判", "签约", "货品入仓", "正式发货");
 
     public WhIdentityService.Identity current() {
@@ -126,8 +130,58 @@ public class WhWorkspaceService {
             if (contacts.update(null,update) != 1) throw conflict();
             contact = contacts.selectById(id);
         }
+        syncSalespersonPromoter(contact, who.warehouse());
         audit.log("warehouse.staff.save", "warehouse", who.warehouse().getId(), "维护云仓业务员 " + contact.getId());
         return staffView(contact);
+    }
+
+    /** 维护云仓业务员（P0）的伙伴档案关联，便于佣金核算与结算发放；不降级已有 P1–P4 伙伴角色。 */
+    private void syncSalespersonPromoter(MktWarehouseContact contact, MktWarehouse warehouse) {
+        if (contact == null || !"member".equals(contact.getRole()) || promoterMapper == null || promoterService == null) return;
+        com.zhyq.park.marketing.entity.MktPromoter existing = null;
+        if (contact.getPromoterId() != null) {
+            existing = promoterMapper.selectById(contact.getPromoterId());
+        }
+        if (existing == null && StringUtils.hasText(contact.getPhone())) {
+            existing = promoterMapper.selectOne(new LambdaQueryWrapper<com.zhyq.park.marketing.entity.MktPromoter>()
+                    .eq(com.zhyq.park.marketing.entity.MktPromoter::getPhone, contact.getPhone())
+                    .orderByDesc(com.zhyq.park.marketing.entity.MktPromoter::getId).last("limit 1"));
+        }
+        int targetStatus = Integer.valueOf(1).equals(contact.getStatus())
+                ? com.zhyq.park.marketing.service.MktPromoterService.ST_NORMAL
+                : com.zhyq.park.marketing.service.MktPromoterService.ST_FROZEN;
+        Long promoterId;
+        if (existing == null) {
+            com.zhyq.park.marketing.entity.MktPromoter p = new com.zhyq.park.marketing.entity.MktPromoter();
+            p.setName(contact.getName());
+            p.setPhone(contact.getPhone());
+            p.setPositionCode("P0");
+            p.setStatus(targetStatus);
+            p.setProjectId(warehouse.getProjectId());
+            p.setRemark("云仓业务员（" + warehouse.getName() + "）");
+            com.zhyq.park.marketing.entity.MktPromoter created = promoterService.registerManaged(p, null);
+            promoterId = created.getId();
+        } else {
+            promoterId = existing.getId();
+            if ("P0".equals(existing.getPositionCode())) {
+                var pUpdate = new LambdaUpdateWrapper<com.zhyq.park.marketing.entity.MktPromoter>()
+                        .eq(com.zhyq.park.marketing.entity.MktPromoter::getId, existing.getId())
+                        .set(com.zhyq.park.marketing.entity.MktPromoter::getName, contact.getName())
+                        .set(com.zhyq.park.marketing.entity.MktPromoter::getStatus, targetStatus);
+                if (StringUtils.hasText(contact.getPhone()) && !contact.getPhone().equals(existing.getPhone())
+                        && promoterMapper.selectCount(new LambdaQueryWrapper<com.zhyq.park.marketing.entity.MktPromoter>()
+                        .eq(com.zhyq.park.marketing.entity.MktPromoter::getPhone, contact.getPhone())) == 0) {
+                    pUpdate.set(com.zhyq.park.marketing.entity.MktPromoter::getPhone, contact.getPhone());
+                }
+                promoterMapper.update(null, pUpdate);
+            }
+        }
+        if (!Objects.equals(contact.getPromoterId(), promoterId)) {
+            contacts.update(null, new LambdaUpdateWrapper<MktWarehouseContact>()
+                    .eq(MktWarehouseContact::getId, contact.getId())
+                    .set(MktWarehouseContact::getPromoterId, promoterId));
+            contact.setPromoterId(promoterId);
+        }
     }
 
     public LambdaQueryWrapper<Customer> customerScope(WhIdentityService.Identity who) {
@@ -183,6 +237,7 @@ public class WhWorkspaceService {
         MktWarehouseContact contact = contactId == null ? null : contacts.selectById(contactId);
         if (contact != null && (!Objects.equals(contact.getWarehouseId(),who.warehouse().getId()) || !"member".equals(contact.getRole()) || !Integer.valueOf(1).equals(contact.getStatus()))) throw forbidden();
         if (contactId != null && contact == null) throw forbidden();
+        if (contact != null) syncSalespersonPromoter(contact, who.warehouse());
         if (Objects.equals(customer.getWarehouseSalespersonId(),contactId)) return detail(customerId);
         if (customers.update(null, version(customer).set(Customer::getWarehouseSalespersonId,contactId).set(Customer::getWarehouseSalesStage,0)) != 1) throw conflict();
         history(who,customerId,contactId,0,contact == null ? "主账号取消业务员分配" : "主账号分配业务员：" + contact.getName());

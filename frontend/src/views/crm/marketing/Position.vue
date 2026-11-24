@@ -5,14 +5,17 @@
         <span class="title">角色称号与锁定上限</span>
         <el-button type="primary" @click="save" :loading="saving">保存设置</el-button>
       </div>
-      <p class="rule-note">P4 拥有定价权；P1–P4 的按单金额均由 P4 按客户 / 品牌自定义，称号不绑定固定金额或比例。</p>
+      <p class="rule-note">P0 为各云仓商家业务员，固定佣金 0.02 元/单；P4 拥有定价权，P1–P4 的按单金额均由 P4 或后台超级管理员按每单具体金额设定。</p>
       <el-table :data="list" v-loading="loading" border>
         <el-table-column prop="code" label="角色" width="80" />
         <el-table-column label="称号" min-width="140">
           <template #default="{ row }"><el-input v-model="row.name" :aria-label="`${row.code} 称号`" size="small" /></template>
         </el-table-column>
-        <el-table-column label="按单定价权限" width="150">
-          <template #default="{ row }"><el-tag :type="row.code === 'P4' ? 'success' : 'info'">{{ row.code === 'P4' ? '可自定义金额' : '由 P4 设置金额' }}</el-tag></template>
+        <el-table-column label="按单定价权限" width="180">
+          <template #default="{ row }">
+            <el-tag v-if="row.code === 'P0'" type="warning">固定 0.02 元/单</el-tag>
+            <el-tag v-else :type="row.code === 'P4' ? 'success' : 'info'">{{ row.code === 'P4' ? '可自定义金额' : '由 P4 设置金额' }}</el-tag>
+          </template>
         </el-table-column>
         <el-table-column label="锁定客户上限" width="220">
           <template #default="{ row }"><el-input-number v-model="row.lockCap" :min="0" :max="2147483647" :step="1" :precision="0" :aria-label="`${row.code} 锁定客户上限`" size="small" controls-position="right" /></template>

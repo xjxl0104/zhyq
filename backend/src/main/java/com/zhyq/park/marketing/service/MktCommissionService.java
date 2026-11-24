@@ -138,6 +138,8 @@ public class MktCommissionService {
             order.setCommissionOrderCount(orderCount);
             order.setCompanyPerOrder(pricing.companyPerOrder());
             order.setPlatformServiceFeePerOrder(pricing.platformServiceFeePerOrder());
+            order.setSalespersonCommissionPerOrder(pricing.salespersonPerOrder());
+            order.setSalespersonContactId(pricing.salespersonContactId());
             order.setUnallocatedPerOrder(pricing.unallocatedPerOrder());
         }
         try {
@@ -150,15 +152,27 @@ public class MktCommissionService {
         }
         int count = 0;
         if (pricing != null) {
+            record PayeeLine(Long promoterId, String positionCode, BigDecimal perOrder) {}
+            java.util.Map<Long, PayeeLine> payees = new java.util.LinkedHashMap<>();
             if (pricing.ownerPerOrder().signum() > 0) {
-                commissionMapper.insert(newPerOrderCommission(order, ev, pricing.ownerPromoterId(),
-                        pricing.ownerPositionCode(), pricing.ownerPerOrder(), orderCount));
-                count++;
+                payees.put(pricing.ownerPromoterId(),
+                        new PayeeLine(pricing.ownerPromoterId(), pricing.ownerPositionCode(), pricing.ownerPerOrder()));
             }
             for (MktCustomerPricingService.Beneficiary beneficiary : pricing.beneficiaries()) {
                 if (beneficiary.amountPerOrder().signum() <= 0) continue;
-                commissionMapper.insert(newPerOrderCommission(order, ev, beneficiary.promoterId(),
-                        beneficiary.positionCode(), beneficiary.amountPerOrder(), orderCount));
+                payees.merge(beneficiary.promoterId(),
+                        new PayeeLine(beneficiary.promoterId(), beneficiary.positionCode(), beneficiary.amountPerOrder()),
+                        (a, b) -> new PayeeLine(a.promoterId(), a.positionCode(), a.perOrder().add(b.perOrder())));
+            }
+            if (pricing.salespersonPromoterId() != null && pricing.salespersonPerOrder() != null
+                    && pricing.salespersonPerOrder().signum() > 0) {
+                payees.merge(pricing.salespersonPromoterId(),
+                        new PayeeLine(pricing.salespersonPromoterId(), "P0", pricing.salespersonPerOrder()),
+                        (a, b) -> new PayeeLine(a.promoterId(), a.positionCode(), a.perOrder().add(b.perOrder())));
+            }
+            for (PayeeLine line : payees.values()) {
+                commissionMapper.insert(newPerOrderCommission(order, ev, line.promoterId(),
+                        line.positionCode(), line.perOrder(), orderCount));
                 count++;
             }
         } else {

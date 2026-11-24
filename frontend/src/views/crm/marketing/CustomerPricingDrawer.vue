@@ -22,13 +22,14 @@
         <template v-if="pricing.configured">
           <h3>每单金额 <span>元 / 单</span></h3>
           <dl class="pricing-amounts">
-            <div><dt>总佣金单价</dt><dd>{{ perOrder(pricing.totalPerOrder) }}</dd></div>
+            <div><dt>总佣金单价<el-tag v-if="pricing.totalPerOrderLocked" size="small" type="success" style="margin-left:8px">云仓确认返点·锁定</el-tag></dt><dd>{{ perOrder(pricing.totalPerOrder) }}</dd></div>
+            <div class="company-amount"><dt>平台服务费（10%）</dt><dd>{{ feeAmount(pricing.platformServiceFeePerOrder) }}</dd></div>
+            <div class="company-amount"><dt>业务员佣金（P0 固定）</dt><dd>{{ perOrder(pricing.salespersonCommissionPerOrder ?? 0.02) }}<span v-if="pricing.salespersonName">（{{ pricing.salespersonName }}）</span></dd></div>
             <div><dt>P4 本人金额</dt><dd>{{ perOrder(pricing.ownerPerOrder) }}</dd></div>
             <div><dt>其他受益人合计</dt><dd>{{ perOrder(pricing.allocatedPerOrder) }}</dd></div>
-            <div class="company-amount"><dt>平台服务费（10%）</dt><dd>{{ feeAmount(pricing.platformServiceFeePerOrder) }}</dd></div>
             <div><dt>剩余未分配</dt><dd>{{ feeAmount(pricing.unallocatedPerOrder) }}</dd></div>
           </dl>
-          <p class="pricing-hint">平台服务费 = 总佣金单价 × 10%；剩余未分配 = 总佣金 − 平台服务费 − 个人分配合计。</p>
+          <p class="pricing-hint">平台服务费 = 总佣金单价 × 10%；业务员佣金（P0）固定 0.020 元/单；剩余未分配 = 总佣金 − 平台服务费 − 业务员佣金 − 个人分配合计。</p>
 
           <h3>其他受益人 <span>{{ pricing.beneficiaries?.length || 0 }} / 2 人</span></h3>
           <el-table :data="pricing.beneficiaries || []" border empty-text="未分配给其他受益人">

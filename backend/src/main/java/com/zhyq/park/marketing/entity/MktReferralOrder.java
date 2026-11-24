@@ -45,6 +45,10 @@ public class MktReferralOrder extends BaseEntity {
     private BigDecimal companyPerOrder;
     /** 新计佣记录的平台服务费快照，精确到 0.0001 元；历史未记录的保持空。 */
     private BigDecimal platformServiceFeePerOrder;
+    /** 业务员(P0)固定佣金每单快照，精确到 0.0001 元；历史未记录的保持空。 */
+    private BigDecimal salespersonCommissionPerOrder;
+    /** 计佣时负责该客户的云仓业务员联系人 ID 快照。 */
+    private Long salespersonContactId;
     /** 平台服务费之外尚未分配的金额，包含不足个人输入精度的尾差。 */
     private BigDecimal unallocatedPerOrder;
     private Integer qty;

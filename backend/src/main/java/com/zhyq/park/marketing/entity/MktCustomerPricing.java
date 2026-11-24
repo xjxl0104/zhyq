@@ -17,6 +17,8 @@ public class MktCustomerPricing extends BaseEntity {
     private Long ownerPromoterId;
     private BigDecimal totalPerOrder;
     private BigDecimal ownerPerOrder;
+    /** 业务员(P0)固定每单佣金快照(0.020元/单)；历史旧版本为空 */
+    private BigDecimal salespersonPerOrder;
     private String beneficiariesJson;
     private Long projectId;
 }

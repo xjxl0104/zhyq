@@ -10,6 +10,15 @@
         <view class="wh-meta">负责业务员：{{ customer.salespersonName || '待主账号分配' }}{{ customer.salespersonStatus === 0 ? '（已停用）' : '' }}</view>
         <CustomerRequirements :requirements="customer.requirements" :demand="customer.demand" :remark="customer.remark" />
       </view>
+      <view v-if="customer.rebateUnitPrice != null" class="card rebate-card">
+        <view class="wh-row">
+          <view class="wh-title">平台服务费（返点）确认</view>
+          <view class="wh-status">{{ customer.rebateConfirmedAt ? '已确认返点' : '待承接确认' }}</view>
+        </view>
+        <view class="wh-meta">返点政策：{{ customer.rebatePolicyLabel || customer.rebatePolicyType || '平台约定返点' }}</view>
+        <view class="rebate-price">{{ rebateMoney(customer.rebateUnitPrice) }} <text class="rebate-unit">元 / 单</text></view>
+        <view class="wh-note">{{ customer.rebateConfirmedAt ? '商家已确认承接，该返点单价已锁定为该客户总计佣单价。' : '请核对以上平台服务费（返点）政策，确认承接即视为认可该返点单价；确认后将锁定为总计佣单价且不可手动调整。' }}</view>
+      </view>
       <CustomerQuoteDemand v-if="customer.quoteIntake?.submittedAt" :intake="customer.quoteIntake" />
       <view v-if="customer.isOwner && customer.warehouseAssignmentStatus === 2" class="card">
         <view class="wh-title">分配业务员</view>
@@ -48,7 +57,7 @@ export default { mixins: [appShareMixin] }
 import { ref } from 'vue'
 import { onLoad, onShow } from '@dcloudio/uni-app'
 import { warehouseApi } from '@/api/warehouse'
-import { assignmentLabel } from '@/utils/warehouse-ui'
+import { assignmentLabel, rebateMoney } from '@/utils/warehouse-ui'
 import { WAREHOUSE_STAGES, warehouseStageLabel, stagePayload } from '@/utils/warehouse-workspace.mjs'
 import CustomerRequirements from '@/components/CustomerRequirements.vue'
 import CustomerQuoteDemand from '@/components/CustomerQuoteDemand.vue'
@@ -86,4 +95,4 @@ function draft() { uni.navigateTo({ url: '/pages/warehouse-contracts/index?custo
 onLoad(options => { if (/^[1-9]\d*$/.test(String(options.id || ''))) id.value = Number(options.id); else error.value = '客户参数无效'; load() })
 onShow(load)
 </script>
-<style scoped>@import '../../styles/warehouse.css'; .stages { margin: 24rpx 0; } .stage-option { display: flex; align-items: center; padding: 16rpx 0; font-size: 28rpx; }</style>
+<style scoped>@import '../../styles/warehouse.css'; .stages { margin: 24rpx 0; } .stage-option { display: flex; align-items: center; padding: 16rpx 0; font-size: 28rpx; } .rebate-card { border: 1rpx solid #d4dfff; background: #f8faff; } .rebate-price { margin-top: 12rpx; font-size: 44rpx; font-weight: 700; color: #2e47cc; } .rebate-unit { font-size: 24rpx; font-weight: 400; color: #58617d; }</style>
