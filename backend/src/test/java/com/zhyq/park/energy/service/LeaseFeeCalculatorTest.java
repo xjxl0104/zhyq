@@ -137,4 +137,38 @@ class LeaseFeeCalculatorTest {
         assertThat(yunshanProp.getItems()).hasSize(5);
         assertThat(yunshanProp.getTotalDue()).isEqualByComparingTo("105800.00");
     }
+
+    @Test
+    void fixedMonthlyRentOverridesUnitPriceAndEscalatesFromFixedTotal() {
+        LeaseContract c = new LeaseContract();
+        c.setId(99L);
+        c.setSeqNo(99);
+        c.setTenantName("固定月租测试公司");
+        c.setUnitName("首层B区");
+        c.setLeaseArea(new BigDecimal("3600"));
+        c.setRentUnitPrice(new BigDecimal("99.99")); // 应被月固定总价覆盖
+        c.setFixedMonthlyRent(new BigDecimal("102800.00"));
+        c.setPropertyUnitPrice(new BigDecimal("2.00"));
+        c.setEscalationRate(new BigDecimal("0.08"));
+        c.setEscalationMonths(36);
+        c.setStartDate(LocalDate.of(2026, 8, 1));
+        c.setEndDate(LocalDate.of(2035, 7, 31));
+
+        // 起始期按固定总价 102800.00
+        ContractMonthRow initial = LeaseFeeCalculator.calculateContractRow(YearMonth.of(2026, 9), c, null);
+        assertThat(initial.getFixedMonthlyRent()).isEqualByComparingTo("102800.00");
+        assertThat(initial.getStandardRent()).isEqualByComparingTo("102800.00");
+        assertThat(initial.getPayableRent()).isEqualByComparingTo("102800.00");
+        assertThat(initial.getStandardProperty()).isEqualByComparingTo("7200.00");
+
+        // 满36个月首次递增 8% -> 102800 * 1.08 = 111024.00
+        ContractMonthRow esc1 = LeaseFeeCalculator.calculateContractRow(YearMonth.of(2029, 8), c, null);
+        assertThat(esc1.getStandardRent()).isEqualByComparingTo("111024.00");
+        assertThat(esc1.getPayableRent()).isEqualByComparingTo("111024.00");
+
+        // 满72个月二次复利递增 -> 102800 * 1.08^2 = 119905.92
+        ContractMonthRow esc2 = LeaseFeeCalculator.calculateContractRow(YearMonth.of(2032, 8), c, null);
+        assertThat(esc2.getStandardRent()).isEqualByComparingTo("119905.92");
+        assertThat(esc2.getPayableRent()).isEqualByComparingTo("119905.92");
+    }
 }

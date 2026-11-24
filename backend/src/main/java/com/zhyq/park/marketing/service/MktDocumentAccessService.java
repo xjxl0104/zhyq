@@ -39,7 +39,11 @@ public class MktDocumentAccessService {
             Map.entry("energy_fee_garbage", "energy:feebill"),
             Map.entry("energy_fee_rent", "energy:feebill"), Map.entry("energy_fee_property", "energy:feebill"),
             Map.entry("fee_notice_payment", "energy:feebill"),
+            Map.entry("fee_notice_invoice", "energy:feebill"),
             Map.entry("lease_fee_notice_payment", "energy:feebill"),
+            Map.entry("lease_fee_notice_invoice", "energy:feebill"),
+            Map.entry("lease_deposit_rent_receipt", "energy:feebill"),
+            Map.entry("lease_deposit_property_receipt", "energy:feebill"),
             // 资料管理:资料库里的归档文件
             Map.entry("archive_doc", "archive:doc"));
 

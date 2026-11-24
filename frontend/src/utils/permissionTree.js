@@ -13,9 +13,12 @@ const RETIRED_PATHS = new Set([
   '/property/meeting', '/property/check-quality', '/property/complaint', '/property/feedback',
   '/property/survey', '/property/activity', '/rsv/resource', '/rsv/booking',
   '/service/passcard', '/service/forum', '/service/declare', '/service/ip',
-  '/service/policy', '/service/ecosystem'
+  '/service/policy', '/service/ecosystem',
+  '/iot/device', '/iot/access', '/iot/lock', '/iot/charging', '/iot/sensor',
+  '/iot/breaker', '/iot/point', '/iot/channel', '/iot/vendor',
+  '/acc/access', '/acc/visitor', '/acc/parking'
 ])
-const RETIRED_PERM_RE = /^(system:(dept|post)|property:(meeting|feedback|survey|activity)|rsv|service:(passcard|forum|declare|ip|policy|ecosystem))(:|$)/
+const RETIRED_PERM_RE = /^(system:(dept|post)|property:(meeting|feedback|survey|activity)|rsv|service:(passcard|forum|declare|ip|policy|ecosystem)|iot:(point|channel|vendor)|acc)(:|$)/
 export function isRetiredPermission(menu) {
   return RETIRED_PATHS.has(pathOf(menu.path)) || RETIRED_PERM_RE.test(menu.perm || '')
 }
@@ -39,13 +42,14 @@ const SHARED = {
   budget: ['预算管理', '年度 / 月度预算共用操作'],
   'pur:plan': ['预算管理', '年度 / 月度采购计划共用操作'],
   'pur:request': ['预算管理', '采购申请操作'],
-  'property:check': ['物业服务', '保洁 / 绿化共用操作']
+  'property:check': ['物业服务', '保洁 / 绿化共用操作'],
+  'iot:device': ['智慧物联', '智能安防 / 智慧停车场 / 智慧安消共用操作']
 }
 const MODULE_INDEX = {
-  dashboard: 0, data: 0, screen: 0, overview: 0, building: 1, am: 1, space: 1,
+  dashboard: 0, data: 0, screen: 0, overview: 0, building: 1, space: 1,
   crm: 2, contract: 2, tenant: 2, finance: 3, receivable: 3,
   property: 4, rsv: 4, service: 4, hui: 4, iot: 5, acc: 5,
-  energy: 6, oa: 6, budget: 6, pur: 6, vending: 6, app: 6, workflow: 6, bi: 7, suggestion: 8, system: 9
+  am: 6, energy: 6, oa: 6, budget: 6, pur: 6, vending: 6, app: 6, workflow: 6, bi: 7, suggestion: 8, system: 9
 }
 
 export function permissionIds(nodes) {

@@ -77,6 +77,11 @@ public class LeaseFeeService {
                                 BigDecimal grandTotal, int noticeCount, int rentNoticeCount, int propertyNoticeCount,
                                 int rentFiles, int propertyFiles) {}
 
+    public record DepositUpdate(BigDecimal rentDeposit, BigDecimal propertyDeposit, String depositTerms,
+                                Integer rentDepositStatus, BigDecimal rentDepositPaid, LocalDate rentDepositPaidDate,
+                                Integer propertyDepositStatus, BigDecimal propertyDepositPaid, LocalDate propertyDepositPaidDate,
+                                String depositRemark) {}
+
     // ------------------------------------------------------------------ 合同台账 CRUD
 
     public List<LeaseContract> listContracts(boolean includeDisabled) {
@@ -85,9 +90,66 @@ public class LeaseFeeService {
                 .orderByAsc(LeaseContract::getSeqNo).orderByAsc(LeaseContract::getId));
     }
 
+    public List<LeaseContract> listDeposits(boolean includeDisabled) {
+        List<LeaseContract> list = listContracts(includeDisabled);
+        if (list.isEmpty()) return list;
+        String ids = list.stream().map(c -> String.valueOf(c.getId())).collect(Collectors.joining(","));
+        Map<String, Integer> counts = new LinkedHashMap<>();
+        for (Map<String, Object> r : jdbc.queryForList(
+                "SELECT biz_type, biz_id, COUNT(*) AS c FROM sys_file WHERE deleted = 0"
+                        + " AND biz_type IN ('lease_deposit_rent_receipt','lease_deposit_property_receipt')"
+                        + " AND biz_id IN (" + ids + ") GROUP BY biz_type, biz_id")) {
+            counts.put(r.get("biz_type") + ":" + r.get("biz_id"), ((Number) r.get("c")).intValue());
+        }
+        for (LeaseContract c : list) {
+            if (c.getRentDepositStatus() == null) c.setRentDepositStatus(0);
+            if (c.getRentDepositPaid() == null) c.setRentDepositPaid(BigDecimal.ZERO);
+            if (c.getPropertyDepositStatus() == null) c.setPropertyDepositStatus(0);
+            if (c.getPropertyDepositPaid() == null) c.setPropertyDepositPaid(BigDecimal.ZERO);
+            c.setRentReceiptCount(counts.getOrDefault("lease_deposit_rent_receipt:" + c.getId(), 0));
+            c.setPropertyReceiptCount(counts.getOrDefault("lease_deposit_property_receipt:" + c.getId(), 0));
+        }
+        return list;
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public LeaseContract updateDeposit(Long contractId, DepositUpdate req) {
+        if (contractId == null || req == null) throw new BizException("保证金参数不能为空");
+        LeaseContract existed = contractMapper.selectById(contractId);
+        if (existed == null) throw new BizException(404, "合同不存在: " + contractId);
+        if (req.rentDeposit() != null && req.rentDeposit().signum() < 0) throw new BizException("租金保证金不能为负");
+        if (req.propertyDeposit() != null && req.propertyDeposit().signum() < 0) throw new BizException("物业保证金不能为负");
+        if (req.rentDepositPaid() != null && req.rentDepositPaid().signum() < 0) throw new BizException("租金保证金已缴金额不能为负");
+        if (req.propertyDepositPaid() != null && req.propertyDepositPaid().signum() < 0) throw new BizException("物业保证金已缴金额不能为负");
+        int rentSt = normalizeDepositStatus(req.rentDepositStatus(), existed.getRentDepositStatus());
+        int propSt = normalizeDepositStatus(req.propertyDepositStatus(), existed.getPropertyDepositStatus());
+        LambdaUpdateWrapper<LeaseContract> uw = new LambdaUpdateWrapper<LeaseContract>()
+                .eq(LeaseContract::getId, contractId)
+                .set(LeaseContract::getRentDepositStatus, rentSt)
+                .set(LeaseContract::getRentDepositPaid, req.rentDepositPaid() != null ? req.rentDepositPaid() : nz(existed.getRentDepositPaid()))
+                .set(LeaseContract::getRentDepositPaidDate, req.rentDepositPaidDate())
+                .set(LeaseContract::getPropertyDepositStatus, propSt)
+                .set(LeaseContract::getPropertyDepositPaid, req.propertyDepositPaid() != null ? req.propertyDepositPaid() : nz(existed.getPropertyDepositPaid()))
+                .set(LeaseContract::getPropertyDepositPaidDate, req.propertyDepositPaidDate())
+                .set(LeaseContract::getDepositRemark, req.depositRemark());
+        if (req.rentDeposit() != null) uw.set(LeaseContract::getRentDeposit, req.rentDeposit());
+        if (req.propertyDeposit() != null) uw.set(LeaseContract::getPropertyDeposit, req.propertyDeposit());
+        if (req.depositTerms() != null) uw.set(LeaseContract::getDepositTerms, req.depositTerms());
+        contractMapper.update(null, uw);
+        return listDeposits(true).stream().filter(c -> Objects.equals(c.getId(), contractId)).findFirst()
+                .orElseGet(() -> contractMapper.selectById(contractId));
+    }
+
+    private static int normalizeDepositStatus(Integer status, Integer fallback) {
+        int val = status != null ? status : (fallback != null ? fallback : 0);
+        if (val < 0 || val > 2) throw new BizException("保证金状态只能为 0(未缴纳)、1(部分缴纳) 或 2(已缴纳)");
+        return val;
+    }
+
     @Transactional(rollbackFor = Exception.class)
     public LeaseContract saveContract(LeaseContract input) {
         validateContract(input);
+        normalizeFixedRent(input);
         if (input.getTenantRefId() == null) {
             input.setTenantRefId(lookupTenantRefId(input.getTenantName()));
         }
@@ -101,10 +163,21 @@ public class LeaseFeeService {
             if (input.getEscalationMonths() == null || input.getEscalationMonths() <= 0) input.setEscalationMonths(36);
             if (input.getEscalationRate() == null) input.setEscalationRate(BigDecimal.ZERO);
             if (input.getPropertyUnitPrice() == null) input.setPropertyUnitPrice(new BigDecimal("2"));
+            if (input.getRentDepositStatus() == null) input.setRentDepositStatus(0);
+            if (input.getRentDepositPaid() == null) input.setRentDepositPaid(BigDecimal.ZERO);
+            if (input.getPropertyDepositStatus() == null) input.setPropertyDepositStatus(0);
+            if (input.getPropertyDepositPaid() == null) input.setPropertyDepositPaid(BigDecimal.ZERO);
             contractMapper.insert(input);
         } else {
             LeaseContract existed = contractMapper.selectById(input.getId());
             if (existed == null) throw new BizException("合同不存在: " + input.getId());
+            if (input.getRentDepositStatus() == null) input.setRentDepositStatus(existed.getRentDepositStatus());
+            if (input.getRentDepositPaid() == null) input.setRentDepositPaid(existed.getRentDepositPaid());
+            if (input.getRentDepositPaidDate() == null) input.setRentDepositPaidDate(existed.getRentDepositPaidDate());
+            if (input.getPropertyDepositStatus() == null) input.setPropertyDepositStatus(existed.getPropertyDepositStatus());
+            if (input.getPropertyDepositPaid() == null) input.setPropertyDepositPaid(existed.getPropertyDepositPaid());
+            if (input.getPropertyDepositPaidDate() == null) input.setPropertyDepositPaidDate(existed.getPropertyDepositPaidDate());
+            if (input.getDepositRemark() == null) input.setDepositRemark(existed.getDepositRemark());
             contractMapper.updateById(input);
         }
         touchDrafts();
@@ -119,6 +192,19 @@ public class LeaseFeeService {
         touchDrafts();
     }
 
+    private static void normalizeFixedRent(LeaseContract c) {
+        if (c.getFixedMonthlyRent() != null && c.getFixedMonthlyRent().signum() <= 0) {
+            c.setFixedMonthlyRent(null);
+        }
+        if (c.getRentUnitPrice() == null) {
+            if (c.getFixedMonthlyRent() != null && c.getLeaseArea() != null && c.getLeaseArea().signum() > 0) {
+                c.setRentUnitPrice(c.getFixedMonthlyRent().divide(c.getLeaseArea(), 12, java.math.RoundingMode.HALF_UP));
+            } else {
+                c.setRentUnitPrice(BigDecimal.ZERO);
+            }
+        }
+    }
+
     private static void validateContract(LeaseContract c) {
         if (c == null) throw new BizException("合同参数不能为空");
         if (!StringUtils.hasText(c.getTenantName())) throw new BizException("请填写租户名称");
@@ -126,7 +212,10 @@ public class LeaseFeeService {
         if (c.getStartDate() == null || c.getEndDate() == null) throw new BizException("请填写合同起租日与到期日");
         if (c.getEndDate().isBefore(c.getStartDate())) throw new BizException("合同到期日不能早于起租日");
         if (c.getLeaseArea() == null || c.getLeaseArea().signum() < 0) throw new BizException("计租面积不能为负");
-        if (c.getRentUnitPrice() == null || c.getRentUnitPrice().signum() < 0) throw new BizException("月租金单价不能为负");
+        if (c.getFixedMonthlyRent() != null && c.getFixedMonthlyRent().signum() < 0) throw new BizException("月固定总价不能为负");
+        boolean hasFixed = c.getFixedMonthlyRent() != null && c.getFixedMonthlyRent().signum() > 0;
+        if (!hasFixed && (c.getRentUnitPrice() == null || c.getRentUnitPrice().signum() < 0)) throw new BizException("请填写月租金单价或月固定总价");
+        if (c.getRentUnitPrice() != null && c.getRentUnitPrice().signum() < 0) throw new BizException("月租金单价不能为负");
         if (c.getPropertyUnitPrice() != null && c.getPropertyUnitPrice().signum() < 0) throw new BizException("月物业费单价不能为负");
         if (c.getEscalationRate() != null && c.getEscalationRate().signum() < 0) throw new BizException("递增比例不能为负");
     }
@@ -460,6 +549,7 @@ public class LeaseFeeService {
             List<LeaseFeeNoticeItem> mergedItems = new ArrayList<>(n.getItems());
             if (old != null) {
                 n.setPaymentStatus(old.getPaymentStatus() == null ? 0 : old.getPaymentStatus());
+                n.setInvoiceStatus(old.getInvoiceStatus() == null ? 0 : old.getInvoiceStatus());
                 n.setPaidAmount(nz(old.getPaidAmount()));
                 n.setPriorArrears(nz(old.getPriorArrears()));
                 if (StringUtils.hasText(old.getRemark())) n.setRemark(old.getRemark());

@@ -7,6 +7,7 @@ const SHARED_PATHS = {
   'pur:plan': ['/budget/plan-year', '/budget/plan-month'],
   'pur:request': ['/budget/plan-year', '/budget/plan-month'],
   'property:check': ['/property/check-clean', '/property/check-green'],
+  'iot:device': ['/iot/camera', '/iot/parking', '/iot/fire'],
   contract: ['/contract/list'],
   tenant: ['/tenant/list'],
   receivable: ['/finance/receivable-register'],

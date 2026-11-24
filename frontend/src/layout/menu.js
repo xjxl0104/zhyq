@@ -13,15 +13,10 @@ export const menuTree = [
     ]
   },
   {
-    title: '空间与资产', icon: 'OfficeBuilding', children: [
-      {
-        title: '建筑', icon: 'OfficeBuilding', children: [
-          { title: '租控管理', path: '/building/room' },
-          { title: '项目管理', path: '/building/project' },
-          { title: '建筑管理', path: '/building/building' }
-        ]
-      },
-      { title: '资产管理', path: '/property/asset' }
+    title: '项目概况', icon: 'OfficeBuilding', children: [
+      { title: '项目管理', path: '/building/project' },
+      { title: '建筑管理', path: '/building/building' },
+      { title: '租控管理', path: '/building/room' }
     ]
   },
   {
@@ -106,37 +101,19 @@ export const menuTree = [
     ]
   },
   {
-    title: '能源与物联', icon: 'Lightning', children: [
-      {
-        title: '智慧物联', icon: 'VideoCamera', children: [
-          { title: '智能硬件', path: '/iot/device' },
-          { title: '预警事件', path: '/iot/alarm' },
-          { title: '智能安防', path: '/iot/camera' },
-          { title: '人脸识别门禁', path: '/iot/access' },
-          { title: '智能门锁', path: '/iot/lock' },
-          { title: '智慧停车场', path: '/iot/parking' },
-          { title: '智能充电桩', path: '/iot/charging' },
-          { title: '空气质量传感器', path: '/iot/sensor' },
-          { title: '智能空开', path: '/iot/breaker' },
-          { title: '智慧安消', path: '/iot/fire' },
-          { title: '点位管理', path: '/iot/point' },
-          { title: '通道管理', path: '/iot/channel' },
-          { title: '厂商配置', path: '/iot/vendor' }
-        ]
-      },
-      {
-        title: '便捷通行', icon: 'Postcard', children: [
-          { title: '门禁通行记录', path: '/acc/access' },
-          { title: '访客登记', path: '/acc/visitor' },
-          { title: '停车管理', path: '/acc/parking' }
-        ]
-      }
+    title: '智慧物联', icon: 'VideoCamera', children: [
+      { title: '预警事件', path: '/iot/alarm' },
+      { title: '智能安防', path: '/iot/camera' },
+      { title: '智慧停车场', path: '/iot/parking' },
+      { title: '智慧安消', path: '/iot/fire' }
     ]
   },
   {
     title: '园区运营', icon: 'Calendar', children: [
+      { title: '物资管理', path: '/property/asset' },
       {
         title: '缴费管理', icon: 'Tickets', children: [
+          { title: '保证金', path: '/energy/deposit' },
           { title: '租金', path: '/energy/rent' },
           { title: '物业费', path: '/energy/property' },
           { title: '电费', path: '/energy/electric' },

@@ -47,6 +47,7 @@ public final class LeaseFeeCalculator {
         private String agreementNo;
         private String collectionTiming;
         private BigDecimal leaseArea;
+        private BigDecimal fixedMonthlyRent;
         private BigDecimal rentUnitPrice;
         private BigDecimal propertyUnitPrice;
         private BigDecimal standardRent;
@@ -117,10 +118,14 @@ public final class LeaseFeeCalculator {
         }
 
         BigDecimal area = nz(c.getLeaseArea());
-        BigDecimal currRentPrice = nz(c.getRentUnitPrice()).multiply(multiplier, MC);
+        boolean hasFixedRent = c.getFixedMonthlyRent() != null && c.getFixedMonthlyRent().signum() > 0;
+        BigDecimal rawStandardRent = hasFixedRent
+                ? c.getFixedMonthlyRent().multiply(multiplier, MC)
+                : area.multiply(nz(c.getRentUnitPrice()).multiply(multiplier, MC), MC);
+        BigDecimal currRentPrice = hasFixedRent
+                ? (area.signum() > 0 ? rawStandardRent.divide(area, MC) : BigDecimal.ZERO)
+                : nz(c.getRentUnitPrice()).multiply(multiplier, MC);
         BigDecimal currPropPrice = nz(c.getPropertyUnitPrice()).multiply(multiplier, MC);
-
-        BigDecimal rawStandardRent = area.multiply(currRentPrice, MC);
         BigDecimal rawStandardProp = area.multiply(currPropPrice, MC);
 
         DefaultRuleResult rule = evaluateDefaultRule(ym, c, startYm, endYm, escalationNote);
@@ -145,6 +150,7 @@ public final class LeaseFeeCalculator {
         row.setAgreementNo(c.getAgreementNo());
         row.setCollectionTiming(c.getCollectionTiming());
         row.setLeaseArea(area.setScale(2, RoundingMode.HALF_UP));
+        row.setFixedMonthlyRent(hasFixedRent ? money(c.getFixedMonthlyRent()) : null);
         row.setRentUnitPrice(currRentPrice.setScale(4, RoundingMode.HALF_UP));
         row.setPropertyUnitPrice(currPropPrice.setScale(4, RoundingMode.HALF_UP));
         row.setStandardRent(money(rawStandardRent));
@@ -302,6 +308,7 @@ public final class LeaseFeeCalculator {
         n.setTenantName(tenantName);
         n.setSort(sort);
         n.setPaymentStatus(0);
+        n.setInvoiceStatus(0);
 
         List<String> units = new ArrayList<>();
         List<String> agreements = new ArrayList<>();

@@ -11,6 +11,7 @@ vi.mock('../feePeriod', async (original) => ({
 }))
 vi.mock('@/api/energy', () => ({ feePeriodApi: { notices: vi.fn() }, leaseFeeApi: { overview: vi.fn().mockResolvedValue([]) } }))
 const payment = { name: 'FeeNoticePayment', props: ['modelValue', 'notice'], emits: ['saved', 'update:modelValue'], template: '<div />' }
+const invoice = { name: 'NoticeInvoiceDialog', props: ['modelValue', 'notice', 'mode'], emits: ['saved', 'update:modelValue'], template: '<div />' }
 beforeEach(() => {
   vi.clearAllMocks()
   state.hook = {
@@ -24,7 +25,7 @@ beforeEach(() => {
 })
 it('已出账仍可登记缴费，保存后只更新状态并使该通知单整行变绿', async () => {
   const wrapper = mount(FeeSummary, { global: { stubs: {
-    FeeNoticePayment: payment, FeeMonthPicker: true, LeaseMonthPicker: true, LeaseFeeSummaryDetail: true, FeeBillFiles: true, FeeFilterBar: true, ElDialog: true
+    FeeNoticePayment: payment, NoticeInvoiceDialog: invoice, FeeMonthPicker: true, LeaseMonthPicker: true, LeaseFeeSummaryDetail: true, FeeBillFiles: true, FeeFilterBar: true, ElDialog: true
   } } })
   await state.opened()
   await flushPromises()
@@ -52,5 +53,15 @@ it('已出账仍可登记缴费，保存后只更新状态并使该通知单整�
   expect(rows()[0].classes()).not.toContain('notice-payment-paid')
   expect(rows()[0].classes()).toContain('floor-band-0')
   expect(dialog.props('notice')).toMatchObject({ paidAmount: 10, totalDue: 120 })
+  // 开票后整行从绿色升级为七彩流光
+  const invBtn = rows()[1].findAll('button').find(button => button.text() === '发票')
+  expect(invBtn).toBeTruthy()
+  await invBtn.trigger('click')
+  const invDialog = wrapper.findComponent({ name: 'NoticeInvoiceDialog' })
+  expect(invDialog.props('notice')).toMatchObject({ id: 12 })
+  invDialog.vm.$emit('saved', { id: 12, invoiceStatus: 1 })
+  await flushPromises()
+  expect(rows()[1].classes()).toContain('notice-invoice-issued')
+  expect(rows()[1].text()).toContain('已开票')
   wrapper.unmount()
 })

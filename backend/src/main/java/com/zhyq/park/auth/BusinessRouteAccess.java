@@ -85,7 +85,10 @@ public final class BusinessRouteAccess {
             case "energy/reading" -> hasMenu(grants, "/energy/meter");
             case "energy/fee-period" -> anyMenu(grants, "/energy/electric", "/energy/water",
                     "/energy/garbage", "/energy/summary");
-            case "energy/lease-fee" -> anyMenu(grants, "/energy/rent", "/energy/property", "/energy/summary");
+            case "energy/lease-fee" -> anyMenu(grants, "/energy/deposit", "/energy/rent",
+                    "/energy/property", "/energy/summary");
+            case "iot/device" -> anyMenu(grants, "/iot/camera", "/iot/parking", "/iot/fire")
+                    || hasPrefix(grants, "iot:device:");
             case "service/product" -> hasMenu(grants, "/service/mall");
             case "space/", "space/room" -> hasMenu(grants, "/building/room") || hasPrefix(grants, "building:room:");
             case "app/", "app/vending", "vending/", "vending/machine" -> hasMenu(grants, "/app/center") || hasPrefix(grants, "vending:");

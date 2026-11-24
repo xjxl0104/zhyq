@@ -30,6 +30,8 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class LeaseFeePaymentService {
     public static final String BIZ_TYPE = "lease_fee_notice_payment";
+    public static final String INVOICE_BIZ_TYPE = "lease_fee_notice_invoice";
+    private static final List<String> NOTICE_FILE_TYPES = List.of(BIZ_TYPE, INVOICE_BIZ_TYPE);
 
     private final JdbcTemplate jdbc;
     private final LeaseFeeNoticeMapper notices;
@@ -69,7 +71,28 @@ public class LeaseFeePaymentService {
     }
 
     @Transactional(rollbackFor = Exception.class)
+    public LeaseFeeNotice updateInvoiceStatus(Long noticeId, Integer status) {
+        if (status == null || (status != 0 && status != 1)) throw new BizException(400, "开票状态只能选择未开票或已开票");
+        LeaseFeeNotice current = lockNotice(noticeId);
+        notices.update(null, new LambdaUpdateWrapper<LeaseFeeNotice>()
+                .eq(LeaseFeeNotice::getId, noticeId).set(LeaseFeeNotice::getInvoiceStatus, status));
+        current.setInvoiceStatus(status);
+        current.setItems(items.selectList(new LambdaQueryWrapper<LeaseFeeNoticeItem>()
+                .eq(LeaseFeeNoticeItem::getNoticeId, noticeId).orderByAsc(LeaseFeeNoticeItem::getSort)));
+        return current;
+    }
+
+    @Transactional(rollbackFor = Exception.class)
     public SysFile upload(MultipartFile file, Long noticeId) {
+        return uploadForType(file, noticeId, BIZ_TYPE);
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public SysFile uploadInvoice(MultipartFile file, Long noticeId) {
+        return uploadForType(file, noticeId, INVOICE_BIZ_TYPE);
+    }
+
+    private SysFile uploadForType(MultipartFile file, Long noticeId, String bizType) {
         LeaseFeeNotice current = lockNotice(noticeId);
         FileStorageService.StoredResult stored = storage.store(file);
         boolean sync = TransactionSynchronizationManager.isSynchronizationActive();
@@ -81,7 +104,7 @@ public class LeaseFeePaymentService {
             });
         }
         SysFile result = new SysFile();
-        result.setBizType(BIZ_TYPE);
+        result.setBizType(bizType);
         result.setBizId(current.getId());
         result.setTenantId(current.getTenantId());
         result.setOriginalName(stored.originalName());
@@ -105,8 +128,10 @@ public class LeaseFeePaymentService {
         Map<String, List<Long>> sources = new LinkedHashMap<>();
         for (LeaseFeeNotice old : oldNotices) {
             String key = LeaseFeeCalculator.noticeKey(old);
-            if (!newKeys.contains(key) && (Integer.valueOf(1).equals(old.getPaymentStatus()) || evidenceIds.contains(old.getId()))) {
-                throw new BizException(409, "租户「" + old.getTenantName() + "」已有缴费记录或附件，本次生成将移除该通知单；请先核对并处理缴费标记和附件");
+            if (!newKeys.contains(key) && (Integer.valueOf(1).equals(old.getPaymentStatus())
+                    || Integer.valueOf(1).equals(old.getInvoiceStatus())
+                    || evidenceIds.contains(old.getId()))) {
+                throw new BizException(409, "租户「" + old.getTenantName() + "」已有缴费/开票记录或附件，本次生成将移除该通知单；请先核对并处理标记和附件");
             }
             if (old.getId() != null) {
                 sources.computeIfAbsent(key, ignored -> new ArrayList<>()).add(old.getId());
@@ -118,13 +143,14 @@ public class LeaseFeePaymentService {
     public void moveAttachments(Map<String, List<Long>> sources, LeaseFeeNotice replacement) {
         List<Long> oldIds = sources.get(LeaseFeeCalculator.noticeKey(replacement));
         if (oldIds == null || oldIds.isEmpty()) return;
-        files.update(null, new LambdaUpdateWrapper<SysFile>().eq(SysFile::getBizType, BIZ_TYPE)
+        files.update(null, new LambdaUpdateWrapper<SysFile>().in(SysFile::getBizType, NOTICE_FILE_TYPES)
                 .in(SysFile::getBizId, oldIds).set(SysFile::getBizId, replacement.getId()));
     }
 
     public void assertCanDelete(List<LeaseFeeNotice> targets) {
-        if (targets.stream().anyMatch(n -> Integer.valueOf(1).equals(n.getPaymentStatus())) || !paymentFiles(targets).isEmpty()) {
-            throw new BizException(409, "通知单已有缴费标记或缴费附件，请先将标记改为未缴并处理附件后再删除");
+        if (targets.stream().anyMatch(n -> Integer.valueOf(1).equals(n.getPaymentStatus())
+                || Integer.valueOf(1).equals(n.getInvoiceStatus())) || !paymentFiles(targets).isEmpty()) {
+            throw new BizException(409, "通知单已有缴费/开票标记或附件，请先将标记改回未缴/未开票并处理附件后再删除");
         }
     }
 
@@ -132,11 +158,12 @@ public class LeaseFeePaymentService {
         List<Long> ids = list.stream().map(LeaseFeeNotice::getId).filter(Objects::nonNull).toList();
         if (ids.isEmpty()) return List.of();
         return files.selectList(new LambdaQueryWrapper<SysFile>()
-                .eq(SysFile::getBizType, BIZ_TYPE).in(SysFile::getBizId, ids));
+                .in(SysFile::getBizType, NOTICE_FILE_TYPES).in(SysFile::getBizId, ids));
     }
 
     static LeaseFeeNotice normalizeStatus(LeaseFeeNotice n) {
         if (n.getPaymentStatus() == null) n.setPaymentStatus(0);
+        if (n.getInvoiceStatus() == null) n.setInvoiceStatus(0);
         return n;
     }
 }

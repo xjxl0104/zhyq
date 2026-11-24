@@ -76,10 +76,18 @@ class BusinessRouteAccessTest {
     }
 
     @Test void leaseFeeEndpointsAllowRentPropertyAndSummaryMenus() {
+        assertThat(BusinessRouteAccess.allowed("/energy/lease-fee/deposits", "GET", Set.of("MENU:/energy/deposit"))).isTrue();
         assertThat(BusinessRouteAccess.allowed("/energy/lease-fee/overview", "GET", Set.of("MENU:/energy/rent"))).isTrue();
         assertThat(BusinessRouteAccess.allowed("/energy/lease-fee/open", "POST", Set.of("MENU:/energy/property"))).isTrue();
         assertThat(BusinessRouteAccess.allowed("/energy/lease-fee/1/notices", "GET", Set.of("MENU:/energy/summary"))).isTrue();
         assertThat(BusinessRouteAccess.allowed("/energy/lease-fee/overview", "GET", Set.of("MENU:/energy/electric"))).isFalse();
         assertThat(BusinessRouteAccess.allowed("/energy/lease-fee/overview", "GET", Set.of())).isFalse();
+    }
+
+    @Test void retainedIotCategoryMenusCanCallDeviceApi() {
+        assertThat(BusinessRouteAccess.allowed("/iot/device/page", "GET", Set.of("MENU:/iot/camera"))).isTrue();
+        assertThat(BusinessRouteAccess.allowed("/iot/device/page", "GET", Set.of("MENU:/iot/parking"))).isTrue();
+        assertThat(BusinessRouteAccess.allowed("/iot/device/page", "GET", Set.of("MENU:/iot/fire"))).isTrue();
+        assertThat(BusinessRouteAccess.allowed("/iot/device/page", "GET", Set.of("MENU:/iot/alarm"))).isFalse();
     }
 }

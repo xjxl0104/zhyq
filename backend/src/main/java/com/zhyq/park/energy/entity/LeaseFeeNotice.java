@@ -1,5 +1,6 @@
 package com.zhyq.park.energy.entity;
 
+import com.baomidou.mybatisplus.annotation.FieldStrategy;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.zhyq.park.common.base.BaseEntity;
@@ -37,7 +38,10 @@ public class LeaseFeeNotice extends BaseEntity {
     private BigDecimal priorArrears;
     private BigDecimal totalDue;
     private Long billId;
+    @TableField(updateStrategy = FieldStrategy.NEVER)
     private Integer paymentStatus;
+    @TableField(updateStrategy = FieldStrategy.NEVER)
+    private Integer invoiceStatus;
     private Integer sort;
     private String remark;
 

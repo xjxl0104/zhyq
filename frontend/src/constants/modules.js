@@ -9,9 +9,9 @@
  */
 export const MODULE_LABELS = Object.freeze({
   acc: '便捷通行',
-  am: '资产管理',
+  am: '物资管理',
   budget: '预算采购',
-  building: '空间与资产',
+  building: '项目概况',
   contract: '合同',
   crm: '招商',
   energy: '缴费管理',

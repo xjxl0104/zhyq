@@ -105,12 +105,19 @@
           <el-table-column label="账单" width="80" align="center">
             <template #default="{ row }"><el-tag v-if="row.billId" size="small" type="success" effect="plain">已出账</el-tag><span v-else>-</span></template>
           </el-table-column>
-          <el-table-column label="缴费状态" width="90" align="center">
+          <el-table-column label="缴费状态" width="88" align="center">
             <template #default="{ row }"><el-tag :type="Number(row.paymentStatus) === 1 ? 'success' : 'info'" size="small">{{ Number(row.paymentStatus) === 1 ? '已缴费' : '未缴费' }}</el-tag></template>
           </el-table-column>
-          <el-table-column label="操作" width="290" fixed="right">
+          <el-table-column label="开票状态" width="94" align="center">
+            <template #default="{ row }">
+              <span v-if="Number(row.invoiceStatus) === 1" class="rainbow-badge">已开票</span>
+              <el-tag v-else type="info" size="small">未开票</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" width="335" fixed="right">
             <template #default="{ row }">
               <el-button link type="success" @click="openPayment(row)">缴费</el-button>
+              <el-button link class="invoice-btn" @click="openInvoice(row)">发票</el-button>
               <el-button link type="primary" @click="preview(row)">预览</el-button>
               <el-button link type="primary" @click="printOne(row)">打印</el-button>
               <el-button link type="primary" :disabled="locked" @click="edit(row)">调整</el-button>
@@ -229,6 +236,7 @@
       </template>
     </el-dialog>
     <FeeNoticePayment v-model="paymentDialog.visible" :notice="paymentDialog.notice" @saved="paymentSaved" />
+    <NoticeInvoiceDialog v-model="invoiceDialog.visible" :notice="invoiceDialog.notice" mode="utility" @saved="invoiceSaved" />
   </div>
 </template>
 
@@ -243,6 +251,7 @@ import { noticeHtml, NOTICE_CSS, printNotices } from './noticePrint'
 import FeeMonthPicker from './components/FeeMonthPicker.vue'
 import FeeBillFiles from './components/FeeBillFiles.vue'
 import FeeNoticePayment from './components/FeeNoticePayment.vue'
+import NoticeInvoiceDialog from './components/NoticeInvoiceDialog.vue'
 import LeaseMonthPicker from './components/LeaseMonthPicker.vue'
 import LeaseFeeSummaryDetail from './components/LeaseFeeSummaryDetail.vue'
 
@@ -301,7 +310,9 @@ const filterActive = computed(() => !!(filter.company || filter.floor))
 const viewNotices = computed(() => applyFilter(notices.value, filter, companyOf, unitOf))
 const bandClass = computed(() => floorBandClass(notices.value, (n) => n.noticeNo))
 const paymentDialog = reactive({ visible: false, notice: null })
+const invoiceDialog = reactive({ visible: false, notice: null })
 function noticeRowClass(row) {
+  if (Number(row.invoiceStatus) === 1) return 'notice-invoice-issued'
   return Number(row.paymentStatus) === 1 ? 'notice-payment-paid' : bandClass.value(row)
 }
 function openPayment(row) {
@@ -311,6 +322,14 @@ function openPayment(row) {
 function paymentSaved({ id, paymentStatus }) {
   const row = notices.value.find(item => String(item.id) === String(id))
   if (row) row.paymentStatus = paymentStatus
+}
+function openInvoice(row) {
+  invoiceDialog.notice = row
+  invoiceDialog.visible = true
+}
+function invoiceSaved({ id, invoiceStatus }) {
+  const row = notices.value.find(item => String(item.id) === String(id))
+  if (row) row.invoiceStatus = invoiceStatus
 }
 const matrix = computed(() => (viewNotices.value.length ? MATRIX_ROWS : []))
 // 合计列 = 各户金额逐个相加(分为单位取整,避免浮点尾数),与通知单列表、导出 Excel 同源
@@ -524,4 +543,36 @@ async function revoke() {
 .notice-table :deep(.el-table__body tr.notice-payment-paid > td.el-table__cell) { background-color: var(--el-color-success-light-9) !important; }
 .notice-table :deep(.el-table__body tr.notice-payment-paid.hover-row > td.el-table__cell),
 .notice-table :deep(.el-table__body tr.notice-payment-paid:hover > td.el-table__cell) { background-color: var(--el-color-success-light-8) !important; }
+@keyframes rainbow-flow {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+.notice-table :deep(.el-table__body tr.notice-invoice-issued) {
+  background: linear-gradient(115deg, #ffd1e8 0%, #ffe0b5 14%, #fff6a8 28%, #baf7d0 42%, #b5e4ff 56%, #d9c2ff 70%, #ffc2e2 84%, #ffd1e8 100%) !important;
+  background-size: 320% 100% !important;
+  animation: rainbow-flow 4.5s linear infinite !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8), inset 0 -1px 0 rgba(168, 85, 247, 0.28);
+}
+.notice-table :deep(.el-table__body tr.notice-invoice-issued > td.el-table__cell),
+.notice-table :deep(.el-table__body tr.notice-invoice-issued.hover-row > td.el-table__cell),
+.notice-table :deep(.el-table__body tr.notice-invoice-issued:hover > td.el-table__cell) {
+  background: transparent !important;
+  color: #111827;
+}
+.notice-table :deep(.el-table__body tr.notice-invoice-issued > td.el-table-fixed-column--right) {
+  background: linear-gradient(115deg, rgba(255, 209, 232, 0.96) 0%, rgba(255, 246, 168, 0.96) 25%, rgba(186, 247, 208, 0.96) 50%, rgba(181, 228, 255, 0.96) 75%, rgba(217, 194, 255, 0.96) 100%) !important;
+  background-size: 320% 100% !important;
+  animation: rainbow-flow 4.5s linear infinite !important;
+}
+.rainbow-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 2px 9px; border-radius: 999px; font-size: 12px; font-weight: 700; color: #fff;
+  background: linear-gradient(115deg, #ff4d8d, #ff9900, #10b981, #3b82f6, #8b5cf6, #ec4899);
+  background-size: 260% 100%;
+  animation: rainbow-flow 3.6s linear infinite;
+  box-shadow: 0 2px 8px rgba(139, 92, 246, 0.35);
+}
+.invoice-btn { color: #9333ea !important; font-weight: 600; }
+.invoice-btn:hover { color: #db2777 !important; }
 </style>

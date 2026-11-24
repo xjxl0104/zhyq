@@ -105,7 +105,7 @@
         </h4>
       </div>
       <el-table :data="viewRentNotices" border size="small" row-key="id" class="notice-table"
-                :row-class-name="({ row }) => Number(row.paymentStatus) === 1 ? 'notice-payment-paid' : ''"
+                :row-class-name="({ row }) => noticeRowClass(row)"
                 show-summary :summary-method="noticeSummary">
         <el-table-column type="index" label="序号" width="55" />
         <el-table-column prop="noticeNo" label="单据编号" width="190" />
@@ -118,12 +118,19 @@
         <el-table-column label="账单" width="76" align="center">
           <template #default="{ row }"><el-tag v-if="row.billId" size="small" type="success" effect="plain">已出账</el-tag><span v-else>-</span></template>
         </el-table-column>
-        <el-table-column label="缴费状态" width="88" align="center">
+        <el-table-column label="缴费状态" width="84" align="center">
           <template #default="{ row }"><el-tag :type="Number(row.paymentStatus) === 1 ? 'success' : 'info'" size="small">{{ Number(row.paymentStatus) === 1 ? '已缴费' : '未缴费' }}</el-tag></template>
         </el-table-column>
-        <el-table-column label="操作" width="260" fixed="right">
+        <el-table-column label="开票状态" width="90" align="center">
+          <template #default="{ row }">
+            <span v-if="Number(row.invoiceStatus) === 1" class="rainbow-badge">已开票</span>
+            <el-tag v-else type="info" size="small">未开票</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="305" fixed="right">
           <template #default="{ row }">
             <el-button link type="success" @click="openPayment(row)">缴费</el-button>
+            <el-button link class="invoice-btn" @click="openInvoice(row)">发票</el-button>
             <el-button link type="primary" @click="preview(row)">预览</el-button>
             <el-button link type="primary" @click="printBatch([row])">打印</el-button>
             <el-button link type="primary" :disabled="locked" @click="openEdit(row)">调整</el-button>
@@ -140,7 +147,7 @@
         </h4>
       </div>
       <el-table :data="viewPropertyNotices" border size="small" row-key="id" class="notice-table"
-                :row-class-name="({ row }) => Number(row.paymentStatus) === 1 ? 'notice-payment-paid' : ''"
+                :row-class-name="({ row }) => noticeRowClass(row)"
                 show-summary :summary-method="noticeSummary">
         <el-table-column type="index" label="序号" width="55" />
         <el-table-column prop="noticeNo" label="单据编号" width="190" />
@@ -153,12 +160,19 @@
         <el-table-column label="账单" width="76" align="center">
           <template #default="{ row }"><el-tag v-if="row.billId" size="small" type="success" effect="plain">已出账</el-tag><span v-else>-</span></template>
         </el-table-column>
-        <el-table-column label="缴费状态" width="88" align="center">
+        <el-table-column label="缴费状态" width="84" align="center">
           <template #default="{ row }"><el-tag :type="Number(row.paymentStatus) === 1 ? 'success' : 'info'" size="small">{{ Number(row.paymentStatus) === 1 ? '已缴费' : '未缴费' }}</el-tag></template>
         </el-table-column>
-        <el-table-column label="操作" width="260" fixed="right">
+        <el-table-column label="开票状态" width="90" align="center">
+          <template #default="{ row }">
+            <span v-if="Number(row.invoiceStatus) === 1" class="rainbow-badge">已开票</span>
+            <el-tag v-else type="info" size="small">未开票</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="305" fixed="right">
           <template #default="{ row }">
             <el-button link type="success" @click="openPayment(row)">缴费</el-button>
+            <el-button link class="invoice-btn" @click="openInvoice(row)">发票</el-button>
             <el-button link type="primary" @click="preview(row)">预览</el-button>
             <el-button link type="primary" @click="printBatch([row])">打印</el-button>
             <el-button link type="primary" :disabled="locked" @click="openEdit(row)">调整</el-button>
@@ -258,6 +272,7 @@
     </el-dialog>
 
     <LeaseNoticePayment v-model="paymentDialog.visible" :notice="paymentDialog.notice" @saved="paymentSaved" />
+    <NoticeInvoiceDialog v-model="invoiceDialog.visible" :notice="invoiceDialog.notice" mode="lease" @saved="invoiceSaved" />
   </div>
 </template>
 
@@ -271,6 +286,7 @@ import { LEASE_NOTICE_CSS, leaseNoticeHtml, printLeaseNotices } from '../leaseNo
 import FeeBillFiles from './FeeBillFiles.vue'
 import FeeFilterBar from './FeeFilterBar.vue'
 import LeaseNoticePayment from './LeaseNoticePayment.vue'
+import NoticeInvoiceDialog from './NoticeInvoiceDialog.vue'
 
 const props = defineProps({ month: { type: String, required: true } })
 defineEmits(['back'])
@@ -394,10 +410,20 @@ function printBatch(list) {
 }
 
 const paymentDialog = reactive({ visible: false, notice: null })
+const invoiceDialog = reactive({ visible: false, notice: null })
+function noticeRowClass(row) {
+  if (Number(row.invoiceStatus) === 1) return 'notice-invoice-issued'
+  return Number(row.paymentStatus) === 1 ? 'notice-payment-paid' : ''
+}
 function openPayment(row) { paymentDialog.notice = row; paymentDialog.visible = true }
 function paymentSaved({ id, paymentStatus }) {
   const row = notices.value.find((n) => String(n.id) === String(id))
   if (row) row.paymentStatus = paymentStatus
+}
+function openInvoice(row) { invoiceDialog.notice = row; invoiceDialog.visible = true }
+function invoiceSaved({ id, invoiceStatus }) {
+  const row = notices.value.find((n) => String(n.id) === String(id))
+  if (row) row.invoiceStatus = invoiceStatus
 }
 
 async function deleteOne(row) {
@@ -480,4 +506,36 @@ function noticeSummary({ columns, data }) {
 .muted { color: var(--el-text-color-placeholder); font-size: 12px; }
 .preview-frame { width: 100%; height: 72vh; border: 1px solid var(--el-border-color); border-radius: 6px; background: #fff; }
 :deep(.notice-payment-paid) td { background: var(--el-color-success-light-9) !important; }
+@keyframes rainbow-flow {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+.notice-table :deep(.el-table__body tr.notice-invoice-issued) {
+  background: linear-gradient(115deg, #ffd1e8 0%, #ffe0b5 14%, #fff6a8 28%, #baf7d0 42%, #b5e4ff 56%, #d9c2ff 70%, #ffc2e2 84%, #ffd1e8 100%) !important;
+  background-size: 320% 100% !important;
+  animation: rainbow-flow 4.5s linear infinite !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8), inset 0 -1px 0 rgba(168, 85, 247, 0.28);
+}
+.notice-table :deep(.el-table__body tr.notice-invoice-issued > td.el-table__cell),
+.notice-table :deep(.el-table__body tr.notice-invoice-issued.hover-row > td.el-table__cell),
+.notice-table :deep(.el-table__body tr.notice-invoice-issued:hover > td.el-table__cell) {
+  background: transparent !important;
+  color: #111827;
+}
+.notice-table :deep(.el-table__body tr.notice-invoice-issued > td.el-table-fixed-column--right) {
+  background: linear-gradient(115deg, rgba(255, 209, 232, 0.96) 0%, rgba(255, 246, 168, 0.96) 25%, rgba(186, 247, 208, 0.96) 50%, rgba(181, 228, 255, 0.96) 75%, rgba(217, 194, 255, 0.96) 100%) !important;
+  background-size: 320% 100% !important;
+  animation: rainbow-flow 4.5s linear infinite !important;
+}
+.rainbow-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 2px 9px; border-radius: 999px; font-size: 12px; font-weight: 700; color: #fff;
+  background: linear-gradient(115deg, #ff4d8d, #ff9900, #10b981, #3b82f6, #8b5cf6, #ec4899);
+  background-size: 260% 100%;
+  animation: rainbow-flow 3.6s linear infinite;
+  box-shadow: 0 2px 8px rgba(139, 92, 246, 0.35);
+}
+.invoice-btn { color: #9333ea !important; font-weight: 600; }
+.invoice-btn:hover { color: #db2777 !important; }
 </style>

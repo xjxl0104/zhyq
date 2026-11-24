@@ -85,7 +85,7 @@ const routes = [
       { path: 'property/workorder-summary', meta: { title: '工单汇总' }, component: () => import('@/views/property/WorkOrderSummary.vue') },
       { path: 'property/workorder', meta: { title: '物业报修' }, component: () => import('@/views/property/WorkOrder.vue') },
       { path: 'property/responsible-unit', meta: { title: '供应商档案' }, component: () => import('@/views/budget/Supplier.vue') },
-      { path: 'property/asset', meta: { title: '资产管理' }, component: () => import('@/views/property/Asset.vue') },
+      { path: 'property/asset', meta: { title: '物资管理' }, component: () => import('@/views/property/Asset.vue') },
       { path: 'property/inspection', meta: { title: '设备巡检' }, component: () => import('@/views/property/Inspection.vue') },
       { path: 'property/patrol', meta: { title: '安防巡更' }, component: () => import('@/views/property/Patrol.vue') },
       { path: 'property/check-clean', meta: { title: '保洁检查', ctype: '保洁' }, component: () => import('@/views/property/Check.vue') },
@@ -103,11 +103,6 @@ const routes = [
       { path: 'budget/flow', meta: { title: '审批流程' }, component: () => import('@/views/budget/FlowConfig.vue') },
       { path: 'budget/supplier', redirect: '/property/responsible-unit' },
       { path: 'budget/supplier-contract', meta: { title: '供应商合同' }, component: () => import('@/views/budget/SupplierContract.vue') },
-
-      // 便捷通行(#21,门禁记录/访客登记/停车)
-      { path: 'acc/access', meta: { title: '门禁通行记录' }, component: () => import('@/views/acc/Access.vue') },
-      { path: 'acc/visitor', meta: { title: '访客登记' }, component: () => import('@/views/acc/Visitor.vue') },
-      { path: 'acc/parking', meta: { title: '停车管理' }, component: () => import('@/views/acc/Parking.vue') },
 
       // 物业服务(原惠企保留模块)
       { path: 'service/visitor', meta: { title: '访客预约' }, component: () => import('@/views/service/Visitor.vue') },
@@ -134,7 +129,8 @@ const routes = [
       { path: 'app/vending', meta: { title: '自动售货机' }, component: () => import('@/views/app/Vending.vue') },
 
       // 缴费管理(园区运营下)
-      // 租金 / 物业费 一组件两路由,靠 meta.leaseFeeType 区分;电费 / 水费 一组件两路由,靠 meta.energyType 区分
+      // 保证金按合同台账一次性登记;租金 / 物业费 一组件两路由,靠 meta.leaseFeeType 区分;电费 / 水费 一组件两路由,靠 meta.energyType 区分
+      { path: 'energy/deposit', meta: { title: '保证金' }, component: () => import('@/views/energy/LeaseDeposit.vue') },
       { path: 'energy/rent', meta: { title: '租金', leaseFeeType: 'RENT' }, component: () => import('@/views/energy/LeaseFeeSheet.vue') },
       { path: 'energy/property', meta: { title: '物业费', leaseFeeType: 'PROPERTY' }, component: () => import('@/views/energy/LeaseFeeSheet.vue') },
       { path: 'energy/electric', meta: { title: '电费', energyType: '电' }, component: () => import('@/views/energy/UtilityFeeSheet.vue') },
@@ -143,19 +139,10 @@ const routes = [
       { path: 'energy/summary', meta: { title: '缴费汇总' }, component: () => import('@/views/energy/FeeSummary.vue') },
 
       // 智慧物联
-      { path: 'iot/device', meta: { title: '智能硬件' }, component: () => import('@/views/iot/Device.vue') },
       { path: 'iot/alarm', meta: { title: '预警事件' }, component: () => import('@/views/iot/Alarm.vue') },
-      { path: 'iot/point', meta: { title: '点位管理' }, component: () => import('@/views/iot/Point.vue') },
-      { path: 'iot/channel', meta: { title: '通道管理' }, component: () => import('@/views/iot/Channel.vue') },
-      { path: 'iot/vendor', meta: { title: '厂商配置' }, component: () => import('@/views/iot/Vendor.vue') },
-      { path: 'iot/lock', meta: { title: '智能门锁', category: '门锁' }, component: () => import('@/views/iot/DeviceCategory.vue') },
-      { path: 'iot/parking', meta: { title: '智慧停车场', category: '停车' }, component: () => import('@/views/iot/DeviceCategory.vue') },
-      { path: 'iot/charging', meta: { title: '智能充电桩', category: '充电桩' }, component: () => import('@/views/iot/DeviceCategory.vue') },
-      { path: 'iot/access', meta: { title: '人脸识别门禁', category: '门禁' }, component: () => import('@/views/iot/DeviceCategory.vue') },
-      { path: 'iot/sensor', meta: { title: '空气质量传感器', category: '传感器' }, component: () => import('@/views/iot/DeviceCategory.vue') },
-      { path: 'iot/breaker', meta: { title: '智能空开', category: '空开' }, component: () => import('@/views/iot/DeviceCategory.vue') },
-      { path: 'iot/fire', meta: { title: '智慧安消', category: '消防' }, component: () => import('@/views/iot/DeviceCategory.vue') },
       { path: 'iot/camera', meta: { title: '智能安防', category: '摄像头' }, component: () => import('@/views/iot/DeviceCategory.vue') },
+      { path: 'iot/parking', meta: { title: '智慧停车场', category: '停车' }, component: () => import('@/views/iot/DeviceCategory.vue') },
+      { path: 'iot/fire', meta: { title: '智慧安消', category: '消防' }, component: () => import('@/views/iot/DeviceCategory.vue') },
 
       // 数据中心
       { path: 'data/center', meta: { title: '数据看板' }, component: () => import('@/views/data/DataCenter.vue') },

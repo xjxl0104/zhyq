@@ -49,6 +49,9 @@ public class FeeNotice extends BaseEntity {
     /** 缴费登记状态：0=未缴费，1=已缴费。独立于费用计算，只由缴费接口显式更新。 */
     @TableField(updateStrategy = FieldStrategy.NEVER)
     private Integer paymentStatus;
+    /** 开票登记状态：0=未开票，1=已开票。独立于费用计算，只由发票接口显式更新。 */
+    @TableField(updateStrategy = FieldStrategy.NEVER)
+    private Integer invoiceStatus;
     private BigDecimal priorArrears;
     /** 本期应收合计 = 小计 − 已付 + 前期欠费 */
     private BigDecimal totalDue;

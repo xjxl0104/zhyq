@@ -57,8 +57,11 @@
           <el-table-column label="计租面积(㎡)" width="105" align="right">
             <template #default="{ row }">{{ num(row.leaseArea) }}</template>
           </el-table-column>
-          <el-table-column :label="isRent ? '当期租金单价' : '当期物业单价'" width="115" align="right">
-            <template #default="{ row }">{{ num(isRent ? row.rentUnitPrice : row.propertyUnitPrice, 4) }}</template>
+          <el-table-column :label="isRent ? '当期租金单价' : '当期物业单价'" width="135" align="right">
+            <template #default="{ row }">
+              <span>{{ num(isRent ? row.rentUnitPrice : row.propertyUnitPrice, 4) }}</span>
+              <el-tag v-if="isRent && Number(row.fixedMonthlyRent) > 0" size="small" type="primary" effect="plain" style="margin-left: 4px">固定总价</el-tag>
+            </template>
           </el-table-column>
           <el-table-column :label="isRent ? '标准租金(元)' : '标准物业费(元)'" width="125" align="right">
             <template #default="{ row }">¥{{ money(isRent ? row.standardRent : row.standardProperty) }}</template>

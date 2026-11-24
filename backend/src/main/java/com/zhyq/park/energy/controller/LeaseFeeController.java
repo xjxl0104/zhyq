@@ -48,13 +48,28 @@ public class LeaseFeeController {
     }
 
     public record PaymentRequest(Object paymentStatus) {}
+    public record InvoiceRequest(Object invoiceStatus) {}
 
-    // ---------- 合同基础台账 ----------
+    // ---------- 合同基础台账与保证金 ----------
 
     @Operation(summary = "查询租金/物业费计费合同台账")
     @GetMapping("/contracts")
     public Result<List<LeaseContract>> contracts(@RequestParam(defaultValue = "true") boolean includeDisabled) {
         return Result.ok(service.listContracts(includeDisabled));
+    }
+
+    @Operation(summary = "查询合同保证金台账(含回执份数)")
+    @GetMapping("/deposits")
+    public Result<List<LeaseContract>> deposits(@RequestParam(defaultValue = "true") boolean includeDisabled) {
+        return Result.ok(service.listDeposits(includeDisabled));
+    }
+
+    @Operation(summary = "登记/更新合同保证金缴纳状态与回执备注")
+    @OperationLog(module = "合同保证金", action = "更新缴纳状态")
+    @PutMapping("/deposits/{id}")
+    public Result<LeaseContract> updateDeposit(@PathVariable Long id,
+                                               @RequestBody LeaseFeeService.DepositUpdate req) {
+        return Result.ok(service.updateDeposit(id, req));
     }
 
     @Operation(summary = "新增或修改计费合同")
@@ -144,6 +159,16 @@ public class LeaseFeeController {
             throw new BizException(400, "缴费状态只能选择未缴或已缴");
         }
         return Result.ok(payments.updateStatus(id, status));
+    }
+
+    @Operation(summary = "记录通知单开票状态")
+    @OperationLog(module = "租金物业费账期", action = "记录开票状态")
+    @PutMapping("/notice/{id}/invoice")
+    public Result<LeaseFeeNotice> invoice(@PathVariable Long id, @RequestBody InvoiceRequest req) {
+        if (req == null || !(req.invoiceStatus() instanceof Integer status)) {
+            throw new BizException(400, "开票状态只能选择未开票或已开票");
+        }
+        return Result.ok(payments.updateInvoiceStatus(id, status));
     }
 
     @Operation(summary = "删除指定通知单")
