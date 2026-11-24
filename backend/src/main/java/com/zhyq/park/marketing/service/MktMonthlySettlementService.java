@@ -69,6 +69,18 @@ public class MktMonthlySettlementService {
                     log.warn("[mkt] 月结失败 合同 {} {}: {}", contract, ym, failure.getMessage());
                 }
             }
+            try {
+                Settled nonOutbound = settleNonOutbound();
+                if (nonOutbound.count() > 0) {
+                    batches++;
+                    commissions += nonOutbound.count();
+                    amount = amount.add(nonOutbound.amount());
+                }
+            } catch (RuntimeException failure) {
+                failed++;
+                if (errors.size() < 20) errors.add("非出库佣金：" + failure.getMessage());
+                log.warn("[mkt] 非出库佣金自动结算失败: {}", failure.getMessage());
+            }
             log.info("[mkt] 自动月结：{} 个批次，{} 条流水，合计 {} 元，失败 {}", batches, commissions, amount, failed);
             return new Result(batches, commissions, amount, failed, List.copyOf(errors));
         } finally {
@@ -135,6 +147,34 @@ public class MktMonthlySettlementService {
                     .reduce(BigDecimal.ZERO, BigDecimal::add);
             String batchNo = commissionService.settle(rows.stream().map(MktPromoterCommission::getId).toList(), OPERATOR);
             return new Settled(rows.size(), amount, batchNo);
+        });
+    }
+
+    /** 自动批量结算已解冻的非出库类佣金(1租赁签约 / 3直签平台费 / 4服务合同签约奖)。 */
+    Settled settleNonOutbound() {
+        return transaction.execute(status -> {
+            List<Map<String, Object>> rows = jdbc.queryForList(
+                    "SELECT c.id, c.amount FROM crm_promoter_commission c "
+                            + "JOIN crm_referral_order o ON o.id = c.referral_order_id AND o.deleted = 0 "
+                            + "AND o.source_type IN (" + MktCommissionService.SOURCE_LEASE + ", "
+                            + MktCommissionService.SOURCE_PLATFORM_FEE + ", "
+                            + MktCommissionService.SOURCE_CONTRACT_BONUS + ") "
+                            + "WHERE c.deleted = 0 AND c.status = " + MktCommissionService.C_SETTLEABLE
+                            + " AND c.sign = 1 AND c.withdrawal_id IS NULL ORDER BY c.id");
+            if (rows == null || rows.isEmpty()) return new Settled(0, BigDecimal.ZERO, null);
+            List<Long> ids = new ArrayList<>(rows.size());
+            BigDecimal amount = BigDecimal.ZERO;
+            for (Map<String, Object> r : rows) {
+                Object rawId = r.get("id");
+                if (!(rawId instanceof Number idNum)) continue;
+                ids.add(idNum.longValue());
+                Object rawAmt = r.get("amount");
+                if (rawAmt instanceof BigDecimal bd) amount = amount.add(bd);
+                else if (rawAmt != null) amount = amount.add(new BigDecimal(rawAmt.toString()));
+            }
+            if (ids.isEmpty()) return new Settled(0, BigDecimal.ZERO, null);
+            String batchNo = commissionService.settle(ids, OPERATOR);
+            return new Settled(ids.size(), amount, batchNo);
         });
     }
 }

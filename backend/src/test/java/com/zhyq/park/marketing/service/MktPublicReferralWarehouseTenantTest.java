@@ -1,5 +1,7 @@
 package com.zhyq.park.marketing.service;
 
+import com.baomidou.mybatisplus.core.MybatisConfiguration;
+import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.zhyq.park.common.exception.BizException;
 import com.zhyq.park.common.setting.BizSettings;
@@ -10,6 +12,8 @@ import com.zhyq.park.marketing.entity.MktPromoter;
 import com.zhyq.park.marketing.entity.MktWarehouse;
 import com.zhyq.park.marketing.mapper.MktPromoterMapper;
 import com.zhyq.park.marketing.mapper.MktWarehouseMapper;
+import org.apache.ibatis.builder.MapperBuilderAssistant;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -46,6 +50,10 @@ class MktPublicReferralWarehouseTenantTest {
     final MktWarehouse warehouse = new MktWarehouse();
     final Map<String,Object> body = new HashMap<>(Map.of("name", "扫码客户", "warehouseId", 88L,
             "submissionId", "request-0123456789", "agreed", true));
+
+    @BeforeAll static void metadata() {
+        TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new MybatisConfiguration(), ""), Customer.class);
+    }
 
     @BeforeEach void setup() {
         partner.setId(7L); partner.setTenantId(2L); partner.setStatus(1);
@@ -147,5 +155,41 @@ class MktPublicReferralWarehouseTenantTest {
                 error -> assertThat(error.getCode()).isEqualTo(429));
         verify(customers, never()).insert(any(Customer.class));
         verify(jdbc, never()).update(startsWith("INSERT INTO mkt_customer_referral_submission"), any(Object[].class));
+    }
+
+    @Test void publicSeaCustomerWithoutReferrerCanBeReclaimedByAnotherPartnerWhileProtectedOrSignedCannot() {
+        Customer publicSea = new Customer();
+        publicSea.setId(66L); publicSea.setTenantId(2L); publicSea.setName("扫码客户"); publicSea.setReferrerId(null); publicSea.setStatus(1);
+        when(customers.selectCount(any())).thenReturn(1L);
+        when(customers.selectOne(any())).thenReturn(publicSea);
+        MktCustomerLock newLock = new MktCustomerLock();
+        newLock.setStatus(MktLockService.LS_LOCKED);
+        newLock.setLockUntil(java.time.LocalDateTime.now().plusMonths(3));
+        when(locks.prelock(66L, 7L)).thenReturn(newLock);
+        body.put("contact", "新联系人"); body.put("remark", "新需求补充");
+
+        Map<String, Object> res = referrals.create(7L, body);
+        assertThat(res.get("customerId")).isEqualTo(66L);
+        assertThat(res.get("lockStatus")).isEqualTo(MktLockService.LS_LOCKED);
+        assertThat(res.get("lockUntil")).isEqualTo(newLock.getLockUntil());
+        verify(assignment).assertNoActiveContracts(66L);
+        verify(locks).prelock(66L, 7L);
+        verify(customers).update(isNull(), any());
+        verify(audit).log(eq("referral.reclaim"), eq("customer"), eq(66L), contains("重报接管"));
+        verify(customers, never()).insert(any(Customer.class));
+
+        // 仍在他人保护期内(referrerId != null)或已签约成交(status == 2)时仍抛 409
+        publicSea.setReferrerId(99L);
+        assertThatThrownBy(() -> referrals.create(7L, body)).isInstanceOfSatisfying(BizException.class,
+                err -> assertThat(err.getCode()).isEqualTo(409));
+        publicSea.setReferrerId(null); publicSea.setStatus(2);
+        assertThatThrownBy(() -> referrals.create(7L, body)).isInstanceOfSatisfying(BizException.class,
+                err -> assertThat(err.getCode()).isEqualTo(409));
+
+        // 原伙伴在 30 天冷却期内重报由 prelock 拒绝
+        publicSea.setStatus(1);
+        when(locks.prelock(66L, 7L)).thenThrow(new BizException("该客户释放后 30 天内不可再次报备"));
+        assertThatThrownBy(() -> referrals.create(7L, body))
+                .isInstanceOf(BizException.class).hasMessageContaining("30 天内不可再次报备");
     }
 }

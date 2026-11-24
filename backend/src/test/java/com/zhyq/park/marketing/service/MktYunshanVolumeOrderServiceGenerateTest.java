@@ -59,7 +59,7 @@ class MktYunshanVolumeOrderServiceGenerateTest {
                 pricing, terms, settings, mock(MktAuditService.class), promoters, transactions);
         var map = new MktYunshanVolumeMap(); map.setId(7L); map.setCustomerId(10L); map.setWarehouseId(1L); map.setProjectId(3L); map.setStatus(1);
         when(maps.selectList(any())).thenReturn(List.of(map));
-        contract = new MktServiceContract(); contract.setId(100L); contract.setWarehouseId(1L); contract.setPartnerId(2L); contract.setSignMode(2); contract.setProjectId(3L);
+        contract = new MktServiceContract(); contract.setId(100L); contract.setWarehouseId(1L); contract.setPartnerId(2L); contract.setSignMode(1); contract.setProjectId(3L);
         when(contracts.selectOne(any())).thenReturn(contract);
         when(terms.atDate(any(), any())).thenAnswer(call -> call.getArgument(0));
         var customer = new Customer(); customer.setId(10L); customer.setReferrerId(2L);
@@ -266,5 +266,25 @@ class MktYunshanVolumeOrderServiceGenerateTest {
         var result = service.generate(null, null, null);
         assertThat(result.failed()).isEqualTo(1);
         verify(commissionService, never()).createAggregatedOutboundInTransaction(any(), anyInt());
+    }
+
+    @Test void 云仓直签合同跳过云山日票数出库计佣以防与实收平台费双重计佣() {
+        contract.setSignMode(2);
+        var result = service.generate(null, null, null);
+        assertThat(result.skipped()).isEqualTo(1);
+        assertThat(result.created()).isZero();
+        verify(commissionService, never()).createAggregatedOutboundInTransaction(any(), anyInt());
+    }
+
+    @Test void 园区签合同配置单票服务费时同步生成汇总单服务费与包裹票数() {
+        contract.setSignMode(1);
+        contract.setPriceTable("{\"perOrder\":3.50}");
+        var result = service.generate(null, null, null);
+        assertThat(result.created()).isEqualTo(1);
+        var event = createdEvent(5);
+        assertThat(event.baseAmount()).isEqualByComparingTo("17.50");
+        assertThat(event.packages()).isEqualTo(5);
+        assertThat(event.qty()).isEqualTo(0);
+        assertThat(event.poolAmount()).isEqualByComparingTo("0.475");
     }
 }

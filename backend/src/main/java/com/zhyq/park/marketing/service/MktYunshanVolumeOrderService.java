@@ -24,6 +24,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
@@ -45,6 +46,7 @@ public class MktYunshanVolumeOrderService {
     private static final String MODULE = "marketing";
     private static final ZoneId SHANGHAI = ZoneId.of("Asia/Shanghai");
     private static final long MAX_DAILY_TICKETS = 1_000_000L;
+    private static final com.fasterxml.jackson.databind.ObjectMapper JSON = new com.fasterxml.jackson.databind.ObjectMapper();
 
     public record Result(int created, int rebuilt, int unchanged, int skipped, int failed, List<String> errors) {}
 
@@ -308,6 +310,10 @@ public class MktYunshanVolumeOrderService {
         MktCustomerPricingService.PricingSnapshot pricing = pricingService.forAccrual(customer.getId(), contract.getId());
         int count = Math.toIntExact(toCreate);
         BigDecimal pool = pricing.totalPerOrder().subtract(pricing.companyPerOrder()).multiply(BigDecimal.valueOf(count));
+        BigDecimal perOrderFee = parsePerOrderPrice(contract.getPriceTable());
+        BigDecimal serviceFee = perOrderFee.signum() > 0
+                ? perOrderFee.multiply(BigDecimal.valueOf(count)).setScale(2, RoundingMode.HALF_UP)
+                : BigDecimal.ZERO;
         int freezeDays = bizSettings.getInt(MODULE, "freeze_days", 7);
         if (freezeDays < 0) throw new BizException("冻结天数配置不合法");
         LocalDateTime eventTime = day.atStartOfDay();
@@ -317,11 +323,13 @@ public class MktYunshanVolumeOrderService {
         String sourceNo = prefix + "V" + (orders.size() + 1);
         MktCommissionService.CommissionEvent event = new MktCommissionService.CommissionEvent(
                 MktCommissionService.SOURCE_OUTBOUND, sourceNo, contract.getId(), customer.getId(), seller, grade,
-                BigDecimal.ZERO, BigDecimal.ZERO, pool, eventTime, eventTime.plusDays(freezeDays), projectId,
-                contract.getWarehouseId(), null, null, null, null);
+                BigDecimal.ZERO, serviceFee, pool, eventTime, eventTime.plusDays(freezeDays), projectId,
+                contract.getWarehouseId(), 0, count, null, null);
         MktReferralOrder order = commissionService.createAggregatedOutboundInTransaction(event, count);
         orderMapper.update(null, new LambdaUpdateWrapper<MktReferralOrder>()
                 .eq(MktReferralOrder::getId, order.getId())
+                .set(MktReferralOrder::getServiceFee, serviceFee)
+                .set(MktReferralOrder::getPackages, count)
                 .set(MktReferralOrder::getRemark, "云山发货量汇总订单 " + day + "，" + count + " 票"));
         auditService.log("yunshan.order.generate", "referral_order", order.getId(),
                 sourceNo + "：" + day + " 共 " + count + " 票，佣金池 " + pool);
@@ -354,7 +362,20 @@ public class MktYunshanVolumeOrderService {
                 .orderByDesc(MktServiceContract::getId).last("limit 1"));
         if (contract == null) return null;
         contract = termsService.atDate(contract, day);
-        // 园区签(1)和云仓直签(2)都按发货量计佣；其他签约方式不计佣。
-        return Integer.valueOf(1).equals(contract.getSignMode()) || Integer.valueOf(2).equals(contract.getSignMode()) ? contract : null;
+        // 防双重计佣(拍板 A3):仅匹配园区签合同(signMode=1);云仓直签(signMode=2)按实收平台费计佣,不按云山日票数生成出库计佣单。
+        return Integer.valueOf(1).equals(contract.getSignMode()) ? contract : null;
+    }
+
+    private static BigDecimal parsePerOrderPrice(String priceTable) {
+        if (!StringUtils.hasText(priceTable)) return BigDecimal.ZERO;
+        try {
+            var node = JSON.readTree(priceTable);
+            if (node == null || !node.isObject() || !node.has("perOrder")) return BigDecimal.ZERO;
+            var perOrder = node.get("perOrder");
+            if (perOrder == null || !perOrder.isNumber() || perOrder.decimalValue().signum() <= 0) return BigDecimal.ZERO;
+            return perOrder.decimalValue();
+        } catch (Exception ignored) {
+            return BigDecimal.ZERO;
+        }
     }
 }

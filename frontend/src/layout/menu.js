@@ -32,30 +32,28 @@ export const menuTree = [
           { title: '线索管理', path: '/crm/lead' },
           { title: '意向客户', path: '/crm/customer' },
           { title: '销售计划', path: '/crm/plan' },
-          { title: '佣金管理', path: '/crm/commission' },
+          { title: '渠道中介返佣', path: '/crm/commission' },
           { title: '招商分析', path: '/crm/analysis' }
         ]
       },
       {
         // 子项很多:侧边栏按 group 合并成一个入口,同组页面在页内用标签切换(见 navigationAccess / SectionTabs)。
+        // 角色与称号(/position)、客户评级(/grade)已收折进「规则与字典」内嵌字典页签；空壳合同模板(/template)隐藏。
         title: '全民营销', icon: 'Share', children: [
-          { title: '看板', path: '/crm/marketing/dashboard', group: '看板' },
+          { title: '营销看板', path: '/crm/marketing/dashboard', group: '看板' },
           { title: '伙伴管理', path: '/crm/marketing/promoter', group: '伙伴' },
-          { title: '角色与称号', path: '/crm/marketing/position', group: '伙伴' },
           { title: '客户管理', path: '/crm/marketing/customer', group: '客户' },
-          { title: '客户评级', path: '/crm/marketing/grade', group: '客户' },
           { title: '云仓管理', path: '/crm/marketing/warehouse', group: '云仓' },
           { title: '加盟申请', path: '/crm/marketing/onboarding', group: '云仓' },
-          { title: 'ERP 对接', path: '/crm/marketing/erp', group: '云仓' },
+          { title: '单量与ERP对接', path: '/crm/marketing/erp', group: '云仓' },
           { title: '报价体系', path: '/crm/marketing/quote-rates', group: '云仓' },
           { title: '服务合同', path: '/crm/marketing/contract', group: '合同' },
-          { title: '合同模板', path: '/crm/marketing/template', group: '合同' },
           { title: '计佣订单', path: '/crm/marketing/order', group: '结算' },
-          { title: '佣金结算', path: '/crm/marketing/commission', group: '结算' },
+          { title: '伙伴佣金结算', path: '/crm/marketing/commission', group: '结算' },
           { title: '服务费账单', path: '/crm/marketing/bill', group: '结算' },
           { title: '云仓结算', path: '/crm/marketing/settlement', group: '结算' },
           { title: '提现审核', path: '/crm/marketing/withdrawal', group: '结算' },
-          { title: '规则参数', path: '/crm/marketing/setting', group: '设置' },
+          { title: '规则与字典', path: '/crm/marketing/setting', group: '设置' },
           { title: '审计日志', path: '/crm/marketing/audit', group: '设置' }
         ]
       },

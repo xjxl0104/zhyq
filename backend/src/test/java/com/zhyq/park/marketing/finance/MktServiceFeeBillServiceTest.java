@@ -70,4 +70,17 @@ class MktServiceFeeBillServiceTest {
         assertThatThrownBy(()->service().receive(1L,"R1","file:5",new BigDecimal("99"))).isInstanceOf(BizException.class).hasMessageContaining("一致");verify(commissions,never()).unfreezeByOrderInTransaction(any());}
     @Test void receiptUnfreezesOnlyThisContractsBonusInSameTransaction(){var b=new MktServiceFeeBill();b.setId(1L);b.setWarehouseId(11L);b.setContractId(9L);b.setAmount(new BigDecimal("100"));b.setStatus(3);when(bills.selectById(1L)).thenReturn(b);when(bills.update(any(),any())).thenReturn(1);
         var bonus=new MktReferralOrder();bonus.setId(7L);when(orders.selectList(any())).thenReturn(List.of(bonus));service().receive(1L,"R1","file:5",new BigDecimal("100"));verify(proofs).require("file:5","mkt_bill",1L);verify(commissions).unfreezeByOrderInTransaction(7L);}
+    @Test void yunshanParkSignedAggregatedOrdersWithPositiveServiceFeeEnterServiceBill() {
+        when(contracts.selectOne(any())).thenReturn(contract());
+        var ys = new MktReferralOrder(); ys.setId(25L); ys.setSourceType(2); ys.setSourceNo("YS-7-20260915-V1"); ys.setServiceFee(new BigDecimal("17.50"));
+        when(orders.selectList(any())).thenAnswer(inv -> {
+            String sql = ((com.baomidou.mybatisplus.core.conditions.Wrapper<?>) inv.getArgument(0)).getSqlSegment();
+            assertThat(sql).contains("source_no", "service_fee");
+            return List.of(ys);
+        });
+        doAnswer(i -> { ((MktServiceFeeBill) i.getArgument(0)).setId(35L); return 1; }).when(bills).insert(any(MktServiceFeeBill.class));
+        var generated = service().generate(9L, LocalDate.of(2026, 9, 1), LocalDate.of(2026, 9, 30));
+        assertThat(generated.getAmount()).isEqualByComparingTo("17.50");
+        verify(lines).insert(any(MktServiceFeeBillLine.class));
+    }
 }

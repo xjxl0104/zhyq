@@ -1,9 +1,34 @@
 <template>
   <div class="page-container mkt-page">
+    <div class="view-switch">
+      <el-radio-group v-model="viewMode" aria-label="伙伴佣金结算视图切换" @change="onViewChange">
+        <el-radio-button value="outbound">📦 出库单佣金按月汇总</el-radio-button>
+        <el-radio-button value="nonOutbound">🏢 租赁 / 直签平台费 / 签约奖结算</el-radio-button>
+      </el-radio-group>
+    </div>
+
     <div class="search-bar">
       <el-form :inline="true" :model="query">
-        <el-form-item label="伙伴"><el-input v-model="query.promoterName" placeholder="姓名或手机号" clearable style="width: 160px" @keyup.enter="search" /></el-form-item>
-        <el-form-item label="伙伴 ID"><el-input-number v-model="query.promoterId" :min="1" controls-position="right" style="width: 140px" /></el-form-item>
+        <el-form-item label="伙伴搜索">
+          <el-input v-model="query.promoterName" placeholder="姓名或手机号" clearable style="width: 160px" @keyup.enter="search" />
+        </el-form-item>
+        <el-form-item label="指定伙伴">
+          <PromoterSelect v-model="query.promoterId" clearable placeholder="远程搜索选择伙伴" style="width: 240px" />
+        </el-form-item>
+        <template v-if="viewMode === 'nonOutbound'">
+          <el-form-item label="来源类型">
+            <el-select v-model="nonOut.sourceType" placeholder="全部非出库来源" clearable style="width: 155px">
+              <el-option label="园区租赁" :value="1" />
+              <el-option label="云仓直签平台费" :value="3" />
+              <el-option label="入仓签约奖" :value="4" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="状态">
+            <el-select v-model="nonOut.status" placeholder="全部状态" clearable style="width: 140px">
+              <el-option v-for="(label, val) in NON_OUT_ST" :key="val" :label="label" :value="Number(val)" />
+            </el-select>
+          </el-form-item>
+        </template>
         <el-form-item>
           <el-button type="primary" @click="search"><el-icon><Search /></el-icon>查询</el-button>
           <el-button @click="reset">重置</el-button>
@@ -11,7 +36,8 @@
       </el-form>
     </div>
 
-    <div class="table-card">
+    <!-- ===================== 视图 1：出库单佣金按月汇总 ===================== -->
+    <div v-if="viewMode === 'outbound'" class="table-card">
       <div class="toolbar">
         <el-button type="primary" plain @click="openMonthly()">按合同月结</el-button>
         <el-button @click="batches.visible = true; loadBatches()">结算批次</el-button>
@@ -37,6 +63,98 @@
           <template #default="{ row }"><el-button link type="primary" @click.stop="openContract(row)">每月结算</el-button></template>
         </el-table-column>
       </el-table>
+    </div>
+
+    <!-- ===================== 视图 2：租赁 / 直签平台费 / 签约奖结算 ===================== -->
+    <div v-else class="table-card">
+      <div class="toolbar">
+        <el-button
+          type="primary"
+          :loading="nonOut.settling"
+          :disabled="!nonOut.selectedIds.length"
+          @click="settleSelectedNonOutbound"
+        >
+          立即结算入池（已选 {{ nonOut.selectedIds.length }} 笔）
+        </el-button>
+        <el-button @click="batches.visible = true; loadBatches()">结算批次</el-button>
+        <span class="hint">涵盖园区租赁签约返佣、云仓直签实收平台费分佣与入仓签约奖。状态为「已解冻可结算」的记录支持多选或单行点击「立即结算入池」，入池后直接计入伙伴可提现余额。</span>
+      </div>
+
+      <el-table
+        :data="nonOut.list"
+        v-loading="nonOut.loading"
+        border
+        stripe
+        row-key="id"
+        @selection-change="onNonOutSelectionChange"
+      >
+        <el-table-column type="selection" width="48" :selectable="canSettleNonOutRow" />
+        <el-table-column prop="id" label="流水ID" width="80" />
+        <el-table-column label="来源类型" width="140">
+          <template #default="{ row }">
+            <el-tag :type="nonOutSourceTag(row).type" size="small">{{ nonOutSourceTag(row).label }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="伙伴姓名" min-width="130">
+          <template #default="{ row }">
+            <div>{{ row.promoterName || `#${row.promoterId}` }}</div>
+            <div class="sub">{{ row.positionCode || '—' }} · #{{ row.promoterId }}</div>
+          </template>
+        </el-table-column>
+        <el-table-column label="关联单号" min-width="170">
+          <template #default="{ row }">
+            <code>{{ row.orderSourceNo || row.sourceNo || `#${row.referralOrderId}` }}</code>
+            <div v-if="row.customerName || row.contractNo" class="sub">
+              {{ [row.customerName, row.contractNo].filter(Boolean).join(' · ') }}
+            </div>
+          </template>
+        </el-table-column>
+        <el-table-column label="佣金金额(元)" width="130" align="right">
+          <template #default="{ row }">
+            <span :class="{ neg: row.sign === -1 }">{{ money(row.amount) }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="当前状态" width="130">
+          <template #default="{ row }">
+            <el-tag :type="stType(row.status)" size="small">{{ NON_OUT_ST[row.status] || ST[row.status] || row.status }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="解冻 / 生成时间" width="170">
+          <template #default="{ row }">{{ row.unfreezeAt || row.createTime || '—' }}</template>
+        </el-table-column>
+        <el-table-column label="操作" width="160" fixed="right">
+          <template #default="{ row }">
+            <el-button
+              v-if="canSettleNonOutRow(row)"
+              link
+              type="primary"
+              :loading="nonOut.settling"
+              @click="settleSingleNonOutbound(row)"
+            >
+              立即结算入池
+            </el-button>
+            <el-button
+              v-if="[1, 2].includes(row.status) && row.sign === 1 && !row.withdrawalId"
+              link
+              type="danger"
+              @click="voidNonOutOne(row)"
+            >
+              作废
+            </el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+
+      <el-pagination
+        class="pager"
+        background
+        layout="total, prev, pager, next, sizes"
+        :total="nonOut.total"
+        v-model:current-page="nonOut.pageNo"
+        v-model:page-size="nonOut.pageSize"
+        :page-sizes="[10, 20, 50]"
+        @change="loadNonOutbound"
+      />
     </div>
 
     <el-drawer v-model="contractView.visible" :title="drawerTitle" size="min(980px, 96vw)">
@@ -72,7 +190,7 @@
       </template>
     </el-drawer>
 
-    <el-drawer v-model="detail.visible" :title="`${detail.title} 佣金明细（按发货日）`" size="920px">
+    <el-drawer v-model="detail.visible" :title="`${detail.title} 佣金明细（按发货日）`" size="min(920px, 96vw)">
       <el-table :data="detail.list" v-loading="detail.loading" border stripe size="small">
         <el-table-column prop="id" label="ID" width="70" />
         <el-table-column label="发货日" width="110"><template #default="{ row }">{{ row.orderEventTime ? String(row.orderEventTime).slice(0, 10) : '—' }}</template></el-table-column>
@@ -89,7 +207,8 @@
       <el-pagination class="pager" small background layout="total, prev, pager, next" :total="detail.total"
                      v-model:current-page="detail.pageNo" :page-size="detail.pageSize" @current-change="loadDetail" />
     </el-drawer>
-    <el-drawer v-model="batches.visible" title="结算批次" size="520px">
+
+    <el-drawer v-model="batches.visible" title="结算批次" size="min(520px, 94vw)">
       <el-table :data="batches.list" size="small" border>
         <el-table-column prop="batchNo" label="批次号" width="180" />
         <el-table-column prop="cnt" label="条数" width="70" />
@@ -131,21 +250,119 @@
 
 <script setup>
 import { reactive, ref, computed, onMounted, h } from 'vue'
+import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { mktCommissionApi, mktContractApi } from '@/api/marketing'
 import { money } from '@/utils/format'
 import CommissionBasis from './CommissionBasis.vue'
+import PromoterSelect from './PromoterSelect.vue'
 import { groupByContract, settleShares } from './commissionGroups'
 
+const route = useRoute()
+
 const ST = { 1: '冻结', 2: '可结算', 3: '已结算', 4: '已提现', 5: '作废' }
+const NON_OUT_ST = { 1: '冻结中', 2: '已解冻可结算', 3: '已结算', 4: '已提现', 5: '已作废' }
 const SIGN = { 1: '园区签', 2: '直签' }
 const stType = (s) => ({ 2: 'success', 3: '', 4: 'info', 5: 'danger' }[s] || 'warning')
 
+const viewMode = ref(route?.query?.view === 'nonOutbound' ? 'nonOutbound' : 'outbound')
 const loading = ref(false)
 const months = ref([])
 const query = reactive({ promoterId: null, promoterName: '' })
 const isFiltered = computed(() => !!query.promoterId || !!String(query.promoterName || '').trim())
 const amt = (v) => Number(v || 0).toFixed(3)
+
+// ==================== 非出库佣金视图状态 ====================
+const nonOut = reactive({
+  loading: false,
+  settling: false,
+  sourceType: null,
+  status: null,
+  pageNo: 1,
+  pageSize: 20,
+  list: [],
+  total: 0,
+  selectedIds: []
+})
+
+function nonOutSourceTag(row) {
+  const st = Number(row.sourceType ?? row.orderSourceType ?? 0)
+  if (st === 1) return { label: '园区租赁', type: 'primary' }
+  if (st === 3) return { label: '云仓直签平台费', type: 'warning' }
+  if (st === 4) return { label: '入仓签约奖', type: 'success' }
+  const no = String(row.orderSourceNo || row.sourceNo || '')
+  if (no.startsWith('DP') || no.includes('PF')) return { label: '云仓直签平台费', type: 'warning' }
+  if (no.startsWith('CB') || no.includes('BONUS')) return { label: '入仓签约奖', type: 'success' }
+  return { label: '园区租赁', type: 'primary' }
+}
+
+function canSettleNonOutRow(row) {
+  return Number(row?.status) === 2 && Number(row?.sign ?? 1) === 1 && !row?.withdrawalId
+}
+
+function onNonOutSelectionChange(rows) {
+  nonOut.selectedIds = (rows || []).filter(canSettleNonOutRow).map(r => r.id)
+}
+
+async function loadNonOutbound() {
+  nonOut.loading = true
+  try {
+    const res = await mktCommissionApi.page({
+      nonOutbound: true,
+      pageNo: nonOut.pageNo,
+      pageSize: nonOut.pageSize,
+      promoterId: query.promoterId || undefined,
+      promoterName: String(query.promoterName || '').trim() || undefined,
+      sourceType: nonOut.sourceType || undefined,
+      status: nonOut.status || undefined
+    })
+    nonOut.list = res?.records || []
+    nonOut.total = Number(res?.total || 0)
+    nonOut.selectedIds = []
+  } finally {
+    nonOut.loading = false
+  }
+}
+
+async function settleSingleNonOutbound(row) {
+  if (!canSettleNonOutRow(row) || nonOut.settling) return
+  nonOut.settling = true
+  try {
+    const batchNo = await mktCommissionApi.settle([row.id])
+    ElMessage.success(`已结算入池${batchNo ? `（批次 ${batchNo}）` : ''}`)
+    await loadNonOutbound()
+  } finally {
+    nonOut.settling = false
+  }
+}
+
+async function settleSelectedNonOutbound() {
+  if (!nonOut.selectedIds.length || nonOut.settling) return
+  try {
+    await ElMessageBox.confirm(`确认将已选中的 ${nonOut.selectedIds.length} 笔已解冻佣金立即结算入伙伴可提现余额池？`, '批量结算入池', { type: 'warning' })
+  } catch { return }
+  nonOut.settling = true
+  try {
+    const batchNo = await mktCommissionApi.settle([...nonOut.selectedIds])
+    ElMessage.success(`已批量结算 ${nonOut.selectedIds.length} 笔${batchNo ? `（批次 ${batchNo}）` : ''}`)
+    await loadNonOutbound()
+  } finally {
+    nonOut.settling = false
+  }
+}
+
+async function voidNonOutOne(row) {
+  let reason = ''
+  try {
+    const res = await ElMessageBox.prompt('请填写作废原因', '作废非出库佣金', { inputPattern: /\S+/, inputErrorMessage: '原因必填' })
+    reason = res.value.trim()
+  } catch { return }
+  await mktCommissionApi.void(row.id, { reason })
+  ElMessage.success('已作废')
+  await loadNonOutbound()
+}
+
+// ==================== 出库按月汇总视图 ====================
 // 主列表一个合同一行;点进合同看每月(结算后数据刷新,抽屉跟着变)
 const contracts = computed(() => groupByContract(months.value))
 const totals = computed(() => contracts.value.reduce((s, c) => {
@@ -172,14 +389,38 @@ const SettleBar = (props) => {
 }
 SettleBar.props = ['row']
 
-async function load() {
+async function loadOutbound() {
   loading.value = true
   try {
-    months.value = await mktCommissionApi.monthly({ promoterId: query.promoterId || undefined, promoterName: String(query.promoterName || '').trim() || undefined })
+    months.value = await mktCommissionApi.monthly({
+      promoterId: query.promoterId || undefined,
+      promoterName: String(query.promoterName || '').trim() || undefined
+    })
   } finally { loading.value = false }
 }
-function search() { load() }
-function reset() { Object.assign(query, { promoterId: null, promoterName: '' }); load() }
+
+async function load() {
+  if (viewMode.value === 'nonOutbound') return loadNonOutbound()
+  return loadOutbound()
+}
+
+function onViewChange() {
+  nonOut.pageNo = 1
+  load()
+}
+
+function search() {
+  nonOut.pageNo = 1
+  load()
+}
+
+function reset() {
+  Object.assign(query, { promoterId: null, promoterName: '' })
+  nonOut.sourceType = null
+  nonOut.status = null
+  nonOut.pageNo = 1
+  load()
+}
 
 // 一行 = 一个合同的一个月份:直接按合同月结
 async function settleRow(row) {
@@ -189,7 +430,7 @@ async function settleRow(row) {
   const result = await mktCommissionApi.settleContract({ contractId: row.contractId, month: row.month })
   if (result.settleCount > 0) ElMessage.success(`已结算 ${result.settleCount} 条,批次 ${result.batchNo}`)
   else ElMessage.info('该月份没有可结算的佣金')
-  await load()
+  await loadOutbound()
 }
 
 const detail = reactive({ visible: false, loading: false, title: '', contractId: null, month: null, list: [], total: 0, pageNo: 1, pageSize: 20 })
@@ -206,7 +447,7 @@ function openDetail(row) {
 }
 async function voidOne(row) {
   const { value } = await ElMessageBox.prompt('作废原因', '作废佣金', { inputPattern: /\S+/, inputErrorMessage: '原因必填' })
-  await mktCommissionApi.void(row.id, { reason: value }); ElMessage.success('已作废'); await loadDetail(); await load()
+  await mktCommissionApi.void(row.id, { reason: value }); ElMessage.success('已作废'); await loadDetail(); await loadOutbound()
 }
 // 按合同月结:可选合同开始月到上个月之间的任意月份,随时可结
 const monthly = reactive({ visible: false, contracts: [], loadingContracts: false, contractId: null, month: null, settling: false, result: null })
@@ -248,7 +489,7 @@ async function runMonthly() {
     monthly.result = await mktCommissionApi.settleContract({ contractId: monthly.contractId, month: monthly.month })
     if (monthly.result.settleCount > 0) ElMessage.success(`已结算 ${monthly.result.settleCount} 条,批次 ${monthly.result.batchNo}`)
     else ElMessage.info(`该合同 ${monthly.month} 月没有可结算的佣金`)
-    await load()
+    await loadOutbound()
   } finally { monthly.settling = false }
 }
 
@@ -259,9 +500,20 @@ async function loadBatches() {
 }
 
 onMounted(load)
+
+defineExpose({
+  viewMode,
+  query,
+  nonOut,
+  onViewChange,
+  loadNonOutbound,
+  settleSingleNonOutbound,
+  settleSelectedNonOutbound
+})
 </script>
 
 <style scoped>
+.view-switch { margin-bottom: 12px; }
 .toolbar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .hint { color: var(--el-text-color-secondary); font-size: 12px; }
 .hint-block { flex-basis: 100%; margin: 4px 0 0; line-height: 1.6; }

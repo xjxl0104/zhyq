@@ -49,8 +49,9 @@ public class MktServiceFeeBillService {
         List<MktReferralOrder> orders = orderMapper.selectList(new LambdaQueryWrapper<MktReferralOrder>()
                 .eq(MktReferralOrder::getSourceId, contractId).eq(MktReferralOrder::getCustomerId, contract.getCustomerId())
                 .eq(MktReferralOrder::getWarehouseId, contract.getWarehouseId()).eq(MktReferralOrder::getSourceType, 2)
-                // 云山发货量汇总订单(YS- 前缀)只计佣、没有服务费，不进服务费账单
-                .notLikeRight(MktReferralOrder::getSourceNo, "YS-")
+                // 普通出库单全量纳入(无服务费在下方报错拦截);云山汇总单(YS- 前缀)在配置了单票服务费(service_fee > 0)时纳入服务费账单
+                .and(q -> q.notLikeRight(MktReferralOrder::getSourceNo, "YS-")
+                        .or().gt(MktReferralOrder::getServiceFee, BigDecimal.ZERO))
                 .eq(MktReferralOrder::getStatus, 2).ge(MktReferralOrder::getEventTime, start.atStartOfDay())
                 .lt(MktReferralOrder::getEventTime, end.plusDays(1).atStartOfDay())
                 .notInSql(MktReferralOrder::getId, "SELECT referral_order_id FROM crm_service_fee_bill_line WHERE deleted=0 AND referral_order_id IS NOT NULL")

@@ -13,6 +13,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.web.bind.annotation.*;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -28,13 +29,24 @@ public class MktSettingController {
     private static final String MODULE = "marketing";
     private static final String ARRIVAL_TIME = "withdraw_arrival_time";
     private static final String ARRIVAL_REMARK = "提现实际处理与到账时效说明，请按可履行的运营安排填写（最多200字）";
+    private static final String WINDOW_START_KEY = "withdraw_window_start_day";
+    private static final String WINDOW_START_REMARK = "提现申请开放起始日（0 表示全月随时可提交；1–28 表示每月固定开放起始日）";
+    private static final String WINDOW_END_KEY = "withdraw_window_end_day";
+    private static final String WINDOW_END_REMARK = "提现申请开放截止日（1–31，起始日为 0 时忽略）";
+    private static final String AUTO_WITHDRAW_KEY = "auto_withdraw_day";
+    private static final String AUTO_WITHDRAW_REMARK = "每月自动提现日：当天 10:00 自动将可提现余额发起提现申请（0 关闭，1–28）";
+
+    /** 后端 0 次读取的幽灵历史参数:查询时不展示以防误导管理员。 */
+    public static final Set<String> RETIRED_GHOST_KEYS = Set.of(
+            "attribution_rule", "protect_days", "dup_customer_fields", "internal_commission",
+            "monthly_cap", "default_sign_mode", "lease_renew_ratio", "invite_grace_days");
+
     private static final Set<String> ALLOWED = Set.of(
             "ladder_depth", "override_enabled", "freeze_days",
-            "daily_referral_cap", "attribution_rule", "protect_days", "dup_customer_fields", "clawback_days",
-            "old_channel_exclusive", "internal_commission", "monthly_cap", "tax_mode", "tax_rate",
-            "default_sign_mode", "lock_cooldown_days",
-            "lease_clawback_days", "lease_renew_ratio", "invite_grace_days",
-            "withdraw_window_start_day", "withdraw_window_end_day", "auto_withdraw_day", ARRIVAL_TIME);
+            "daily_referral_cap", "clawback_days",
+            "old_channel_exclusive", "tax_mode", "tax_rate",
+            "lock_cooldown_days", "lease_clawback_days",
+            WINDOW_START_KEY, WINDOW_END_KEY, AUTO_WITHDRAW_KEY, ARRIVAL_TIME);
 
     private final JdbcTemplate jdbc;
     private final MktAuditService auditService;
@@ -45,12 +57,23 @@ public class MktSettingController {
     public Result<List<Map<String, Object>>> all() {
         List<Map<String, Object>> rows = new ArrayList<>(jdbc.queryForList(
                 "SELECT skey, svalue, remark FROM biz_setting WHERE module = ? AND deleted = 0 "
-                        + "AND skey NOT IN ('min_withdraw', 'withdraw_free_times', 'prelock_days', 'lock_days', 'lock_extend_days', 'withdraw_approver_username', 'withdraw_approver_promoter_id') ORDER BY id", MODULE));
-        // The default is visible without writing during GET; saving it creates the missing setting.
-        if (rows.stream().noneMatch(row -> ARRIVAL_TIME.equals(row.get("skey")))) {
-            rows.add(Map.of("skey", ARRIVAL_TIME, "svalue", MktWithdrawalService.DEFAULT_ARRIVAL_TIME, "remark", ARRIVAL_REMARK));
-        }
+                        + "AND skey NOT IN ('min_withdraw', 'withdraw_free_times', 'prelock_days', 'lock_days', 'lock_extend_days', "
+                        + "'withdraw_approver_username', 'withdraw_approver_promoter_id', "
+                        + "'attribution_rule', 'protect_days', 'dup_customer_fields', 'internal_commission', "
+                        + "'monthly_cap', 'default_sign_mode', 'lease_renew_ratio', 'invite_grace_days') ORDER BY id", MODULE));
+        rows.removeIf(row -> row != null && RETIRED_GHOST_KEYS.contains(String.valueOf(row.get("skey"))));
+        // The defaults are visible without writing during GET; saving them creates any missing setting.
+        ensureVirtualDefault(rows, ARRIVAL_TIME, MktWithdrawalService.DEFAULT_ARRIVAL_TIME, ARRIVAL_REMARK);
+        ensureVirtualDefault(rows, WINDOW_START_KEY, "0", WINDOW_START_REMARK);
+        ensureVirtualDefault(rows, WINDOW_END_KEY, "31", WINDOW_END_REMARK);
+        ensureVirtualDefault(rows, AUTO_WITHDRAW_KEY, "10", AUTO_WITHDRAW_REMARK);
         return Result.ok(rows);
+    }
+
+    private static void ensureVirtualDefault(List<Map<String, Object>> rows, String key, String defaultValue, String remark) {
+        if (rows.stream().noneMatch(row -> key.equals(row.get("skey")))) {
+            rows.add(Map.of("skey", key, "svalue", defaultValue, "remark", remark));
+        }
     }
 
     @Operation(summary = "批量保存(只改白名单 key)")
@@ -77,8 +100,20 @@ public class MktSettingController {
                 saveArrivalTime(value);
                 continue;
             }
-            if ("auto_withdraw_day".equals(key) && (value == null || !value.trim().matches("\\d{1,2}") || Integer.parseInt(value.trim()) > 28)) {
-                throw new BizException("自动提现日请填写 0–28（0 表示关闭自动提现）");
+            if (WINDOW_START_KEY.equals(key)) {
+                int day = parseBoundedInt(value, 0, 28, "提现申请开放起始日请填写 0–28（0 表示全月随时可提交）");
+                upsertSetting(WINDOW_START_KEY, String.valueOf(day), WINDOW_START_REMARK, "提现窗口起始日设置已变化，请刷新页面后重试");
+                continue;
+            }
+            if (WINDOW_END_KEY.equals(key)) {
+                int day = parseBoundedInt(value, 1, 31, "提现申请开放截止日请填写 1–31");
+                upsertSetting(WINDOW_END_KEY, String.valueOf(day), WINDOW_END_REMARK, "提现窗口截止日设置已变化，请刷新页面后重试");
+                continue;
+            }
+            if (AUTO_WITHDRAW_KEY.equals(key)) {
+                int day = parseBoundedInt(value, 0, 28, "自动提现日请填写 0–28（0 表示关闭自动提现）");
+                upsertSetting(AUTO_WITHDRAW_KEY, String.valueOf(day), AUTO_WITHDRAW_REMARK, "自动提现日设置已变化，请刷新页面后重试");
+                continue;
             }
             String before = jdbc.query("SELECT svalue FROM biz_setting WHERE module = ? AND skey = ? AND deleted = 0 LIMIT 1",
                     rs -> rs.next() ? rs.getString(1) : null, MODULE, key);
@@ -91,15 +126,30 @@ public class MktSettingController {
         return Result.ok();
     }
 
+    private static int parseBoundedInt(String raw, int min, int max, String errorMsg) {
+        if (raw == null || !raw.trim().matches("\\d{1,2}")) {
+            throw new BizException(errorMsg);
+        }
+        int parsed = Integer.parseInt(raw.trim());
+        if (parsed < min || parsed > max) {
+            throw new BizException(errorMsg);
+        }
+        return parsed;
+    }
+
     private void saveArrivalTime(String input) {
         String value = input == null ? "" : input.trim();
         if (value.isEmpty() || value.codePointCount(0, value.length()) > 200) {
             throw new BizException("请填写实际提现到账时效说明，不能为空且最多200字");
         }
+        upsertSetting(ARRIVAL_TIME, value, ARRIVAL_REMARK, "提现到账时效设置已变化，请刷新页面后重试");
+    }
+
+    private void upsertSetting(String key, String value, String remark, String conflictMsg) {
         // biz_setting has a non-unique index. Lock the key range and guard insertion;
         // ON DUPLICATE KEY would not prevent a second row for a previously absent key.
         List<Map<String, Object>> existing = jdbc.queryForList(
-                "SELECT svalue FROM biz_setting WHERE module = ? AND skey = ? AND deleted = 0 FOR UPDATE", MODULE, ARRIVAL_TIME);
+                "SELECT svalue FROM biz_setting WHERE module = ? AND skey = ? AND deleted = 0 FOR UPDATE", MODULE, key);
         String before = existing.isEmpty() ? null : (String) existing.get(0).get("svalue");
         if (value.equals(before)) return;
         int changed;
@@ -108,12 +158,12 @@ public class MktSettingController {
             changed = jdbc.update("INSERT INTO biz_setting (module, skey, svalue, remark, create_by, create_time, update_by, update_time) "
                             + "SELECT ?, ?, ?, ?, ?, NOW(), ?, NOW() WHERE NOT EXISTS "
                             + "(SELECT 1 FROM biz_setting WHERE module = ? AND skey = ? AND deleted = 0)",
-                    MODULE, ARRIVAL_TIME, value, ARRIVAL_REMARK, operator, operator, MODULE, ARRIVAL_TIME);
+                    MODULE, key, value, remark, operator, operator, MODULE, key);
         } else {
             changed = jdbc.update("UPDATE biz_setting SET svalue = ?, update_time = NOW() WHERE module = ? AND skey = ? AND deleted = 0",
-                    value, MODULE, ARRIVAL_TIME);
+                    value, MODULE, key);
         }
-        if (changed < 1) throw new BizException("提现到账时效设置已变化，请刷新页面后重试");
-        auditService.log("setting.change", "setting", null, ARRIVAL_TIME, before, value);
+        if (changed < 1) throw new BizException(conflictMsg);
+        auditService.log("setting.change", "setting", null, key, before, value);
     }
 }

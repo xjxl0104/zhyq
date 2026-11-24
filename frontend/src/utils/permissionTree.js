@@ -3,7 +3,10 @@ import { menuTree as navigation } from '../layout/menu'
 const pathOf = path => path ? `/${path.replace(/^\/+|\/+$/g, '')}` : ''
 const ALIASES = {
   '/budget/supplier': '/property/responsible-unit',
-  '/budget/supplier-contract': '/property/responsible-unit'
+  '/budget/supplier-contract': '/property/responsible-unit',
+  '/crm/marketing/position': '/crm/marketing/setting',
+  '/crm/marketing/grade': '/crm/marketing/setting',
+  '/crm/marketing/template': '/crm/marketing/contract'
 }
 export function isRetiredPermission(menu) {
   return ['/system/dept', '/system/post'].includes(pathOf(menu.path))
@@ -20,6 +23,9 @@ const RESOURCE_PATHS = {
   'pur:supplierContract': '/property/responsible-unit', 'bi:admin': '/bi/admin',
   'bi:product': '/bi/product', suggestion: '/suggestion/manage',
   'crm:marketing:account': '/crm/marketing/promoter',
+  'crm:marketing:position': '/crm/marketing/setting',
+  'crm:marketing:grade': '/crm/marketing/setting',
+  'crm:marketing:template': '/crm/marketing/contract',
   'workflow:definition': '/budget/flow', vending: '/app/center'
 }
 const SHARED = {

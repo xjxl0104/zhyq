@@ -10,9 +10,13 @@ import com.zhyq.park.marketing.entity.*;
 import com.zhyq.park.marketing.mapper.*;
 import com.zhyq.park.marketing.service.*;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
@@ -21,7 +25,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.*;
 
 class MktReferralOrderControllerTest {
-    @BeforeAll static void tables(){var a=new MapperBuilderAssistant(new MybatisConfiguration(),"");TableInfoHelper.initTableInfo(a,MktReferralOrder.class);TableInfoHelper.initTableInfo(a,MktServiceFeeBillLine.class);TableInfoHelper.initTableInfo(a,MktServiceContract.class);}
+    @BeforeAll static void tables(){var a=new MapperBuilderAssistant(new MybatisConfiguration(),"");TableInfoHelper.initTableInfo(a,MktReferralOrder.class);TableInfoHelper.initTableInfo(a,MktServiceFeeBillLine.class);TableInfoHelper.initTableInfo(a,MktServiceContract.class);TableInfoHelper.initTableInfo(a,MktPromoterCommission.class);}
+    @AfterEach void clearAuth(){SecurityContextHolder.clearContext();}
     @Test void everyServiceContractSourceShowsItsContractNumber(){
         var orders=mock(MktReferralOrderMapper.class);var contracts=mock(MktServiceContractMapper.class);
         var sc=new MktServiceContract();sc.setId(9L);sc.setContractNo("CS-9");sc.setSignMode(1);when(contracts.selectById(9L)).thenReturn(sc);
@@ -61,5 +66,48 @@ class MktReferralOrderControllerTest {
         assertThatThrownBy(()->controller.voidOrder(7L,Map.of("reason","退款"))).isInstanceOf(BizException.class).hasMessageContaining("联系财务");
         verifyNoInteractions(commissions);
         var inOrder=inOrder(orders,lines);inOrder.verify(orders).update(isNull(),any());inOrder.verify(lines).selectCount(any());
+    }
+    @Test void contractCommissionsExcludesVoidedRows() {
+        var commMapper = mock(MktPromoterCommissionMapper.class);
+        var promoterMapper = mock(MktPromoterMapper.class);
+        var valid = new MktPromoterCommission(); valid.setPromoterId(4L); valid.setStatus(MktCommissionService.C_SETTLED); valid.setAmount(new BigDecimal("12.50"));
+        var voided = new MktPromoterCommission(); voided.setPromoterId(4L); voided.setStatus(MktCommissionService.C_VOID); voided.setAmount(new BigDecimal("99.00"));
+        when(commMapper.selectList(any())).thenReturn(List.of(valid, voided));
+        var p = new MktPromoter(); p.setId(4L); p.setName("丁超"); p.setPositionCode("P4");
+        when(promoterMapper.selectBatchIds(any())).thenReturn(List.of(p));
+        var ctrl = new MktReferralOrderController(mock(MktReferralOrderMapper.class), commMapper, promoterMapper,
+                mock(CustomerMapper.class), mock(MktServiceContractMapper.class), mock(MktWarehouseMapper.class),
+                mock(MktCommissionService.class), mock(MktAuditService.class), mock(MktServiceFeeBillLineMapper.class),
+                mock(MktCustomerPricingService.class), mock(MktAdminActorService.class));
+        var list = ctrl.contractCommissions(100L).getData();
+        assertThat(list).hasSize(1);
+        assertThat((BigDecimal) list.get(0).get("total")).isEqualByComparingTo("12.50");
+        assertThat(list.get(0).get("count")).isEqualTo(1);
+    }
+    @Test void superAdminWithoutPromoterProfileCanSaveContractPricingViaOwnerP4WhileRegularStaffCannot() {
+        var pricing = mock(MktCustomerPricingService.class);
+        var actorService = mock(MktAdminActorService.class);
+        var audit = mock(MktAuditService.class);
+        var ctrl = new MktReferralOrderController(mock(MktReferralOrderMapper.class), mock(MktPromoterCommissionMapper.class),
+                mock(MktPromoterMapper.class), mock(CustomerMapper.class), mock(MktServiceContractMapper.class),
+                mock(MktWarehouseMapper.class), mock(MktCommissionService.class), audit,
+                mock(MktServiceFeeBillLineMapper.class), pricing, actorService);
+        var req = new MktReferralOrderController.ContractPricingSave(100L, new BigDecimal("1.000"), new BigDecimal("0.500"), List.of());
+
+        // 普通后台员工未关联伙伴档案 -> 拒绝
+        SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(
+                "operator1", null, List.of(new SimpleGrantedAuthority("crm:marketing:order:edit"))));
+        assertThatThrownBy(() -> ctrl.saveContractPricing(req))
+                .isInstanceOf(BizException.class).hasMessageContaining("未关联伙伴档案");
+        verifyNoInteractions(pricing);
+
+        // ROLE_admin 超级管理员未关联私人手机号 -> 代该合同负责 P4 保存并记录审计
+        var ownerP4 = new MktPromoter(); ownerP4.setId(4L); ownerP4.setPositionCode("P4"); ownerP4.setStatus(1);
+        when(pricing.resolveContractOwnerP4(100L)).thenReturn(ownerP4);
+        SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(
+                "admin", null, List.of(new SimpleGrantedAuthority("ROLE_admin"))));
+        ctrl.saveContractPricing(req);
+        verify(pricing).saveContract(eq(4L), eq(100L), any());
+        verify(audit).log(eq("pricing.contract.admin_proxy"), eq("service_contract"), eq(100L), contains("P4(4)"));
     }
 }

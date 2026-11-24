@@ -382,6 +382,30 @@ class MktServiceContractServiceTest {
         verify(auditService).log(eq("contract.void"), any(), eq(1L), eq("客户放弃"));
     }
 
+    @Test
+    void validateEconomicsPrefersConfiguredPerOrderPricingOverGradePercentage() {
+        var pricingService = org.mockito.Mockito.mock(MktCustomerPricingService.class);
+        service.setPricingService(pricingService);
+        MktServiceContract draft = contract(1L, MktServiceContractService.ST_DRAFT, 1);
+        draft.setPriceTable("{\"perOrder\":6.00}"); // warehouse cost is 5.00
+        when(contractMapper.selectById(1L)).thenReturn(draft);
+
+        // 当 P4 每单总佣金为 1.20 时: 6.00 - 5.00 - 1.20 = -0.20 < 0 -> 即使评级 8% 比例不亏也必须拦截!
+        when(pricingService.findPricingSnapshot(5L, 1L)).thenReturn(java.util.Optional.of(
+                new MktCustomerPricingService.PricingSnapshot(9L, 4L, "P4", new BigDecimal("1.200"),
+                        new BigDecimal("1.000"), new BigDecimal("0.200"), java.util.List.of())));
+        assertThatThrownBy(() -> service.submit(1L))
+                .isInstanceOf(BizException.class).hasMessageContaining("perOrder");
+
+        // 当 P4 每单总佣金为 0.80 时: 6.00 - 5.00 - 0.80 = 0.20 >= 0 -> 放行!
+        when(pricingService.findPricingSnapshot(5L, 1L)).thenReturn(java.util.Optional.of(
+                new MktCustomerPricingService.PricingSnapshot(9L, 4L, "P4", new BigDecimal("0.800"),
+                        new BigDecimal("0.700"), new BigDecimal("0.100"), java.util.List.of())));
+        updated(1);
+        service.submit(1L);
+        verify(auditService).log(eq("contract.submit"), eq("service_contract"), eq(1L), isNull());
+    }
+
     // ---- helpers ----
     private void updated(int rows) {
         lenient().when(contractMapper.update(isNull(), any(Wrapper.class))).thenReturn(rows);

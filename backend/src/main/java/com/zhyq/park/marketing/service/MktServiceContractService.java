@@ -79,6 +79,10 @@ public class MktServiceContractService {
     private final MktAuditService auditService;
     private final ApplicationEventPublisher eventPublisher;
     private final MktCustomerAssignmentService assignmentService;
+    /** 非构造注入：优先使用客户/合同已配置的 P4 每单总佣金做毛利校验，保持既有构造器兼容。 */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    @lombok.Setter
+    private MktCustomerPricingService pricingService;
     private static final ObjectMapper JSON = new ObjectMapper().findAndRegisterModules()
             .disable(com.fasterxml.jackson.databind.SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
     private static final Set<String> PRICE_KEYS = Set.of("perOrder", "perItem", "storage", "monthly");
@@ -425,30 +429,52 @@ public class MktServiceContractService {
         return MktFixedFeeBillingService.fixedAmount(c, c.getStartDate(), c.getStartDate().plusMonths(1));
     }
 
-    /** 按量报价必须覆盖承接成本及佣金；出库时仍按实际件数复核，避免报价后配置变化。 */
+    /** 按量报价必须覆盖承接成本及佣金；优先使用已配置的 P4 每单总佣金快照，未配置时回退评级佣金比例。 */
     private void validateEconomics(MktServiceContract c) {
         if (!Integer.valueOf(SIGN_MODE_PARK).equals(c.getSignMode())
                 || !(Integer.valueOf(2).equals(c.getFeeModel()) || Integer.valueOf(3).equals(c.getFeeModel()))) return;
         var warehouse = assignmentService.requireAvailableWarehouse(c.getWarehouseId(), c.getProjectId());
         JsonNode costs = parseJson(warehouse.getFeeModel(), "请先配置承接云仓的单票/按件成本价");
         if (!costs.isObject()) throw new BizException("云仓成本价格式无效");
+        JsonNode prices = parseJson(c.getPriceTable(), "单价表不是合法 JSON");
+        BigDecimal totalCost = BigDecimal.ZERO;
+        for (String key : java.util.List.of("perOrder", "perItem")) {
+            JsonNode costNode = costs.get(key);
+            if (costNode != null && (!costNode.isNumber() || costNode.decimalValue().signum() < 0)) throw new BizException("云仓成本价不合法");
+            totalCost = totalCost.add(costNode == null ? BigDecimal.ZERO : costNode.decimalValue());
+        }
+        if (totalCost.signum() <= 0) throw new BizException("请先配置承接云仓的单票/按件成本价");
+
+        var snapshotOpt = pricingService == null
+                ? java.util.Optional.<MktCustomerPricingService.PricingSnapshot>empty()
+                : pricingService.findPricingSnapshot(c.getCustomerId(), c.getId());
+        if (snapshotOpt.isPresent()) {
+            var pricing = snapshotOpt.get();
+            BigDecimal perOrder = prices.has("perOrder") ? prices.get("perOrder").decimalValue() : BigDecimal.ZERO;
+            BigDecimal costPerOrder = costs.has("perOrder") ? costs.get("perOrder").decimalValue() : BigDecimal.ZERO;
+            if (perOrder.subtract(costPerOrder).subtract(pricing.totalPerOrder()).signum() < 0) {
+                throw new BizException("报价不足以覆盖云仓成本与佣金，请调整合同单价：perOrder");
+            }
+            BigDecimal perItem = prices.has("perItem") ? prices.get("perItem").decimalValue() : BigDecimal.ZERO;
+            BigDecimal costPerItem = costs.has("perItem") ? costs.get("perItem").decimalValue() : BigDecimal.ZERO;
+            if (perItem.compareTo(costPerItem) < 0) {
+                throw new BizException("报价不足以覆盖云仓成本与佣金，请调整合同单价：perItem");
+            }
+            return;
+        }
+
         String gradeCode = StringUtils.hasText(c.getGrade()) ? c.getGrade() : "D";
         MktCustomerGrade grade = gradeMapper.selectOne(new LambdaQueryWrapper<MktCustomerGrade>()
                 .eq(MktCustomerGrade::getCode, gradeCode).last("limit 1"));
         if (grade == null || grade.getErpTotalRate() == null || grade.getErpTotalRate().signum() < 0
                 || grade.getErpTotalRate().compareTo(new BigDecimal("100")) > 0) throw new BizException("请先配置客户评级佣金比例");
         BigDecimal retained = BigDecimal.ONE.subtract(grade.getErpTotalRate().movePointLeft(2));
-        JsonNode prices = parseJson(c.getPriceTable(), "单价表不是合法 JSON");
-        BigDecimal totalCost = BigDecimal.ZERO;
         for (String key : java.util.List.of("perOrder", "perItem")) {
             JsonNode costNode = costs.get(key);
-            if (costNode != null && (!costNode.isNumber() || costNode.decimalValue().signum() < 0)) throw new BizException("云仓成本价不合法");
             BigDecimal cost = costNode == null ? BigDecimal.ZERO : costNode.decimalValue();
-            totalCost = totalCost.add(cost);
             BigDecimal price = prices.has(key) ? prices.get(key).decimalValue() : BigDecimal.ZERO;
             if (price.multiply(retained).compareTo(cost) < 0) throw new BizException("报价不足以覆盖云仓成本与佣金，请调整合同单价：" + key);
         }
-        if (totalCost.signum() <= 0) throw new BizException("请先配置承接云仓的单票/按件成本价");
     }
 
     private void lockCustomer(MktServiceContract c) {

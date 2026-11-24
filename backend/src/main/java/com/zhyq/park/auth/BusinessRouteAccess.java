@@ -29,6 +29,12 @@ public final class BusinessRouteAccess {
                 || path.equals("/building/floor/list")) && workOrder(grants)) return true;
         if (path.startsWith("/building/floor/") && path.endsWith("/plan")
                 && "GET".equals(method) && workOrder(grants)) return true;
+        // 提现单工作流审批端点由 MktWithdrawalViewService / WorkflowAccessService 校验当前节点审批人资格，避免跨部门审批人无营销菜单时在审批中心 403
+        if (("GET".equals(method) && (path.equals("/crm/marketing/withdrawal/page")
+                || path.matches("^/crm/marketing/withdrawal/\\d+$")))
+                || ("POST".equals(method) && path.matches("^/crm/marketing/withdrawal/\\d+/(approve|reject)$"))) {
+            return true;
+        }
 
         if (path.startsWith("/crm/marketing/quote/warehouses/")) {
             return switch (method) {

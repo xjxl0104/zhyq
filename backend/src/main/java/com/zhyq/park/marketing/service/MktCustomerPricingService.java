@@ -347,6 +347,51 @@ public class MktCustomerPricingService {
         return snapshotOf(pricing, owner);
     }
 
+    /** 只读尝试读取当前有效定价快照(供服务合同毛利校验优先使用,未配置时返回 empty)。 */
+    public Optional<PricingSnapshot> findPricingSnapshot(Long customerId, Long contractId) {
+        if (customerId == null) return Optional.empty();
+        MktCustomerPricing pricing = contractId == null ? null : latestByContract(contractId);
+        if (pricing == null) pricing = latest(customerId);
+        if (pricing == null) return Optional.empty();
+        MktPromoter owner = pricing.getOwnerPromoterId() == null ? null : promoterMapper.selectById(pricing.getOwnerPromoterId());
+        if (owner == null || !"P4".equals(owner.getPositionCode()) || !Integer.valueOf(1).equals(owner.getStatus())) {
+            return Optional.empty();
+        }
+        if (pricing.getContractId() == null) {
+            Customer customer = customerMapper.selectById(customerId);
+            MktPromoter currentOwner = customer == null ? null : ownerOf(customer);
+            if (currentOwner == null || !owner.getId().equals(currentOwner.getId())) {
+                return Optional.empty();
+            }
+        }
+        try {
+            return Optional.of(snapshotOf(pricing, owner));
+        } catch (BizException invalid) {
+            return Optional.empty();
+        }
+    }
+
+    /** 查找合同成交链路上的最近正常状态 P4(供超级管理员未绑私人伙伴手机号时代配分佣)。 */
+    public MktPromoter resolveContractOwnerP4(Long contractId) {
+        MktServiceContract contract = requireContract(contractId);
+        Long startId = contract.getPartnerId();
+        if (startId == null && contract.getCustomerId() != null) {
+            Customer customer = customerMapper.selectById(contract.getCustomerId());
+            if (customer != null) startId = customer.getReferrerId();
+        }
+        Set<Long> seen = new HashSet<>();
+        Long id = startId;
+        while (id != null && seen.add(id) && seen.size() <= 256) {
+            MktPromoter p = promoterMapper.selectById(id);
+            if (p == null) return null;
+            if ("P4".equals(p.getPositionCode())) {
+                return Integer.valueOf(1).equals(p.getStatus()) ? p : null;
+            }
+            id = p.getParentId();
+        }
+        return null;
+    }
+
     /** 校验定价版本当前仍可执行(受益人有效、金额自洽),返回计佣快照;客户定价与合同分配共用。 */
     private PricingSnapshot snapshotOf(MktCustomerPricing pricing, MktPromoter owner) {
         List<Beneficiary> items = readBeneficiaries(pricing);

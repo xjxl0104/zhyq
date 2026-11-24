@@ -331,16 +331,55 @@ class MktOnboardingAndLockServiceTest {
 
         @Test
         void expireReleasesDueLocks() {
-            MktCustomerLock a = new MktCustomerLock(); a.setId(1L); a.setStatus(2);
-            MktCustomerLock b = new MktCustomerLock(); b.setId(2L); b.setStatus(2);
+            MktCustomerLock a = new MktCustomerLock(); a.setId(1L); a.setCustomerId(5L); a.setPromoterId(9L); a.setStatus(2);
+            MktCustomerLock b = new MktCustomerLock(); b.setId(2L); b.setCustomerId(6L); b.setPromoterId(9L); b.setStatus(2);
             when(lockMapper.selectList(any(Wrapper.class))).thenReturn(List.of(a, b));
             when(lockMapper.update(isNull(), any(Wrapper.class))).thenReturn(1);
-            when(lockMapper.selectById(any())).thenReturn(a);
+            when(lockMapper.selectById(1L)).thenReturn(a);
+            when(lockMapper.selectById(2L)).thenReturn(b);
 
             int n = service.expire(LocalDateTime.now());
 
             assertThat(n).isEqualTo(2);
+            verify(customerMapper, times(2)).update(isNull(), any(Wrapper.class));
             verify(eventPublisher, times(2)).publishEvent(any(DomainEvent.CustomerLockChanged.class));
+        }
+
+        @Test
+        void releaseClearsCustomerReferrerToPublicSeaAndEnforcesCooldownOnlyOnFormerPartner() {
+            MktCustomerLock active = new MktCustomerLock();
+            active.setId(7L); active.setCustomerId(5L); active.setPromoterId(9L); active.setStatus(MktLockService.LS_LOCKED);
+            when(lockMapper.update(isNull(), any(Wrapper.class))).thenReturn(1);
+            when(lockMapper.selectById(7L)).thenReturn(active);
+
+            service.release(7L, "跟进超时释放公海", "ops");
+
+            ArgumentCaptor<Wrapper> custCap = ArgumentCaptor.forClass(Wrapper.class);
+            verify(customerMapper).update(isNull(), custCap.capture());
+            assertThat(((LambdaUpdateWrapper<?>) custCap.getValue()).getSqlSet()).contains("referrer_id=");
+
+            // 释放后 customer.referrerId 已清空为 null:原伙伴(9L) 30 天冷却期内重报被拒绝,其他伙伴(12L)可接管锁定3个月
+            Customer publicCustomer = new Customer(); publicCustomer.setId(5L); publicCustomer.setReferrerId(null); publicCustomer.setStatus(1);
+            when(customerMapper.selectForUpdate(5L)).thenReturn(publicCustomer);
+            when(customerMapper.update(isNull(), any(Wrapper.class))).thenReturn(1);
+            when(promoterMapper.selectForUpdate(9L)).thenReturn(normalPromoter());
+            MktPromoter other = new MktPromoter(); other.setId(12L); other.setStatus(1); other.setPositionCode("P1");
+            when(promoterMapper.selectForUpdate(12L)).thenReturn(other);
+            MktPosition pos = new MktPosition(); pos.setCode("P1"); pos.setLockCap(50);
+            when(positionMapper.selectOne(any(Wrapper.class))).thenReturn(pos);
+            when(bizSettings.getInt(eq("marketing"), eq("lock_cooldown_days"), anyInt())).thenReturn(30);
+
+            // 模拟原伙伴 9L 有近期释放记录 -> checkCooldown 命中 > 0
+            when(lockMapper.selectCount(any(Wrapper.class))).thenReturn(0L, 1L);
+            assertThatThrownBy(() -> service.prelock(5L, 9L))
+                    .isInstanceOf(BizException.class).hasMessageContaining("30 天内不可再次报备");
+
+            // 模拟新伙伴 12L 无冷却记录 -> 成功接管并锁定三个月
+            when(lockMapper.selectCount(any(Wrapper.class))).thenReturn(0L, 0L);
+            MktCustomerLock reclaimed = service.prelock(5L, 12L);
+            assertThat(reclaimed.getPromoterId()).isEqualTo(12L);
+            assertThat(reclaimed.getStatus()).isEqualTo(MktLockService.LS_LOCKED);
+            assertThat(reclaimed.getLockUntil()).isAfter(LocalDateTime.now().plusMonths(2));
         }
     }
 }

@@ -62,4 +62,16 @@ class BusinessRouteAccessTest {
         assertThat(BusinessRouteAccess.allowed(path, "GET", Set.of("finance:bill:query"))).isFalse();
         assertThat(BusinessRouteAccess.allowed(path, "GET", Set.of())).isFalse();
     }
+
+    @Test void crossDepartmentApproversReachWithdrawalTaskEndpointsWhileSensitivePayoutApisStayGuarded() {
+        Set<String> oaApprover = Set.of("MENU:/oa/approval");
+        assertThat(BusinessRouteAccess.allowed("/crm/marketing/withdrawal/18", "GET", oaApprover)).isTrue();
+        assertThat(BusinessRouteAccess.allowed("/crm/marketing/withdrawal/18/approve", "POST", oaApprover)).isTrue();
+        assertThat(BusinessRouteAccess.allowed("/crm/marketing/withdrawal/18/reject", "POST", oaApprover)).isTrue();
+        // 收款明文账号解密与代申请仍受营销财务权限点严格保护
+        assertThat(BusinessRouteAccess.allowed("/crm/marketing/withdrawal/18/pay-account", "GET", oaApprover)).isFalse();
+        assertThat(BusinessRouteAccess.allowed("/crm/marketing/withdrawal/manual", "POST", oaApprover)).isFalse();
+        // 小程序令牌在入口即被隔离，不能借此进入后台提现接口
+        assertThat(BusinessRouteAccess.allowed("/crm/marketing/withdrawal/18", "GET", Set.of("ROLE_MP"))).isFalse();
+    }
 }
