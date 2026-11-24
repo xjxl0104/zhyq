@@ -30,7 +30,10 @@ public class WxQuickLoginService {
     public enum Identity { MP, WH }
     public record Request(@JsonProperty(access = JsonProperty.Access.WRITE_ONLY) String jsCode, String appId,
                           Boolean agreed, @JsonProperty(access = JsonProperty.Access.WRITE_ONLY) String phoneCode,
-                          String phone, String inviteCode, String name) {
+                          String phone, String inviteCode, String name, Boolean memberOnly) {
+        public Request(String jsCode, String appId, Boolean agreed, String phoneCode, String phone, String inviteCode, String name) {
+            this(jsCode, appId, agreed, phoneCode, phone, inviteCode, name, false);
+        }
         public Request(String jsCode, String appId, Boolean agreed, String phoneCode, String phone, String inviteCode) {
             this(jsCode, appId, agreed, phoneCode, phone, inviteCode, null);
         }
@@ -60,6 +63,8 @@ public class WxQuickLoginService {
                 : whAuth.quickPhone(request.phoneCode(), request.phone());
         limiter.check("wx-quick:" + identity + ":" + session.openid(), 20);
         try {
+            if (identity == Identity.WH && Boolean.TRUE.equals(request.memberOnly()))
+                return whAuth.memberLogin(session.openid(), phone, request.name());
             return identity == Identity.MP ? partner(session.openid(), phone, request.inviteCode(), request.name()) : whAuth.quickLoginIdentity(session.openid(), phone, request.name());
         } catch (DuplicateKeyException e) {
             // Propagate out of the transaction: a losing registration must roll back its warehouse,

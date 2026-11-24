@@ -7,7 +7,7 @@ import java.util.*;
 
 /** Customer-facing nationwide contract rates. Omitted prices remain unknown; a free service is explicitly zero. */
 public record QuoteCard(String scopeNote, Map<String,BigDecimal> fields, List<Carrier> carriers,
-                        Map<String,BigDecimal> services) {
+                        Map<String,BigDecimal> services, Map<String,Map<String,String>> tariff) {
     public record Carrier(String name, Map<String,BigDecimal> rates, BigDecimal heavyLabelFee,
                           BigDecimal heavyPerKg, String scopeNote,String heavyRule,BigDecimal heavyFirstKg,
                           BigDecimal heavyFirstFee,BigDecimal heavyStepKg,BigDecimal heavyStepFee,BigDecimal heavyMaxKg) {
@@ -48,12 +48,12 @@ public record QuoteCard(String scopeNote, Map<String,BigDecimal> fields, List<Ca
             svc("整板调拨或退仓","板"),svc("拼箱调拨或退仓","箱"),svc("随货带走卡板","板"));
     private static Column svc(String s,String unit){return new Column(s,s,"元/"+unit);}
     public static Map<String,Object> schema(){
-        return Map.of("fields",FIELDS,"weights",WEIGHTS,"services",SERVICES,"couriers",COURIERS);
+        return Map.of("fields",FIELDS,"weights",WEIGHTS,"services",SERVICES,"couriers",COURIERS,"tariff",QuoteTariff.SECTIONS);
     }
-    public static QuoteCard empty(){return new QuoteCard("",Map.of(),List.of(),Map.of());}
+    public static QuoteCard empty(){return new QuoteCard("",Map.of(),List.of(),Map.of(),Map.of());}
 
     static QuoteCard parse(JsonNode root) {
-        keys(root,Set.of("scopeNote","fields","carriers","services"));
+        keys(root,Set.of("scopeNote","fields","carriers","services","tariff"));
         String scope=text(root.path("scopeNote"),500);
         if(scope.isEmpty())throw bad("请注明报价适用范围、有效期及附加费用");
         var fields=numbers(root.path("fields"),FIELDS);
@@ -87,7 +87,7 @@ public record QuoteCard(String scopeNote, Map<String,BigDecimal> fields, List<Ca
                 throw bad("重货上限须大于3kg，且不得小于首重");
             carriers.add(new Carrier(name,rates,label,kg,text(c.path("scopeNote"),500),rule,firstKg,firstFee,stepKg,stepFee,max));
         }
-        return new QuoteCard(scope,fields,List.copyOf(carriers),services);
+        return new QuoteCard(scope,fields,List.copyOf(carriers),services,QuoteTariff.parse(root.path("tariff")));
     }
     private static Map<String,BigDecimal> numbers(JsonNode obj,List<Column> allowed){
         if(obj.isMissingNode()||obj.isNull())return Map.of();
@@ -96,7 +96,7 @@ public record QuoteCard(String scopeNote, Map<String,BigDecimal> fields, List<Ca
         for(Column c:allowed){var n=number(obj.path(c.key()));if(n!=null)result.put(c.key(),n);}
         return result;
     }
-    private static BigDecimal number(JsonNode v){
+    static BigDecimal number(JsonNode v){
         if(v.isMissingNode()||v.isNull()||v.isTextual()&&v.asText().isBlank())return null;
         String raw=v.asText().trim();if(!(v.isTextual()||v.isNumber())||!raw.matches("[0-9]{1,8}(\\.[0-9]{1,4})?"))throw bad("金额或数量须为非负数，最多四位小数");
         return new BigDecimal(raw);

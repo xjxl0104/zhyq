@@ -106,3 +106,28 @@ test('merchant card distinguishes missing from free, selects one heavy rule and 
   assert.throws(()=>prepareRateCard({...base,carriers:[...base.carriers,...base.carriers]}),/重复/)
   assert.throws(()=>prepareRateCard({...base,fields:{material:-1}}),/非负/)
 })
+
+test('partner detail renders all second-stage groups, other values, heavy weight and actual quantities',()=>{
+  const form=quote.newQuoteForm()
+  for (const field of quote.QUOTE_FIELDS) {
+    if(field.type==='multi') form[field.key]=[field.other ? '其他' : field.options.at(-1).value]
+    if(field.other) form[field.other]='自定义'+field.label
+    if(field.type==='single') form[field.key]=field.options[0].value
+    if(field.type==='decimal') form[field.key]='14'
+  }
+  Object.assign(form,{services:quote.SERVICE_GROUPS.map(g=>g.values[0]),serviceQuantities:{inbound:'100箱',packing:'200套',returns:'5单'},
+    heavyWeightKg:'4.5',itemsPerParcel:'2',batchPercent:'0',weightMix:'一半重件',packingNote:'防潮'})
+  const rows=quote.quoteRows(quote.quotePayload(form))
+  assert.ok(quote.QUOTE_FIELDS.every(f=>rows.some(r=>r.label===f.label)))
+  for(const value of ['100箱','200套','5单','4.5 kg','0%','一半重件','防潮']) assert.ok(rows.some(r=>r.value===value),value)
+  const detail=readFileSync(new URL('../src/pages/customer-detail/index.vue',import.meta.url),'utf8')
+  const component=readFileSync(new URL('../src/components/CustomerQuoteDemand.vue',import.meta.url),'utf8')
+  assert.match(detail,/<CustomerQuoteDemand[^>]*:intake="c.quoteIntake"/)
+  assert.match(component,/quoteRows\(props.intake\?\.requirements/)
+})
+
+test('regional tariff submission keeps province prices, a free rate, notes and unknown carton prices',()=>{
+  const tariff={'yt.6':{w0:'1.6',w1:'0'},'packaging.202':{price:''},'terms.yt1':{text:'超3kg按整公斤计价'}}
+  const body=prepareRateCard({scopeNote:'全国',fields:{},services:{},carriers:[],tariff})
+  assert.deepEqual(body.tariff,tariff)
+})

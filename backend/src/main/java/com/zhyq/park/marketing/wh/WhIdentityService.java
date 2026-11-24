@@ -41,30 +41,40 @@ public class WhIdentityService {
 
     @Transactional
     public Map<String,Object> quickLoginIdentity(String openid, String phone, String name) {
-        return result(phoneIdentity(openid, phone, name, true));
+        return result(phoneIdentity(openid, phone, name, true, false));
     }
 
     @Transactional
     public Identity bindVerifiedPhone(String openid, String phone, String name) {
-        return phoneIdentity(openid, phone, name, false);
+        return phoneIdentity(openid, phone, name, false, false);
     }
 
-    private Identity phoneIdentity(String openid, String phone, String name, boolean allowCreate) {
+    @Transactional
+    public Map<String,Object> memberLogin(String openid, String phone, String name) {
+        return result(phoneIdentity(openid, phone, name, false, true));
+    }
+
+    private Identity phoneIdentity(String openid, String phone, String name, boolean allowCreate, boolean memberOnly) {
         if (!StringUtils.hasText(openid)) throw new BizException(400, "缺少已验证的微信身份");
         phone = requirePhone(phone);
         name = StringUtils.hasText(name) ? requireName(name) : null;
         lockPhone(phone);
+        List<MktWarehouseContact> phoneContacts = contacts.selectList(new LambdaQueryWrapper<MktWarehouseContact>()
+                .eq(MktWarehouseContact::getPhone, phone));
+        if (phoneContacts.size() > 1) throw new BizException(409, "该手机号关联多个云仓账号，请联系园区运营核验");
+        boolean registeredMember = !phoneContacts.isEmpty() && "member".equals(phoneContacts.get(0).getRole());
+        if (memberOnly && !registeredMember) throw new BizException(403, "此手机号尚未登记为云仓业务员，请向主账号核对登录手机号");
+        // A verified, preassigned member phone must not complete an unrelated legacy owner application.
         MktWarehouseContact byOpenid = contacts.selectOne(new LambdaQueryWrapper<MktWarehouseContact>()
-                .eq(MktWarehouseContact::getOpenid, openid).last("limit 1"));
+                .eq(MktWarehouseContact::getOpenid, openid)
+                .eq(registeredMember, MktWarehouseContact::getRole, "member")
+                .orderByDesc(MktWarehouseContact::getRole).last("limit 1"));
         if (byOpenid != null) {
             active(byOpenid);
             if ("owner".equals(byOpenid.getRole()) && !StringUtils.hasText(byOpenid.getPhone()))
                 return completeLegacyOwner(byOpenid,openid,phone,requireName(name));
             if (!phone.equals(byOpenid.getPhone())) throw new BizException(409, "本次授权手机号与绑定账号不一致，请联系云仓主账号核验");
         }
-        List<MktWarehouseContact> phoneContacts = contacts.selectList(new LambdaQueryWrapper<MktWarehouseContact>()
-                .eq(MktWarehouseContact::getPhone, phone));
-        if (phoneContacts.size() > 1) throw new BizException(409, "该手机号关联多个云仓账号，请联系园区运营核验");
         List<MktWarehouse> phoneWarehouses = warehouses.selectList(new LambdaQueryWrapper<MktWarehouse>()
                 .eq(MktWarehouse::getPhone, phone));
         if (phoneWarehouses.size() > 1) throw new BizException(409, "该手机号关联多个云仓，请联系园区运营核验");
@@ -147,6 +157,8 @@ public class WhIdentityService {
     @Transactional
     public Identity findByOpenid(String openid, Long requestedWarehouseId) {
         if (!StringUtils.hasText(openid)) return null;
+        // Two roles on one WeChat must go through phone verification to select the correct contact.
+        if (contacts.selectCount(new LambdaQueryWrapper<MktWarehouseContact>().eq(MktWarehouseContact::getOpenid, openid)) > 1) return null;
         MktWarehouseContact contact = contacts.selectOne(new LambdaQueryWrapper<MktWarehouseContact>()
                 .eq(MktWarehouseContact::getOpenid, openid).last("limit 1"));
         MktWarehouse warehouse;

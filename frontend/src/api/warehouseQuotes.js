@@ -9,6 +9,8 @@ export const quoteApi = {
     ...scoped(projectId), headers: { 'Content-Type': 'application/json' }
   }),
   intake: (id, projectId) => request.get(`/crm/marketing/customer/${id}/quote-intake`, scoped(projectId)),
+  confirmProject: (id, projectId) => request.post(`/crm/marketing/customer/${id}/quote-intake/project`, null, scoped(projectId)),
   comparison: (id, projectId) => request.get(`${quote}/customers/${id}/comparison`, scoped(projectId)),
-  advice: (id, projectId) => request.get(`${quote}/customers/${id}/advice`, scoped(projectId))
+  advice: (id, projectId) => request.get(`${quote}/customers/${id}/advice`, scoped(projectId)),
+  retry: (id, projectId) => request.post(`${quote}/customers/${id}/advice/retry`, null, scoped(projectId))
 }

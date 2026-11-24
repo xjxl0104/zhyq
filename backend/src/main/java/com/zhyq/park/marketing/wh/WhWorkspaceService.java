@@ -34,6 +34,7 @@ public class WhWorkspaceService {
     private final com.zhyq.park.marketing.service.MktCustomerProgressService progress;
     private final MktAuditService audit;
     private final JdbcTemplate jdbc;
+    private final com.zhyq.park.marketing.quote.QuoteIntakeService quoteIntake;
     public static final List<String> STAGES = List.of("待业务员承接", "业务员承接", "价格谈判", "签约", "货品入仓", "正式发货");
 
     public WhIdentityService.Identity current() {
@@ -162,6 +163,8 @@ public class WhWorkspaceService {
     public Map<String,Object> detail(Long id) {
         Customer customer = requireCustomer(id,false);
         Map<String,Object> out = customerView(customer);
+        if (List.of(1,2).contains(Objects.requireNonNullElse(customer.getWarehouseAssignmentStatus(),0)))
+            out.put("quoteIntake",quoteIntake.submittedDetails(id,customer.getTenantId(),customer.getProjectId()));
         if (Integer.valueOf(2).equals(customer.getWarehouseAssignmentStatus())) out.put("phone",customer.getPhone());
         var who = current();
         out.put("isOwner","owner".equals(who.contact().getRole()));
@@ -173,13 +176,14 @@ public class WhWorkspaceService {
     public Map<String,Object> assignStaff(Long customerId, Long contactId) {
         var who = owner();
         Customer customer = requireCustomer(customerId,true);
+        if (!Integer.valueOf(MktCustomerAssignmentService.ACCEPTED).equals(customer.getWarehouseAssignmentStatus()))
+            throw new BizException(409,"请先由云仓主账号确认承接客户，再分配业务员");
         warehouses.selectForUpdate(who.warehouse().getId());
         who = owner();
         MktWarehouseContact contact = contactId == null ? null : contacts.selectById(contactId);
         if (contact != null && (!Objects.equals(contact.getWarehouseId(),who.warehouse().getId()) || !"member".equals(contact.getRole()) || !Integer.valueOf(1).equals(contact.getStatus()))) throw forbidden();
         if (contactId != null && contact == null) throw forbidden();
         if (Objects.equals(customer.getWarehouseSalespersonId(),contactId)) return detail(customerId);
-        if (Integer.valueOf(3).equals(customer.getWarehouseAssignmentStatus())) throw new BizException(409,"已拒绝客户不能分配业务员");
         if (customers.update(null, version(customer).set(Customer::getWarehouseSalespersonId,contactId).set(Customer::getWarehouseSalesStage,0)) != 1) throw conflict();
         history(who,customerId,contactId,0,contact == null ? "主账号取消业务员分配" : "主账号分配业务员：" + contact.getName());
         progress.transition(customerId,0,contact == null ? "已取消业务员分配，等待重新安排" : "已分配业务员，等待承接需求", "salesperson_assigned");
@@ -189,9 +193,9 @@ public class WhWorkspaceService {
 
     @Transactional
     public void accept(Long id) {
-        var customer = requireCustomer(id,true);
+        owner();
+        requireCustomer(id,true);
         assignments.accept(id,WhAuthContext.currentWarehouseId());
-        if (!Integer.valueOf(1).equals(customer.getWarehouseSalesStage()) && customer.getWarehouseSalespersonId() != null) updateStage(id,1,"业务员已承接客户，开始对接需求");
     }
 
     @Transactional

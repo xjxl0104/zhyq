@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import vm from 'node:vm'
+import { warehouseDashboardEntries } from '../src/utils/warehouse-dashboard.mjs'
 import { isWarehouseOwner } from '../src/utils/warehouse-workspace.mjs'
 
 const source = readFileSync(new URL('../src/pages/warehouse-profile/index.vue', import.meta.url), 'utf8')
@@ -140,7 +141,7 @@ test('工作台即使资料读取失败，仍保留业务数据和个人信息�
   assert.equal(vm.runInContext('stats.customerCount', context), 2)
   assert.equal(vm.runInContext('loading.value', context), false)
   assert.equal(vm.runInContext('error.value', context), '资料读取超时')
-  assert.equal(vm.runInContext("visibleEntries.value[0].page", context), 'warehouse-profile')
+  assert.equal(warehouseDashboardEntries(null, {}).at(0).page, 'warehouse-profile')
   vm.runInContext("go('warehouse-profile')", context)
   assert.equal(route, '/pages/warehouse-profile/index')
 })

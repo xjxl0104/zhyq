@@ -64,7 +64,8 @@ public class MktCustomerController {
                                                         @RequestParam(required = false) String grade,
                                                         @RequestParam(required = false) Integer referredOnly,
                                                         @RequestParam(required = false) Long projectId,
-                                                        @RequestParam(required = false) Integer warehouseAssignmentStatus) {
+                                                        @RequestParam(required = false) Integer warehouseAssignmentStatus,
+                                                        @RequestParam(defaultValue = "false") boolean awaitingQuoteDispatch) {
         LambdaQueryWrapper<Customer> qw = new LambdaQueryWrapper<Customer>()
                 .and(StringUtils.hasText(keyword), w -> w.like(Customer::getName, keyword).or().like(Customer::getPhone, keyword))
                 .eq(StringUtils.hasText(grade), Customer::getGrade, grade)
@@ -72,6 +73,11 @@ public class MktCustomerController {
                 .and(projectId != null, q -> q.eq(Customer::getProjectId, projectId).or().isNull(Customer::getProjectId))
                 .eq(warehouseAssignmentStatus != null, Customer::getWarehouseAssignmentStatus, warehouseAssignmentStatus)
                 .orderByDesc(Customer::getId);
+        if(awaitingQuoteDispatch) {
+            qw.and(q->q.isNull(Customer::getWarehouseAssignmentStatus).or().in(Customer::getWarehouseAssignmentStatus,0,3))
+                .eq(Customer::getStatus,1)
+                .apply("EXISTS (SELECT 1 FROM crm_quote_intake qi WHERE qi.customer_id=crm_customer.id AND qi.tenant_id=crm_customer.tenant_id AND qi.project_id <=> crm_customer.project_id AND qi.submitted_at IS NOT NULL)");
+        }
         IPage<Customer> p = customerMapper.selectPage(new Page<>(pageNo, pageSize), qw);
         List<Map<String, Object>> rows = p.getRecords().stream().map(this::enrich).collect(Collectors.toList());
         return Result.ok(PageResult.of(p.getTotal(), rows));
@@ -157,13 +163,13 @@ public class MktCustomerController {
         return Result.ok();
     }
 
-    public record WarehouseAssignmentRequest(Long warehouseId, String reason) {}
+    public record WarehouseAssignmentRequest(Long warehouseId, String reason, Boolean manualQuoteOverride) {}
 
     @Operation(summary = "分派或调整承接云仓，等待商家确认")
     @PreAuthorize("hasAuthority('crm:marketing:customer:edit')")
     @PostMapping("/{id}/assign-warehouse")
     public Result<Void> assignWarehouse(@PathVariable Long id, @RequestBody WarehouseAssignmentRequest request) {
-        assignmentService.assign(id, request.warehouseId(), request.reason());
+        assignmentService.assign(id, request.warehouseId(), request.reason(), Boolean.TRUE.equals(request.manualQuoteOverride()));
         return Result.ok();
     }
 

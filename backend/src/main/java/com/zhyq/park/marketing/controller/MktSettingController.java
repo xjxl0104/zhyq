@@ -64,9 +64,9 @@ public class MktSettingController {
         rows.removeIf(row -> row != null && RETIRED_GHOST_KEYS.contains(String.valueOf(row.get("skey"))));
         // The defaults are visible without writing during GET; saving them creates any missing setting.
         ensureVirtualDefault(rows, ARRIVAL_TIME, MktWithdrawalService.DEFAULT_ARRIVAL_TIME, ARRIVAL_REMARK);
-        ensureVirtualDefault(rows, WINDOW_START_KEY, "0", WINDOW_START_REMARK);
-        ensureVirtualDefault(rows, WINDOW_END_KEY, "31", WINDOW_END_REMARK);
-        ensureVirtualDefault(rows, AUTO_WITHDRAW_KEY, "10", AUTO_WITHDRAW_REMARK);
+        ensureVirtualDefault(rows, WINDOW_START_KEY, String.valueOf(MktWithdrawalService.DEFAULT_WINDOW_START_DAY), WINDOW_START_REMARK);
+        ensureVirtualDefault(rows, WINDOW_END_KEY, String.valueOf(MktWithdrawalService.DEFAULT_WINDOW_END_DAY), WINDOW_END_REMARK);
+        ensureVirtualDefault(rows, AUTO_WITHDRAW_KEY, String.valueOf(MktWithdrawalService.DEFAULT_AUTO_WITHDRAW_DAY), AUTO_WITHDRAW_REMARK);
         return Result.ok(rows);
     }
 

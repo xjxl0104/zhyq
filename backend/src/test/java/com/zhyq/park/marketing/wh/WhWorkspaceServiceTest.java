@@ -26,7 +26,7 @@ class WhWorkspaceServiceTest {
     MktCustomerProgressService progress=mock(MktCustomerProgressService.class);
     MktAuditService audit=mock(MktAuditService.class);
     JdbcTemplate jdbc=mock(JdbcTemplate.class);
-    WhWorkspaceService service=new WhWorkspaceService(contacts,warehouses,customers,identities,assignments,progress,audit,jdbc);
+    WhWorkspaceService service=new WhWorkspaceService(contacts,warehouses,customers,identities,assignments,progress,audit,jdbc,mock(com.zhyq.park.marketing.quote.QuoteIntakeService.class));
     MktWarehouseContact member;MktWarehouse warehouse;Customer customer;
     @BeforeAll static void metadata(){var a=new MapperBuilderAssistant(new MybatisConfiguration(),"");for(Class<?> c:List.of(MktWarehouse.class,MktWarehouseContact.class,Customer.class))TableInfoHelper.initTableInfo(a,c);}
     @BeforeEach void setup(){
@@ -39,6 +39,15 @@ class WhWorkspaceServiceTest {
     void login(String role){SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken("wh:11:contact:5",null,List.of(new SimpleGrantedAuthority("ROLE_WH"),new SimpleGrantedAuthority("ROLE_WH_"+role.toUpperCase()))));}
     void owner(){member.setRole("owner");member.setPhone(warehouse.getPhone());login("owner");}
     @AfterEach void cleanup(){SecurityContextHolder.clearContext();}
+    @Test void staffCannotAcceptAndOwnerMustAcceptBeforeDelegation(){
+        customer.setWarehouseAssignmentStatus(1);
+        assertThatThrownBy(()->service.accept(9L)).isInstanceOf(BizException.class);
+        owner();
+        assertThatThrownBy(()->service.assignStaff(9L,6L)).isInstanceOf(BizException.class).hasMessageContaining("先由云仓主账号确认承接");
+        service.accept(9L);
+        verify(assignments).accept(9L,11L);
+        verify(customers,never()).update(any(),any());
+    }
     @Test void memberReadsAssignedCustomerButNotOtherMembersOrOtherWarehouses(){
         assertThat(service.requireCustomer(9L,false)).isSameAs(customer);
         customer.setWarehouseSalespersonId(6L);assertThatThrownBy(()->service.requireCustomer(9L,false)).isInstanceOf(BizException.class);

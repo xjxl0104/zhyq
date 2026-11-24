@@ -41,6 +41,7 @@ class MktCustomerDeletionSecurityTest {
         @Bean JdbcTemplate jdbc() { return mock(JdbcTemplate.class); }
         @Bean SysAuditMapper audits() { return mock(SysAuditMapper.class); }
         @Bean MktWithdrawalViewService withdrawalViews() { return mock(MktWithdrawalViewService.class); }
+        @Bean com.zhyq.park.marketing.quote.QuoteIntakeService quoteIntake() { return mock(com.zhyq.park.marketing.quote.QuoteIntakeService.class); }
         @Bean PlatformTransactionManager transactionManager() { return mock(PlatformTransactionManager.class); }
         @Bean MktCustomerDeletionService deletion(CustomerMapper customers, JdbcTemplate jdbc, SysAuditMapper audits) {
             return new MktCustomerDeletionService(customers, jdbc, audits, new ObjectMapper());

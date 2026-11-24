@@ -23,7 +23,7 @@ public class MpSuperOverviewController {
 
     @GetMapping("/customer/{id}")
     public Result<Map<String,Object>> customer(@PathVariable Long id,
-            @RequestParam(required=false) String startDate,@RequestParam(required=false) String endDate) {
-        return Result.ok(overview.customer(id,startDate,endDate));
+            @RequestParam(required=false) String startDate,@RequestParam(required=false) String endDate, @RequestParam(required=false) Long warehouseId) {
+        return Result.ok(overview.customer(id,startDate,endDate,warehouseId));
     }
 }
