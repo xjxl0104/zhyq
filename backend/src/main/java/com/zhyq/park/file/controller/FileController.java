@@ -13,6 +13,7 @@ import com.zhyq.park.file.mapper.SysFileMapper;
 import com.zhyq.park.file.service.FileStorageService;
 import com.zhyq.park.file.service.FileDownloadTicketService;
 import com.zhyq.park.energy.service.FeeNoticePaymentService;
+import com.zhyq.park.energy.service.LeaseFeePaymentService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
@@ -45,6 +46,8 @@ public class FileController {
     private final SysFileMapper fileMapper;
     private final FileDownloadTicketService downloadTickets;
     private final FeeNoticePaymentService feeNoticePayments;
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private LeaseFeePaymentService leaseFeePayments;
 
     @Operation(summary = "上传单文件")
     @PostMapping("/upload")
@@ -174,7 +177,8 @@ public class FileController {
         }
         if (isWorkOrderEvidence(req.getBizType()))
             throw new BizException("工单现场照片请随对应流程一并提交");
-        if (FeeNoticePaymentService.BIZ_TYPE.equals(req.getBizType()))
+        if (FeeNoticePaymentService.BIZ_TYPE.equals(req.getBizType())
+                || LeaseFeePaymentService.BIZ_TYPE.equals(req.getBizType()))
             throw new BizException(400, "缴费附件请在对应通知单中直接上传");
         marketingAccess.write(req.getBizType());
         int attached = 0;
@@ -185,7 +189,8 @@ public class FileController {
             }
             if (isWorkOrderEvidence(f.getBizType()))
                 throw new BizException("工单现场照片不可转为其他业务附件");
-            if (FeeNoticePaymentService.BIZ_TYPE.equals(f.getBizType()))
+            if (FeeNoticePaymentService.BIZ_TYPE.equals(f.getBizType())
+                    || LeaseFeePaymentService.BIZ_TYPE.equals(f.getBizType()))
                 throw new BizException(400, "缴费附件不能转为其他业务附件");
             marketingAccess.attach(f, req.getBizType());
             attached += fileMapper.update(null, new LambdaUpdateWrapper<SysFile>()
@@ -214,6 +219,7 @@ public class FileController {
             throw new BizException("未指定业务类型的附件不能关联业务对象");
         marketingAccess.write(bizType);
         if (FeeNoticePaymentService.BIZ_TYPE.equals(bizType)) return feeNoticePayments.upload(file, bizId);
+        if (LeaseFeePaymentService.BIZ_TYPE.equals(bizType) && leaseFeePayments != null) return leaseFeePayments.upload(file, bizId);
         String photoMime = null;
         if (isWorkOrderEvidence(bizType)) {
             if (bizId != null) throw new BizException("工单现场照片请随对应流程一并提交");

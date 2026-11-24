@@ -60,3 +60,22 @@ it('retains custom grants exactly once and searches the full ancestor context', 
 it('places legacy supplier URLs under the property supplier archive', () => {
   expect(permissionIds([buildPermissionTree([page(1, '/budget/supplier'), page(2, '/budget/supplier-contract')])[4]])).toEqual([1, 2])
 })
+it('flattens property service menus, removes retired entries, and moves fee management under park operations', () => {
+  const propertyService = menuTree.find(n => n.title === '物业服务')
+  expect(propertyService.children.map(c => c.title)).toEqual([
+    '工单汇总', '物业报修', '供应商档案', '设备巡检', '安防巡更', '保洁检查', '绿化检查',
+    '访客预约', '在线商城', '物品放行', '场地预约', '装修申请'
+  ])
+  const energyIot = menuTree.find(n => n.title === '能源与物联')
+  expect(energyIot.children.some(c => c.title === '能耗' || c.title === '缴费管理')).toBe(false)
+  const ops = menuTree.find(n => n.title === '园区运营')
+  const feeMgmt = ops.children.find(c => c.title === '缴费管理')
+  expect(feeMgmt).toBeTruthy()
+  expect(feeMgmt.children.map(c => c.title)).toEqual(['租金', '物业费', '电费', '水费', '垃圾处理费', '缴费汇总'])
+  const tree = buildPermissionTree([
+    page(10, '/property/meeting'), page(11, '/service/forum'), grant(12, 'property:check:edit', '检查-编辑'),
+    page(13, '/energy/rent'), page(14, '/energy/property')
+  ])
+  expect(permissionIds(tree)).toEqual([12, 13, 14])
+  expect(permissionIds([tree[6]])).toEqual([13, 14])
+})

@@ -9,7 +9,7 @@ vi.mock('../feePeriod', async (original) => ({
   ...await original(),
   useFeePeriod: callback => { state.opened = callback; return state.hook }
 }))
-vi.mock('@/api/energy', () => ({ feePeriodApi: { notices: vi.fn() } }))
+vi.mock('@/api/energy', () => ({ feePeriodApi: { notices: vi.fn() }, leaseFeeApi: { overview: vi.fn().mockResolvedValue([]) } }))
 const payment = { name: 'FeeNoticePayment', props: ['modelValue', 'notice'], emits: ['saved', 'update:modelValue'], template: '<div />' }
 beforeEach(() => {
   vi.clearAllMocks()
@@ -24,7 +24,7 @@ beforeEach(() => {
 })
 it('已出账仍可登记缴费，保存后只更新状态并使该通知单整行变绿', async () => {
   const wrapper = mount(FeeSummary, { global: { stubs: {
-    FeeNoticePayment: payment, FeeMonthPicker: true, FeeBillFiles: true, FeeFilterBar: true, ElDialog: true
+    FeeNoticePayment: payment, FeeMonthPicker: true, LeaseMonthPicker: true, LeaseFeeSummaryDetail: true, FeeBillFiles: true, FeeFilterBar: true, ElDialog: true
   } } })
   await state.opened()
   await flushPromises()

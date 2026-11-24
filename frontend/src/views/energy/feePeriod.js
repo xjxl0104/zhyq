@@ -4,11 +4,13 @@ import { feePeriodApi } from '@/api/energy'
 export const money = (v) => Number(v || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 export const num = (v, digits = 2) => (v == null || v === '' ? '-' : Number(v).toLocaleString('zh-CN', { maximumFractionDigits: digits }))
 
-/** 供应商账单(单据留存)的三种类型,与后端 sys_file.biz_type = energy_fee_{key} 对应 */
+/** 供应商账单与租金/物业管理费留存单据类型,与后端 sys_file.biz_type = energy_fee_{key} 对应 */
 export const BILL_KINDS = {
   electric: { key: 'electric', label: '南网电费账单' },
   water: { key: 'water', label: '自来水公司账单' },
-  garbage: { key: 'garbage', label: '垃圾清理供应商账单' }
+  garbage: { key: 'garbage', label: '垃圾清理供应商账单' },
+  rent: { key: 'rent', label: '租金核对/单据附件' },
+  property: { key: 'property', label: '物业管理费核对/单据附件' }
 }
 
 export function periodRange(p) {

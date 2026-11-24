@@ -1,11 +1,18 @@
 <template>
   <div class="page-container">
-    <FeeMonthPicker v-if="!month" ref="picker" kind="summary" @select="(m) => (month = m)" />
+    <template v-if="!month && !leaseMonth">
+      <FeeMonthPicker ref="picker" kind="summary" @select="(m) => (month = m)" />
+      <div class="lease-picker-section">
+        <LeaseMonthPicker ref="leasePicker" kind="summary" @select="(m) => (leaseMonth = m)" />
+      </div>
+    </template>
+
+    <LeaseFeeSummaryDetail v-else-if="leaseMonth" :month="leaseMonth" @back="leaseMonth = null" />
 
     <template v-else>
       <div class="detail-head">
         <el-button @click="back"><el-icon><ArrowLeft /></el-icon>返回年月表</el-button>
-        <h3>{{ monthLabel }} · 缴费汇总</h3>
+        <h3>{{ monthLabel }} · 水电费、垃圾处理费缴费汇总</h3>
         <el-tag v-if="period" :type="locked ? 'success' : 'info'">{{ locked ? '已确认出账' : '草稿' }}</el-tag>
         <span v-if="period?.generatedTime" class="gen-time">通知单生成于 {{ period.generatedTime }}</span>
       </div>
@@ -236,6 +243,11 @@ import { noticeHtml, NOTICE_CSS, printNotices } from './noticePrint'
 import FeeMonthPicker from './components/FeeMonthPicker.vue'
 import FeeBillFiles from './components/FeeBillFiles.vue'
 import FeeNoticePayment from './components/FeeNoticePayment.vue'
+import LeaseMonthPicker from './components/LeaseMonthPicker.vue'
+import LeaseFeeSummaryDetail from './components/LeaseFeeSummaryDetail.vue'
+
+const leaseMonth = ref(null)
+const leasePicker = ref(null)
 
 const notices = ref([])
 const selected = ref([])
@@ -263,8 +275,8 @@ watch(month, (v) => { filter.company = ''; filter.floor = ''; if (!v) { notices.
 let firstActivation = true
 onActivated(async () => {
   if (firstActivation) { firstActivation = false; return }
-  if (!month.value) picker.value?.refresh()
-  else { await reload(); await loadNotices() }
+  if (!month.value && !leaseMonth.value) { picker.value?.refresh(); leasePicker.value?.refresh() }
+  else if (month.value) { await reload(); await loadNotices() }
 })
 
 const MATRIX_ROWS = [
@@ -481,6 +493,7 @@ async function revoke() {
 </script>
 
 <style scoped>
+.lease-picker-section { margin-top: 26px; padding-top: 22px; border-top: 1px solid var(--el-border-color-lighter); }
 .detail-head { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
 .detail-head h3 { margin: 0; font-size: 16px; }
 .toolbar { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }

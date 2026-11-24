@@ -34,10 +34,12 @@ public class MktDocumentAccessService {
             Map.entry("oa_notice", "oa:notice"), Map.entry("article", "oa:article"),
             Map.entry("recruit", "oa:recruit"), Map.entry("oa_task", "oa:task"),
             Map.entry("oa_document", "oa:document"), Map.entry("energy_reading", "energy:reading"),
-            // 缴费账期的三种供应商账单(南网/自来水公司/垃圾清理供应商),单据留存
+            // 缴费账期的供应商账单与租金/物业管理费留存单据
             Map.entry("energy_fee_electric", "energy:feebill"), Map.entry("energy_fee_water", "energy:feebill"),
             Map.entry("energy_fee_garbage", "energy:feebill"),
+            Map.entry("energy_fee_rent", "energy:feebill"), Map.entry("energy_fee_property", "energy:feebill"),
             Map.entry("fee_notice_payment", "energy:feebill"),
+            Map.entry("lease_fee_notice_payment", "energy:feebill"),
             // 资料管理:资料库里的归档文件
             Map.entry("archive_doc", "archive:doc"));
 

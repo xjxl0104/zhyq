@@ -29,3 +29,25 @@ export const feePeriodApi = {
   revoke: (id) => request.post(`/energy/fee-period/${id}/revoke`),
   export: (id) => request.get(`/energy/fee-period/${id}/export`, { responseType: 'blob' })
 }
+
+// 租金与物业管理费月度账期(与水电费同模式,租金与物业费收取单位独立)
+export const leaseFeeApi = {
+  contracts: (includeDisabled = true) => request.get('/energy/lease-fee/contracts', { params: { includeDisabled } }),
+  saveContract: (data) => request.post('/energy/lease-fee/contracts', data),
+  deleteContract: (id) => request.delete(`/energy/lease-fee/contracts/${id}`),
+  overview: (year) => request.get('/energy/lease-fee/overview', { params: { year } }),
+  open: (period) => request.post('/energy/lease-fee/open', { period }),
+  get: (id) => request.get(`/energy/lease-fee/${id}`),
+  update: (data) => request.put('/energy/lease-fee', data),
+  sheet: (id, feeType = 'RENT') => request.get(`/energy/lease-fee/${id}/sheet`, { params: { feeType } }),
+  saveEntries: (id, rows) => request.post(`/energy/lease-fee/${id}/entries`, rows),
+  generate: (id) => request.post(`/energy/lease-fee/${id}/generate`),
+  notices: (id) => request.get(`/energy/lease-fee/${id}/notices`),
+  editNotice: (data) => request.post('/energy/lease-fee/notice/edit', data),
+  updateNoticePayment: (id, data) => request.put(`/energy/lease-fee/notice/${id}/payment`, data),
+  deleteNotices: (id, ids) => request.post(`/energy/lease-fee/${id}/notices/delete`, { ids }),
+  deleteAllNotices: (id) => request.post(`/energy/lease-fee/${id}/notices/delete-all`),
+  confirm: (id) => request.post(`/energy/lease-fee/${id}/confirm`),
+  revoke: (id) => request.post(`/energy/lease-fee/${id}/revoke`),
+  export: (id) => request.get(`/energy/lease-fee/${id}/export`, { responseType: 'blob' })
+}

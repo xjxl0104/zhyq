@@ -91,52 +91,22 @@ export const menuTree = [
   },
   {
     title: '物业服务', icon: 'Tools', children: [
-      {
-        title: '物业', icon: 'Tools', children: [
-          { title: '工单汇总', path: '/property/workorder-summary' },
-          { title: '物业报修', path: '/property/workorder' },
-          { title: '供应商档案', path: '/property/responsible-unit' },
-          { title: '会议室预约', path: '/property/meeting' },
-          { title: '设备巡检', path: '/property/inspection' },
-          { title: '安防巡更', path: '/property/patrol' },
-          { title: '保洁检查', path: '/property/check-clean' },
-          { title: '绿化检查', path: '/property/check-green' },
-          { title: '品质核查', path: '/property/check-quality' },
-          { title: '投诉建议', path: '/property/complaint' },
-          { title: '意见反馈', path: '/property/feedback' },
-          { title: '投票问卷', path: '/property/survey' },
-          { title: '物业活动', path: '/property/activity' },
-          { title: '资源目录', path: '/rsv/resource' },
-          { title: '资源预订', path: '/rsv/booking' }
-        ]
-      },
-      {
-        title: '惠企', icon: 'Shop', children: [
-          { title: '访客预约', path: '/service/visitor' },
-          { title: '在线商城', path: '/service/mall' },
-          { title: '物品放行', path: '/service/pass' },
-          { title: '场地预约', path: '/service/site' },
-          { title: '装修申请', path: '/service/decoration' },
-          { title: '出入证管理', path: '/service/passcard' },
-          { title: '园区论坛', path: '/service/forum' },
-          { title: '申报服务', path: '/service/declare' },
-          { title: '知产服务', path: '/service/ip' },
-          { title: '政策服务', path: '/service/policy' },
-          { title: '生态配置', path: '/service/ecosystem' }
-        ]
-      }
+      { title: '工单汇总', path: '/property/workorder-summary' },
+      { title: '物业报修', path: '/property/workorder' },
+      { title: '供应商档案', path: '/property/responsible-unit' },
+      { title: '设备巡检', path: '/property/inspection' },
+      { title: '安防巡更', path: '/property/patrol' },
+      { title: '保洁检查', path: '/property/check-clean' },
+      { title: '绿化检查', path: '/property/check-green' },
+      { title: '访客预约', path: '/service/visitor' },
+      { title: '在线商城', path: '/service/mall' },
+      { title: '物品放行', path: '/service/pass' },
+      { title: '场地预约', path: '/service/site' },
+      { title: '装修申请', path: '/service/decoration' }
     ]
   },
   {
     title: '能源与物联', icon: 'Lightning', children: [
-      {
-        title: '能耗', icon: 'Lightning', children: [
-          { title: '电费', path: '/energy/electric' },
-          { title: '水费', path: '/energy/water' },
-          { title: '垃圾处理费', path: '/energy/garbage' },
-          { title: '缴费汇总', path: '/energy/summary' }
-        ]
-      },
       {
         title: '智慧物联', icon: 'VideoCamera', children: [
           { title: '智能硬件', path: '/iot/device' },
@@ -165,6 +135,16 @@ export const menuTree = [
   },
   {
     title: '园区运营', icon: 'Calendar', children: [
+      {
+        title: '缴费管理', icon: 'Tickets', children: [
+          { title: '租金', path: '/energy/rent' },
+          { title: '物业费', path: '/energy/property' },
+          { title: '电费', path: '/energy/electric' },
+          { title: '水费', path: '/energy/water' },
+          { title: '垃圾处理费', path: '/energy/garbage' },
+          { title: '缴费汇总', path: '/energy/summary' }
+        ]
+      },
       {
         title: '办公', icon: 'Calendar', children: [
           { title: '任务', path: '/oa/task' },

@@ -81,25 +81,17 @@ const routes = [
       { path: 'finance/notice', meta: { title: '收款通知' }, component: () => import('@/views/finance/PayNotice.vue') },
       { path: 'finance/setting', meta: { title: '财务设置' }, component: () => import('@/views/finance/Setting.vue') },
 
-      // 物业
+      // 物业服务
       { path: 'property/workorder-summary', meta: { title: '工单汇总' }, component: () => import('@/views/property/WorkOrderSummary.vue') },
       { path: 'property/workorder', meta: { title: '物业报修' }, component: () => import('@/views/property/WorkOrder.vue') },
       { path: 'property/responsible-unit', meta: { title: '供应商档案' }, component: () => import('@/views/budget/Supplier.vue') },
-      { path: 'property/meeting', meta: { title: '会议室预约' }, component: () => import('@/views/property/Meeting.vue') },
       { path: 'property/asset', meta: { title: '资产管理' }, component: () => import('@/views/property/Asset.vue') },
       { path: 'property/inspection', meta: { title: '设备巡检' }, component: () => import('@/views/property/Inspection.vue') },
-      { path: 'property/complaint', meta: { title: '投诉建议', ftype: '投诉' }, component: () => import('@/views/property/Feedback.vue') },
-      { path: 'property/feedback', meta: { title: '意见反馈', ftype: '意见' }, component: () => import('@/views/property/Feedback.vue') },
-      { path: 'property/survey', meta: { title: '投票问卷' }, component: () => import('@/views/property/Survey.vue') },
-      { path: 'property/activity', meta: { title: '物业活动' }, component: () => import('@/views/property/Activity.vue') },
       { path: 'property/patrol', meta: { title: '安防巡更' }, component: () => import('@/views/property/Patrol.vue') },
       { path: 'property/check-clean', meta: { title: '保洁检查', ctype: '保洁' }, component: () => import('@/views/property/Check.vue') },
       { path: 'property/check-green', meta: { title: '绿化检查', ctype: '绿化' }, component: () => import('@/views/property/Check.vue') },
-      { path: 'property/check-quality', meta: { title: '品质核查', ctype: '品质' }, component: () => import('@/views/property/Check.vue') },
-
-      // 资源预订(#23,统一目录+预订,叠加于既有会议室/场地预约)
-      { path: 'rsv/resource', meta: { title: '资源目录' }, component: () => import('@/views/rsv/Resource.vue') },
-      { path: 'rsv/booking', meta: { title: '资源预订' }, component: () => import('@/views/rsv/Booking.vue') },
+      // 菜单已下线;保留隐藏路由仅用于历史工单「查看来源记录(FEEDBACK)」防死链
+      { path: 'property/feedback', meta: { title: '意见反馈', ftype: '意见' }, component: () => import('@/views/property/Feedback.vue') },
 
       // 预算管理(园区运营下,与办公同级):预算(附件+预算申请审批) + 采购计划(计划下提采购申请)
       // 取代原「办公 → 采购管理」:采购计划/申请沿用 pur 后端接口,页面并入本板块
@@ -117,18 +109,12 @@ const routes = [
       { path: 'acc/visitor', meta: { title: '访客登记' }, component: () => import('@/views/acc/Visitor.vue') },
       { path: 'acc/parking', meta: { title: '停车管理' }, component: () => import('@/views/acc/Parking.vue') },
 
-      // 惠企
+      // 物业服务(原惠企保留模块)
       { path: 'service/visitor', meta: { title: '访客预约' }, component: () => import('@/views/service/Visitor.vue') },
       { path: 'service/mall', meta: { title: '在线商城' }, component: () => import('@/views/service/Mall.vue') },
       { path: 'service/pass', meta: { title: '物品放行' }, component: () => import('@/views/service/Pass.vue') },
       { path: 'service/site', meta: { title: '场地预约' }, component: () => import('@/views/service/SiteBooking.vue') },
       { path: 'service/decoration', meta: { title: '装修申请' }, component: () => import('@/views/service/Decoration.vue') },
-      { path: 'service/forum', meta: { title: '园区论坛' }, component: () => import('@/views/service/Forum.vue') },
-      { path: 'service/passcard', meta: { title: '出入证管理' }, component: () => import('@/views/service/PassCard.vue') },
-      { path: 'service/declare', meta: { title: '申报服务' }, component: () => import('@/views/service/Declare.vue') },
-      { path: 'service/ip', meta: { title: '知产服务' }, component: () => import('@/views/service/Ip.vue') },
-      { path: 'service/policy', meta: { title: '政策服务' }, component: () => import('@/views/service/Policy.vue') },
-      { path: 'service/ecosystem', meta: { title: '生态配置' }, component: () => import('@/views/service/Ecosystem.vue') },
 
       // 办公
       { path: 'oa/task', meta: { title: '任务' }, component: () => import('@/views/oa/Task.vue') },
@@ -147,8 +133,10 @@ const routes = [
       { path: 'app/center', meta: { title: '应用中心' }, component: () => import('@/views/app/AppCenter.vue') },
       { path: 'app/vending', meta: { title: '自动售货机' }, component: () => import('@/views/app/Vending.vue') },
 
-      // 能耗
-      // 电费 / 水费 一组件两路由,靠 meta.energyType 区分
+      // 缴费管理(园区运营下)
+      // 租金 / 物业费 一组件两路由,靠 meta.leaseFeeType 区分;电费 / 水费 一组件两路由,靠 meta.energyType 区分
+      { path: 'energy/rent', meta: { title: '租金', leaseFeeType: 'RENT' }, component: () => import('@/views/energy/LeaseFeeSheet.vue') },
+      { path: 'energy/property', meta: { title: '物业费', leaseFeeType: 'PROPERTY' }, component: () => import('@/views/energy/LeaseFeeSheet.vue') },
       { path: 'energy/electric', meta: { title: '电费', energyType: '电' }, component: () => import('@/views/energy/UtilityFeeSheet.vue') },
       { path: 'energy/water', meta: { title: '水费', energyType: '水' }, component: () => import('@/views/energy/UtilityFeeSheet.vue') },
       { path: 'energy/garbage', meta: { title: '垃圾处理费' }, component: () => import('@/views/energy/GarbageFee.vue') },
