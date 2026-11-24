@@ -33,7 +33,7 @@
           <dl><template v-for="line in warehouse.stageRates" :key="line.weight"><dt>{{line.weight}}</dt>
             <dd>{{line.rate}} {{line.unit}}<div>{{line.scopeNote}}</div></dd></template></dl>
         </details>
-        <el-button v-if="canAssign && [0,3].includes(assignmentStatus)" size="small" @click="$emit('assign',warehouse.warehouseId)">选择此仓分配</el-button>
+        <el-button v-if="canAssign && [0,3].includes(assignmentStatus)" size="small" :disabled="assignmentStatus===0 && (!advice || advice.status==='pending')" @click="$emit('assign',warehouse.warehouseId)">选择此仓分配</el-button>
         <el-collapse><el-collapse-item v-for="(offer,i) in warehouse.offers" :key="i" :name="i">
           <template #title><strong>{{offer.carrier}}</strong><span class="summary">{{ status[offer.status] }} · {{ range(offer,'perParcel','元/票') }}</span></template>
           <dl>
@@ -78,13 +78,14 @@ const lowest=computed(()=>{
 const units=[['handling','打包操作'],['materials','标准包材'],['freight','快递运费']]
 const status={estimate:'可估算',partial:'部分待确认',missing:'缺少快递价'}
 const cardCount=computed(()=>(comparison.value?.warehouses || []).filter(w=>w.version>0).length)
-const quotedCount=computed(()=>(comparison.value?.warehouses || []).filter(w=>w.version>0 && w.offers.some(o=>
-  o.status!=='missing' && (o.perParcelMin!=null || o.unitPrices?.freightMin!=null || o.unitPrices?.handlingMin!=null || o.storageMonthlyMin!=null || o.selectedServiceRates?.some(r=>r.rate!=null)))).length)
+const quotedCount=computed(()=>(comparison.value?.warehouses || []).filter(w=>w.version>0 && (w.stageRates?.length || w.offers.some(o=>
+  o.status!=='missing' && (o.perParcelMin!=null || o.unitPrices?.freightMin!=null || o.unitPrices?.handlingMin!=null || o.storageMonthlyMin!=null || o.selectedServiceRates?.some(r=>r.rate!=null))))).length)
 const warehouseRows=computed(()=>(comparison.value?.warehouses || []).map(w=>{
   const offers=w.offers || [], matches=[], gaps=[]
   const priced=offers.filter(o=>o.perParcelMax!=null)
   const freight=offers.filter(o=>o.unitPrices?.freightMax!=null)
   if(priced.length) matches.push(priced.length+' 个方案可估单票总价')
+  if(w.stageRates?.length) matches.push('已报匹配重量段的通达配条件套餐')
   if(freight.length) matches.push(freight.map(o=>o.carrier).join('、')+'有运费报价')
   if(offers.some(o=>o.capacityFit==='fits')) matches.push('登记产能覆盖填报单量')
   if(!w.version) gaps.push('尚未录入价卡')

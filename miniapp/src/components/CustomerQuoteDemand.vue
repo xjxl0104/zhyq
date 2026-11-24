@@ -12,7 +12,7 @@
 import { computed } from 'vue'
 import { quoteRows } from '@/utils/quote-intake.mjs'
 const props=defineProps({ intake: Object, showAssessment: Boolean })
-const stages={project_required:'等待园区确认归属',pending:'正在评估云仓报价',running:'正在评估云仓报价',waiting:'等待补齐云仓报价资料',ready:'报价报告已生成',failed:'评估待园区重试'}
+const stages={project_required:'等待园区确认归属',pending:'正在评估云仓报价',running:'正在评估云仓报价',waiting:'等待补齐云仓报价资料',ready:'报价报告已生成',partial:'报告已生成，等待园区核实报价',failed:'评估待园区重试'}
 const rows=computed(()=>quoteRows(props.intake?.requirements || {}))
 const stage=computed(()=>props.showAssessment && stages[props.intake?.assessmentStatus])
 </script>

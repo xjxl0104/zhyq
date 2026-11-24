@@ -108,10 +108,23 @@ class MktCustomerAssignmentServiceTest {
         customer.setWarehouseAssignmentStatus(0);
         assertThatThrownBy(()->service.assign(11L,20L,"首派")).isInstanceOf(BizException.class).hasMessageContaining("详细报价需求");
         verify(customers,never()).update(isNull(),any(Wrapper.class));
-        when(customers.scopedSubmittedQuoteCount(11L)).thenReturn(1L);
+        when(customers.initialQuoteState(11L)).thenReturn("pending");
+        assertThatThrownBy(()->service.assign(11L,20L,"急需分配",true)).isInstanceOf(BizException.class).hasMessageContaining("正在进行");
+        when(customers.initialQuoteState(11L)).thenReturn("failed");
+        assertThatThrownBy(()->service.assign(11L,20L,"首派")).isInstanceOf(BizException.class).hasMessageContaining("确认人工分配");
+        when(customers.initialQuoteState(11L)).thenReturn("ready");
         when(customers.update(isNull(),any(Wrapper.class))).thenReturn(1);
         service.assign(11L,20L,"已查阅比价报告");
         verify(progress).transition(11L,30,"已分派云仓，等待商家确认承接","assigned");
+    }
+
+    @Test void missingPricesAllowAnExplicitAuditedManualDispatch(){
+        customer.setAssignedWarehouseId(null);
+        customer.setWarehouseAssignmentStatus(0);
+        when(customers.initialQuoteState(11L)).thenReturn("waiting");
+        when(customers.update(isNull(),any(Wrapper.class))).thenReturn(1);
+        service.assign(11L,20L,"已取得书面报价",true);
+        verify(audit).log(eq("customer.warehouse.assign"),eq("customer"),eq(11L),contains("人工分配（缺少可比报价）：已取得书面报价"),isNull(),eq(20L));
     }
 
     @Test

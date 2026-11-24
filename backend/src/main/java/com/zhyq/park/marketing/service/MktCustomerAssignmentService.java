@@ -50,6 +50,11 @@ public class MktCustomerAssignmentService {
 
     @Transactional
     public void assign(Long customerId, Long warehouseId, String reason) {
+        assign(customerId,warehouseId,reason,false);
+    }
+
+    @Transactional
+    public void assign(Long customerId, Long warehouseId, String reason, boolean manualQuoteOverride) {
         reason = text(reason, "请填写分派或调整原因");
         Customer customer = requireLocked(customerId);
         if (Integer.valueOf(4).equals(customer.getServiceType())) throw new BizException("园区入驻客户不分派云仓");
@@ -62,8 +67,17 @@ public class MktCustomerAssignmentService {
         if(warehouse!=null && !Objects.equals(warehouse.getTenantId(),customer.getTenantId()))
             throw new BizException(403,"不能跨运营主体分派客户");
         if(warehouse!=null && customer.getReferrerId()!=null && customer.getAssignedWarehouseId()==null) {
-            if(customers.scopedSubmittedQuoteCount(customerId)==0)
+            String state=customers.initialQuoteState(customerId);
+            if(state==null || "no_demand".equals(state))
                 throw new BizException(409,"推荐客户请先完成详细报价需求并确认归属园区，再分配云仓");
+            if("waiting".equals(state) || "failed".equals(state) || "partial".equals(state)) {
+                if(!manualQuoteOverride) throw new BizException(409,"报价依据不足或 AI 评估失败，请确认人工分配并填写原因");
+                String issue=switch(state){case "waiting"->"缺少可比报价"; case "partial"->"报价或产能待核实"; default->"AI 评估未完成";};
+                reason="人工分配（"+issue+"）："+reason;
+                if(reason.length()>500) throw new BizException(400,"请缩短人工分配原因");
+            } else if(!"ready".equals(state)) {
+                throw new BizException(409,"客户报价评估正在进行，请查看报告后再分配云仓");
+            }
         }
         LambdaUpdateWrapper<Customer> update = versionGuard(customer)
                 .set(Customer::getAssignedWarehouseId, warehouseId)

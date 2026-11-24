@@ -163,13 +163,13 @@ public class MktCustomerController {
         return Result.ok();
     }
 
-    public record WarehouseAssignmentRequest(Long warehouseId, String reason) {}
+    public record WarehouseAssignmentRequest(Long warehouseId, String reason, Boolean manualQuoteOverride) {}
 
     @Operation(summary = "分派或调整承接云仓，等待商家确认")
     @PreAuthorize("hasAuthority('crm:marketing:customer:edit')")
     @PostMapping("/{id}/assign-warehouse")
     public Result<Void> assignWarehouse(@PathVariable Long id, @RequestBody WarehouseAssignmentRequest request) {
-        assignmentService.assign(id, request.warehouseId(), request.reason());
+        assignmentService.assign(id, request.warehouseId(), request.reason(), Boolean.TRUE.equals(request.manualQuoteOverride()));
         return Result.ok();
     }
 

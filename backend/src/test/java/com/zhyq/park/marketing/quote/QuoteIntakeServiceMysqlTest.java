@@ -132,10 +132,10 @@ class QuoteIntakeServiceMysqlTest {
                 return QuoteAdviceClient.suggestions(candidates,json.readTree("{\"shortlist\":[1],\"checks\":[\"scope\"]}"));
             }).when(ai).assess(org.mockito.ArgumentMatchers.anyList());
             advice.processNext();
-            assertEquals("ready",advice.view(100,3L).get("status"));
+            assertEquals("partial",advice.view(100,3L).get("status"));
             assertTrue(advice.view(100,3L).get("suggestions").toString().contains("单票总价待补齐"));
             tx.execute(s->advice.retry(100,3L));
-            assertEquals("ready",advice.view(100,3L).get("status"));
+            assertEquals("partial",advice.view(100,3L).get("status"));
         } finally {advice.stop();}
     }
 

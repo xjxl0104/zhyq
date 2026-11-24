@@ -85,6 +85,22 @@ public class QuoteAdviceClient {
                 numbers.put("incomplete",!"estimate".equals(offer.path("status").asText()));
                 list.add(new Candidate(warehouse.path("warehouseName").asText()+" · "+offer.path("carrier").asText(),numbers,profile));
             }
+            // A warehouse-level bundle is a conditional alternative to itemized fees.
+            // Keep ticket and kg prices separate and never attach this plan to a specific courier.
+            var bundle=new LinkedHashMap<String,Object>();
+            for (String unit:List.of("元/票","元/kg")) {
+                var amounts=new ArrayList<java.math.BigDecimal>();
+                for(JsonNode rate:warehouse.path("stageRates"))
+                    if(unit.equals(rate.path("unit").asText()) && rate.path("rate").isNumber()) amounts.add(rate.get("rate").decimalValue());
+                if(!amounts.isEmpty()){
+                    String prefix="元/票".equals(unit)?"bundleTicket":"bundleKg";
+                    bundle.put(prefix+"Min",Collections.min(amounts)); bundle.put(prefix+"Max",Collections.max(amounts));
+                }
+            }
+            if(!bundle.isEmpty()){
+                bundle.put("id",list.size()+1); bundle.put("warehouse",warehouseIndex); bundle.put("incomplete",true);
+                list.add(new Candidate(warehouse.path("warehouseName").asText()+" · 通达配条件套餐",bundle,profile));
+            }
         }
         return list;
     }
@@ -145,9 +161,10 @@ public class QuoteAdviceClient {
             boolean fullTicket=n.containsKey("perParcelMax");
             boolean insufficient="exceeded".equals(n.get("capacityFit"));
             boolean limitedRegion=Boolean.TRUE.equals(n.get("limitedRegion"));
+            boolean incomplete=Boolean.TRUE.equals(n.get("incomplete"));
             String heading;
             if(insufficient) heading="产能不足，需另核";
-            else if(!fullTicket || limitedRegion) heading=sameWarehouse?"同仓待补价方案":"待补价候选";
+            else if(!fullTicket || limitedRegion || incomplete) heading=sameWarehouse?"同仓待补价方案":"待补价候选";
             else if(sameWarehouse) heading="同仓承运备选";
             else if(warehouseCount==1) heading="唯一报价仓的可选方案";
             else heading=result.isEmpty()?"建议优先分配":"备选云仓";
@@ -155,6 +172,8 @@ public class QuoteAdviceClient {
             else {
                 if(n.containsKey("freightMax")) facts.add("运费 "+range(n,"freight")+" 元/票");
                 if(n.containsKey("handlingMax")) facts.add("操作费 "+range(n,"handling")+" 元/票");
+                if(n.containsKey("bundleTicketMax")) facts.add("条件套餐 "+range(n,"bundleTicket")+" 元/票");
+                if(n.containsKey("bundleKgMax")) facts.add("重货条件套餐 "+range(n,"bundleKg")+" 元/kg");
                 facts.add("单票总价待补齐");
             }
             if(n.containsKey("storageMonthlyMax")) facts.add("30 天仓租 "+range(n,"storageMonthly")+" 元");
@@ -174,6 +193,12 @@ public class QuoteAdviceClient {
         }
         result.addAll(checks);
         return List.copyOf(result);
+    }
+
+    static boolean hasAssignableOffer(List<Candidate> candidates){
+        return candidates.stream().map(Candidate::numbers).anyMatch(n->n.containsKey("perParcelMax")
+            && !Boolean.TRUE.equals(n.get("incomplete")) && !Boolean.TRUE.equals(n.get("limitedRegion"))
+            && !"exceeded".equals(n.get("capacityFit")));
     }
 
     private static String range(Map<String,Object> values,String field) {

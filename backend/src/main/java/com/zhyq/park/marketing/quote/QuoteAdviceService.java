@@ -41,6 +41,11 @@ public class QuoteAdviceService {
     public Map<String,Object> view(long id,Long project) {
         // Check the caller's tenant, current customer attribution and active project before returning any cached advice.
         var comparison=rates.comparison(id,project);
+        var rows=db.queryForList("SELECT status,CAST(suggestions AS CHAR CHARACTER SET utf8mb4) AS suggestions FROM crm_quote_advice WHERE customer_id=? AND project_id=?",id,project);
+        if(rows.isEmpty()) return reply("failed","该需求尚无评估任务，可重新发起。",List.of());
+        var row=rows.get(0);
+        String state=String.valueOf(row.get("status"));
+        if("pending".equals(state) || "running".equals(state)) return reply("pending","评估中，完成后会在这里显示。",List.of());
         if(ai.candidates(comparison).isEmpty()) {
             com.fasterxml.jackson.databind.JsonNode warehouses=json.valueToTree(comparison.get("warehouses"));
             if(warehouses.isEmpty()) return reply("waiting","本园区尚无已上线的加盟云仓。",List.of());
@@ -49,12 +54,8 @@ public class QuoteAdviceService {
             return reply("waiting","当前没有与需求匹配的可比较价格。请按下方各仓缺项补充资料，暂缓推荐。",List.of());
         }
         if(!ai.configured()) return reply("unconfigured","AI 评估服务尚未接通，可查看上方逐项报价。",List.of());
-        var rows=db.queryForList("SELECT status,CAST(suggestions AS CHAR CHARACTER SET utf8mb4) AS suggestions FROM crm_quote_advice WHERE customer_id=? AND project_id=?",id,project);
-        if(rows.isEmpty()) return reply("failed","该需求尚无评估任务，可重新发起。",List.of());
-        var row=rows.get(0);
-        String state=String.valueOf(row.get("status"));
-        if ("ready".equals(state)) {
-            try { return reply("ready","基于当前需求与云仓价卡生成，供运营手动分配时参考。",json.readValue(row.get("suggestions").toString(),new TypeReference<List<String>>(){})); }
+        if ("ready".equals(state) || "partial".equals(state)) {
+            try { return reply(state,"partial".equals(state)?"报告已生成；目前仅有条件报价、缺项或产能限制。请核实后说明人工分配原因。":"基于当前需求与云仓价卡生成，供运营手动分配时参考。",json.readValue(row.get("suggestions").toString(),new TypeReference<List<String>>(){})); }
             catch(Exception e) { return reply("failed","评估结果读取失败，请查看逐项报价。",List.of()); }
         }
         if ("failed".equals(state)) return reply(state,"本次 AI 评估未完成，可以重试。各仓逐项报价仍可查看。",List.of());
@@ -65,8 +66,7 @@ public class QuoteAdviceService {
     @org.springframework.transaction.annotation.Transactional
     public Map<String,Object> retry(long id,Long project) {
         long tenant=QuoteProjectAccess.requireTenant(db,project);
-        var comparison=rates.comparisonForSubmission(id,tenant,project);
-        if(!ai.configured() || ai.candidates(comparison).isEmpty()) return view(id,project);
+        rates.comparisonForSubmission(id,tenant,project);
         // No-op for concurrent clicks or a job already completed by another operator.
         db.update("""
             INSERT INTO crm_quote_advice(customer_id,tenant_id,project_id) VALUES(?,?,?)
@@ -81,7 +81,7 @@ public class QuoteAdviceService {
     private record Job(long id,long tenant,long project,long generation) {}
     @Scheduled(initialDelay=20000,fixedDelay=5000)
     public void schedule() {
-        if(ai.configured() && busy.compareAndSet(false,true)) worker.execute(() -> {
+        if(busy.compareAndSet(false,true)) worker.execute(() -> {
             try { processNext(); }
             catch(RuntimeException e) { log.warn("报价建议任务扫描失败 ({})",e.getClass().getSimpleName()); }
             finally { busy.set(false); }
@@ -99,7 +99,8 @@ public class QuoteAdviceService {
         try {
             var candidates=ai.candidates(rates.comparisonForSubmission(job.id,job.tenant,job.project));
             if(candidates.isEmpty()) { finish(job,"waiting",null); return; }
-            finish(job,"ready",json.writeValueAsString(ai.assess(candidates)));
+            if(!ai.configured()) { finish(job,"failed",null); return; }
+            finish(job,QuoteAdviceClient.hasAssignableOffer(candidates)?"ready":"partial",json.writeValueAsString(ai.assess(candidates)));
         } catch(Exception ex) {
             if(ex instanceof InterruptedException) Thread.currentThread().interrupt();
             finish(job,"failed",null);

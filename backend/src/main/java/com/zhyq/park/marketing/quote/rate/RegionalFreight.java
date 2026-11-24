@@ -58,7 +58,7 @@ final class RegionalFreight {
             missing.add("顺丰模板未列西藏和青海玉树运价，全国配送需另行询价");
             notes.add("顺丰按表内始发地、目的地区域和日均票量分档；20kg以上需另询，高峰附加及资源调节费另计。");
         }
-        notes.add("快递区间取所选重量与全部适用地区已填价格的最低、最高值，不按省份均摊；泡重、偏远流向及附加费用按条款核定。");
+        notes.add("快递区间取所选重量在表内中国大陆地区已报价的最低、最高值，港澳台另询；泡重、偏远流向及附加费用按条款核定。");
         return new Estimate(known.isEmpty() ? null : QuoteCalculator.Amount.bounds(known),complete<applicable||restrictedGeography);
     }
 

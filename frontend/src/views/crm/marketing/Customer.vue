@@ -114,7 +114,10 @@
       <el-alert type="info" :closable="false" title="分派后商家需要确认承接。已有生效合同的客户不能更换承接仓。" />
       <el-form label-width="90px" style="margin-top:20px">
         <el-form-item label="承接云仓"><el-select v-model="assignment.warehouseId" filterable placeholder="选择已上线云仓" style="width:100%"><el-option v-for="w in warehouses" :key="w.id" :value="w.id" :label="w.name" /></el-select></el-form-item>
-        <el-form-item label="分派原因"><el-input v-model="assignment.reason" type="textarea" maxlength="500" /></el-form-item>
+        <template v-if="assignment.manualMessage"><el-alert type="warning" :closable="false" :title="assignment.manualMessage" />
+          <el-checkbox v-model="assignment.manualConfirmed">已核实情况，确认人工分配</el-checkbox>
+        </template>
+        <el-form-item :label="assignment.manualMessage ? '人工分配原因' : '分派原因'"><el-input v-model="assignment.reason" type="textarea" :maxlength="assignment.manualMessage ? 450 : 500" /></el-form-item>
       </el-form>
       <template #footer><el-button @click="assignment.visible = false">取消</el-button><el-button type="primary" :loading="assignment.busy" @click="assignWarehouse">确认分派</el-button></template>
     </el-dialog>
@@ -243,6 +246,7 @@ import CustomerPricingDrawer from './CustomerPricingDrawer.vue'
 import CustomerCreateDialog from './CustomerCreateDialog.vue'
 import CustomerRequirements from './CustomerRequirements.vue'
 import CustomerQuotePanel from './CustomerQuotePanel.vue'
+import { quoteApi } from '@/api/warehouseQuotes'
 import CustomerProgressHistory from './CustomerProgressHistory.vue'
 import PromoterSelect from './PromoterSelect.vue'
 
@@ -309,17 +313,27 @@ async function loadProtection() {
   } catch (error) { protection.error = error?.message || '白名单读取失败，请重试' }
   finally { protection.loading = false }
 }
-const assignment = reactive({visible:false,id:null,warehouseId:null,reason:'',busy:false})
+const assignment = reactive({visible:false,id:null,warehouseId:null,reason:'',busy:false,manualMessage:'',manualConfirmed:false})
 const progress = reactive({visible:false,id:null,summary:'',percentage:0,history:[],hasMore:false,signed:false,busy:false,loading:false,ready:false,error:''})
 async function openAssignment(row, selectedWarehouseId) {
+  let manualMessage=''
+  if(row.referrerId && !row.assignedWarehouseId) {
+    if(!row.projectId) return ElMessage.warning('请在客户详情确认归属园区后再分配')
+    const intake=await quoteApi.intake(row.id,row.projectId)
+    if(!intake.submittedAt) return ElMessage.warning('请先完成该客户的详细报价需求')
+    const report=await quoteApi.advice(row.id,row.projectId)
+    if(report.status==='pending') return ElMessage.warning('报价评估正在进行，请在客户详情查看报告后再分配')
+    if(report.status!=='ready') manualMessage=report.message || '当前没有可用比价结论，请确认人工分配依据'
+  }
   const rows = await mktWarehouseApi.online()
   warehouses.value = rows.filter(w=>row.projectId == null || w.projectId == null || String(w.projectId) === String(row.projectId))
-  Object.assign(assignment,{visible:true,id:row.id,warehouseId:selectedWarehouseId || row.assignedWarehouseId || row.intendedWarehouseId,reason:'',busy:false})
+  Object.assign(assignment,{visible:true,id:row.id,warehouseId:selectedWarehouseId || row.assignedWarehouseId || row.intendedWarehouseId,reason:'',busy:false,manualMessage,manualConfirmed:false})
 }
 async function assignWarehouse() {
   if (!assignment.warehouseId || !assignment.reason.trim()) return ElMessage.error('请选择云仓并填写分派原因')
+  if(assignment.manualMessage && !assignment.manualConfirmed) return ElMessage.warning('请核实报价缺项并确认人工分配')
   assignment.busy = true
-  try { await mktCustomerApi.assignWarehouse(assignment.id,{warehouseId:assignment.warehouseId,reason:assignment.reason}); assignment.visible=false; ElMessage.success('已分派，等待商家确认'); await load(); if(detail.visible && detail.row?.id===assignment.id) await openDetail(detail.row) }
+  try { await mktCustomerApi.assignWarehouse(assignment.id,{warehouseId:assignment.warehouseId,reason:assignment.reason,manualQuoteOverride:!!assignment.manualMessage && assignment.manualConfirmed}); assignment.visible=false; ElMessage.success('已分派，等待商家确认'); await load(); if(detail.visible && detail.row?.id===assignment.id) await openDetail(detail.row) }
   finally { assignment.busy=false }
 }
 async function openProgress(row) {
