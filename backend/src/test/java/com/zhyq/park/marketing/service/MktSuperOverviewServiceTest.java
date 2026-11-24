@@ -16,12 +16,12 @@ class MktSuperOverviewServiceTest {
     final MktAccountControl access=mock(MktAccountControl.class);
     final MktPromoterMapper people=mock(MktPromoterMapper.class);
     final NamedParameterJdbcTemplate jdbc=mock(NamedParameterJdbcTemplate.class);
-    final MktSuperOverviewService service=new MktSuperOverviewService(access,people,jdbc);
+    final MktSuperOverviewService service=new MktSuperOverviewService(access,people,jdbc,mock(com.zhyq.park.marketing.quote.QuoteIntakeService.class));
 
     @Test void bothEntryPointsCheckLiveGrantBeforeAnyBusinessRead() {
         when(access.requireSuperAdmin()).thenThrow(new BizException(403,"denied"));
         assertThatThrownBy(()->service.overview("partners",null,"p4",null,null,null,1,20)).isInstanceOf(BizException.class);
-        assertThatThrownBy(()->service.customer(101L,null,null)).isInstanceOf(BizException.class);
+        assertThatThrownBy(()->service.customer(101L,null,null,null)).isInstanceOf(BizException.class);
         verify(access,times(2)).requireSuperAdmin(); verifyNoInteractions(people,jdbc);
     }
     @Test void disabledAdministratorCannotReadEvenWithStaleGrant() {
@@ -71,6 +71,27 @@ class MktSuperOverviewServiceTest {
         var first=data.summary(data.scope("warehouses",201L));var second=data.summary(data.scope("warehouses",202L));
         assertThat(first.get("shipmentVolume")).isEqualTo("10");assertThat(second.get("shipmentVolume")).isEqualTo("5");
         assertThat(first.get("partnerCommission")).isEqualTo("0.180");assertThat(second.get("partnerCommission")).isEqualTo("0.090");
+    }
+    @Test void warehouseOperationsCountDistinctClientsWithinWarehouseAndExcludeFinance() {
+        var original = fixture();
+        var clients = List.of(map("id",101L,"name","A","assignedWarehouseId",201L,"assignmentStatus",2,"salesStage",4),
+                map("id",102L,"name","B","assignedWarehouseId",201L,"assignmentStatus",1),
+                map("id",103L,"name","C","assignedWarehouseId",null),
+                map("id",104L,"name","D","assignedWarehouseId",null));
+        var data = new MktSuperOverviewService.Data(original.partners,clients,original.contracts,original.warehouses,
+                List.of(map("customer_id",101L,"warehouseId",201L,"volume",26),
+                        map("customer_id",101L,"warehouseId",202L,"volume",10),
+                        map("customer_id",103L,"warehouseId",202L,"volume",3)),List.of(),List.of());
+        var all = data.operations(data.scope("warehouses",null));
+        assertThat(all).containsEntry("signedCustomerCount",1).containsEntry("contractCount",2L)
+            .containsEntry("customerCount",3).containsEntry("shipmentVolume","39").containsEntry("shippingCustomerCount",2)
+            .doesNotContainKeys("commissionTotal","settledCommission","withdrawnAmount");
+        assertThat(data.operations(data.scope("warehouses",201L))).containsEntry("storedCustomerCount",1L)
+            .containsEntry("pendingCustomerCount",1L).containsEntry("shipmentVolume","26");
+        var second = data.scope("warehouses",202L);
+        assertThat(data.operations(second)).containsEntry("storedCustomerCount",0L).containsEntry("shipmentVolume","13");
+        assertThat(data.customerRows(second,true)).hasSize(2);
+        assertThat(((Map<?,?>)data.customerRows(second,true).get(0).get("summary")).get("shipmentVolume")).isNotEqualTo("26");
     }
     @Test void contractBreakdownExcludesOtherContractsAndNonContractIncome() {
         var data=fixture();data.ledger.add(map("customerId",101L,"contractId",null,"status",3,"amount","2.000"));

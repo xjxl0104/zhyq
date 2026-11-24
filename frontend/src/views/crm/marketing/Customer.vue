@@ -11,6 +11,7 @@
         <el-form-item label="仅有推荐人">
           <el-switch v-model="query.referredOnly" :active-value="1" :inactive-value="null" />
         </el-form-item>
+        <el-form-item label="已填需求待分配"><el-switch v-model="query.awaitingQuoteDispatch" @change="search" /></el-form-item>
         <el-form-item>
           <el-button type="primary" @click="search"><el-icon><Search /></el-icon>查询</el-button>
           <el-button @click="reset">重置</el-button>
@@ -88,7 +89,10 @@
             <el-descriptions-item label="需求">{{ detail.row.demand || '未填写' }}</el-descriptions-item>
           </el-descriptions>
           <CustomerRequirements :model-value="detail.row.requirements || {}" readonly />
-          <CustomerQuotePanel v-if="detail.visible && projectStore.currentProjectId" :key="`${projectStore.currentProjectId}/${detail.row.id}`" :customer-id="detail.row.id" :project-id="projectStore.currentProjectId" />
+          <CustomerQuotePanel v-if="detail.visible && (detail.row.projectId || projectStore.currentProjectId)" :key="`${detail.row.projectId || projectStore.currentProjectId}/${detail.row.id}`"
+            :customer-id="detail.row.id" :project-id="detail.row.projectId || projectStore.currentProjectId" :project-name="projectLabel(detail.row.projectId || projectStore.currentProjectId)" :can-edit="canEdit"
+            :assignment-status="detail.row.warehouseAssignmentStatus || 0" :can-assign="canEdit && detail.row.status === 1 && detail.row.serviceType !== 4"
+            @assign="openAssignment(detail.row,$event)" @project-confirmed="openDetail(detail.row)" />
           <el-descriptions :column="1" border style="margin-top:12px"><el-descriptions-item label="备注">{{ detail.row.remark || '未填写' }}</el-descriptions-item></el-descriptions>
           <div class="detail-progress"><h4>当前跟进进度</h4><el-progress :percentage="progressPercent(detail.row)" :stroke-width="12" /><p>{{ detail.row.publicProgress || '暂无进度说明' }}</p></div>
           <CustomerProgressHistory :items="detail.row.progressHistory || []" :has-more="detail.row.progressHistoryHasMore" />
@@ -307,14 +311,15 @@ async function loadProtection() {
 }
 const assignment = reactive({visible:false,id:null,warehouseId:null,reason:'',busy:false})
 const progress = reactive({visible:false,id:null,summary:'',percentage:0,history:[],hasMore:false,signed:false,busy:false,loading:false,ready:false,error:''})
-async function openAssignment(row) {
-  warehouses.value = await mktWarehouseApi.online()
-  Object.assign(assignment,{visible:true,id:row.id,warehouseId:row.assignedWarehouseId || row.intendedWarehouseId,reason:'',busy:false})
+async function openAssignment(row, selectedWarehouseId) {
+  const rows = await mktWarehouseApi.online()
+  warehouses.value = rows.filter(w=>row.projectId == null || w.projectId == null || String(w.projectId) === String(row.projectId))
+  Object.assign(assignment,{visible:true,id:row.id,warehouseId:selectedWarehouseId || row.assignedWarehouseId || row.intendedWarehouseId,reason:'',busy:false})
 }
 async function assignWarehouse() {
   if (!assignment.warehouseId || !assignment.reason.trim()) return ElMessage.error('请选择云仓并填写分派原因')
   assignment.busy = true
-  try { await mktCustomerApi.assignWarehouse(assignment.id,{warehouseId:assignment.warehouseId,reason:assignment.reason}); assignment.visible=false; ElMessage.success('已分派，等待商家确认'); await load() }
+  try { await mktCustomerApi.assignWarehouse(assignment.id,{warehouseId:assignment.warehouseId,reason:assignment.reason}); assignment.visible=false; ElMessage.success('已分派，等待商家确认'); await load(); if(detail.visible && detail.row?.id===assignment.id) await openDetail(detail.row) }
   finally { assignment.busy=false }
 }
 async function openProgress(row) {
@@ -350,7 +355,7 @@ const lockType = (s) => ({ 1: 'info', 2: 'success', 3: '' }[s] || 'info')
 const loading = ref(false)
 const list = ref([])
 const total = ref(0)
-const query = reactive({ pageNo: 1, pageSize: 10, keyword: '', grade: null, referredOnly: null })
+const query = reactive({ pageNo: 1, pageSize: 10, keyword: '', grade: null, referredOnly: null, awaitingQuoteDispatch:false })
 
 async function load() {
   loading.value = true
@@ -360,7 +365,7 @@ async function load() {
   } finally { loading.value = false }
 }
 function search() { query.pageNo = 1; load() }
-function reset() { Object.assign(query, { pageNo: 1, keyword: '', grade: null, referredOnly: null }); load() }
+function reset() { Object.assign(query, { pageNo: 1, keyword: '', grade: null, referredOnly: null, awaitingQuoteDispatch:false }); load() }
 
 const pricing = reactive({ visible: false, row: null })
 function openPricing(row) { Object.assign(pricing, { visible: true, row }) }

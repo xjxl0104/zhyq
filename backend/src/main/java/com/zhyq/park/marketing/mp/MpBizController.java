@@ -73,6 +73,8 @@ public class MpBizController {
     private final MktAuditService auditService;
     private final MktCustomerAssignmentService assignmentService;
     private final MktCustomerDeletionService deletionService;
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.zhyq.park.marketing.quote.QuoteIntakeService quoteIntake;
 
     // ---------------- 推荐 / 报备(§2.2 + §2.2a) ----------------
 
@@ -96,7 +98,9 @@ public class MpBizController {
     public Result<Map<String, Object>> customer(@PathVariable Long id) {
         Customer c = customerMapper.selectById(id);
         if (c == null || !MpAuthService.currentPromoterId().equals(c.getReferrerId())) throw new BizException(403, "无权查看");
-        return Result.ok(customerView(c));
+        var detail=customerView(c);
+        detail.put("quoteIntake",quoteIntake.submittedDetails(id,c.getTenantId(),c.getProjectId()));
+        return Result.ok(detail);
     }
 
     @Operation(summary = "删除自己推荐的客户（有合同或订单不可删除）")

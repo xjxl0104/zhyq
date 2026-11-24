@@ -105,6 +105,18 @@ class QuoteRateServiceMysqlTest {
         assertThat(jdbc.queryForObject("SELECT generation FROM crm_quote_advice WHERE customer_id=2 AND status='done'", Long.class)).isEqualTo(1L);
     }
 
+    @Test void legacySaveKeepsPreviouslyPublishedRegionalRows() throws Exception {
+        var warehouse=warehouse(11,5);
+        when(warehouses.selectForUpdate(1L)).thenReturn(warehouse);
+        var payload=json.createObjectNode().put("scopeNote","全国");
+        payload.putArray("carriers");
+        payload.putObject("tariff").putObject("yt.6").put("w0","1.60");
+        service.saveAdmin(1L,11L,new QuoteRateService.Update(0L,payload));
+        payload.remove("tariff");
+        var saved=service.saveAdmin(1L,11L,new QuoteRateService.Update(1L,payload));
+        assertThat(((QuoteCard)saved.get("card")).tariff().get("yt.6")).containsEntry("w0","1.60");
+    }
+
     @Test @SuppressWarnings("unchecked")
     void comparisonChecksSubmittedCustomerAndLimitsEveryJoinedRowToScope() {
         jdbc.update("INSERT INTO crm_quote_rate_card(warehouse_id,tenant_id,project_id,version,card_json) VALUES (1,2,22,31,JSON_OBJECT())");

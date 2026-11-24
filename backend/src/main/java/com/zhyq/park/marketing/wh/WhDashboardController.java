@@ -39,23 +39,20 @@ public class WhDashboardController {
     private final MktReferralOrderMapper orderMapper;
     private final MktCustomerAssignmentService assignments;
     private final WhWorkspaceService workspace;
+    private final com.zhyq.park.marketing.service.WarehouseShipmentFacts shipments;
 
     @Operation(summary = "当前云仓运营汇总")
     @GetMapping("/dashboard")
     public Result<Map<String, Object>> dashboard() {
         Long id = WhAuthContext.currentWarehouseId(); MktWarehouse w = WhAuthContext.requireWarehouse(warehouseMapper, id);
-        java.time.LocalDate now = java.time.LocalDate.now();
-        long today = orderMapper.selectCount(orderScope(w).eq(MktReferralOrder::getSourceType, 2)
-                .ge(MktReferralOrder::getEventTime, now.atStartOfDay()).lt(MktReferralOrder::getEventTime, now.plusDays(1).atStartOfDay()));
-        long month = orderMapper.selectCount(orderScope(w).eq(MktReferralOrder::getSourceType, 2)
-                .ge(MktReferralOrder::getEventTime, now.withDayOfMonth(1).atStartOfDay())
-                .lt(MktReferralOrder::getEventTime, now.withDayOfMonth(1).plusMonths(1).atStartOfDay()));
-        Map<String,Object> out = new HashMap<>();
+        var who = workspace.current();
+        boolean owner = "owner".equals(who.contact().getRole());
+        var now = java.time.LocalDate.now(java.time.ZoneId.of("Asia/Shanghai"));
+        Map<String,Object> out = new HashMap<>(shipments.month(w, owner ? null : who.contact().getId(), now));
         out.put("warehouseId", id); out.put("warehouseCode", w.getCode()); out.put("warehouseName", w.getName());
         out.put("customerCount", customerMapper.selectCount(customerScope(w).eq(Customer::getWarehouseAssignmentStatus, 2)));
         out.put("pendingCustomers", customerMapper.selectCount(customerScope(w).eq(Customer::getWarehouseAssignmentStatus, 1)));
-        out.put("todayOrders", today); out.put("monthOrders", month);
-        out.put("isOwner", "owner".equals(workspace.current().contact().getRole()));
+        out.put("isOwner", owner);
         out.put("erpStatus", w.getErpStatus()); out.put("joinStatus", w.getJoinStatus()); out.put("orderMode", w.getOrderMode());
         return Result.ok(out);
     }

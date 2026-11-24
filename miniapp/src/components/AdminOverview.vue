@@ -7,25 +7,33 @@
       </view>
       <view class="date-row"><picker mode="date" :value="range.startDate" :end="range.endDate" @change="setDate('startDate', $event)"><view>{{ range.startDate }} 起</view></picker>
         <text>—</text><picker mode="date" :value="range.endDate" :start="range.startDate" :end="today" @change="setDate('endDate', $event)"><view>{{ range.endDate }} 止</view></picker></view>
-      <view class="caption">客户、伙伴及合同数量为当前档案；发货和佣金按所选日期统计。</view>
+      <view class="caption">{{ warehouse ? '承接、签约及入仓按客户去重；发货票数和发货客户按所选日期统计。' : '客户和合同为当前档案，发货量和佣金按所选日期统计。' }}</view>
     </view>
     <view v-if="selectionId" class="section-head"><text class="section-title">{{ selectionName }}</text><text class="section-link" @click="back">返回全部 ›</text></view>
     <view v-if="error" class="card"><view class="error">{{ error }}</view><button class="btn secondary" @click="load(false)">重新加载</button></view>
     <view v-if="summary" class="card overview-card">
-      <view class="total-label">{{ selectionId ? '范围内总发货量' : '总发货量' }}（单）</view>
+      <view class="total-label">{{ selectionId ? '范围内总发货量' : '总发货量' }}（票）</view>
       <view class="volume">{{ count(summary.shipmentVolume) }}</view>
       <view class="metric-grid">
-        <view><text class="caption">伙伴</text><text>{{ count(summary.partnerCount) }}</text></view>
-        <view><text class="caption">P4</text><text>{{ count(summary.p4Count) }}</text></view>
-        <view><text class="caption">客户</text><text>{{ count(summary.customerCount) }}</text></view>
-        <view><text class="caption">已签合同</text><text>{{ count(summary.contractCount) }}</text></view>
-        <view><text class="caption">云仓</text><text>{{ count(summary.warehouseCount) }}</text></view>
+        <view v-for="item in indicators" :key="item.label"><text class="caption">{{ item.label }}</text><text>{{ count(item.value) }}</text></view>
       </view>
-      <view class="row"><text>客户总佣金（元）</text><text class="money">{{ money(summary.commissionTotal) }}</text></view>
-      <view class="row"><text>伙伴所得佣金（元）</text><text class="money">{{ money(summary.partnerCommission) }}</text></view>
-      <view class="row"><text>待结算（元）</text><text>{{ money(summary.pendingCommission) }}</text></view>
-      <view class="row"><text>已结算（含已提现）</text><text>{{ money(summary.settledCommission) }}</text></view>
-      <view class="row"><text>已提现（元）</text><text>{{ money(summary.withdrawnAmount) }}</text></view>
+    </view>
+    <view v-if="summary" class="card">
+      <view class="chart-title">{{ warehouse ? '云仓客户服务情况' : '伙伴佣金结算情况' }}</view>
+      <view v-if="!warehouse" class="row"><text>客户总佣金</text><text>{{ money(summary.commissionTotal) }} 元</text></view>
+      <view v-if="!warehouse" class="row"><text>伙伴所得佣金</text><text>{{ money(summary.partnerCommission) }} 元</text></view>
+      <view v-for="bar in distribution" :key="bar.label" class="bar-item">
+        <view class="bar-label"><text>{{ bar.label }}</text><text>{{ bar.display }}</text></view>
+        <view class="bar-track"><view class="bar-fill" :style="{width: bar.width,backgroundColor:bar.color}" /></view>
+      </view>
+      <view class="caption">{{ warehouse ? '签约含已签合同及业务员已跟进到签约的客户。入仓按货品入仓、正式发货阶段统计。' : '已结算金额包含已提现部分。' }}</view>
+    </view>
+    <view v-if="ranking.length" class="card">
+      <view class="chart-title">{{ selectionId ? '客户' : warehouse ? '云仓' : group === 'p4' ? 'P4 团队' : '伙伴团队' }}发货量前 {{ ranking.length }}</view>
+      <view v-for="bar in ranking" :key="bar.id" class="bar-item pressable" @click="select(bar)">
+        <view class="bar-label"><text>{{ bar.name }} ›</text><text>{{ bar.display }}</text></view>
+        <view class="bar-track"><view class="bar-fill" :style="{width:bar.width}" /></view>
+      </view>
     </view>
     <view class="card filters">
       <view v-if="view === 'partners' && !selectionId" class="segments">
@@ -41,9 +49,11 @@
     <view v-for="row in records" :key="row.id" class="card record pressable" @click="select(row)">
       <view class="record-head"><view class="record-title">{{ row.name }}</view><text class="section-link">查看 ›</text></view>
       <view class="caption">{{ subtitle(row) }}</view>
-      <view class="record-metrics"><view><text class="caption">发货量（单）</text><text>{{ count(row.summary?.shipmentVolume) }}</text></view><view><text class="caption">客户数</text><text>{{ count(row.summary?.customerCount) }}</text></view></view>
-      <view class="row"><text>客户总佣金</text><text>{{ money(row.summary?.commissionTotal) }} 元</text></view>
-      <view class="row"><text>伙伴所得佣金</text><text>{{ money(row.summary?.partnerCommission) }} 元</text></view>
+      <view class="record-metrics"><view><text class="caption">发货量（票）</text><text>{{ count(row.summary?.shipmentVolume) }}</text></view><view><text class="caption">{{ selectionId ? '已签合同' : '客户数' }}</text><text>{{ count(selectionId ? row.summary?.contractCount : row.summary?.customerCount) }}</text></view></view>
+      <view v-if="warehouse" class="row"><text>签约 / 入仓客户</text><text>{{ count(row.summary?.signedCustomerCount) }} / {{ count(row.summary?.storedCustomerCount) }} 家</text></view>
+      <view v-if="warehouse" class="row"><text>统计期有发货客户</text><text>{{ count(row.summary?.shippingCustomerCount) }} 家</text></view>
+      <view v-else class="row"><text>客户总佣金</text><text>{{ money(row.summary?.commissionTotal) }} 元</text></view>
+      <view v-if="!warehouse" class="row"><text>伙伴所得佣金</text><text>{{ money(row.summary?.partnerCommission) }} 元</text></view>
     </view>
     <button v-if="records.length < total && !error" class="btn secondary load-more" :loading="loading" :disabled="loading" @click="load(true)">加载更多（{{ records.length }}/{{ total }}）</button>
     <view v-else-if="total" class="list-end">共 {{ total }} 条，已全部显示</view>
@@ -59,8 +69,28 @@ const presets = [{ value: 'all', label: '累计' }, { value: 'month', label: '�
 const preset = ref('all'), range = ref(overviewRange('all')), group = ref('p4'), keyword = ref('')
 const appliedKeyword = ref('')
 const today = computed(() => overviewRange('all').endDate)
+const warehouse = computed(() => props.view === 'warehouses')
 const selectionId = ref(null), selectionName = ref(''), summary = ref(null), records = ref([])
 const total = ref(0), page = ref(1), loading = ref(false), error = ref(''), kind = ref('')
+const indicators = computed(() => (warehouse.value
+  ? [['云仓','warehouseCount'],['期内发货客户','shippingCustomerCount'],['关联客户','customerCount'],['已签合同','contractCount'],['签约客户','signedCustomerCount'],['已入仓客户','storedCustomerCount']]
+  : [['涉及云仓','warehouseCount'],['团队伙伴','partnerCount'],['P4 伙伴','p4Count'],['客户','customerCount'],['已签合同','contractCount']]
+).map(([label,key]) => ({ label, value:summary.value?.[key] })))
+function chartBars(items) {
+  const max = Math.max(0,...items.map(item => Math.abs(Number(item.value) || 0)))
+  return items.map(item => ({ ...item, width: (max ? 100 * Math.abs(Number(item.value) || 0) / max : 0) + '%' }))
+}
+const distribution = computed(() => {
+  const fields = warehouse.value
+    ? [['待承接','pendingCustomerCount','#c48418'],['已承接','acceptedCustomerCount','#536af4'],['已签约','signedCustomerCount','#387cca'],['已入仓','storedCustomerCount','#178a83'],['期内有发货','shippingCustomerCount','#207a52']]
+    : [['待结算','pendingCommission','#bd891b'],['已结算','settledCommission','#328b88'],['已提现','withdrawnAmount','#566ce4']]
+  return chartBars(fields.map(([label,key,color]) => {
+    const value = summary.value?.[key]
+    return {label,value,color,display: warehouse.value ? count(value) + ' 家' : money(value) + ' 元'}
+  }))
+})
+const ranking = computed(() => chartBars(records.value.slice(0,5).filter(row => Number(row.summary?.shipmentVolume) > 0)
+  .map(row => ({...row,value:row.summary.shipmentVolume,display:count(row.summary.shipmentVolume) + ' 票'}))))
 let sequence = 0
 async function load(append = false) {
   if (append && loading.value) return
@@ -83,7 +113,7 @@ function setGroup(value) { group.value = value; load() }
 function search() { appliedKeyword.value = keyword.value; load() }
 function back() { selectionId.value = null; keyword.value = ''; appliedKeyword.value = ''; load() }
 function select(row) {
-  if (kind.value === 'customers') return navigateTo(`/pages/admin-customer/index?id=${row.id}&startDate=${range.value.startDate}&endDate=${range.value.endDate}`)
+  if (kind.value === 'customers') return navigateTo(`/pages/admin-customer/index?id=${row.id}&startDate=${range.value.startDate}&endDate=${range.value.endDate}${warehouse.value ? '&warehouseId=' + selectionId.value : ''}`)
   selectionId.value = row.id; keyword.value = ''; appliedKeyword.value = ''; load()
 }
 function subtitle(row) {
@@ -118,4 +148,9 @@ onUnmounted(() => { sequence++ })
 .row > text:last-child { text-align: right; }
 .error { color: #a3293e; }
 .load-more { margin: 24rpx; width: calc(100% - 48rpx); }
+.chart-title {font-size:32rpx;font-weight:700;margin-bottom:14rpx}
+.bar-item {padding:11rpx 0}.bar-label {display:flex;align-items:center;justify-content:space-between;gap:22rpx;font-size:26rpx}
+.bar-label text:first-child {flex:1;min-width:0;overflow-wrap:anywhere}.bar-label text:last-child {font-weight:600}
+.bar-track {height:12rpx;border-radius:8rpx;background:#edf0f8;margin:9rpx 0 4rpx;overflow:hidden}
+.bar-fill {height:100%;border-radius:8rpx;background:#4165da}.metric-grid {display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}
 </style>

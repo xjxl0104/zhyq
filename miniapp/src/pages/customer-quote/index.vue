@@ -7,6 +7,7 @@
       <button v-if="summary.stage === 'lead' || (!summary.token && !summary.requirements)" class="btn" :loading="busy" :disabled="busy" @click="promote">{{ summary.stage === 'lead' ? '转为意向客户' : '领取本客户的填写码' }}</button>
       <view v-if="summary.stage === 'intent' && summary.token && !summary.submittedAt && !summary.requirements" class="share-box">
         <view class="muted">将专属填写码发给该客户，客户可直接填报报价需求。</view>
+        <button class="btn ghost" :disabled="busy" @click="enterDemand">协助客户填写需求</button>
         <button class="btn ghost" :loading="busy" :disabled="busy" @click="makeCode">生成客户报价填写码</button>
         <image v-if="image" class="qr" :src="image" mode="widthFix" @click="preview" />
         <button v-if="image" class="btn ghost" @click="save">保存填写码</button>
@@ -15,23 +16,19 @@
         <!-- #endif -->
       </view>
     </view>
-    <view v-if="summary && (summary.submittedAt || summary.requirements)" class="card">
-      <view class="title">已提交的报价需求</view><view v-if="summary.submittedAt" class="muted">{{ summary.submittedAt.replace('T',' ') }}</view>
-      <view v-for="row in rows" :key="row.label" class="detail"><view class="muted">{{ row.label }}</view><view>{{ row.value }}</view></view>
-    </view>
+    <CustomerQuoteDemand v-if="summary?.submittedAt || summary?.requirements" :intake="summary" />
   </view>
 </template>
 <script setup>
-import { ref, computed } from 'vue'
+import { ref } from 'vue'
 import { onLoad, onShow, onUnload, onShareAppMessage } from '@dcloudio/uni-app'
 import { bizApi } from '@/api'
 import { get, post, token, downloadQuoteCode } from '@/utils/request'
 import { createAppShare } from '@/utils/share'
 import { parseReferralToken } from '@/utils/referral-intake.mjs'
-import { quoteRows } from '@/utils/quote-intake.mjs'
+import CustomerQuoteDemand from '@/components/CustomerQuoteDemand.vue'
 const id = ref(''), summary = ref(null), customerName = ref(''), loading = ref(false), busy = ref(false), image = ref(''), error = ref('')
 let actor = '', sequence = 0
-const rows = computed(() => quoteRows(summary.value?.requirements || {}))
 const path = () => '/quote/customers/' + id.value
 onLoad(q => { id.value = /^[1-9]\d*$/.test(q.id) ? q.id : '' })
 onShow(load)
@@ -47,6 +44,11 @@ function releaseImage() {
   if (image.value.startsWith('blob:')) URL.revokeObjectURL(image.value)
   // #endif
   image.value = ''
+}
+function enterDemand() {
+  const code=parseReferralToken({token:summary.value?.token})
+  if (code && actor === token.get() && !summary.value?.submittedAt)
+    uni.navigateTo({url:'/pages/quote-intake/index?token='+code})
 }
 async function load() {
   if (busy.value) return

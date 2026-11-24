@@ -59,6 +59,12 @@ public class MktCustomerAssignmentService {
                 || Integer.valueOf(ACCEPTED).equals(customer.getWarehouseAssignmentStatus()))) return;
         assertNoActiveContracts(customerId);
         MktWarehouse warehouse = warehouseId == null ? null : requireAvailableWarehouse(warehouseId, customer.getProjectId());
+        if(warehouse!=null && !Objects.equals(warehouse.getTenantId(),customer.getTenantId()))
+            throw new BizException(403,"不能跨运营主体分派客户");
+        if(warehouse!=null && customer.getReferrerId()!=null && customer.getAssignedWarehouseId()==null) {
+            if(customers.scopedSubmittedQuoteCount(customerId)==0)
+                throw new BizException(409,"推荐客户请先完成详细报价需求并确认归属园区，再分配云仓");
+        }
         LambdaUpdateWrapper<Customer> update = versionGuard(customer)
                 .set(Customer::getAssignedWarehouseId, warehouseId)
                 .set(Customer::getWarehouseSalespersonId, null).set(Customer::getWarehouseSalesStage,0)

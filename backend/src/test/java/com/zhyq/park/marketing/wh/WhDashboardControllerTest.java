@@ -30,6 +30,7 @@ import static org.mockito.Mockito.*;
 class WhDashboardControllerTest {
     @Mock MktWarehouseMapper warehouses;
     @Mock WhWorkspaceService workspace;
+    @Mock com.zhyq.park.marketing.service.WarehouseShipmentFacts shipments;
     @Mock MktCustomerErpMapMapper mappings;
     @Mock CustomerMapper customers;
     @Mock MktReferralOrderMapper orders;
@@ -55,14 +56,15 @@ class WhDashboardControllerTest {
         when(workspace.current()).thenReturn(new WhIdentityService.Identity(current,contact));
         when(customers.selectCount(any())).thenReturn(0L);
         when(workspace.customerScope(any())).thenAnswer(x -> new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<com.zhyq.park.crm.entity.Customer>().eq(com.zhyq.park.crm.entity.Customer::getAssignedWarehouseId,11L));
-        when(orders.selectCount(any())).thenReturn(0L);
-        WhDashboardController controller = new WhDashboardController(warehouses, mappings, customers, orders, assignments, workspace);
+        when(shipments.month(eq(current),isNull(),any())).thenReturn(java.util.Map.of("todayOrders",24,"monthOrders",986));
+        WhDashboardController controller = new WhDashboardController(warehouses, mappings, customers, orders, assignments, workspace, shipments);
         Object data = controller.dashboard().getData();
         assertThat(data.toString()).contains("warehouseId=11", "WH-11");
         verify(warehouses, never()).selectById(99L);
         verify(customers,times(2)).selectCount(any());
         verifyNoInteractions(mappings);
-        verify(orders,times(2)).selectCount(any());
+        assertThat(data.toString()).contains("todayOrders=24","monthOrders=986");
+        verifyNoInteractions(orders);
     }
     @Test void merchantOrdersExcludeBonusAndPlatformFeeFinancialEvents() {
         SecurityContextHolder.getContext().setAuthentication(
@@ -77,7 +79,7 @@ class WhDashboardControllerTest {
             assertThat(query.getParamNameValuePairs()).containsValues(11L,7L,2);
             IPage<MktReferralOrder> page = inv.getArgument(0); page.setRecords(List.of()); return page;
         });
-        WhDashboardController controller = new WhDashboardController(warehouses,mappings,customers,orders,assignments,workspace);
+        WhDashboardController controller = new WhDashboardController(warehouses,mappings,customers,orders,assignments,workspace,shipments);
         assertThat(controller.orders(1,20,null).getData().getTotal()).isZero();
         verify(orders).selectPage(any(),any());
     }

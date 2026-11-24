@@ -2,7 +2,7 @@
   <view class="page-wrap">
     <view v-if="state === 'loading'" class="card muted">正在读取报价填写码…</view>
     <view v-else-if="state === 'error'" class="card"><view class="error">{{ error }}</view><button v-if="tokenValue" class="btn ghost" @click="load">重新读取</button></view>
-    <view v-else-if="state === 'done'" class="card"><view class="title">报价需求已提交</view><view class="muted">园区将根据已提交的信息匹配云仓报价。</view></view>
+    <view v-else-if="state === 'done'" class="card"><view class="title">报价需求已提交</view><view class="muted">园区将对比各云仓报价，运营人员会根据评估结果分配对接云仓。</view></view>
     <view v-else-if="pending" class="card"><view v-if="sending" class="muted">正在核对并提交报价需求…</view><template v-else><view class="error">{{ error }}</view><button class="btn" @click="send">再次确认提交结果</button></template></view>
     <view v-else>
       <view class="card"><view class="title">云仓报价需求</view><view class="muted">请按实际业务勾选。可跳过暂时无法确定的项目。</view></view>

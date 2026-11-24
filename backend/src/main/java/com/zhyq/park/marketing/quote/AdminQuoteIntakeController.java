@@ -16,4 +16,10 @@ public class AdminQuoteIntakeController {
     public Result<Map<String,Object>> state(@PathVariable long id,@RequestParam long projectId) {
         return Result.ok(intake.admin(id,projectId));
     }
+
+    @PostMapping("/crm/marketing/customer/{id}/quote-intake/project")
+    @PreAuthorize("hasAuthority('crm:marketing:customer:edit')")
+    public Result<Map<String,Object>> confirmProject(@PathVariable long id,@RequestParam long projectId) {
+        return Result.ok(intake.confirmProject(id,projectId));
+    }
 }

@@ -1,3 +1,4 @@
+import { warehouseDashboardEntries } from '../src/utils/warehouse-dashboard.mjs'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
@@ -62,13 +63,13 @@ test('failed progress update keeps text for retry and does not show fake success
 test('invalid customer links do not query a guessed fallback customer', () => {
   const h = detailHarness(); h.hooks.load({ id: '-9' }); assert.equal(h.calls.length, 0); assert.equal(h.run('error.value'), '客户参数无效')
 })
-test('member dashboard exposes only own profile, scoped customers and scoped shipments', () => {
-  const context = vm.createContext({ ref: value => ({ value }), reactive: value => value, computed: getter => ({ get value() { return getter() } }), onShow() {}, isWarehouseOwner })
-  vm.runInContext(source('warehouse-dashboard'), context)
-  vm.runInContext("profile.value = { warehouseRole: 'member', isOwner: false }", context)
-  assert.deepEqual(JSON.parse(vm.runInContext('JSON.stringify(visibleEntries.value.map(x => x.page))', context)), ['warehouse-profile', 'warehouse-customers', 'warehouse-orders'])
-  vm.runInContext("profile.value = { warehouseRole: 'owner', isOwner: true }", context)
-  assert.equal(vm.runInContext("visibleEntries.value.some(x => x.page === 'warehouse-staff')", context), true)
+test('same dashboard exposes only scoped features to salespeople and the tariff only to online owners', () => {
+  const staff = warehouseDashboardEntries({ warehouseRole:'member',isOwner:false },{ joinStatus:5 })
+  assert.deepEqual(staff.map(item => item.page), ['warehouse-profile','warehouse-customers','warehouse-orders'])
+  const owner = { warehouseRole:'owner',isOwner:true }
+  assert.ok(warehouseDashboardEntries(owner,{}).some(item => item.page === 'warehouse-staff'))
+  assert.ok(warehouseDashboardEntries(owner,{ joinStatus:5 }).some(item => item.page === 'warehouse-rate-card'))
+  assert.ok(!warehouseDashboardEntries(owner,{ joinStatus:6 }).some(item => item.page === 'warehouse-rate-card'))
 })
 
 test('customer detail renders one complete authoritative progress history beside the five-stage editor', async () => {

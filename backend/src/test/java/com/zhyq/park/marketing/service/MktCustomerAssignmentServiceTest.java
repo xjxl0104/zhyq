@@ -103,6 +103,17 @@ class MktCustomerAssignmentServiceTest {
         verify(customers, never()).update(isNull(), any(Wrapper.class));
     }
 
+    @Test void firstDispatchOfReferredCustomerRequiresSubmittedDemandInTheSameProject(){
+        customer.setAssignedWarehouseId(null);
+        customer.setWarehouseAssignmentStatus(0);
+        assertThatThrownBy(()->service.assign(11L,20L,"首派")).isInstanceOf(BizException.class).hasMessageContaining("详细报价需求");
+        verify(customers,never()).update(isNull(),any(Wrapper.class));
+        when(customers.scopedSubmittedQuoteCount(11L)).thenReturn(1L);
+        when(customers.update(isNull(),any(Wrapper.class))).thenReturn(1);
+        service.assign(11L,20L,"已查阅比价报告");
+        verify(progress).transition(11L,30,"已分派云仓，等待商家确认承接","assigned");
+    }
+
     @Test
     void crossProjectAndOfflineUnavailableWarehouseAreRejected() {
         warehouse.setProjectId(2L);
