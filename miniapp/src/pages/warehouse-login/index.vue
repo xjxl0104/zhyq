@@ -6,9 +6,13 @@
       <view class="login-subtitle">加盟进度、ERP 接入、订单与结算，一站式掌握</view>
     </view>
     <view class="card login-card">
-      <WechatAuthForm v-if="method === 'wechat'" warehouse @authenticated="done" @busy="busy = $event" />
+      <radio-group v-if="canUseWechat && method === 'wechat'" class="login-roles" @change="memberOnly = $event.detail.value === 'member'">
+        <label><radio value="merchant" :checked="!memberOnly" :disabled="busy" />商家登录</label>
+        <label><radio value="member" :checked="memberOnly" :disabled="busy" />业务员登录</label>
+      </radio-group>
+      <WechatAuthForm v-if="method === 'wechat'" :key="memberOnly" warehouse :member-only="memberOnly" @authenticated="done" @busy="busy = $event" />
       <PasswordAuthForm v-else warehouse @authenticated="done" @busy="busy = $event" />
-      <button v-if="canUseWechat" class="method-link" :disabled="busy" @click="choose(method === 'wechat' ? 'password' : 'wechat')">{{ method === 'wechat' ? '账号密码登录（备用）' : '返回一键登录' }}</button>
+      <button v-if="canUseWechat && !memberOnly" class="method-link" :disabled="busy" @click="choose(method === 'wechat' ? 'password' : 'wechat')">{{ method === 'wechat' ? '账号密码登录（备用）' : '返回一键登录' }}</button>
     </view>
     <button class="identity-link" :disabled="busy" @click="chooseIdentity">切换身份</button>
     <button v-if="showDemo" class="demo-link" :disabled="busy" @click="goDemo">查看功能演示（示例数据）</button>
@@ -35,14 +39,17 @@ canUseWechat.value = true
 // #endif
 const method = ref(canUseWechat.value ? 'wechat' : 'password')
 const busy = ref(false)
+const memberOnly = ref(false)
 
 function choose(value) { if (!busy.value) method.value = value }
 function done(t) { warehouseToken.set(t); uni.reLaunch({ url: '/pages/warehouse-dashboard/index' }) }
 function chooseIdentity() { if (!busy.value) uni.reLaunch({ url: '/pages/entry/index?select=1' }) }
-function goDemo() { if (showDemo && !busy.value) uni.navigateTo({ url: '/pages/demo/index' }) }
+function goDemo() { if (showDemo && !busy.value) uni.navigateTo({ url: '/pages/demo/index?role=warehouse' }) }
 </script>
 
 <style scoped>
+.login-roles { display: flex; flex-wrap: wrap; gap: 28rpx; margin-bottom: 28rpx; }
+.login-roles label { display: flex; align-items: center; gap: 6rpx; }
 .warehouse-login-page { padding: 24rpx 0 56rpx; }
 .warehouse-login-hero { padding: 30rpx 42rpx 12rpx; }
 .warehouse-login-hero .brand-mark { margin-bottom: 24rpx; background: #248596; }

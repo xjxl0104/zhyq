@@ -44,6 +44,20 @@ class WhIdentityServiceTest {
         member.setOpenid("wx");when(contacts.selectOne(any())).thenReturn(member);
         assertThatThrownBy(()->service.quickLoginIdentity("wx","13800138000","负责人")).isInstanceOf(BizException.class).hasMessageContaining("手机号");verifyNoInteractions(jwt,onboarding);
     }
+    @Test void memberLoginRequiresProvisionedPhoneAndNeverCreatesOwner() {
+        assertThatThrownBy(() -> service.memberLogin("wx", "13900139000", "张三")).hasMessageContaining("尚未登记");
+        verifyNoInteractions(onboarding, jwt);
+        when(contacts.selectList(any())).thenReturn(List.of(member));
+        assertThat(service.memberLogin("wx", "13900139000", "张三")).containsEntry("warehouseRole", "member");
+    }
+
+    @Test void twoBindingsRequirePhoneToSelectRole() {
+        when(contacts.selectCount(any())).thenReturn(2L);
+        assertThat(service.findByOpenid("wx", null)).isNull();
+        verify(contacts, never()).selectOne(any());
+        verifyNoInteractions(jwt, onboarding);
+    }
+
     @Test void existingBindingCannotBeClaimedByAnotherWechat(){
         member.setOpenid("original");when(contacts.selectList(any())).thenReturn(List.of(member));
         assertThatThrownBy(()->service.quickLoginIdentity("other","13900139000","张三")).isInstanceOf(BizException.class).hasMessageContaining("其他微信");verifyNoInteractions(jwt);
