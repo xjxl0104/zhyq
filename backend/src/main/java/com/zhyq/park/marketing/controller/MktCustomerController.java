@@ -54,6 +54,8 @@ public class MktCustomerController {
     private final MktAuditService auditService;
     private final MktCustomerAssignmentService assignmentService;
     private final MktCustomerDeletionService deletionService;
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.zhyq.park.marketing.quote.QuoteIntakeService quoteIntakeService;
 
     @Operation(summary = "分页(附推荐人姓名与锁定状态)")
     @PreAuthorize("hasAuthority('crm:marketing:customer:query')")
@@ -87,7 +89,17 @@ public class MktCustomerController {
     @PreAuthorize("hasAuthority('crm:marketing:customer:query')")
     @GetMapping("/{id}")
     public Result<Map<String, Object>> get(@PathVariable Long id) {
-        return Result.ok(enrich(require(id)));
+        Customer c = require(id);
+        Map<String, Object> out = enrich(c);
+        if (quoteIntakeService != null) {
+            long tenantId = c.getTenantId() == null
+                    ? com.zhyq.park.common.config.MyMetaObjectHandler.DEFAULT_TENANT_ID : c.getTenantId();
+            Map<String, Object> quoteIntake = quoteIntakeService.submittedDetails(c.getId(), tenantId, c.getProjectId());
+            if (quoteIntake != null && !quoteIntake.isEmpty()) {
+                out.put("quoteIntake", quoteIntake);
+            }
+        }
+        return Result.ok(out);
     }
 
     @Operation(summary = "管理员删除客户（保留业务历史，有合同或订单不可删除）")

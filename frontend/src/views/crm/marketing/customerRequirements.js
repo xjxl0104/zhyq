@@ -35,24 +35,61 @@ export function validateRequirements(value) {
   }
   return ''
 }
-export function requirementsRows(value = {}) {
+const quoteWeightLabel = v => v === '0-0.3' ? '≤0.3 kg' : v === '>3' ? '＞3 kg' : `＞${String(v).replace('-', ' 至 ')} kg`
+
+export function mergeRequirementsWithQuote(value = {}, quote = null) {
+  const base = value || {}
+  const q = quote || {}
+  const pickList = (a, b) => Array.isArray(a) && a.length ? a : (Array.isArray(b) && b.length ? b : [])
+  const pickText = (a, b) => (a != null && String(a).trim() !== '') ? a : (b ?? '')
+  return {
+    ...base,
+    salesPlatforms: pickList(base.salesPlatforms, q.salesPlatforms),
+    salesPlatformOther: pickText(base.salesPlatformOther, q.salesPlatformOther),
+    productCategories: pickList(base.productCategories, q.productCategories),
+    productCategoryOther: pickText(base.productCategoryOther, q.productCategoryOther),
+    skuCount: pickText(base.skuCount, q.skuCount),
+    dailyOrders: pickText(base.dailyOrders, q.dailyOrders),
+    itemsPerParcel: base.itemsPerParcel != null && base.itemsPerParcel !== '' ? base.itemsPerParcel : (q.itemsPerParcel ?? null),
+    couriers: pickList(base.couriers, q.couriers),
+    courierOther: pickText(base.courierOther, q.courierOther),
+    quoteWeightRanges: Array.isArray(q.weightRanges) ? q.weightRanges : (Array.isArray(base.quoteWeightRanges) ? base.quoteWeightRanges : []),
+    heavyWeightKg: base.heavyWeightKg ?? q.heavyWeightKg ?? null,
+    weightMix: pickText(base.weightMix, q.weightMix)
+  }
+}
+
+export function requirementsRows(value = {}, quote = null) {
+  const merged = quote ? mergeRequirementsWithQuote(value, quote) : (value || {})
   const multi = (items, other) => (items || []).map(item => item === '其他' && other ? `其他：${other}` : item).join('、') || '未填写'
+  const weightText = (() => {
+    if (Array.isArray(merged.productWeights) && merged.productWeights.length) {
+      return merged.productWeights.map(w => `${rangeLabel(w.range, 'kg')}${w.percentage != null && w.percentage !== '' ? `（${w.percentage}%）` : ''}`).join('；')
+    }
+    if (Array.isArray(merged.quoteWeightRanges) && merged.quoteWeightRanges.length) {
+      const parts = [merged.quoteWeightRanges.map(quoteWeightLabel).join('、')]
+      if (merged.heavyWeightKg != null && merged.heavyWeightKg !== '') parts.push(`典型重件 ${merged.heavyWeightKg} kg`)
+      if (merged.weightMix) parts.push(merged.weightMix)
+      return parts.join('；')
+    }
+    return '未填写'
+  })()
   const rows = [
-    ['对接人职位', value.contactPosition || '未填写'],
-    ['销售平台', multi(value.salesPlatforms, value.salesPlatformOther)],
-    ['销售品类', multi(value.productCategories, value.productCategoryOther)],
-    ['产品重量', (value.productWeights || []).map(w => `${rangeLabel(w.range, 'kg')}${w.percentage != null && w.percentage !== '' ? `（${w.percentage}%）` : ''}`).join('；') || '未填写'],
-    ...rangeFields.map(f => [f.label, value[f.key] ? rangeLabel(value[f.key], f.unit) : '未填写']),
-    ['平均包裹产品数量', itemsPerParcelLabel(value.itemsPerParcelRange) || (value.itemsPerParcel != null && value.itemsPerParcel !== '' ? `${value.itemsPerParcel} 件` : '未填写')],
-    ['指定快递承运商', multi(value.couriers, value.courierOther)],
-    ['目前仓配方式', value.warehouseMode || '未填写'],
-    ['目前合作快递', multi(value.currentCouriers, value.currentCourierOther)],
-    ['最头疼的问题', multi(value.painPoints, value.painPointOther)]
+    ...(merged.contactPosition ? [['对接人职位', merged.contactPosition]] : []),
+    ['销售平台', multi(merged.salesPlatforms, merged.salesPlatformOther)],
+    ['销售品类', multi(merged.productCategories, merged.productCategoryOther)],
+    ['产品重量', weightText],
+    ...rangeFields.map(f => [f.label, merged[f.key] ? rangeLabel(merged[f.key], f.unit) : '未填写']),
+    ['平均包裹产品数量', itemsPerParcelLabel(merged.itemsPerParcelRange) || (merged.itemsPerParcel != null && merged.itemsPerParcel !== '' ? `${merged.itemsPerParcel} 件` : '未填写')],
+    ['指定快递承运商', multi(merged.couriers, merged.courierOther)],
+    ['目前仓配方式', merged.warehouseMode || '未填写'],
+    ['目前合作快递', multi(merged.currentCouriers, merged.currentCourierOther)],
+    ['最头疼的问题', multi(merged.painPoints, merged.painPointOther)]
   ]
-  if (value.productCount) rows.push(['销售产品种类数（历史）', rangeLabel(value.productCount, '种')])
+  if (merged.productCount) rows.push(['销售产品种类数（历史）', rangeLabel(merged.productCount, '种')])
   // 表单已不再收集仓储面积、打包方式和开票，只在历史数据有值时显示
-  if (value.storageArea) rows.push(['仓储面积', rangeLabel(value.storageArea, '㎡')])
-  if (value.packaging) rows.push(['打包方式', value.packaging])
-  if (value.invoiceRequired === true || value.invoiceRequired === false) rows.push(['是否开发票', value.invoiceRequired ? '是' : '否'])
+  if (merged.storageArea) rows.push(['仓储面积', rangeLabel(merged.storageArea, '㎡')])
+  if (merged.packaging) rows.push(['打包方式', merged.packaging])
+  if (merged.invoiceRequired === true || merged.invoiceRequired === false) rows.push(['是否开发票', merged.invoiceRequired ? '是' : '否'])
   return rows
 }

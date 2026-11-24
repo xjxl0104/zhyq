@@ -98,7 +98,7 @@
             </el-descriptions-item>
             <el-descriptions-item label="需求">{{ detail.row.demand || '未填写' }}</el-descriptions-item>
           </el-descriptions>
-          <CustomerRequirements :model-value="detail.row.requirements || {}" readonly />
+          <CustomerRequirements :model-value="detail.row.requirements || {}" :quote-requirements="detail.row.quoteIntake?.requirements || null" readonly />
           <CustomerQuotePanel v-if="detail.visible && (detail.row.projectId || projectStore.currentProjectId)" :key="`${detail.row.projectId || projectStore.currentProjectId}/${detail.row.id}`"
             :customer-id="detail.row.id" :project-id="detail.row.projectId || projectStore.currentProjectId" :project-name="projectLabel(detail.row.projectId || projectStore.currentProjectId)" :can-edit="canEdit"
             :assignment-status="detail.row.warehouseAssignmentStatus || 0" :can-assign="canEdit && detail.row.status === 1 && detail.row.serviceType !== 4"

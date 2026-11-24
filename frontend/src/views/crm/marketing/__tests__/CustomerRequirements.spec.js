@@ -89,4 +89,28 @@ describe('客户仓配需求勾选表单', () => {
     expect(validateRequirements({ ...emptyRequirements(), productCategories: ['非法选项'] })).toContain('销售品类')
     expect(validateRequirements({ ...emptyRequirements(), itemsPerParcelRange: '>=100' })).toContain('平均包裹产品数量')
   })
+
+  it('报备表缺失的销售平台、品类、重量、SKU、日均单量、包裹件数与指定快递自动从已提交报价需求合并回显', () => {
+    const rows = requirementsRows(
+      { warehouseMode: '外包云仓', currentCouriers: ['圆通', '中通'], painPoints: ['错发漏发多'] },
+      {
+        salesPlatforms: ['抖音', '天猫'],
+        productCategories: ['美妆护肤'],
+        weightRanges: ['0-0.3', '0.3-0.5', '>3'],
+        heavyWeightKg: 5,
+        skuCount: '100-500',
+        dailyOrders: '3000-5000',
+        itemsPerParcel: 3,
+        couriers: ['顺丰']
+      }
+    )
+    expect(rows).toContainEqual(['销售平台', '抖音、天猫'])
+    expect(rows).toContainEqual(['销售品类', '美妆护肤'])
+    expect(rows).toContainEqual(['产品重量', '≤0.3 kg、＞0.3 至 0.5 kg、＞3 kg；典型重件 5 kg'])
+    expect(rows).toContainEqual(['SKU 数量', '100–小于 500 个'])
+    expect(rows).toContainEqual(['日均单量', '3000–小于 5000 单'])
+    expect(rows).toContainEqual(['平均包裹产品数量', '3 件'])
+    expect(rows).toContainEqual(['指定快递承运商', '顺丰'])
+    expect(rows).toContainEqual(['目前仓配方式', '外包云仓'])
+  })
 })

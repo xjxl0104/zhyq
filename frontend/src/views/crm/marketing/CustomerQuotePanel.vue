@@ -10,7 +10,7 @@
     <p v-else-if="state && !state.submittedAt">意向客户，等待客户扫码填写报价需求。</p>
     <template v-if="state?.submittedAt">
       <p><strong>{{ assignmentStages[assignmentStatus] }}</strong>　需求提交于 {{ String(state.submittedAt).replace('T',' ') }}</p>
-      <el-collapse><el-collapse-item title="查看客户填写的报价需求" name="demand">
+      <el-collapse v-model="demandOpen"><el-collapse-item title="查看客户填写的报价需求" name="demand">
         <el-descriptions :column="1" border><el-descriptions-item v-for="[key,label] in visibleFields" :key="key" :label="label">{{ formatField(key,state.requirements[key]) }}</el-descriptions-item></el-descriptions>
       </el-collapse-item></el-collapse>
       <h4>AI 比价报告</h4>
@@ -65,7 +65,7 @@ const props=defineProps({customerId:{type:[Number,String],required:true},project
   projectName:String,canEdit:Boolean,canAssign:Boolean,assignmentStatus:{type:Number,default:0}})
 const emit=defineEmits(['assign','project-confirmed'])
 const assignmentStages={0:'待后台分配',1:'已分配 · 等待云仓承接',2:'云仓已承接',3:'云仓已拒绝 · 待重新分配'}
-const state=ref(null), comparison=ref(null), advice=ref(null), loading=ref(false), failure=ref('')
+const state=ref(null), comparison=ref(null), advice=ref(null), loading=ref(false), failure=ref(''), demandOpen=ref(['demand'])
 const fields=Object.entries({salesPlatforms:'销售平台',salesPlatformOther:'其他销售平台',productCategories:'销售品类',productCategoryOther:'其他品类',palletCount:'约占卡板数',weightRanges:'包裹实重档（kg）',heavyWeightKg:'典型重件重量（kg）',weightMix:'重量分布',skuCount:'SKU 数量',dailyOrders:'日均单量',peakOrders:'大促单量',materialProviders:'纸箱耗材提供方',erpSystems:'使用系统',erpOther:'其他系统',couriers:'指定承运商',courierOther:'其他承运商',services:'增值服务',serviceQuantities:'增值服务用量',invoice:'开票要求',itemsPerParcel:'每票商品件数',batchPercent:'批量单占比（%）',packingNote:'包装说明'})
 const visibleFields=computed(()=>fields.filter(([key])=>state.value?.requirements?.[key]!=null))
 const lowest=computed(()=>{
