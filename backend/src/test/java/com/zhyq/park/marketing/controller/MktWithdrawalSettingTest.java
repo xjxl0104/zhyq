@@ -46,9 +46,9 @@ class MktWithdrawalSettingTest {
                 "auto_withdraw_day");
         assertThat(rows.get(0)).containsEntry("skey", "withdraw_arrival_time")
                 .containsEntry("svalue", MktWithdrawalService.DEFAULT_ARRIVAL_TIME);
-        assertThat(rows.get(1)).containsEntry("skey", "withdraw_window_start_day").containsEntry("svalue", "0");
-        assertThat(rows.get(2)).containsEntry("skey", "withdraw_window_end_day").containsEntry("svalue", "31");
-        assertThat(rows.get(3)).containsEntry("skey", "auto_withdraw_day").containsEntry("svalue", "10");
+        assertThat(rows.get(1)).containsEntry("skey", "withdraw_window_start_day").containsEntry("svalue", "25");
+        assertThat(rows.get(2)).containsEntry("skey", "withdraw_window_end_day").containsEntry("svalue", "30");
+        assertThat(rows.get(3)).containsEntry("skey", "auto_withdraw_day").containsEntry("svalue", "25");
         verify(jdbc, never()).update(anyString(), any(Object[].class));
         verifyNoInteractions(audit);
     }
