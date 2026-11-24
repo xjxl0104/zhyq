@@ -117,12 +117,16 @@ public class MktDashboardController {
     }
 
     private long count(String sql, Object... args) {
-        Long v = jdbc.queryForObject(sql, Long.class, args);
+        Long v = (args == null || args.length == 0)
+                ? jdbc.queryForObject(sql, Long.class)
+                : jdbc.queryForObject(sql, Long.class, args);
         return v == null ? 0 : v;
     }
 
     private BigDecimal decimal(String sql, Object... args) {
-        BigDecimal v = jdbc.queryForObject(sql, BigDecimal.class, args);
+        BigDecimal v = (args == null || args.length == 0)
+                ? jdbc.queryForObject(sql, BigDecimal.class)
+                : jdbc.queryForObject(sql, BigDecimal.class, args);
         return v == null ? BigDecimal.ZERO : v;
     }
 
