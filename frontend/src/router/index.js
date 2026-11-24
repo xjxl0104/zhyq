@@ -181,7 +181,9 @@ const routes = [
       { path: 'system/resource', meta: { title: '运营资源' }, component: () => import('@/views/system/Resource.vue') },
       { path: 'system/message', meta: { title: '消息中心' }, component: () => import('@/views/system/MessageCenter.vue') }
     ]
-  }
+  },
+  // 已下线菜单的旧书签/旧标签页刷新时兜底回首页，避免空路由白屏
+  { path: '/:pathMatch(.*)*', redirect: '/dashboard' }
 ]
 
 const router = createRouter({

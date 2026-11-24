@@ -74,4 +74,12 @@ class BusinessRouteAccessTest {
         // 小程序令牌在入口即被隔离，不能借此进入后台提现接口
         assertThat(BusinessRouteAccess.allowed("/crm/marketing/withdrawal/18", "GET", Set.of("ROLE_MP"))).isFalse();
     }
+
+    @Test void leaseFeeEndpointsAllowRentPropertyAndSummaryMenus() {
+        assertThat(BusinessRouteAccess.allowed("/energy/lease-fee/overview", "GET", Set.of("MENU:/energy/rent"))).isTrue();
+        assertThat(BusinessRouteAccess.allowed("/energy/lease-fee/open", "POST", Set.of("MENU:/energy/property"))).isTrue();
+        assertThat(BusinessRouteAccess.allowed("/energy/lease-fee/1/notices", "GET", Set.of("MENU:/energy/summary"))).isTrue();
+        assertThat(BusinessRouteAccess.allowed("/energy/lease-fee/overview", "GET", Set.of("MENU:/energy/electric"))).isFalse();
+        assertThat(BusinessRouteAccess.allowed("/energy/lease-fee/overview", "GET", Set.of())).isFalse();
+    }
 }
