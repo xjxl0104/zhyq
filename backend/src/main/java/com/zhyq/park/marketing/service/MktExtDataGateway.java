@@ -1,11 +1,12 @@
 package com.zhyq.park.marketing.service;
 
+import cn.hutool.crypto.digest.DigestUtil;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.zhyq.park.common.exception.BizException;
 import com.zhyq.park.common.setting.BizSettings;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -32,7 +33,6 @@ import java.util.regex.Pattern;
  */
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class MktExtDataGateway {
 
     private static final String MODULE = "marketing";
@@ -44,7 +44,20 @@ public class MktExtDataGateway {
     private final JdbcTemplate jdbc;
     private final BizSettings bizSettings;
     private final ObjectMapper json;
+    private final MktConnectorHubService connectorHub;
     private final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(4)).build();
+
+    public MktExtDataGateway(JdbcTemplate jdbc, BizSettings bizSettings, ObjectMapper json) {
+        this(jdbc, bizSettings, json, null);
+    }
+
+    @Autowired
+    public MktExtDataGateway(JdbcTemplate jdbc, BizSettings bizSettings, ObjectMapper json, MktConnectorHubService connectorHub) {
+        this.jdbc = jdbc;
+        this.bizSettings = bizSettings;
+        this.json = json;
+        this.connectorHub = connectorHub;
+    }
 
     public record CompanyProfile(
             String status, // CACHE_HIT / API_ALIGNED / SKIPPED_OUT_PROVINCE / UNCONFIGURED
@@ -121,66 +134,160 @@ public class MktExtDataGateway {
                     parseShopsJson(str(c.get("shops_json"))));
         }
 
-        // 2. 检查是否配置了外部轻量工商 API 凭证
+        // 2. 多通道热插拔工商与联系方式穿透链：企查查官方 QCC_PRO -> 天眼查 TYC_PRO -> 阿里云/APISpace 百元包 LIGHT_CORP
+        CompanyProfile fetched = tryQccOfficial(tenantId, companyOrShopName);
+        if (fetched == null) fetched = tryTianyanchaOfficial(tenantId, companyOrShopName);
+        if (fetched == null) fetched = tryLightCorpPack(tenantId, companyOrShopName);
+        if (fetched == null) {
+            return new CompanyProfile("UNCONFIGURED", null, null, null, null, null, null, null, null, null, null, 0, List.of());
+        }
+
+        // 若工商照面未含电话且已点亮探迹 TUNGEE_API，则补全老板/供应链实名手机
+        String enrichedPhone = fetched.phone();
+        if (!StringUtils.hasText(enrichedPhone)) {
+            enrichedPhone = tryTungeeBossPhone(tenantId, fetched.companyName());
+        }
+        String shopsJson = "[]";
+        try { shopsJson = json.writeValueAsString(fetched.extraShops()); } catch (Exception ignored) {}
+
+        // 写入 30 天本地省钱缓存
+        jdbc.update("""
+                INSERT INTO crm_ext_company_cache
+                  (tenant_id, lookup_key, company_name, credit_code, legal_person, reg_capital, insured_count,
+                   phone, province, city, district, address, dishonest_count, shops_json, expires_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, DATE_ADD(NOW(), INTERVAL 30 DAY))
+                ON DUPLICATE KEY UPDATE
+                  company_name=VALUES(company_name), credit_code=VALUES(credit_code), legal_person=VALUES(legal_person),
+                  reg_capital=VALUES(reg_capital), insured_count=VALUES(insured_count), phone=VALUES(phone),
+                  address=VALUES(address), dishonest_count=VALUES(dishonest_count), shops_json=VALUES(shops_json),
+                  expires_at=DATE_ADD(NOW(), INTERVAL 30 DAY)
+                """, tenantId, key, fetched.companyName(), fetched.creditCode(), fetched.legalPerson(),
+                fetched.regCapital(), fetched.insuredCount(), enrichedPhone, fetched.province(),
+                fetched.city(), fetched.district(), fetched.address(), fetched.dishonestCount(), shopsJson);
+
+        return new CompanyProfile("API_ALIGNED", fetched.companyName(), fetched.creditCode(), fetched.legalPerson(),
+                fetched.regCapital(), fetched.insuredCount(), enrichedPhone, fetched.province(),
+                fetched.city(), fetched.district(), fetched.address(), fetched.dishonestCount(), fetched.extraShops());
+    }
+
+    private CompanyProfile tryQccOfficial(Long tenantId, String keyword) {
+        if (connectorHub == null) return null;
+        Optional<Map<String, String>> credsOpt = connectorHub.acquireActiveCredentials(tenantId, "QCC_PRO", false);
+        if (credsOpt.isEmpty()) return null;
+        Map<String, String> creds = credsOpt.get();
+        String appKey = trimNull(creds.get("appKey"));
+        String secretKey = trimNull(creds.get("secretKey"));
+        if (!StringUtils.hasText(appKey) || !StringUtils.hasText(secretKey)) return null;
+        try {
+            String timespan = String.valueOf(System.currentTimeMillis() / 1000);
+            String token = DigestUtil.md5Hex(appKey + timespan + secretKey).toUpperCase(Locale.ROOT);
+            String url = "https://api.qichacha.com/ECIV4/GetBasicDetailsByName?key=" + URLEncoder.encode(appKey, StandardCharsets.UTF_8)
+                    + "&keyword=" + URLEncoder.encode(keyword.trim(), StandardCharsets.UTF_8);
+            HttpRequest req = HttpRequest.newBuilder(URI.create(url)).timeout(Duration.ofSeconds(5))
+                    .header("Token", token).header("Timespan", timespan).GET().build();
+            HttpResponse<String> resp = http.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+            if (resp.statusCode() != 200) return null;
+            return parseStandardCompanyNode(json.readTree(resp.body()).path("Result"));
+        } catch (Exception e) {
+            log.warn("[qcc-pro] 企查查官方接口调用异常: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    private CompanyProfile tryTianyanchaOfficial(Long tenantId, String keyword) {
+        if (connectorHub == null) return null;
+        Optional<Map<String, String>> credsOpt = connectorHub.acquireActiveCredentials(tenantId, "TYC_PRO", false);
+        if (credsOpt.isEmpty()) return null;
+        String token = trimNull(credsOpt.get().get("token"));
+        if (!StringUtils.hasText(token)) return null;
+        try {
+            String url = "https://open.api.tianyancha.com/services/open/ic/baseinfoV2/2.0?keyword="
+                    + URLEncoder.encode(keyword.trim(), StandardCharsets.UTF_8);
+            HttpRequest req = HttpRequest.newBuilder(URI.create(url)).timeout(Duration.ofSeconds(5))
+                    .header("Authorization", token).GET().build();
+            HttpResponse<String> resp = http.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+            if (resp.statusCode() != 200) return null;
+            return parseStandardCompanyNode(json.readTree(resp.body()).path("result"));
+        } catch (Exception e) {
+            log.warn("[tyc-pro] 天眼查接口调用异常: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    private CompanyProfile tryLightCorpPack(Long tenantId, String keyword) {
         String appCode = trimNull(bizSettings.raw(MODULE, "ext_qcc_appcode"));
         String endpoint = trimNull(bizSettings.raw(MODULE, "ext_qcc_endpoint"));
-        if (!StringUtils.hasText(appCode) || !StringUtils.hasText(endpoint)) {
-            return new CompanyProfile("UNCONFIGURED", null, null, null, null, null, null, null, null, null, null, 0, List.of());
-        }
-
-        try {
-            String url = endpoint + (endpoint.contains("?") ? "&" : "?") + "keyword=" + URLEncoder.encode(companyOrShopName.trim(), StandardCharsets.UTF_8);
-            HttpRequest req = HttpRequest.newBuilder(URI.create(url))
-                    .timeout(Duration.ofSeconds(5))
-                    .header("Authorization", "APPCODE " + appCode)
-                    .header("Token", appCode)
-                    .GET().build();
-            HttpResponse<String> resp = http.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
-            if (resp.statusCode() != 200) {
-                log.warn("[ext-qcc] 工商接口返回 HTTP {}", resp.statusCode());
-                return new CompanyProfile("UNCONFIGURED", null, null, null, null, null, null, null, null, null, null, 0, List.of());
+        if ((!StringUtils.hasText(appCode) || !StringUtils.hasText(endpoint)) && connectorHub != null) {
+            Optional<Map<String, String>> opt = connectorHub.acquireActiveCredentials(tenantId, "LIGHT_CORP", false);
+            if (opt.isPresent()) {
+                appCode = trimNull(opt.get().get("appCode"));
+                endpoint = trimNull(opt.get().get("endpoint"));
             }
+        }
+        if (!StringUtils.hasText(appCode) || !StringUtils.hasText(endpoint)) return null;
+        try {
+            String url = endpoint + (endpoint.contains("?") ? "&" : "?") + "keyword=" + URLEncoder.encode(keyword.trim(), StandardCharsets.UTF_8);
+            HttpRequest req = HttpRequest.newBuilder(URI.create(url)).timeout(Duration.ofSeconds(5))
+                    .header("Authorization", "APPCODE " + appCode).header("Token", appCode).GET().build();
+            HttpResponse<String> resp = http.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+            if (resp.statusCode() != 200) return null;
             JsonNode root = json.readTree(resp.body());
             JsonNode data = root.has("Result") ? root.path("Result") : root.has("result") ? root.path("result") : root.path("data");
-            if (data.isArray() && !data.isEmpty()) data = data.get(0);
-            String corpName = firstText(data, "Name", "companyName", "entName", "name");
-            if (!StringUtils.hasText(corpName)) {
-                return new CompanyProfile("UNCONFIGURED", null, null, null, null, null, null, null, null, null, null, 0, List.of());
-            }
-            String credit = firstText(data, "CreditCode", "creditCode", "regNo");
-            String legal = firstText(data, "OperName", "legalPerson", "frName");
-            String cap = firstText(data, "RegistCapi", "regCapital", "regCap");
-            Integer insured = firstInt(data, "InsuredCount", "insuredCount", "socialStaffNum");
-            String phone = firstText(data, "ContactNumber", "phoneNumber", "tel", "phone");
-            String prov = firstText(data, "Province", "province");
-            String city = firstText(data, "City", "city");
-            String dist = firstText(data, "District", "district", "county");
-            String addr = firstText(data, "Address", "address", "regLocation");
-            int dishonest = Optional.ofNullable(firstInt(data, "DishonestCount", "dishonestCount")).orElse(0);
-
-            // 写入 30 天本地省钱缓存
-            jdbc.update("""
-                    INSERT INTO crm_ext_company_cache
-                      (tenant_id, lookup_key, company_name, credit_code, legal_person, reg_capital, insured_count,
-                       phone, province, city, district, address, dishonest_count, expires_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, DATE_ADD(NOW(), INTERVAL 30 DAY))
-                    ON DUPLICATE KEY UPDATE
-                      company_name=VALUES(company_name), credit_code=VALUES(credit_code), legal_person=VALUES(legal_person),
-                      reg_capital=VALUES(reg_capital), insured_count=VALUES(insured_count), phone=VALUES(phone),
-                      address=VALUES(address), dishonest_count=VALUES(dishonest_count), expires_at=DATE_ADD(NOW(), INTERVAL 30 DAY)
-                    """, tenantId, key, corpName, credit, legal, cap, insured, phone, prov, city, dist, addr, dishonest);
-
-            return new CompanyProfile("API_ALIGNED", corpName, credit, legal, cap, insured, phone, prov, city, dist, addr, dishonest, List.of());
+            return parseStandardCompanyNode(data);
         } catch (Exception e) {
-            log.warn("[ext-qcc] 调用外部工商网关异常: {}", e.getMessage());
-            return new CompanyProfile("UNCONFIGURED", null, null, null, null, null, null, null, null, null, null, 0, List.of());
+            log.warn("[light-corp] 轻量工商网关异常: {}", e.getMessage());
+            return null;
         }
+    }
+
+    private String tryTungeeBossPhone(Long tenantId, String companyName) {
+        if (connectorHub == null || !StringUtils.hasText(companyName)) return null;
+        Optional<Map<String, String>> opt = connectorHub.acquireActiveCredentials(tenantId, "TUNGEE_API", false);
+        if (opt.isEmpty() || !StringUtils.hasText(opt.get().get("endpoint"))) return null;
+        try {
+            Map<String, String> c = opt.get();
+            String url = c.get("endpoint") + (c.get("endpoint").contains("?") ? "&" : "?")
+                    + "companyName=" + URLEncoder.encode(companyName, StandardCharsets.UTF_8);
+            HttpRequest req = HttpRequest.newBuilder(URI.create(url)).timeout(Duration.ofSeconds(4))
+                    .header("X-App-Key", Optional.ofNullable(c.get("appKey")).orElse("")).GET().build();
+            HttpResponse<String> resp = http.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+            if (resp.statusCode() != 200) return null;
+            return firstText(json.readTree(resp.body()).path("data"), "mobile", "phone", "bossPhone");
+        } catch (Exception e) { return null; }
+    }
+
+    private CompanyProfile parseStandardCompanyNode(JsonNode data) {
+        if (data == null || data.isMissingNode()) return null;
+        if (data.isArray() && !data.isEmpty()) data = data.get(0);
+        String corpName = firstText(data, "Name", "companyName", "entName", "name");
+        if (!StringUtils.hasText(corpName)) return null;
+        String credit = firstText(data, "CreditCode", "creditCode", "regNo");
+        String legal = firstText(data, "OperName", "legalPerson", "legalPersonName", "frName");
+        String cap = firstText(data, "RegistCapi", "regCapital", "regCap");
+        Integer insured = firstInt(data, "InsuredCount", "insuredCount", "socialStaffNum");
+        String phone = firstText(data, "ContactNumber", "phoneNumber", "tel", "phone");
+        if (!StringUtils.hasText(phone) && data.has("ContactInfo")) {
+            phone = firstText(data.path("ContactInfo"), "PhoneNumber", "tel");
+        }
+        String prov = firstText(data, "Province", "province", "base");
+        String city = firstText(data, "City", "city");
+        String dist = firstText(data, "District", "district", "county");
+        String addr = firstText(data, "Address", "address", "regLocation");
+        int dishonest = Optional.ofNullable(firstInt(data, "DishonestCount", "dishonestCount")).orElse(0);
+        List<Map<String, String>> shops = new ArrayList<>();
+        if (data.path("ShopList").isArray()) {
+            for (JsonNode s : data.path("ShopList")) {
+                String sn = firstText(s, "ShopName", "shopName", "name");
+                if (StringUtils.hasText(sn)) shops.add(Map.of("platform", firstText(s, "Platform", "platform") != null ? firstText(s, "Platform", "platform") : "天猫", "shopName", sn));
+            }
+        }
+        return new CompanyProfile("API_ALIGNED", corpName, credit, legal, cap, insured, phone, prov, city, dist, addr, dishonest, shops);
     }
 
     /** 高德免费地理编码：将广东详细地址转为 GCJ-02 经纬度与大厦名。未配置 Key 时返回 empty 诚实降级。 */
     public Optional<GeoPoint> geocodeAddress(String address, String cityHint) {
         if (!StringUtils.hasText(address)) return Optional.empty();
-        String amapKey = trimNull(bizSettings.raw(MODULE, "ext_amap_web_key"));
+        String amapKey = resolveAmapWebKey();
         if (!StringUtils.hasText(amapKey)) return Optional.empty();
         try {
             String url = "https://restapi.amap.com/v3/geocode/geo?key=" + URLEncoder.encode(amapKey, StandardCharsets.UTF_8)
@@ -214,9 +321,9 @@ public class MktExtDataGateway {
 
     /** 高德周边 10km 商圈 POI 扫楼雷达：搜直播基地/电商园/服饰化妆品公司。 */
     public List<PoiCandidate> scanAroundPois(BigDecimal centerLng, BigDecimal centerLat, int radiusMeters, String keywords) {
-        String amapKey = trimNull(bizSettings.raw(MODULE, "ext_amap_web_key"));
+        String amapKey = resolveAmapWebKey();
         if (!StringUtils.hasText(amapKey)) {
-            throw new BizException(400, "尚未配置高德开放平台免费 Web服务 Key，请先在「规则与字典 › 外部数据连接器」填入后再启动扫楼雷达");
+            throw new BizException(400, "尚未配置高德开放平台免费 Web服务 Key，请先在「规则与字典 › 外部数据连接器中心」填入后再启动扫楼雷达");
         }
         BigDecimal lng = centerLng != null ? centerLng : new BigDecimal("113.324520"); // 默认广州白云/番禺电商轴心
         BigDecimal lat = centerLat != null ? centerLat : new BigDecimal("23.106414");
@@ -273,20 +380,56 @@ public class MktExtDataGateway {
 
     /** 连接器公开脱敏状态回显（供公海页与设置页读取）。 */
     public Map<String, Object> connectorStatus() {
-        String amapWeb = trimNull(bizSettings.raw(MODULE, "ext_amap_web_key"));
-        String amapJs = trimNull(bizSettings.raw(MODULE, "ext_amap_js_key"));
+        String amapWeb = resolveAmapWebKey();
+        String amapJs = resolveAmapJsKey();
         String qccCode = trimNull(bizSettings.raw(MODULE, "ext_qcc_appcode"));
-        String feiyuToken = trimNull(bizSettings.raw(MODULE, "ext_feiyu_token"));
+        boolean anyCorp = StringUtils.hasText(qccCode);
+        int activeTotal = 4;
+        int totalSlots = 18;
+        if (connectorHub != null) {
+            try {
+                Map<String, Object> hub = connectorHub.hubOverview();
+                Map<?, ?> sum = (Map<?, ?>) hub.get("summary");
+                activeTotal = sum.get("activeConnectors") instanceof Number n ? n.intValue() : 4;
+                totalSlots = sum.get("totalConnectors") instanceof Number n ? n.intValue() : 18;
+                List<?> list = (List<?>) hub.get("connectors");
+                if (list != null) {
+                    anyCorp = anyCorp || list.stream().filter(Map.class::isInstance).map(Map.class::cast)
+                            .anyMatch(m -> "CORP".equals(m.get("categoryCode")) && Boolean.TRUE.equals(m.get("enabled")) && Boolean.TRUE.equals(m.get("configured")));
+                }
+            } catch (Exception ignored) {}
+        }
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("regionLockProvince", Optional.ofNullable(trimNull(bizSettings.raw(MODULE, "sea_region_lock_province"))).orElse("广东省"));
         out.put("checkinMaxMeters", bizSettings.getInt(MODULE, "sea_checkin_max_meters", 500));
         out.put("visitProtectDays", bizSettings.getInt(MODULE, "sea_visit_protect_days", 15));
         out.put("amapWebConfigured", StringUtils.hasText(amapWeb));
         out.put("amapJsConfigured", StringUtils.hasText(amapJs));
-        out.put("amapJsKey", StringUtils.hasText(amapJs) ? amapJs : ""); // Web端JS地图瓦片加载公钥
-        out.put("qccConfigured", StringUtils.hasText(qccCode));
-        out.put("feiyuSignatureEnabled", StringUtils.hasText(feiyuToken));
+        out.put("amapJsKey", StringUtils.hasText(amapJs) ? amapJs : "");
+        out.put("qccConfigured", anyCorp);
+        out.put("activeConnectors", activeTotal);
+        out.put("totalConnectors", totalSlots);
         return out;
+    }
+
+    private String resolveAmapWebKey() {
+        String k = trimNull(bizSettings.raw(MODULE, "ext_amap_web_key"));
+        if (StringUtils.hasText(k)) return k;
+        if (connectorHub != null) {
+            Map<String, String> c = connectorHub.loadPlainCredentials(1L, "AMAP_LBS");
+            return trimNull(c.get("webServiceKey"));
+        }
+        return null;
+    }
+
+    private String resolveAmapJsKey() {
+        String k = trimNull(bizSettings.raw(MODULE, "ext_amap_js_key"));
+        if (StringUtils.hasText(k)) return k;
+        if (connectorHub != null) {
+            Map<String, String> c = connectorHub.loadPlainCredentials(1L, "AMAP_LBS");
+            return trimNull(c.get("webJsKey"));
+        }
+        return null;
     }
 
     private List<Map<String, String>> parseShopsJson(String raw) {

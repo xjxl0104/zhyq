@@ -54,6 +54,20 @@ public final class BusinessRouteAccess {
             return grants.contains("crm:marketing:public-sea:edit")
                     || grants.contains("crm:marketing:customer:edit");
         }
+        if (path.equals("/crm/marketing/connectors") || path.startsWith("/crm/marketing/connectors/")) {
+            if ("GET".equals(method)) {
+                return grants.contains("crm:marketing:setting:query")
+                        || grants.contains("crm:marketing:public-sea:query")
+                        || grants.contains("crm:marketing:customer:query")
+                        || grants.contains("crm:marketing:settlement:query")
+                        || grants.contains("crm:marketing:withdrawal:query");
+            }
+            return grants.contains("crm:marketing:setting:config")
+                    || grants.contains("crm:marketing:public-sea:edit")
+                    || grants.contains("crm:marketing:customer:edit")
+                    || grants.contains("crm:marketing:settlement:edit")
+                    || grants.contains("crm:marketing:withdrawal:audit");
+        }
 
         String[] parts = path.split("/");
         if (parts.length < 2) return false;

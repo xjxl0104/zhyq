@@ -2,13 +2,18 @@
   <div class="page-container mkt-page">
     <div class="dict-tabs-bar">
       <el-radio-group v-model="activeTab" aria-label="规则与字典页签切换">
+        <el-radio-button value="connectors">🔌 外部数据连接器中心 (18通道)</el-radio-button>
         <el-radio-button value="setting">规则参数</el-radio-button>
         <el-radio-button value="position">岗位称号与锁客上限</el-radio-button>
         <el-radio-button value="grade">客户等级字典</el-radio-button>
       </el-radio-group>
     </div>
 
-    <div v-if="activeTab === 'setting'" class="table-card">
+    <div v-if="activeTab === 'connectors'" class="embedded-dict">
+      <ConnectorHubPanel />
+    </div>
+
+    <div v-else-if="activeTab === 'setting'" class="table-card">
       <div class="webhook-banner">
         <div>
           <b>📣 巨量引擎「飞鱼 CRM」/ 腾讯线索通 0 元实时推送 Webhook 地址</b>：
@@ -62,6 +67,7 @@ import { ref, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { mktSettingApi } from '@/api/marketing'
+import ConnectorHubPanel from './ConnectorHubPanel.vue'
 import Position from './Position.vue'
 import Grade from './Grade.vue'
 
@@ -169,7 +175,7 @@ const SETTING_META = {
 }
 
 const route = useRoute()
-const initialTab = ['setting', 'position', 'grade'].includes(String(route?.query?.tab || ''))
+const initialTab = ['connectors', 'setting', 'position', 'grade'].includes(String(route?.query?.tab || ''))
   ? String(route.query.tab)
   : 'setting'
 

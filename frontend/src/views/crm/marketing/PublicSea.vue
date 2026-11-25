@@ -8,7 +8,9 @@
         轻量工商/网店对齐 <b>{{ connectors.qccConfigured ? '已启用(30天缓存)' : '待填百元包AppCode（当前仅存基础线索，不伪造核验数据）' }}</b> ·
         飞鱼免费Webhook <b>已就绪</b>
       </div>
-      <el-button link type="primary" @click="router.push('/crm/marketing/setting')">去配置连接器密钥 ›</el-button>
+      <el-button link type="primary" @click="router.push('/crm/marketing/setting?tab=connectors')">
+        🔌 18通道连接器中心 ({{ connectors.activeConnectors || 4 }}/{{ connectors.totalConnectors || 18 }}) ›
+      </el-button>
     </div>
 
     <!-- 第1层：双视图切换 + 广东定向省钱硬锁 + 三大低成本获客武器 -->
@@ -39,6 +41,7 @@
         </span>
       </div>
       <div v-if="canEdit" class="sea-banner-actions">
+        <el-button size="small" @click="openPullLeadsDialog" data-testid="btn-pull-leads">🤖 蝉妈妈/店透巢/探迹拉榜</el-button>
         <el-button type="warning" plain size="small" @click="openRadarDialog">📡 高德广东商圈扫楼雷达</el-button>
         <el-button type="success" plain size="small" @click="openShopLookupDialog">🛍️ 单店名反查公司</el-button>
         <el-button type="primary" size="small" @click="openWashDialog">🏆 类目TOP500店铺榜对齐入池</el-button>
@@ -564,9 +567,36 @@
               <el-descriptions-item label="广东战区分区">{{ ZONE_NAMES[detailDrawer.row.zoneCode] || detailDrawer.row.zoneCode || '广州战区' }}</el-descriptions-item>
               <el-descriptions-item label="联系方式">{{ detailDrawer.row.contact || '负责人' }} · {{ detailDrawer.row.phone }}</el-descriptions-item>
             </el-descriptions>
+            <div v-if="canEdit" style="margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap">
+              <el-button size="small" type="primary" plain @click="handlePrivacyCall(detailDrawer.row)">📞 阿里云 AXB 隐私小号一键外呼</el-button>
+              <el-button size="small" @click="router.push('/crm/marketing/setting?tab=connectors')">🔌 查看企查查/天眼查/探迹连接器</el-button>
+            </div>
           </el-tab-pane>
 
           <el-tab-pane :label="`🛍️ 店铺矩阵 (${(detailDrawer.row.shops || []).length})`" name="shops">
+            <div class="drill-box" style="margin-bottom: 10px">
+              <div class="drill-box-head">
+                <b>📲 10 秒官方扫码验店（抖店 / 淘宝1688 / 拼多多）</b>
+                <el-tag size="small" type="success">防口头虚报日单量</el-tag>
+              </div>
+              <div class="sub-note" style="margin: 4px 0">生成一次性加密验店函发给货主，点亮官方开放平台 Key 后自动回写近 30 天真实支付单量与退货率：</div>
+              <div v-if="canEdit" style="display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px">
+                <el-button size="small" type="danger" plain @click="createShopInvite('DOUYIN')">生成抖店验店函</el-button>
+                <el-button size="small" type="warning" plain @click="createShopInvite('TAOBAO')">生成淘宝/1688验店函</el-button>
+                <el-button size="small" type="primary" plain @click="createShopInvite('PDD')">生成拼多多验店函</el-button>
+              </div>
+              <div v-if="detailDrawer.inviteResult" class="sub-note" style="margin-top: 8px; color: #166534">
+                ✅ 验店链接已生成并复制：<code>{{ detailDrawer.inviteResult.invitePath }}</code>（{{ detailDrawer.inviteResult.modeHint }}）
+              </div>
+            </div>
+
+            <div v-if="detailDrawer.verifications.length" style="margin-bottom: 10px">
+              <div v-for="v in detailDrawer.verifications" :key="v.id" class="drill-box" style="margin-bottom: 6px">
+                <b>✔ [{{ v.platform }}] 近30天核验单量：{{ v.verified30dOrders ?? '待货主扫码确认' }} 单</b>
+                <span v-if="v.verifiedDailyAvg">（折合日均 {{ v.verifiedDailyAvg }} 单）</span>
+              </div>
+            </div>
+
             <div v-if="(detailDrawer.row.shops || []).length" class="drill-body">
               <div v-for="(s, idx) in detailDrawer.row.shops" :key="idx" class="drill-box">
                 <div class="drill-box-head">
@@ -846,6 +876,40 @@
         <el-button type="warning" :loading="releaseDialog.busy" @click="submitRelease">确认释放</el-button>
       </template>
     </el-dialog>
+
+    <!-- 弹窗 5：蝉妈妈 / 店透巢 / 探迹 商业 API 在线拉取广东痛点榜单 -->
+    <el-dialog v-model="pullDialog.visible" title="🤖 蝉妈妈 / 店透巢 / 探迹 在线拉取广东痛点货主" width="min(560px, 95vw)">
+      <el-form label-position="top">
+        <el-form-item label="选择商业数据源通道">
+          <el-select v-model="pullDialog.connectorCode" style="width: 100%">
+            <el-option value="CHANMAMA_API" label="🏆 蝉妈妈 API（抖音广东发货低物流分爆单榜）" />
+            <el-option value="DIANTOU_API" label="🛍️ 店透巢 / 电霸 API（天猫/淘宝/拼多多/1688广东货盘）" />
+            <el-option value="TUNGEE_API" label="📦 探迹拓客 OpenAPI（广东新发“招打包工/仓管”企业）" />
+          </el-select>
+        </el-form-item>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px">
+          <el-form-item label="目标广东战区">
+            <el-select v-model="pullDialog.zoneCode" style="width: 100%">
+              <el-option v-for="z in GD_ZONES" :key="z.code" :value="z.code" :label="z.label" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="主营类目">
+            <el-input v-model="pullDialog.category" placeholder="如：个人洗护 / 女装服饰" />
+          </el-form-item>
+        </div>
+      </el-form>
+      <div v-if="pullDialog.result" class="drill-box" style="margin-top: 8px">
+        <div><b>{{ pullDialog.result.message || `已拉取 ${pullDialog.result.pulledRows || 0} 条，防撞净入 ${pullDialog.result.insertedRows || 0} 户` }}</b></div>
+        <div v-if="pullDialog.result.applyGuide" class="sub-note" style="margin-top: 6px">
+          📋 <b>派给同事的申领步骤</b>：{{ pullDialog.result.applyGuide }}（官网：{{ pullDialog.result.applyUrl }}）
+        </div>
+      </div>
+      <template #footer>
+        <el-button @click="pullDialog.visible = false">关闭</el-button>
+        <el-button @click="router.push('/crm/marketing/setting?tab=connectors')">去连接器中心填 Key</el-button>
+        <el-button type="primary" :loading="pullDialog.busy" @click="submitPullLeads">执行在线拉取</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -855,7 +919,7 @@ import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { hasPermission } from '@/utils/permission'
 import { useProjectStore } from '@/stores/project'
-import { mktPublicSeaApi, mktWarehouseApi } from '@/api/marketing'
+import { mktPublicSeaApi, mktWarehouseApi, mktConnectorHubApi } from '@/api/marketing'
 import CustomerQuotePanel from './CustomerQuotePanel.vue'
 import { buildPublicSeaDrilldownCards } from './publicSeaDrilldown'
 
@@ -1181,7 +1245,8 @@ function openUrgencyDrawer(row) {
 
 const detailDrawer = reactive({
   visible: false, tab: 'qcc', row: null,
-  category: '', estDailyOrders: 0, note: '', checkins: [], busy: false
+  category: '', estDailyOrders: 0, note: '', checkins: [],
+  verifications: [], inviteResult: null, busy: false
 })
 async function openDetailDrawer(row, tab = 'qcc') {
   detailDrawer.row = row
@@ -1190,11 +1255,70 @@ async function openDetailDrawer(row, tab = 'qcc') {
   detailDrawer.estDailyOrders = row.estDailyOrders || 0
   detailDrawer.note = row.firstTouchNote || ''
   detailDrawer.checkins = []
+  detailDrawer.verifications = []
+  detailDrawer.inviteResult = null
   detailDrawer.visible = true
   if (mktPublicSeaApi.checkins) {
     try {
       detailDrawer.checkins = (await mktPublicSeaApi.checkins(row.customerId)) || []
     } catch (_) { detailDrawer.checkins = [] }
+  }
+  if (mktConnectorHubApi?.listShopVerifications) {
+    try {
+      detailDrawer.verifications = (await mktConnectorHubApi.listShopVerifications(row.customerId)) || []
+    } catch (_) { detailDrawer.verifications = [] }
+  }
+}
+
+async function createShopInvite(platform) {
+  if (!detailDrawer.row || !mktConnectorHubApi?.createShopVerifyInvite) return
+  try {
+    const res = await mktConnectorHubApi.createShopVerifyInvite(detailDrawer.row.customerId, {
+      platform,
+      shopName: detailDrawer.row.shopName || detailDrawer.row.name
+    })
+    detailDrawer.inviteResult = res
+    const fullUrl = `${typeof window !== 'undefined' ? window.location.origin : ''}${res.invitePath}`
+    if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(fullUrl).catch(() => {})
+    }
+    ElMessage.success(`已生成 ${platform} 10秒验店邀请链接并复制到剪贴板`)
+  } catch (_) { /* request.js统一弹错 */ }
+}
+
+async function handlePrivacyCall(row) {
+  if (!row || !mktConnectorHubApi?.privacyCall) return
+  try {
+    const res = await mktConnectorHubApi.privacyCall(row.customerId, {})
+    if (res?.status === 'OK') ElMessage.success(res.message)
+    else ElMessage.warning(res?.message || '隐私小号待同事申领开通')
+  } catch (_) { /* request.js统一弹错 */ }
+}
+
+const pullDialog = reactive({
+  visible: false, connectorCode: 'CHANMAMA_API', zoneCode: 'GZ',
+  category: '个人洗护', result: null, busy: false
+})
+function openPullLeadsDialog() {
+  pullDialog.result = null
+  pullDialog.visible = true
+}
+async function submitPullLeads() {
+  if (pullDialog.busy || !mktConnectorHubApi?.pullLeads) return
+  pullDialog.busy = true
+  try {
+    pullDialog.result = await mktConnectorHubApi.pullLeads({
+      projectId: effectiveProjectId.value || undefined,
+      connectorCode: pullDialog.connectorCode,
+      zoneCode: pullDialog.zoneCode,
+      category: pullDialog.category
+    })
+    if (pullDialog.result?.insertedRows > 0) {
+      ElMessage.success(`拉取入池成功：新增 ${pullDialog.result.insertedRows} 户广东货主`)
+      await reloadAll()
+    }
+  } catch (_) { /* request.js统一弹错 */ } finally {
+    pullDialog.busy = false
   }
 }
 

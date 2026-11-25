@@ -21,6 +21,7 @@
       <div class="toolbar">
         <el-button v-if="canManual" type="primary" @click="openManual"><el-icon><Plus /></el-icon>代伙伴申请提现</el-button>
         <router-link :to="{ path: '/oa/approval', query: { bizType: 'withdrawal' } }"><el-button>我的提现审批待办</el-button></router-link>
+        <el-button type="warning" plain @click="openInvoiceVerify">🧾 6%增值税专票税局验真</el-button>
         <WithdrawalApproverSettings v-if="isAdmin" />
         <span class="hint">流程：核对伙伴及收款账户 → 提交给指定审批人 → 审批通过后由财务线下付款并上传凭证。提交申请不会自动打款。</span>
       </div>
@@ -107,13 +108,32 @@
       </div>
       <template #footer><el-button :disabled="manual.saving" @click="closeManual">取消</el-button><el-button type="primary" :loading="manual.saving" :disabled="!canSubmitManual" @click="submitManual">提交审批</el-button></template>
     </el-dialog>
+
+    <el-dialog v-model="invVerify.visible" title="🧾 P4事业部对公提现 · 6%增值税专用发票OCR与税务总局查验" width="min(580px,95vw)">
+      <el-form label-position="top">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+          <el-form-item label="发票号码（8位或20位全电票号）" required><el-input v-model="invVerify.invoiceNo" placeholder="例如：26442000000088912345" /></el-form-item>
+          <el-form-item label="开票日期" required><el-input v-model="invVerify.invoiceDate" placeholder="YYYY-MM-DD" /></el-form-item>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+          <el-form-item label="货物或应税劳务名称（品目）" required><el-input v-model="invVerify.itemName" /></el-form-item>
+          <el-form-item label="价税合计金额（元）" required><el-input v-model="invVerify.totalAmount" inputmode="decimal" placeholder="10600.00" /></el-form-item>
+        </div>
+        <el-form-item label="购买方园区纳税人识别号（选填，填后强制比对抬头税号）"><el-input v-model="invVerify.buyerTaxNo" placeholder="如：91440100XXXXXXXXXX" /></el-form-item>
+      </el-form>
+      <el-alert v-if="invVerify.result" :type="invVerify.result.verifyStatus === 'VERIFIED_VALID' ? 'success' : invVerify.result.verifyStatus === 'STANDBY_MANUAL' ? 'warning' : 'error'" :closable="false" :title="invVerify.result.verifyMsg" />
+      <template #footer>
+        <el-button @click="invVerify.visible = false">关闭</el-button>
+        <el-button type="primary" :loading="invVerify.busy" @click="submitInvoiceVerify">执行合规与真伪核验</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
 import { reactive, ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { mktWithdrawalApi } from '@/api/marketing'
+import { mktWithdrawalApi, mktConnectorHubApi } from '@/api/marketing'
 import FileUpload from '@/components/FileUpload.vue'
 import WithdrawalApproverSettings from './WithdrawalApproverSettings.vue'
 import PromoterSelect from './PromoterSelect.vue'
@@ -251,6 +271,18 @@ async function savePayment(){
   try{await mktWithdrawalApi.pay(id,{payNo:payment.payNo.trim(),payProof:`file:${payment.files[0].id}`});closePayment();ElMessage.success('付款凭证已保存');await load()}finally{saving.value=false}
 }
 async function downloadProof(row){const id=row.payProof?.match(/^file:(\d+)$/)?.[1];if(id)await startFileDownload(id,'提现付款凭证')}
+const invVerify = reactive({ visible: false, invoiceNo: '', invoiceDate: new Date().toISOString().slice(0, 10), itemName: '*现代服务*招商推广服务费', totalAmount: '', buyerTaxNo: '', busy: false, result: null })
+function openInvoiceVerify() { invVerify.result = null; invVerify.visible = true }
+async function submitInvoiceVerify() {
+  if (invVerify.busy) return
+  invVerify.busy = true
+  try {
+    invVerify.result = await mktConnectorHubApi.verifyInvoice({
+      invoiceNo: invVerify.invoiceNo, invoiceDate: invVerify.invoiceDate,
+      itemName: invVerify.itemName, totalAmount: invVerify.totalAmount, buyerTaxNo: invVerify.buyerTaxNo
+    })
+  } catch (_) { /* request.js统一弹错 */ } finally { invVerify.busy = false }
+}
 onMounted(load)
 </script>
 

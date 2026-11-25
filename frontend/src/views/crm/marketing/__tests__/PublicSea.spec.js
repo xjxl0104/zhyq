@@ -37,6 +37,12 @@ vi.mock('@/api/marketing', () => ({
     batchFeedWarehouses: vi.fn(),
     release: vi.fn()
   },
+  mktConnectorHubApi: {
+    pullLeads: vi.fn().mockResolvedValue({ status: 'STANDBY', message: '待开通' }),
+    createShopVerifyInvite: vi.fn().mockResolvedValue({ invitePath: '/open/shop-verify/sv_test', modeHint: '测试' }),
+    listShopVerifications: vi.fn().mockResolvedValue([]),
+    privacyCall: vi.fn().mockResolvedValue({ status: 'STANDBY', message: '待开通' })
+  },
   mktWarehouseApi: {
     page: vi.fn().mockResolvedValue({ records: [{ id: 10, name: '广州番禺一号云仓' }] })
   }

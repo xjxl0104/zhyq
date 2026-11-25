@@ -9,7 +9,7 @@
       </el-form>
     </div>
     <div class="table-card">
-      <div class="toolbar"><el-button v-if="canEdit" type="primary" :loading="choicesLoading" @click="openGenerate">{{ isBill ? '生成 / 补充服务费账单' : '生成 / 补充云仓结算' }}</el-button><el-button v-if="isBill && canGenerate" :loading="generatingFixed" @click="generateFixed">补齐到期固定月费</el-button><el-button v-if="isBill && canPay" :disabled="choicesLoading" @click="openDirect">登记直签平台费到账</el-button><el-button v-if="isBill" @click="showDirectRecords">平台费到账记录</el-button><el-button v-if="!isBill" @click="openReconcile">票数对账</el-button></div>
+      <div class="toolbar"><el-button v-if="canEdit" type="primary" :loading="choicesLoading" @click="openGenerate">{{ isBill ? '生成 / 补充服务费账单' : '生成 / 补充云仓结算' }}</el-button><el-button v-if="isBill && canGenerate" :loading="generatingFixed" @click="generateFixed">补齐到期固定月费</el-button><el-button v-if="isBill && canPay" :disabled="choicesLoading" @click="openDirect">登记直签平台费到账</el-button><el-button v-if="isBill" @click="showDirectRecords">平台费到账记录</el-button><el-button v-if="!isBill" @click="openReconcile">票数对账</el-button><el-button v-if="!isBill" type="warning" plain @click="openWaybillCheck">📦 快递100 轨迹2%抽检</el-button></div>
       <el-alert v-if="error" :title="error" type="error" :closable="false" class="notice"><el-button link @click="load">重新加载</el-button></el-alert>
       <el-table :data="rows" v-loading="loading" border stripe empty-text="暂无单据。先完成有效合同、订单导入和费用配置，再生成本期账单。">
         <el-table-column prop="id" label="单据ID" width="85" />
@@ -73,12 +73,33 @@
     <el-drawer v-model="details.visible" :title="details.title" size="min(760px, 95vw)">
       <el-table :data="details.rows" border v-loading="details.loading"><el-table-column v-for="c in details.columns" :key="c.prop" :prop="c.prop" :label="c.label" min-width="120" /><el-table-column label="金额（元）" align="right" width="150"><template #default="{row}">{{ money(row.amount) }}</template></el-table-column><el-table-column v-if="!isBill && !details.direct" label="费率快照" min-width="220"><template #default="{row}">{{ snapshotText(row.snapshotJson) }}</template></el-table-column></el-table>
     </el-drawer>
+    <el-dialog v-model="wbCheck.visible" title="📦 快递100 真实物流轨迹 2% 防空包刷佣抽检" width="min(620px, 95vw)">
+      <el-form label-position="top">
+        <el-form-item label="抽检账期月份"><el-date-picker v-model="wbCheck.settleMonth" type="month" value-format="YYYY-MM" class="full" /></el-form-item>
+        <el-form-item label="指定测试/重点抽检运单号（可选，留空则自动从计佣出库单随机抽 2%）">
+          <el-input v-model="wbCheck.trackingInput" placeholder="例如：JT5288901234567（留空自动按2%抽样）" clearable />
+        </el-form-item>
+      </el-form>
+      <div v-if="wbCheck.result" class="rt">
+        <el-alert :type="wbCheck.result.fakeEmptyCount > 0 ? 'error' : 'success'" :closable="false"
+                  :title="`本次核验 ${wbCheck.result.checkedCount} 单：已签收 ${wbCheck.result.realSignedCount || 0} · 运输中 ${wbCheck.result.inTransitCount || 0} · 异常空单 ${wbCheck.result.fakeEmptyCount || 0} · 待开通转人工 ${wbCheck.result.standbyManualCount || 0}`" />
+        <el-table v-if="(wbCheck.result.records || []).length" :data="wbCheck.result.records" size="small" border style="margin-top:8px">
+          <el-table-column prop="trackingNo" label="快递单号" width="165" />
+          <el-table-column prop="checkStatus" label="核验结论" width="130" />
+          <el-table-column prop="latestTrace" label="轨迹与连接器状态说明" min-width="220" />
+        </el-table>
+      </div>
+      <template #footer>
+        <el-button @click="wbCheck.visible=false">关闭</el-button>
+        <el-button type="primary" :loading="wbCheck.loading" @click="runWaybillCheck">执行轨迹核验</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { mktBillApi, mktSettlementApi, mktWarehouseApi, mktContractApi } from '@/api/marketing'
+import { mktBillApi, mktSettlementApi, mktWarehouseApi, mktContractApi, mktConnectorHubApi } from '@/api/marketing'
 import FileUpload from '@/components/FileUpload.vue'
 import { money } from '@/utils/format'
 import { startFileDownload } from '@/utils/fileDownload'
@@ -157,6 +178,15 @@ async function showLines(row){Object.assign(details,{visible:true,loading:true,d
 async function showDirectRecords(){Object.assign(details,{visible:true,loading:true,direct:true,title:'平台费到账记录（最近100条）',columns:[{prop:'paymentNo',label:'到账流水号'},{prop:'contractId',label:'合同ID'},{prop:'paidAt',label:'到账登记时间'}],rows:[]});try{details.rows=(await mktSettlementApi.directPayments({pageNo:1,pageSize:100})).records||[]}finally{details.loading=false}}
 function snapshotText(value){try{const s=JSON.parse(value||'{}');return `单票 ${s.perOrder} × ${s.packages} 包裹；按件 ${s.perItem} × ${s.qty} 件`}catch{return '快照暂不可读'}}
 async function downloadProof(proof){const id=String(proof).match(/^file:(\d+)$/)?.[1];if(id)await startFileDownload(id,'交易凭证')}
+const wbCheck=reactive({visible:false,settleMonth:new Date().toISOString().slice(0,7),trackingInput:'',loading:false,result:null})
+function openWaybillCheck(){wbCheck.result=null;wbCheck.visible=true}
+async function runWaybillCheck(){
+  wbCheck.loading=true
+  try{
+    const waybills=wbCheck.trackingInput.trim()?[{trackingNo:wbCheck.trackingInput.trim(),carrierCode:'jtexpress'}]:undefined
+    wbCheck.result=await mktConnectorHubApi.waybillSpotCheck({warehouseId:query.warehouseId||undefined,settleMonth:wbCheck.settleMonth,waybills})
+  }catch(_){/* request.js统一弹错 */}finally{wbCheck.loading=false}
+}
 onMounted(()=>{load();allChoices(mktWarehouseApi.page).then(records=>warehouses.value=records).catch(()=>{})})
 </script>
 <style scoped>

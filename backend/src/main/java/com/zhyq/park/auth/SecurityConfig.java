@@ -71,6 +71,8 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.POST, "/open/quote-intake/{token}").permitAll()
                 .requestMatchers(HttpMethod.POST, "/open/public-calc/estimate", "/open/public-calc/lead").permitAll()
                 .requestMatchers(HttpMethod.POST, "/open/v1/ad-leads/*").permitAll()
+                .requestMatchers(HttpMethod.GET, "/open/shop-verify/*").permitAll()
+                .requestMatchers(HttpMethod.POST, "/open/shop-verify/*/submit").permitAll()
                 .requestMatchers(
                         "/auth/login",
                         "/mp/v1/auth/**",

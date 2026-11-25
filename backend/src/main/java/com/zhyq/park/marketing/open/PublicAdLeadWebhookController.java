@@ -10,6 +10,7 @@ import com.zhyq.park.common.result.Result;
 import com.zhyq.park.common.setting.BizSettings;
 import com.zhyq.park.marketing.password.ClientAddressResolver;
 import com.zhyq.park.marketing.password.PasswordAttemptLimiter;
+import com.zhyq.park.marketing.service.MktConnectorHubService;
 import com.zhyq.park.marketing.service.MktPublicSeaWashService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -40,10 +41,11 @@ public class PublicAdLeadWebhookController {
     private final ObjectMapper json;
     private final BizSettings bizSettings;
     private final MktPublicSeaWashService washService;
+    private final MktConnectorHubService connectorHub;
     private final PasswordAttemptLimiter limiter;
     private final ClientAddressResolver addresses;
 
-    @Operation(summary = "接收飞鱼/腾讯广告表单实时推送入公海")
+    @Operation(summary = "接收飞鱼/腾讯线索通/小红书聚光/百度基木鱼表单实时推送入公海")
     @PostMapping("/{channel}")
     public Result<Map<String, Object>> receive(
             @PathVariable String channel,
@@ -55,9 +57,9 @@ public class PublicAdLeadWebhookController {
         limiter.check("ad-webhook:" + addresses.resolve(request), 300);
         String ch = channel == null ? "FEIYU" : channel.trim().toUpperCase(Locale.ROOT);
 
-        // 若后台配置了飞鱼签名密钥，则强制校验 HMAC-SHA256 签名
-        String secret = bizSettings.raw("marketing", "ext_feiyu_token");
-        if (StringUtils.hasText(secret) && "FEIYU".equals(ch)) {
+        // 读取对应渠道配置的验签密钥（兼容巨量飞鱼 AD_FEIYU / 腾讯 AD_TENCENT / 小红书 AD_XHS / 百度 AD_BAIDU）
+        String secret = resolveChannelSecret(ch);
+        if (StringUtils.hasText(secret)) {
             verifySignature(secret.trim(), timestamp, rawBody, signature);
         }
 
@@ -102,16 +104,34 @@ public class PublicAdLeadWebhookController {
         String advName = firstText(root, "adv_name", "site_name", "ad_name");
         String note = ch + "广告实时留资" + (StringUtils.hasText(advName) ? "（计划：" + advName + "）" : "");
 
+        String targetName = StringUtils.hasText(name) ? name : (ch + "投流准货主");
         Map<String, Object> wash = washService.ingestAdWebhookLead(
-                projectId, ch, StringUtils.hasText(name) ? name : "抖音投流准货主",
-                phone, category, estDaily, location, note);
+                projectId, ch, targetName, phone, category, estDaily, location, note);
         boolean inserted = ((Number) wash.get("insertedRows")).intValue() > 0;
         Long cid = wash.get("lastCustomerId") instanceof Number n ? n.longValue() : null;
         jdbc.update("UPDATE crm_ext_ad_lead_inbox SET customer_id = ?, wash_result = ? WHERE channel = ? AND external_lead_id = ?",
                 cid, inserted ? "INSERTED" : "BLOCKED_PROTECTION", ch, leadId);
+        if (inserted && connectorHub != null) {
+            connectorHub.broadcastHotLeadIfEnabled(ch + "广告实时推送", targetName, category, estDaily, location);
+        }
 
         log.info("[ad-webhook] 接收 {} 线索 leadId={} inserted={}", ch, leadId, inserted);
         return Result.ok(Map.of("accepted", true, "inserted", inserted, "leadId", leadId));
+    }
+
+    private String resolveChannelSecret(String ch) {
+        if ("FEIYU".equals(ch)) {
+            String legacy = bizSettings.raw("marketing", "ext_feiyu_token");
+            if (StringUtils.hasText(legacy)) return legacy;
+        }
+        if (connectorHub == null) return null;
+        return switch (ch) {
+            case "FEIYU" -> connectorHub.loadPlainCredentials(1L, "AD_FEIYU").get("signatureSecret");
+            case "TENCENT" -> connectorHub.loadPlainCredentials(1L, "AD_TENCENT").get("tokenSecret");
+            case "XHS" -> connectorHub.loadPlainCredentials(1L, "AD_XHS").get("secret");
+            case "BAIDU" -> connectorHub.loadPlainCredentials(1L, "AD_BAIDU").get("token");
+            default -> null;
+        };
     }
 
     private static void verifySignature(String secret, String timestamp, String body, String signature) {

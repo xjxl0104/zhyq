@@ -284,3 +284,18 @@ export const mktPublicSeaApi = {
   batchFeedWarehouses: (data) => request.post(`${PUBLIC_SEA}/batch-feed-warehouses`, data),
   release: (customerId, data) => request.post(`${PUBLIC_SEA}/${customerId}/release`, data)
 }
+
+const CONNECTORS = `${BASE}/connectors`
+export const mktConnectorHubApi = {
+  overview: () => request.get(`${CONNECTORS}/overview`),
+  save: (code, data) => request.put(`${CONNECTORS}/${code}`, data),
+  ping: (code) => request.post(`${CONNECTORS}/${code}/ping`),
+  pullLeads: (data) => request.post(`${CONNECTORS}/pull-leads`, data, { timeout: 30000 }),
+  createShopVerifyInvite: (customerId, data) => request.post(`${CONNECTORS}/customers/${customerId}/shop-verify-invite`, data),
+  listShopVerifications: (customerId) => request.get(`${CONNECTORS}/customers/${customerId}/shop-verifications`),
+  privacyCall: (customerId, data) => request.post(`${CONNECTORS}/customers/${customerId}/privacy-call`, data),
+  waybillSpotCheck: (data) => request.post(`${CONNECTORS}/waybill-spot-check`, data),
+  listWaybillChecks: (params) => request.get(`${CONNECTORS}/waybill-spot-checks`, { params }),
+  verifyInvoice: (data) => request.post(`${CONNECTORS}/invoice-verify`, data),
+  listInvoiceLogs: (params) => request.get(`${CONNECTORS}/invoice-verify-logs`, { params })
+}

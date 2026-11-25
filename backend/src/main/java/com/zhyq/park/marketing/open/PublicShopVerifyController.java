@@ -1,0 +1,58 @@
+package com.zhyq.park.marketing.open;
+
+import com.zhyq.park.common.result.Result;
+import com.zhyq.park.marketing.password.ClientAddressResolver;
+import com.zhyq.park.marketing.password.PasswordAttemptLimiter;
+import com.zhyq.park.marketing.service.MktConnectorHubService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.servlet.http.HttpServletRequest;
+import lombok.RequiredArgsConstructor;
+import org.springframework.web.bind.annotation.*;
+
+import java.math.BigDecimal;
+import java.util.Map;
+
+/**
+ * 公开 10 秒扫码验店落地与回写接口（支持抖店/淘宝1688/拼多多官方 OAuth 回调及商家单量核验提交）。
+ */
+@Tag(name = "公开获客-10秒官方扫码验店")
+@RestController
+@RequestMapping("/open/shop-verify")
+@RequiredArgsConstructor
+public class PublicShopVerifyController {
+
+    private final MktConnectorHubService connectorHub;
+    private final PasswordAttemptLimiter limiter;
+    private final ClientAddressResolver addresses;
+
+    @Operation(summary = "读取验店邀请令牌详情")
+    @GetMapping("/{token}")
+    public Result<Map<String, Object>> detail(@PathVariable String token, HttpServletRequest request) {
+        limiter.check("shop-verify-get:" + addresses.resolve(request), 120);
+        return Result.ok(connectorHub.getPublicShopVerifySession(token));
+    }
+
+    @Operation(summary = "提交官方OAuth回调或核验近30天真实单量")
+    @PostMapping("/{token}/submit")
+    public Result<Map<String, Object>> submit(@PathVariable String token,
+                                              @RequestBody Map<String, Object> body,
+                                              HttpServletRequest request) {
+        limiter.check("shop-verify-post:" + addresses.resolve(request), 60);
+        Integer orders30d = body.get("orders30d") instanceof Number n ? n.intValue()
+                : parseIntSafe(body.get("orders30d"));
+        BigDecimal returnRate = parseDecSafe(body.get("returnRatePct"));
+        BigDecimal avgWeight = parseDecSafe(body.get("avgWeightKg"));
+        String proofNote = body.get("proofNote") == null ? "货主扫码确认近30天单量" : String.valueOf(body.get("proofNote"));
+        boolean oauth = Boolean.TRUE.equals(body.get("fromOfficialOauth"));
+        return Result.ok(connectorHub.submitShopVerifyResult(token, orders30d, returnRate, avgWeight, proofNote, oauth));
+    }
+
+    private static Integer parseIntSafe(Object o) {
+        try { return o == null ? null : Integer.parseInt(String.valueOf(o).trim()); } catch (Exception e) { return null; }
+    }
+    private static BigDecimal parseDecSafe(Object o) {
+        try { return o == null || String.valueOf(o).isBlank() ? null : new BigDecimal(String.valueOf(o).trim()); }
+        catch (Exception e) { return null; }
+    }
+}
