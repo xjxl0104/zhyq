@@ -34,6 +34,7 @@ public class MktDocumentAccessService {
             Map.entry("activity", "property:activity"), Map.entry("pm_check", "property:check"),
             Map.entry("oa_notice", "oa:notice"), Map.entry("article", "oa:article"),
             Map.entry("recruit", "oa:recruit"), Map.entry("oa_task", "oa:task"),
+            Map.entry("oa_task_node", "oa:task"),
             Map.entry("oa_document", "oa:document"), Map.entry("energy_reading", "energy:reading"),
             // 缴费账期的供应商账单与租金/物业管理费留存单据
             Map.entry("energy_fee_electric", "energy:feebill"), Map.entry("energy_fee_water", "energy:feebill"),

@@ -40,6 +40,27 @@
             {{ notices.length ? '重新生成通知单' : '生成通知单' }}
           </el-button>
           <el-button @click="openHeader">通知单抬头</el-button>
+          <el-dropdown trigger="click" @command="onSealCommand">
+            <el-button :type="sealPlacement?.enabled === 1 ? 'danger' : ''" plain>
+              <span v-if="sealPlacement?.enabled === 1" class="seal-dot" />
+              电子印章{{ sealPlacement?.enabled === 1 && sealPlacement.sealName ? `（${shortSealName(sealPlacement.sealName)}）` : '' }}
+              <el-icon class="el-icon--right"><ArrowDown /></el-icon>
+            </el-button>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item v-for="s in seals" :key="s.id" :command="`seal:${s.id}`">
+                  <div class="seal-drop-item">
+                    <img v-if="s.imageData" :src="s.imageData" class="seal-drop-img" alt="" />
+                    <span>{{ s.name }}</span>
+                    <el-tag v-if="sealPlacement?.enabled === 1 && String(sealPlacement.sealId) === String(s.id)" size="small" type="danger" effect="plain">已应用</el-tag>
+                  </div>
+                </el-dropdown-item>
+                <el-dropdown-item v-if="!seals.length" disabled>暂未上传印章，请先到「印章管理」上传</el-dropdown-item>
+                <el-dropdown-item divided command="design">打开通知单模板排版（拖动位置/缩放）</el-dropdown-item>
+                <el-dropdown-item v-if="sealPlacement?.enabled === 1" command="disable">取消通知单电子印章</el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
           <el-button :disabled="!notices.length" @click="exportExcel"><el-icon><Download /></el-icon>导出 Excel</el-button>
           <el-button :disabled="!notices.length" @click="printAll"><el-icon><Printer /></el-icon>{{ filterActive ? "打印检索结果" : "打印全部" }}</el-button>
           <el-button :disabled="!selected.length" @click="printSelected">打印选中</el-button>
@@ -237,14 +258,25 @@
     </el-dialog>
     <FeeNoticePayment v-model="paymentDialog.visible" :notice="paymentDialog.notice" @saved="paymentSaved" />
     <NoticeInvoiceDialog v-model="invoiceDialog.visible" :notice="invoiceDialog.notice" mode="utility" @saved="invoiceSaved" />
+    <NoticeSealDesigner
+      v-model="sealDesigner.visible"
+      template-key="UTILITY_NOTICE"
+      title="水电/垃圾费缴费通知单 · 电子印章模板排版"
+      :notice-markup="sealSampleMarkup"
+      :seals="seals"
+      :placement="sealPlacement"
+      :initial-seal-id="sealDesigner.initialSealId"
+      @saved="(p) => (sealPlacement = p)"
+    />
   </div>
 </template>
 
 <script setup>
 import { computed, onActivated, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowLeft, Delete, Download, Plus, Printer } from '@element-plus/icons-vue'
+import { ArrowDown, ArrowLeft, Delete, Download, Plus, Printer } from '@element-plus/icons-vue'
 import { feePeriodApi } from '@/api/energy'
+import { sealApi } from '@/api/oa'
 import { useFeePeriod, money, num, downloadBlob, BILL_KINDS, applyFilter, filterOptions, floorBandClass, shortName } from './feePeriod'
 import FeeFilterBar from './components/FeeFilterBar.vue'
 import { noticeHtml, NOTICE_CSS, printNotices } from './noticePrint'
@@ -252,6 +284,7 @@ import FeeMonthPicker from './components/FeeMonthPicker.vue'
 import FeeBillFiles from './components/FeeBillFiles.vue'
 import FeeNoticePayment from './components/FeeNoticePayment.vue'
 import NoticeInvoiceDialog from './components/NoticeInvoiceDialog.vue'
+import NoticeSealDesigner from './components/NoticeSealDesigner.vue'
 import LeaseMonthPicker from './components/LeaseMonthPicker.vue'
 import LeaseFeeSummaryDetail from './components/LeaseFeeSummaryDetail.vue'
 
@@ -265,9 +298,25 @@ const listLoading = ref(false)
 const generating = ref(false)
 const picker = ref(null)
 const noticeTable = ref(null)
+const seals = ref([])
+const sealPlacement = ref(null)
+const sealDesigner = reactive({ visible: false, initialSealId: null })
 const { month, period, loading, state, save, reload, back } = useFeePeriod(loadNotices)
 const locked = computed(() => period.value?.status === 'CONFIRMED')
 const monthLabel = computed(() => (month.value ? `${month.value.slice(0, 4)}年${Number(month.value.slice(5))}月` : ''))
+
+async function loadSealData() {
+  try {
+    const [list, placement] = await Promise.all([
+      sealApi.list({ onlyEnabled: true }),
+      sealApi.getPlacement('UTILITY_NOTICE')
+    ])
+    seals.value = list || []
+    sealPlacement.value = placement || null
+  } catch {
+    // 无印章数据或测试环境忽略
+  }
+}
 
 async function loadNotices() {
   if (!period.value) return
@@ -275,6 +324,7 @@ async function loadNotices() {
   try {
     notices.value = await feePeriodApi.notices(period.value.id) || []
     selected.value = []
+    await loadSealData()
   } finally {
     listLoading.value = false
   }
@@ -447,15 +497,55 @@ async function saveEdit() {
   }
 }
 
+const shortSealName = (name) => (name && name.length > 8 ? `${name.slice(0, 8)}…` : name || '')
+
+const sealSampleMarkup = computed(() => {
+  const p = period.value || { parkName: 'DIPARK数智云仓产业园', period: month.value || '2026-11' }
+  const sample = notices.value[0] || {
+    noticeNo: `${p.noticePrefix || 'DIPARK'}-202611-001`,
+    tenantName: '示例租户有限公司',
+    unitName: '1层 A区',
+    subtotal: 12580,
+    paidAmount: 0,
+    priorArrears: 0,
+    totalDue: 12580,
+    items: [
+      { seq: '1', feeItem: '水费', prevReading: 1200, currReading: 1320, quantity: 120, unit: '吨', unitPrice: 4.5, amount: 540, remark: '' },
+      { seq: '2', feeItem: '电费', prevReading: 25600, currReading: 37600, quantity: 12000, unit: '度', unitPrice: 0.92, amount: 11040, remark: '' },
+      { seq: '3', feeItem: '生活垃圾清运费', quantity: 1, unit: '月', unitPrice: 1000, amount: 1000, remark: '' }
+    ]
+  }
+  return noticeHtml(p, sample, null)
+})
+
+async function onSealCommand(cmd) {
+  if (cmd === 'disable') {
+    const saved = await sealApi.savePlacement('UTILITY_NOTICE', {
+      ...(sealPlacement.value || {}),
+      enabled: 0
+    })
+    sealPlacement.value = saved
+    ElMessage.success('已取消水电/垃圾费通知单电子印章')
+    return
+  }
+  await loadSealData()
+  if (cmd.startsWith('seal:')) {
+    sealDesigner.initialSealId = Number(cmd.slice(5))
+  } else {
+    sealDesigner.initialSealId = sealPlacement.value?.sealId || seals.value[0]?.id || null
+  }
+  sealDesigner.visible = true
+}
+
 const previewDialog = reactive({ visible: false, title: '', html: '', notice: null })
 function preview(row) {
   previewDialog.notice = row
   previewDialog.title = `${row.noticeNo}  ${row.tenantName}（${row.unitName}）`
-  previewDialog.html = `<!doctype html><html><head><meta charset="utf-8"><style>${NOTICE_CSS}</style></head><body>${noticeHtml(period.value, row)}</body></html>`
+  previewDialog.html = `<!doctype html><html><head><meta charset="utf-8"><style>${NOTICE_CSS}</style></head><body>${noticeHtml(period.value, row, sealPlacement.value)}</body></html>`
   previewDialog.visible = true
 }
 function doPrint(list) {
-  if (!printNotices(period.value, list)) ElMessage.warning('浏览器拦截了打印窗口，请允许弹出窗口后重试')
+  if (!printNotices(period.value, list, true, sealPlacement.value)) ElMessage.warning('浏览器拦截了打印窗口，请允许弹出窗口后重试')
 }
 const printOne = (row) => doPrint([row])
 const printAll = () => doPrint(viewNotices.value)
@@ -575,4 +665,7 @@ async function revoke() {
 }
 .invoice-btn { color: #9333ea !important; font-weight: 600; }
 .invoice-btn:hover { color: #db2777 !important; }
+.seal-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #dc2626; margin-right: 6px; }
+.seal-drop-item { display: flex; align-items: center; gap: 8px; }
+.seal-drop-img { width: 22px; height: 18px; object-fit: contain; }
 </style>

@@ -10,6 +10,7 @@ vi.mock('../feePeriod', async (original) => ({
   useFeePeriod: callback => { state.opened = callback; return state.hook }
 }))
 vi.mock('@/api/energy', () => ({ feePeriodApi: { notices: vi.fn() }, leaseFeeApi: { overview: vi.fn().mockResolvedValue([]) } }))
+vi.mock('@/api/oa', () => ({ sealApi: { list: vi.fn().mockResolvedValue([]), getPlacement: vi.fn().mockResolvedValue(null), savePlacement: vi.fn().mockResolvedValue(null) } }))
 const payment = { name: 'FeeNoticePayment', props: ['modelValue', 'notice'], emits: ['saved', 'update:modelValue'], template: '<div />' }
 const invoice = { name: 'NoticeInvoiceDialog', props: ['modelValue', 'notice', 'mode'], emits: ['saved', 'update:modelValue'], template: '<div />' }
 beforeEach(() => {

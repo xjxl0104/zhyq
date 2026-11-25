@@ -66,13 +66,15 @@ it('flattens overview, property service and smart iot menus and organizes park o
   const propertyService = menuTree.find(n => n.title === '物业服务')
   expect(propertyService.children.map(c => c.title)).toEqual([
     '工单汇总', '物业报修', '供应商档案', '设备巡检', '安防巡更', '保洁检查', '绿化检查',
-    '访客预约', '在线商城', '物品放行', '场地预约', '装修申请'
+    '访客预约', '装修及动火'
   ])
   const smartIot = menuTree.find(n => n.title === '智慧物联')
   expect(smartIot.children.map(c => c.title)).toEqual(['预警事件', '智能安防', '智慧停车场', '智慧安消'])
   const ops = menuTree.find(n => n.title === '园区运营')
-  expect(ops.children[0].title).toBe('物资管理')
-  expect(ops.children[0].icon).toBeTruthy()
+  expect(ops.children[0].title).toBe('办公管理')
+  expect(ops.children[0].children.map(c => c.title)).toEqual(['任务', '日程', '审批中心', '印章管理', '公文管理', '流程管理'])
+  expect(ops.children[1].title).toBe('物资管理')
+  expect(ops.children[1].icon).toBeTruthy()
   const leasing = menuTree.find(n => n.title === '招商租赁')
   const contractMenu = leasing.children.find(c => c.title === '合同')
   expect(contractMenu.children.map(c => c.title)).toEqual(['正式合同', '简易合同', '合同模板', '合同设置'])
@@ -81,11 +83,13 @@ it('flattens overview, property service and smart iot menus and organizes park o
   expect(feeMgmt.children.map(c => c.title)).toEqual(['保证金', '租金', '物业费', '电费', '水费', '垃圾处理费', '缴费汇总'])
   const tree = buildPermissionTree([
     page(10, '/property/meeting'), page(11, '/service/forum'), page(15, '/iot/device'), page(16, '/acc/access'),
+    page(19, '/service/mall'), page(20, '/oa/notice'), page(21, '/oa/attendance'),
     grant(12, 'property:check:edit', '检查-编辑'),
     page(13, '/energy/rent'), page(14, '/energy/property'), page(17, '/energy/deposit'),
+    page(22, '/oa/seal'),
     grant(18, 'iot:device:query', '设备-查询')
   ])
-  expect(permissionIds(tree)).toEqual([12, 18, 17, 13, 14])
+  expect(permissionIds(tree)).toEqual([12, 18, 22, 17, 13, 14])
   expect(permissionIds([tree[5]])).toEqual([18])
-  expect(permissionIds([tree[6]])).toEqual([17, 13, 14])
+  expect(permissionIds([tree[6]])).toEqual([22, 17, 13, 14])
 })

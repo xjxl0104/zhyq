@@ -108,19 +108,13 @@ const routes = [
 
       // 物业服务(原惠企保留模块)
       { path: 'service/visitor', meta: { title: '访客预约' }, component: () => import('@/views/service/Visitor.vue') },
-      { path: 'service/mall', meta: { title: '在线商城' }, component: () => import('@/views/service/Mall.vue') },
-      { path: 'service/pass', meta: { title: '物品放行' }, component: () => import('@/views/service/Pass.vue') },
-      { path: 'service/site', meta: { title: '场地预约' }, component: () => import('@/views/service/SiteBooking.vue') },
-      { path: 'service/decoration', meta: { title: '装修申请' }, component: () => import('@/views/service/Decoration.vue') },
+      { path: 'service/decoration', meta: { title: '装修及动火' }, component: () => import('@/views/service/Decoration.vue') },
 
-      // 办公
+      // 办公管理
       { path: 'oa/task', meta: { title: '任务' }, component: () => import('@/views/oa/Task.vue') },
       { path: 'oa/schedule', meta: { title: '日程' }, component: () => import('@/views/oa/Schedule.vue') },
-      { path: 'oa/notice', meta: { title: '企业公告' }, component: () => import('@/views/oa/Notice.vue') },
       { path: 'oa/approval', meta: { title: '审批中心' }, component: () => import('@/views/oa/Approval.vue') },
-      { path: 'oa/recruit', meta: { title: '人才招聘' }, component: () => import('@/views/oa/Recruit.vue') },
-      { path: 'oa/article', meta: { title: '文章管理' }, component: () => import('@/views/oa/Article.vue') },
-      { path: 'oa/attendance', meta: { title: '考勤管理' }, component: () => import('@/views/oa/Attendance.vue') },
+      { path: 'oa/seal', meta: { title: '印章管理' }, component: () => import('@/views/oa/Seal.vue') },
       { path: 'oa/document', meta: { title: '公文管理' }, component: () => import('@/views/oa/Document.vue') },
       { path: 'oa/flow', meta: { title: '流程管理' }, component: () => import('@/views/oa/Flow.vue') },
       { path: 'archive/doc', meta: { title: '资料库' }, component: () => import('@/views/archive/Doc.vue') },

@@ -1,4 +1,5 @@
 import { money, periodRange } from './feePeriod'
+import { renderSealOverlay } from './noticePrint'
 
 const esc = (v) => String(v ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]))
 const br = (v) => esc(v).replace(/\n/g, '<br>')
@@ -19,7 +20,7 @@ const factorText = (v) => {
   return `${Number(n.toFixed(4))}`
 }
 
-export function leaseNoticeHtml(period, notice) {
+export function leaseNoticeHtml(period, notice, sealPlacement = null) {
   const isRent = notice.feeCategory === 'RENT'
   const categoryTitle = isRent ? '租金' : '物业管理费'
   const payeeName = notice.payeeName || (isRent ? period.rentPayeeName : period.propertyPayeeName) || ''
@@ -80,14 +81,16 @@ export function leaseNoticeHtml(period, notice) {
       <tr><th>本期应收合计</th><td class="r total">${money(notice.totalDue)}</td><td></td></tr>
     </table>
     <div class="sign"><span>收取单位确认（签字/盖章）：${esc(payeeName)}</span><span>租户确认（签字/盖章）：</span></div>
+    ${renderSealOverlay(sealPlacement, 273)}
   </section>`
 }
 
 export const LEASE_NOTICE_CSS = `
   * { box-sizing: border-box; }
   body { font-family: "Microsoft YaHei", "PingFang SC", sans-serif; font-size: 12px; color: #111; margin: 0; padding: 16px; }
-  .notice { page-break-after: always; max-width: 1080px; margin: 0 auto 32px; }
+  .notice { position: relative; page-break-after: always; max-width: 1080px; margin: 0 auto 32px; }
   .notice:last-child { page-break-after: auto; }
+  .seal-stamp { position: absolute; z-index: 20; pointer-events: none; mix-blend-mode: multiply; height: auto; }
   h1 { text-align: center; font-size: 20px; margin: 0 0 4px; letter-spacing: 2px; }
   .sub { text-align: center; margin: 0 0 10px; color: #333; font-size: 13px; }
   table { width: 100%; border-collapse: collapse; margin-bottom: 8px; }
@@ -106,10 +109,13 @@ export const LEASE_NOTICE_CSS = `
   @media print { body { padding: 0; } @page { size: A4 landscape; margin: 12mm; } }
 `
 
-export function printLeaseNotices(period, notices, autoPrint = true) {
+export function printLeaseNotices(period, notices, autoPrint = true, sealMap = null) {
   const win = window.open('', '_blank')
   if (!win) return false
-  const body = notices.map((n) => leaseNoticeHtml(period, n)).join('')
+  const body = notices.map((n) => {
+    const placement = sealMap ? (n.feeCategory === 'RENT' ? sealMap.RENT : sealMap.PROPERTY) : null
+    return leaseNoticeHtml(period, n, placement)
+  }).join('')
   win.document.write(`<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>${esc(period.period)} 租金与物业管理费缴费通知单</title><style>${LEASE_NOTICE_CSS}</style></head><body>${body}</body></html>`)
   win.document.close()
   if (autoPrint) {

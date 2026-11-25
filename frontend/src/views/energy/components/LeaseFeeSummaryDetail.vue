@@ -46,6 +46,35 @@
           {{ notices.length ? '重新生成通知单' : '生成租金与物业费通知单' }}
         </el-button>
         <el-button @click="openHeader">收取单位与通知单抬头</el-button>
+        <el-dropdown trigger="click" @command="onSealCommand">
+          <el-button :type="anyLeaseSealEnabled ? 'danger' : ''" plain>
+            <span v-if="anyLeaseSealEnabled" class="seal-dot" />
+            电子印章
+            <el-icon class="el-icon--right"><ArrowDown /></el-icon>
+          </el-button>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item disabled>── 租金通知单电子印章 ──</el-dropdown-item>
+              <el-dropdown-item v-for="s in seals" :key="'r-' + s.id" :command="`RENT:${s.id}`">
+                <div class="seal-drop-item">
+                  <img v-if="s.imageData" :src="s.imageData" class="seal-drop-img" alt="" />
+                  <span>{{ s.name }}</span>
+                  <el-tag v-if="rentSeal?.enabled === 1 && String(rentSeal.sealId) === String(s.id)" size="small" type="danger" effect="plain">已应用</el-tag>
+                </div>
+              </el-dropdown-item>
+              <el-dropdown-item command="RENT:design">调整租金通知单印章位置/大小</el-dropdown-item>
+              <el-dropdown-item divided disabled>── 物业管理费通知单电子印章 ──</el-dropdown-item>
+              <el-dropdown-item v-for="s in seals" :key="'p-' + s.id" :command="`PROPERTY:${s.id}`">
+                <div class="seal-drop-item">
+                  <img v-if="s.imageData" :src="s.imageData" class="seal-drop-img" alt="" />
+                  <span>{{ s.name }}</span>
+                  <el-tag v-if="propertySeal?.enabled === 1 && String(propertySeal.sealId) === String(s.id)" size="small" type="danger" effect="plain">已应用</el-tag>
+                </div>
+              </el-dropdown-item>
+              <el-dropdown-item command="PROPERTY:design">调整物业费通知单印章位置/大小</el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
         <el-button :disabled="!notices.length" @click="exportExcel"><el-icon><Download /></el-icon>导出 Excel</el-button>
         <el-button :disabled="!rentNotices.length" @click="printBatch(rentNotices)"><el-icon><Printer /></el-icon>打印全部租金通知单</el-button>
         <el-button :disabled="!propertyNotices.length" @click="printBatch(propertyNotices)"><el-icon><Printer /></el-icon>打印全部物业费通知单</el-button>
@@ -273,20 +302,32 @@
 
     <LeaseNoticePayment v-model="paymentDialog.visible" :notice="paymentDialog.notice" @saved="paymentSaved" />
     <NoticeInvoiceDialog v-model="invoiceDialog.visible" :notice="invoiceDialog.notice" mode="lease" @saved="invoiceSaved" />
+    <NoticeSealDesigner
+      v-model="sealDesigner.visible"
+      :template-key="sealDesigner.category === 'RENT' ? 'LEASE_RENT_NOTICE' : 'LEASE_PROPERTY_NOTICE'"
+      :title="sealDesigner.category === 'RENT' ? '租金缴费通知单 · 电子印章模板排版' : '物业管理费缴费通知单 · 电子印章模板排版'"
+      :notice-markup="sealSampleMarkup"
+      :seals="seals"
+      :placement="sealDesigner.category === 'RENT' ? rentSeal : propertySeal"
+      :initial-seal-id="sealDesigner.initialSealId"
+      @saved="onSealSaved"
+    />
   </div>
 </template>
 
 <script setup>
 import { computed, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowLeft, Download, Plus, Printer } from '@element-plus/icons-vue'
+import { ArrowDown, ArrowLeft, Download, Plus, Printer } from '@element-plus/icons-vue'
 import { leaseFeeApi } from '@/api/energy'
+import { sealApi } from '@/api/oa'
 import { BILL_KINDS, applyFilter, downloadBlob, filterOptions, money, num } from '../feePeriod'
 import { LEASE_NOTICE_CSS, leaseNoticeHtml, printLeaseNotices } from '../leaseNoticePrint'
 import FeeBillFiles from './FeeBillFiles.vue'
 import FeeFilterBar from './FeeFilterBar.vue'
 import LeaseNoticePayment from './LeaseNoticePayment.vue'
 import NoticeInvoiceDialog from './NoticeInvoiceDialog.vue'
+import NoticeSealDesigner from './NoticeSealDesigner.vue'
 
 const props = defineProps({ month: { type: String, required: true } })
 defineEmits(['back'])
@@ -295,6 +336,11 @@ const period = ref(null)
 const notices = ref([])
 const loading = ref(false)
 const generating = ref(false)
+const seals = ref([])
+const rentSeal = ref(null)
+const propertySeal = ref(null)
+const sealDesigner = reactive({ visible: false, category: 'RENT', initialSealId: null })
+const anyLeaseSealEnabled = computed(() => rentSeal.value?.enabled === 1 || propertySeal.value?.enabled === 1)
 
 const locked = computed(() => period.value?.status === 'CONFIRMED')
 const monthLabel = computed(() => `${props.month.slice(0, 4)}年${Number(props.month.slice(5))}月`)
@@ -324,11 +370,27 @@ const summaryRows = computed(() => {
 })
 const viewSummaryRows = computed(() => applyFilter(summaryRows.value, filter, (r) => r.tenantName, (r) => r.unitName))
 
+async function loadSealData() {
+  try {
+    const [list, rSeal, pSeal] = await Promise.all([
+      sealApi.list({ onlyEnabled: true }),
+      sealApi.getPlacement('LEASE_RENT_NOTICE'),
+      sealApi.getPlacement('LEASE_PROPERTY_NOTICE')
+    ])
+    seals.value = list || []
+    rentSeal.value = rSeal || null
+    propertySeal.value = pSeal || null
+  } catch {
+    // ignore
+  }
+}
+
 async function load() {
   loading.value = true
   try {
     period.value = await leaseFeeApi.open(props.month)
     notices.value = await leaseFeeApi.notices(period.value.id) || []
+    await loadSealData()
   } finally {
     loading.value = false
   }
@@ -397,16 +459,58 @@ async function saveEdit() {
   }
 }
 
+const sealSampleMarkup = computed(() => {
+  const p = period.value || { parkName: 'DIPARK数智云仓产业园', period: props.month }
+  const isRent = sealDesigner.category === 'RENT'
+  const list = isRent ? rentNotices.value : propertyNotices.value
+  const sample = list[0] || {
+    feeCategory: sealDesigner.category,
+    noticeNo: `${p.noticePrefix || 'DIPARK'}-${isRent ? 'ZJ' : 'WY'}-001`,
+    tenantName: '示例租户有限公司',
+    unitName: '1层 A区',
+    leaseArea: 1200,
+    subtotal: isRent ? 36000 : 6000,
+    paidAmount: 0,
+    priorArrears: 0,
+    totalDue: isRent ? 36000 : 6000,
+    items: [
+      { seq: '1', feeItem: isRent ? '房屋租金' : '物业管理费', unitName: '1层 A区', leaseArea: 1200, unitPrice: isRent ? 30 : 5, standardAmount: isRent ? 36000 : 6000, discountFactor: 1, amount: isRent ? 36000 : 6000, remark: '' }
+    ]
+  }
+  return leaseNoticeHtml(p, sample, null)
+})
+
+async function onSealCommand(cmd) {
+  await loadSealData()
+  const [cat, arg] = String(cmd).split(':')
+  sealDesigner.category = cat === 'PROPERTY' ? 'PROPERTY' : 'RENT'
+  if (arg && arg !== 'design') {
+    sealDesigner.initialSealId = Number(arg)
+  } else {
+    const current = sealDesigner.category === 'RENT' ? rentSeal.value : propertySeal.value
+    sealDesigner.initialSealId = current?.sealId || seals.value[0]?.id || null
+  }
+  sealDesigner.visible = true
+}
+
+function onSealSaved(saved) {
+  if (sealDesigner.category === 'RENT') rentSeal.value = saved
+  else propertySeal.value = saved
+}
+
 const previewDialog = reactive({ visible: false, title: '', html: '', notice: null })
 function preview(row) {
   previewDialog.notice = row
   previewDialog.title = `${row.feeCategory === 'RENT' ? '租金' : '物业管理费'}通知单预览 - ${row.tenantName}`
-  previewDialog.html = `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><style>${LEASE_NOTICE_CSS}</style></head><body>${leaseNoticeHtml(period.value, row)}</body></html>`
+  const placement = row.feeCategory === 'RENT' ? rentSeal.value : propertySeal.value
+  previewDialog.html = `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><style>${LEASE_NOTICE_CSS}</style></head><body>${leaseNoticeHtml(period.value, row, placement)}</body></html>`
   previewDialog.visible = true
 }
 function printBatch(list) {
   if (!list?.length) return
-  if (!printLeaseNotices(period.value, list, true)) ElMessage.warning('浏览器拦截了打印窗口，请允许弹出窗口')
+  if (!printLeaseNotices(period.value, list, true, { RENT: rentSeal.value, PROPERTY: propertySeal.value })) {
+    ElMessage.warning('浏览器拦截了打印窗口，请允许弹出窗口')
+  }
 }
 
 const paymentDialog = reactive({ visible: false, notice: null })
@@ -538,4 +642,7 @@ function noticeSummary({ columns, data }) {
 }
 .invoice-btn { color: #9333ea !important; font-weight: 600; }
 .invoice-btn:hover { color: #db2777 !important; }
+.seal-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #dc2626; margin-right: 6px; }
+.seal-drop-item { display: flex; align-items: center; gap: 8px; }
+.seal-drop-img { width: 22px; height: 18px; object-fit: contain; }
 </style>

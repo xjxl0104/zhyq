@@ -88,6 +88,15 @@ public final class BusinessRouteAccess {
                     "/energy/garbage", "/energy/summary");
             case "energy/lease-fee" -> anyMenu(grants, "/energy/deposit", "/energy/rent",
                     "/energy/property", "/energy/summary");
+            case "oa/seal" -> {
+                if (hasMenu(grants, "/oa/seal") || hasPrefix(grants, "oa:seal:")) yield true;
+                boolean canUseSeal = anyMenu(grants, "/energy/summary", "/energy/rent", "/energy/property",
+                        "/energy/electric", "/energy/water", "/energy/garbage", "/service/decoration")
+                        || hasPrefix(grants, "energy:feebill:")
+                        || hasPrefix(grants, "service:decoration:");
+                yield canUseSeal && ("GET".equals(method) || path.startsWith("/oa/seal/placement/"));
+            }
+            case "oa/periodic-task" -> hasMenu(grants, "/oa/task") || hasPrefix(grants, "oa:task:");
             case "iot/device" -> anyMenu(grants, "/iot/camera", "/iot/parking", "/iot/fire")
                     || hasPrefix(grants, "iot:device:");
             case "service/product" -> hasMenu(grants, "/service/mall");

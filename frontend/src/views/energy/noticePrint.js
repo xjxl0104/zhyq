@@ -16,8 +16,21 @@ const dateCn = (s) => {
   return `${y}年${Number(m)}月${Number(d)}日`
 }
 
+/** 根据模板印章排版配置渲染绝对定位的电子印章 */
+export function renderSealOverlay(sealPlacement, pageWidthMm = 273) {
+  if (!sealPlacement || Number(sealPlacement.enabled) !== 1 || !sealPlacement.sealImageData) return ''
+  const baseMm = Number(sealPlacement.defaultWidthMm || 44)
+  const scale = Number(sealPlacement.scale || 1)
+  const widthPct = ((baseMm / pageWidthMm) * 100 * scale).toFixed(2)
+  const x = Number(sealPlacement.posX ?? 20).toFixed(2)
+  const y = Number(sealPlacement.posY ?? 88).toFixed(2)
+  const rot = Number(sealPlacement.rotation || 0).toFixed(1)
+  const opacity = Number(sealPlacement.opacity ?? 0.92).toFixed(2)
+  return `<img class="seal-stamp" src="${sealPlacement.sealImageData}" alt="电子印章" style="left:${x}%;top:${y}%;width:${widthPct}%;opacity:${opacity};transform:translate(-50%,-50%) rotate(${rot}deg);" />`
+}
+
 /** 一张通知单的 HTML,版式照线下表的缴费通知单 sheet */
-export function noticeHtml(period, notice) {
+export function noticeHtml(period, notice, sealPlacement = null) {
   const range = periodRange(period)
   const rows = (notice.items || []).map((it) => {
     const detail = /_DETAIL$/.test(it.itemType)
@@ -54,14 +67,16 @@ export function noticeHtml(period, notice) {
       <tr><th>本期应收合计</th><td class="r total">${money(notice.totalDue)}</td><td></td></tr>
     </table>
     <div class="sign"><span>园区方确认（签字/盖章）：</span><span>租户确认（签字/盖章）：</span></div>
+    ${renderSealOverlay(sealPlacement, 273)}
   </section>`
 }
 
 export const NOTICE_CSS = `
   * { box-sizing: border-box; }
   body { font-family: "Microsoft YaHei", "PingFang SC", sans-serif; font-size: 12px; color: #111; margin: 0; padding: 16px; }
-  .notice { page-break-after: always; max-width: 1040px; margin: 0 auto 32px; }
+  .notice { position: relative; page-break-after: always; max-width: 1040px; margin: 0 auto 32px; }
   .notice:last-child { page-break-after: auto; }
+  .seal-stamp { position: absolute; z-index: 20; pointer-events: none; mix-blend-mode: multiply; height: auto; }
   h1 { text-align: center; font-size: 20px; margin: 0 0 4px; letter-spacing: 2px; }
   .sub { text-align: center; margin: 0 0 10px; color: #444; }
   table { width: 100%; border-collapse: collapse; margin-bottom: 8px; }
@@ -82,10 +97,10 @@ export const NOTICE_CSS = `
 `
 
 /** 新开窗口打印:一张或全部(每张一页) */
-export function printNotices(period, notices, autoPrint = true) {
+export function printNotices(period, notices, autoPrint = true, sealPlacement = null) {
   const win = window.open('', '_blank')
   if (!win) return false
-  const body = notices.map((n) => noticeHtml(period, n)).join('')
+  const body = notices.map((n) => noticeHtml(period, n, sealPlacement)).join('')
   win.document.write(`<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>${esc(period.period)} 缴费通知单</title><style>${NOTICE_CSS}</style></head><body>${body}</body></html>`)
   win.document.close()
   if (autoPrint) {

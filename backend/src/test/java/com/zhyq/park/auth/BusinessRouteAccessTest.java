@@ -96,4 +96,16 @@ class BusinessRouteAccessTest {
         assertThat(BusinessRouteAccess.allowed("/contract/template/list", "GET", Set.of("MENU:/contract/template"))).isTrue();
         assertThat(BusinessRouteAccess.allowed("/contract/simple/list", "GET", Set.of())).isFalse();
     }
+
+    @Test void sealAndPeriodicTaskRoutesFollowScopedMenuPermissions() {
+        assertThat(BusinessRouteAccess.allowed("/oa/seal/list", "GET", Set.of("MENU:/oa/seal"))).isTrue();
+        assertThat(BusinessRouteAccess.allowed("/oa/seal", "POST", Set.of("MENU:/oa/seal"))).isTrue();
+        assertThat(BusinessRouteAccess.allowed("/oa/seal/list", "GET", Set.of("MENU:/energy/summary"))).isTrue();
+        assertThat(BusinessRouteAccess.allowed("/oa/seal/placement/UTILITY_NOTICE", "PUT", Set.of("MENU:/energy/summary"))).isTrue();
+        assertThat(BusinessRouteAccess.allowed("/oa/seal", "POST", Set.of("MENU:/energy/summary"))).isFalse();
+        assertThat(BusinessRouteAccess.allowed("/oa/seal/list", "GET", Set.of("MENU:/service/decoration"))).isTrue();
+        assertThat(BusinessRouteAccess.allowed("/oa/periodic-task/board", "GET", Set.of("MENU:/oa/task"))).isTrue();
+        assertThat(BusinessRouteAccess.allowed("/oa/periodic-task/log", "PUT", Set.of("MENU:/oa/task"))).isTrue();
+        assertThat(BusinessRouteAccess.allowed("/oa/periodic-task/board", "GET", Set.of())).isFalse();
+    }
 }

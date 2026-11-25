@@ -95,10 +95,7 @@ export const menuTree = [
       { title: '保洁检查', path: '/property/check-clean' },
       { title: '绿化检查', path: '/property/check-green' },
       { title: '访客预约', path: '/service/visitor' },
-      { title: '在线商城', path: '/service/mall' },
-      { title: '物品放行', path: '/service/pass' },
-      { title: '场地预约', path: '/service/site' },
-      { title: '装修申请', path: '/service/decoration' }
+      { title: '装修及动火', path: '/service/decoration' }
     ]
   },
   {
@@ -111,6 +108,16 @@ export const menuTree = [
   },
   {
     title: '园区运营', icon: 'Calendar', children: [
+      {
+        title: '办公管理', icon: 'Calendar', children: [
+          { title: '任务', path: '/oa/task' },
+          { title: '日程', path: '/oa/schedule' },
+          { title: '审批中心', path: '/oa/approval' },
+          { title: '印章管理', path: '/oa/seal' },
+          { title: '公文管理', path: '/oa/document' },
+          { title: '流程管理', path: '/oa/flow' }
+        ]
+      },
       { title: '物资管理', icon: 'Box', path: '/property/asset' },
       {
         title: '缴费管理', icon: 'Tickets', children: [
@@ -121,19 +128,6 @@ export const menuTree = [
           { title: '水费', path: '/energy/water' },
           { title: '垃圾处理费', path: '/energy/garbage' },
           { title: '缴费汇总', path: '/energy/summary' }
-        ]
-      },
-      {
-        title: '办公', icon: 'Calendar', children: [
-          { title: '任务', path: '/oa/task' },
-          { title: '日程', path: '/oa/schedule' },
-          { title: '企业公告', path: '/oa/notice' },
-          { title: '审批中心', path: '/oa/approval' },
-          { title: '人才招聘', path: '/oa/recruit' },
-          { title: '文章管理', path: '/oa/article' },
-          { title: '考勤管理', path: '/oa/attendance' },
-          { title: '公文管理', path: '/oa/document' },
-          { title: '流程管理', path: '/oa/flow' }
         ]
       },
       {

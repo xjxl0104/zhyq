@@ -13,13 +13,15 @@ const RETIRED_PATHS = new Set([
   '/system/dept', '/system/post',
   '/property/meeting', '/property/check-quality', '/property/complaint', '/property/feedback',
   '/property/survey', '/property/activity', '/rsv/resource', '/rsv/booking',
+  '/service/mall', '/service/pass', '/service/site',
   '/service/passcard', '/service/forum', '/service/declare', '/service/ip',
   '/service/policy', '/service/ecosystem',
+  '/oa/notice', '/oa/recruit', '/oa/article', '/oa/attendance',
   '/iot/device', '/iot/access', '/iot/lock', '/iot/charging', '/iot/sensor',
   '/iot/breaker', '/iot/point', '/iot/channel', '/iot/vendor',
   '/acc/access', '/acc/visitor', '/acc/parking'
 ])
-const RETIRED_PERM_RE = /^(system:(dept|post)|property:(meeting|feedback|survey|activity)|rsv|service:(passcard|forum|declare|ip|policy|ecosystem)|iot:(point|channel|vendor)|acc)(:|$)/
+const RETIRED_PERM_RE = /^(system:(dept|post)|property:(meeting|feedback|survey|activity)|rsv|service:(mall|pass|site|passcard|forum|declare|ip|policy|ecosystem)|oa:(notice|recruit|article|attendance)|iot:(point|channel|vendor)|acc)(:|$)/
 export function isRetiredPermission(menu) {
   return RETIRED_PATHS.has(pathOf(menu.path)) || RETIRED_PERM_RE.test(menu.perm || '')
 }
