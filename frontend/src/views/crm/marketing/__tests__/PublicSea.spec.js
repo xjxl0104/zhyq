@@ -48,6 +48,26 @@ vi.mock('@/api/marketing', () => ({
   }
 }))
 
+vi.mock('@/api/file', () => ({
+  fileApi: { upload: vi.fn().mockResolvedValue({ id: 77 }) }
+}))
+
+vi.mock('@/components/PhotoCapture.vue', async () => {
+  const { h } = await import('vue')
+  return {
+    default: {
+      emits: ['capture'],
+      setup(_, { emit }) {
+        return () => h('button', {
+          class: 'stub-photo-capture',
+          type: 'button',
+          onClick: () => emit('capture', new File(['x'], 'door.jpg', { type: 'image/jpeg' }))
+        }, '拍照')
+      }
+    }
+  }
+})
+
 vi.mock('../CustomerQuotePanel.vue', () => ({
   default: { template: '<div class="stub-quote-panel">多仓比价面板</div>' }
 }))
@@ -193,13 +213,22 @@ describe('PublicSea.vue 广东公海双视图、四卡三层下钻与500m打卡�
     await flushPromises()
     expect(mockClaim).toHaveBeenCalledWith(901)
 
-    // 打开 500m 打卡弹窗并提交现场打卡
+    // 打开现场打卡弹窗：未定位、未拍照时不能提交；开发环境模拟到门头 + 拍照 + 纪要后提交
     await wrapper.find('[data-testid="btn-visit-checkin"]').trigger('click')
     await flushPromises()
-    await wrapper.find('[data-testid="btn-submit-checkin"]').trigger('click')
+    const submitBtn = () => wrapper.find('[data-testid="btn-submit-checkin"]')
+    expect(submitBtn().attributes('disabled')).toBeDefined()
+    expect(wrapper.text()).not.toContain('/uploads/checkin/door-live.jpg')
+
+    await wrapper.find('[data-testid="btn-mock-near-gps"]').trigger('click')
+    await wrapper.find('.stub-photo-capture').trigger('click')
     await flushPromises()
-    expect(mockVisitCheckin).toHaveBeenCalledWith(901, expect.objectContaining({
-      photoUrl: '/uploads/checkin/door-live.jpg'
-    }))
+    expect(wrapper.find('[data-testid="checkin-photo-ok"]').exists()).toBe(true)
+    await wrapper.find('textarea[placeholder*="现场面见林老板"]').setValue('现场面见老板核实单量')
+    await flushPromises()
+    expect(submitBtn().attributes('disabled')).toBeUndefined()
+    await submitBtn().trigger('click')
+    await flushPromises()
+    expect(mockVisitCheckin).toHaveBeenCalledWith(901, expect.objectContaining({ photoUrl: 'file:77' }))
   })
 })

@@ -24,7 +24,7 @@ export function buildConnectorHubDrilldownCards(rawSummary = {}) {
     key: 'hub',
     title: '连接器热插拔点亮总览',
     primaryText: `${fmtInt(active)} / ${fmtInt(total)} 通道`,
-    badgeText: active > 0 ? '按需运行中' : '全 ¥0 待机中',
+    badgeText: active > 0 ? '部分已开启' : '全部未开通（¥0）',
     badgeType: active > 0 ? 'success' : 'info',
     footText: `免费/官方通道 ${fmtInt(freeCnt)} 个 · 商业按次/SaaS通道 ${fmtInt(paidCnt)} 个（未配Key零扣费）`,
     question: `全部 ${total} 条外部接口如何做到「代码一次性全量就位、未买套餐零月租待机、随填随亮」？`,
@@ -34,7 +34,7 @@ export function buildConnectorHubDrilldownCards(rawSummary = {}) {
         key: 'hub-free',
         label: '🟢 8 条 ¥0 免费与官方开放平台通道',
         value: `${fmtInt(freeCnt)} 条`,
-        verdict: '含高德全套LBS、巨量飞鱼/腾讯线索通/小红书聚光/百度基木鱼4大Webhook、企微机器人、抖店与拼多多官方验店',
+        verdict: '含高德、4 个广告回调、企微机器人、抖店/拼多多开放平台（官方读单开发中）',
         evidence: {
           rawTable: `freeConnectors=${freeCnt}, activeConnectors=${active}, totalConnectors=${total}`,
           sourceNote: `crm_ext_connector_config (fee_tier='FREE') · ${fetchedAt}`,
@@ -69,7 +69,7 @@ export function buildConnectorHubDrilldownCards(rawSummary = {}) {
   const costCard = {
     key: 'cost',
     title: '省钱护栏与月度限额熔断',
-    primaryText: `省 ¥${savedYuan}`,
+    primaryText: `估算省 ¥${savedYuan}`,
     badgeText: fusedCnt > 0 ? `⚠️ ${fusedCnt} 通道达限额熔断` : '0 超支风险',
     badgeType: fusedCnt > 0 ? 'danger' : 'primary',
     footText: `外省锁跳过 ${fmtInt(outGd)} 次 · 30天缓存复用 ${fmtInt(cacheHits)} 次 · 本月实调 ${fmtInt(monthUsed)} 次`,
@@ -124,9 +124,9 @@ export function buildConnectorHubDrilldownCards(rawSummary = {}) {
     rows: [
       {
         key: 'guard-front',
-        label: '📣 全域投流进线 + 10秒官方扫码验店真单量',
+        label: '📣 广告回调进线 + 验店单量（目前为货主自报）',
         value: `推流 ${fmtInt(adInbox)} / 验店 ${fmtInt(shopVer)}`,
-        verdict: '飞鱼/腾讯/小红书/百度 0秒幂等入池，抖店/淘系/拼多多核验近30天真单量防虚报压价',
+        verdict: '广告回调验签后幂等入池；验店目前由货主自报近30天单量（标注未核验），官方读单开发中',
         evidence: {
           rawTable: `adInboxTotal=${adInbox}, shopVerifiedCount=${shopVer}`,
           sourceNote: `crm_ext_ad_lead_inbox + crm_shop_oauth_session · ${fetchedAt}`,

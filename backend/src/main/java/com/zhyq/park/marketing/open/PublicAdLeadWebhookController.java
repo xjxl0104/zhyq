@@ -5,9 +5,9 @@ import cn.hutool.crypto.digest.HMac;
 import cn.hutool.crypto.digest.HmacAlgorithm;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.zhyq.park.common.config.MyMetaObjectHandler;
 import com.zhyq.park.common.exception.BizException;
 import com.zhyq.park.common.result.Result;
-import com.zhyq.park.common.setting.BizSettings;
 import com.zhyq.park.marketing.password.ClientAddressResolver;
 import com.zhyq.park.marketing.password.PasswordAttemptLimiter;
 import com.zhyq.park.marketing.service.MktConnectorHubService;
@@ -23,54 +23,60 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 /**
- * 巨量引擎「飞鱼 CRM」与腾讯线索通免费广告 Webhook 实时接收口：
- * 0 元接口费，收到广东本地推表单后 0 秒验签、幂等防重并过三道防撞闸写入内部公海热单池。
+ * 广告线索回调接收口（飞鱼 / 腾讯线索通 / 小红书聚光 / 百度基木鱼）：
+ * 渠道必须在连接器中心开启并填写验签密钥，否则一律拒收，防止被外部灌入假线索。
+ * 注：各平台验签算法需按其官方文档核对一次（当前为 HMAC-SHA256(timestamp+body) 通用实现）。
  */
 @Slf4j
-@Tag(name = "公开获客-巨量飞鱼与腾讯广告免费Webhook")
+@Tag(name = "公开获客-广告线索回调")
 @RestController
 @RequestMapping("/open/v1/ad-leads")
 @RequiredArgsConstructor
 public class PublicAdLeadWebhookController {
 
+    private static final Set<String> CHANNELS = Set.of("FEIYU", "TENCENT", "XHS", "BAIDU");
+
     private final JdbcTemplate jdbc;
     private final ObjectMapper json;
-    private final BizSettings bizSettings;
     private final MktPublicSeaWashService washService;
     private final MktConnectorHubService connectorHub;
     private final PasswordAttemptLimiter limiter;
     private final ClientAddressResolver addresses;
 
-    @Operation(summary = "接收飞鱼/腾讯线索通/小红书聚光/百度基木鱼表单实时推送入公海")
+    @Operation(summary = "接收广告平台表单推送入公海（须已开启渠道并配置验签密钥）")
     @PostMapping("/{channel}")
     public Result<Map<String, Object>> receive(
             @PathVariable String channel,
             @RequestParam(required = false) Long projectId,
             @RequestHeader(value = "Signature", required = false) String signature,
             @RequestHeader(value = "Timestamp", required = false) String timestamp,
-            @RequestBody String rawBody,
+            @RequestBody(required = false) String rawBody,
             HttpServletRequest request) {
         limiter.check("ad-webhook:" + addresses.resolve(request), 300);
-        String ch = channel == null ? "FEIYU" : channel.trim().toUpperCase(Locale.ROOT);
+        String ch = channel == null ? "" : channel.trim().toUpperCase(Locale.ROOT);
+        if (!CHANNELS.contains(ch)) throw new BizException(404, "未知的广告渠道");
 
-        // 读取对应渠道配置的验签密钥（兼容巨量飞鱼 AD_FEIYU / 腾讯 AD_TENCENT / 小红书 AD_XHS / 百度 AD_BAIDU）
         String secret = resolveChannelSecret(ch);
-        if (StringUtils.hasText(secret)) {
-            verifySignature(secret.trim(), timestamp, rawBody, signature);
+        if (!StringUtils.hasText(secret)) {
+            throw new BizException(403, "该广告渠道未在连接器中心开启或未配置验签密钥，已拒收");
         }
+        verifySignature(secret.trim(), timestamp, rawBody, signature);
 
+        String body = rawBody == null ? "" : rawBody;
         JsonNode root;
         try {
-            root = json.readTree(rawBody == null || rawBody.isBlank() ? "{}" : rawBody);
+            root = json.readTree(body.isBlank() ? "{}" : body);
         } catch (Exception e) {
             throw new BizException(400, "Webhook JSON 格式错误");
         }
 
-        // 支持飞鱼控制台“测试连通性”空报文或 test 标志秒回成功
+        // 平台控制台"测试连通性"报文（已通过验签）直接回成功
         if (root.isEmpty() || Boolean.TRUE.equals(root.path("is_test").booleanValue())) {
             return Result.ok(Map.of("accepted", true, "mode", "ping_test"));
         }
@@ -78,16 +84,14 @@ public class PublicAdLeadWebhookController {
         String leadId = firstText(root, "lead_id", "clue_id", "leads_id", "id");
         String phone = firstText(root, "telphone", "telephone", "phone", "mobile");
         String name = firstText(root, "name", "shop_name", "company_name", "adv_name");
-        if (!StringUtils.hasText(leadId)) {
-            leadId = DigestUtil.sha256Hex(rawBody).substring(0, 32);
-        }
+        String digest = DigestUtil.sha256Hex(body);
+        if (!StringUtils.hasText(leadId)) leadId = digest.substring(0, 32);
 
-        String digest = DigestUtil.sha256Hex(rawBody);
         try {
             jdbc.update("""
                     INSERT INTO crm_ext_ad_lead_inbox (tenant_id, channel, external_lead_id, wash_result, payload_digest)
-                    VALUES (1, ?, ?, 'PROCESSING', ?)
-                    """, ch, leadId, digest);
+                    VALUES (?, ?, ?, 'PROCESSING', ?)
+                    """, MyMetaObjectHandler.DEFAULT_TENANT_ID, ch, leadId, digest);
         } catch (DuplicateKeyException dup) {
             return Result.ok(Map.of("accepted", true, "duplicate", true, "leadId", leadId));
         }
@@ -120,31 +124,37 @@ public class PublicAdLeadWebhookController {
     }
 
     private String resolveChannelSecret(String ch) {
-        if ("FEIYU".equals(ch)) {
-            String legacy = bizSettings.raw("marketing", "ext_feiyu_token");
-            if (StringUtils.hasText(legacy)) return legacy;
-        }
         if (connectorHub == null) return null;
+        Map<String, String> creds = connectorHub.activeCredentials(MyMetaObjectHandler.DEFAULT_TENANT_ID, "AD_" + ch);
         return switch (ch) {
-            case "FEIYU" -> connectorHub.loadPlainCredentials(1L, "AD_FEIYU").get("signatureSecret");
-            case "TENCENT" -> connectorHub.loadPlainCredentials(1L, "AD_TENCENT").get("tokenSecret");
-            case "XHS" -> connectorHub.loadPlainCredentials(1L, "AD_XHS").get("secret");
-            case "BAIDU" -> connectorHub.loadPlainCredentials(1L, "AD_BAIDU").get("token");
+            case "FEIYU" -> creds.get("signatureSecret");
+            case "TENCENT" -> creds.get("tokenSecret");
+            case "XHS" -> creds.get("secret");
+            case "BAIDU" -> creds.get("token");
             default -> null;
         };
     }
 
-    private static void verifySignature(String secret, String timestamp, String body, String signature) {
+    static void verifySignature(String secret, String timestamp, String body, String signature) {
         if (!StringUtils.hasText(signature)) {
-            throw new BizException(401, "缺少飞鱼 Webhook Signature 签名头");
+            throw new BizException(401, "缺少 Signature 签名头");
+        }
+        if (StringUtils.hasText(timestamp) && timestamp.trim().matches("\\d{10,13}")) {
+            long ts = Long.parseLong(timestamp.trim());
+            long tsMillis = timestamp.trim().length() == 13 ? ts : ts * 1000;
+            if (Math.abs(System.currentTimeMillis() - tsMillis) > 10 * 60 * 1000L) {
+                throw new BizException(401, "回调时间戳已过期，疑似重放请求");
+            }
         }
         String payload = (timestamp == null ? "" : timestamp) + (body == null ? "" : body);
         HMac hmac = new HMac(HmacAlgorithm.HmacSHA256, secret.getBytes(StandardCharsets.UTF_8));
         String expectedHex = hmac.digestHex(payload, StandardCharsets.UTF_8);
         String expectedBase64 = hmac.digestBase64(payload, StandardCharsets.UTF_8, false);
-        if (!expectedHex.equalsIgnoreCase(signature.trim()) && !expectedBase64.equals(signature.trim())) {
-            throw new BizException(401, "飞鱼 Webhook 签名校验不通过");
-        }
+        byte[] given = signature.trim().getBytes(StandardCharsets.UTF_8);
+        boolean ok = MessageDigest.isEqual(expectedHex.toLowerCase(Locale.ROOT).getBytes(StandardCharsets.UTF_8),
+                signature.trim().toLowerCase(Locale.ROOT).getBytes(StandardCharsets.UTF_8))
+                || MessageDigest.isEqual(expectedBase64.getBytes(StandardCharsets.UTF_8), given);
+        if (!ok) throw new BizException(401, "回调签名校验不通过");
     }
 
     private static String firstText(JsonNode node, String... keys) {

@@ -177,7 +177,7 @@ public class MktPublicSeaWashService {
                 cleanText(body.get("region"), 64), cleanText(body.get("address"), 200), null, null,
                 "30秒算价器主动留资（测算一口价 ¥" + low + "~" + high + "/单，申领300单免打包费试发券）");
         Map<String, Object> wash = washRowsInternal(projectId, "CALC_HOT", "30秒算价器线上留资",
-                List.of(row), false, low, high, true, "public-calc");
+                List.of(row), false, low, high, MktExtDataGateway.AlignPolicy.INBOUND, "public-calc");
         Map<String, Object> resp = new LinkedHashMap<>(quote);
         resp.put("accepted", true);
         resp.put("inserted", ((Number) wash.get("insertedRows")).intValue() > 0);
@@ -192,7 +192,7 @@ public class MktPublicSeaWashService {
         List<RawLeadRow> rows = parseFileRows(file, fileName);
         if (rows.isEmpty()) throw new BizException(400, "文件中未识别到有效店铺或企业行，请核对表头");
         return washRowsInternal(resolveProjectId(projectId), normalizeSource(seaSource), fileName,
-                rows, dryRun, null, null, false, MktAuditService.currentOperator());
+                rows, dryRun, null, null, MktExtDataGateway.AlignPolicy.BATCH, MktAuditService.currentOperator());
     }
 
     /** 后台提交 JSON 榜单或文本行洗数对齐入池。 */
@@ -219,7 +219,7 @@ public class MktPublicSeaWashService {
         )).toList();
         return washRowsInternal(resolveProjectId(projectId), normalizeSource(seaSource),
                 StringUtils.hasText(fileName) ? fileName.trim() : "类目榜单批量对齐",
-                rows, dryRun, null, null, false, MktAuditService.currentOperator());
+                rows, dryRun, null, null, MktExtDataGateway.AlignPolicy.BATCH, MktAuditService.currentOperator());
     }
 
     /** 单店名反查背后广东公司+地址并过三道防撞闸写入公海。 */
@@ -230,7 +230,9 @@ public class MktPublicSeaWashService {
                 null, null, null, StringUtils.hasText(category) ? category.trim() : "综合电商",
                 null, null, null, null, null, null, null, "单店名称企查对齐入池：" + shopName.trim());
         return washRowsInternal(resolveProjectId(projectId), "CHANMAMA", "单店反查:" + shopName.trim(),
-                List.of(row), false, null, null, forceUnlockRegion, MktAuditService.currentOperator());
+                List.of(row), false, null, null,
+                forceUnlockRegion ? MktExtDataGateway.AlignPolicy.FORCE : MktExtDataGateway.AlignPolicy.SINGLE,
+                MktAuditService.currentOperator());
     }
 
     /** 高德周边 10km 商圈 POI 扫楼雷达：搜出园区周边电商园/服饰美妆企业并过防撞入公海。 */
@@ -248,7 +250,7 @@ public class MktPublicSeaWashService {
                 p.lng(), p.lat(), "高德周边 " + (radius / 1000) + "km 扫楼雷达发现：" + p.address()
         )).toList();
         Map<String, Object> res = washRowsInternal(effProject, "AMAP_POI", "高德周边POI扫楼雷达",
-                rows, false, null, null, true, MktAuditService.currentOperator());
+                rows, false, null, null, MktExtDataGateway.AlignPolicy.BATCH, MktAuditService.currentOperator());
         Map<String, Object> out = new LinkedHashMap<>(res);
         out.put("scannedPois", pois.size());
         return out;
@@ -262,13 +264,59 @@ public class MktPublicSeaWashService {
                 StringUtils.hasText(category) ? category : "女装服饰", estDaily, null, null,
                 region, region, null, null, note);
         return washRowsInternal(resolveProjectId(projectId), "FEIYU_AD", channel + "免费Webhook直推",
-                List.of(row), false, null, null, true, "webhook-" + channel.toLowerCase(Locale.ROOT));
+                List.of(row), false, null, null, MktExtDataGateway.AlignPolicy.INBOUND, "webhook-" + channel.toLowerCase(Locale.ROOT));
+    }
+
+    /** 免费防撞闸结果：type 为空表示通过；existing 为命中的已有（可更新）客户。 */
+    private record GateResult(String type, String reason, Customer existing) {
+        static GateResult pass(Customer existing) { return new GateResult(null, null, existing); }
+        boolean blocked() { return type != null; }
+    }
+
+    /**
+     * 本地免费防撞闸（不产生任何接口费用）：
+     * ① 同号码关联 >3 家企业 → 代账号剔除；② 命中加盟云仓保密老客 → 跳过；
+     * ③ 命中外部伙伴在锁/已签约 → 跳过；④ 命中冷宫归档 → 跳过。
+     */
+    private GateResult freeGates(Long tenantId, String name, String shopName, String phone,
+                                 Map<String, Set<String>> batchPhoneCompanies) {
+        if (StringUtils.hasText(phone)) {
+            int dbSamePhoneDiffName = Optional.ofNullable(jdbc.queryForObject(
+                    "SELECT COUNT(DISTINCT name) FROM crm_customer WHERE tenant_id = ? AND phone = ? AND name <> ? AND deleted = 0",
+                    Integer.class, tenantId, phone, name)).orElse(0);
+            int batchDistinct = batchPhoneCompanies.getOrDefault(phone, Set.of()).size();
+            if (dbSamePhoneDiffName + batchDistinct > 3) {
+                return new GateResult("AGENCY_PHONE", "同一号码关联超 3 家企业，识别为代理记账号剔除", null);
+            }
+        }
+        if (isWarehouseHmacProtected(tenantId, name, shopName)) {
+            return new GateResult("WH_HMAC", "命中加盟云仓竞争保护白名单，自动跳过护客", null);
+        }
+        LambdaQueryWrapper<Customer> existQuery = new LambdaQueryWrapper<Customer>().eq(Customer::getTenantId, tenantId);
+        if (StringUtils.hasText(phone)) {
+            existQuery.and(q -> q.eq(Customer::getName, name).or().eq(Customer::getPhone, phone));
+        } else {
+            existQuery.eq(Customer::getName, name);
+        }
+        Customer existing = customers.selectOne(existQuery.last("LIMIT 1"));
+        if (existing != null) {
+            if (isPrivateProtected(existing)) {
+                return new GateResult("PRIVATE_LOCK", "客户处于外部伙伴保护期或已签约，严禁冲单", null);
+            }
+            MktPublicSeaMeta meta = seaMetas.selectById(existing.getId());
+            if (meta != null && "ARCHIVED_COLD".equals(meta.getClaimStatus())) {
+                return new GateResult("COLD_ARCHIVE", "命中冷宫归档库，跳过重复外呼", null);
+            }
+        }
+        return GateResult.pass(existing);
     }
 
     private Map<String, Object> washRowsInternal(Long projectId, String seaSource, String fileName, List<RawLeadRow> rows,
                                                  boolean dryRun, BigDecimal calcLow, BigDecimal calcHigh,
-                                                 boolean forceUnlockRegion, String operator) {
+                                                 MktExtDataGateway.AlignPolicy policy, String operator) {
         Long tenantId = resolveTenantId(projectId);
+        boolean regionSkippable = policy == MktExtDataGateway.AlignPolicy.BATCH || policy == MktExtDataGateway.AlignPolicy.SINGLE;
+        boolean lockOn = extGateway.isGuangdongLockEnabled();
         int inserted = 0, blockedPrivate = 0, blockedHmac = 0, blockedAgency = 0;
         int skippedOutProv = 0, cacheHits = 0, apiCalls = 0;
         Long lastCustomerId = null;
@@ -291,74 +339,71 @@ public class MktPublicSeaWashService {
                 addDetail(details, lineNo, "空行", "INVALID", "店铺名与企业名均为空，已跳过");
                 continue;
             }
-
-            // Step 1: 广东省定向省钱初筛 + 企查查 30 天本地缓存/轻量 API 自动对齐
             String regionText = (r.regionHint() == null ? "" : r.regionHint()) + " " + (r.address() == null ? "" : r.address());
-            MktExtDataGateway.CompanyProfile aligned = extGateway.alignCompany(tenantId, seedName, regionText, forceUnlockRegion);
-            if ("SKIPPED_OUT_PROVINCE".equals(aligned.status())) {
+
+            // ① 免费：地区预判，外省直接跳过（不调任何付费接口）
+            if (regionSkippable && lockOn && "OUT_GD".equals(MktExtDataGateway.classifyZone(regionText + " " + seedName, null))) {
                 skippedOutProv++;
-                addDetail(details, lineNo, maskName(seedName), "OUT_GUANGDONG", "广东定向省钱锁：识别为外省主体，自动跳过免扣API费");
+                addDetail(details, lineNo, maskName(seedName), "OUT_GUANGDONG", "广东定向省钱锁：识别为外省主体，跳过且不扣接口费");
                 continue;
             }
-            if ("CACHE_HIT".equals(aligned.status())) cacheHits++;
-            else if ("API_ALIGNED".equals(aligned.status())) apiCalls++;
+
+            // ② 免费：先用原始名称/电话过防撞闸，注定被拦的行不花钱查工商
+            GateResult gate = freeGates(tenantId, seedName, r.shopName(), r.phone(), batchPhoneCompanies);
+            if (gate.blocked()) {
+                switch (gate.type()) {
+                    case "WH_HMAC" -> blockedHmac++;
+                    case "PRIVATE_LOCK" -> blockedPrivate++;
+                    default -> blockedAgency++;
+                }
+                addDetail(details, lineNo, maskName(seedName), gate.type(), gate.reason());
+                continue;
+            }
+
+            // ③ 付费：本地缓存 → 企查查 → 天眼查 → 百元包（查无此企业即终止，不重复付费）
+            MktExtDataGateway.CompanyProfile aligned = extGateway.alignCompany(tenantId, seedName, regionText, policy);
+            if ("SKIPPED_OUT_PROVINCE".equals(aligned.status())) {
+                skippedOutProv++;
+                addDetail(details, lineNo, maskName(seedName), "OUT_GUANGDONG", "广东定向省钱锁：识别为外省主体，跳过且不扣接口费");
+                continue;
+            }
+            if ("CACHE_HIT".equals(aligned.status()) || "CACHE_NOT_FOUND".equals(aligned.status())) cacheHits++;
+            else if ("API_ALIGNED".equals(aligned.status()) || "NOT_FOUND".equals(aligned.status())) apiCalls++;
 
             String finalName = StringUtils.hasText(aligned.companyName()) ? aligned.companyName() : seedName;
             String finalPhone = StringUtils.hasText(r.phone()) ? r.phone() : cleanPhone(aligned.phone());
             String finalAddr = StringUtils.hasText(r.address()) ? r.address() : aligned.address();
             String zoneCode = MktExtDataGateway.classifyZone(
                     (finalAddr == null ? "" : finalAddr) + " " + regionText + " " + finalName, aligned.creditCode());
-            if (!forceUnlockRegion && extGateway.isGuangdongLockEnabled() && "OUT_GD".equals(zoneCode)) {
+            if (regionSkippable && lockOn && "OUT_GD".equals(zoneCode)) {
                 skippedOutProv++;
-                addDetail(details, lineNo, maskName(finalName), "OUT_GUANGDONG", "工商信用代码/地址属外省，省钱锁自动跳过");
+                addDetail(details, lineNo, maskName(finalName), "OUT_GUANGDONG", "工商信用代码/地址属外省，省钱锁跳过");
                 continue;
             }
 
-            // Step 2: 代理记账高频重号剔除（有手机号时核验）
-            if (StringUtils.hasText(finalPhone)) {
-                int dbSamePhoneDiffName = Optional.ofNullable(jdbc.queryForObject(
-                        "SELECT COUNT(DISTINCT name) FROM crm_customer WHERE tenant_id = ? AND phone = ? AND name <> ? AND deleted = 0",
-                        Integer.class, tenantId, finalPhone, finalName)).orElse(0);
-                int batchDistinct = batchPhoneCompanies.getOrDefault(finalPhone, Set.of()).size();
-                if (dbSamePhoneDiffName + batchDistinct > 3) {
-                    blockedAgency++;
-                    addDetail(details, lineNo, maskName(finalName), "AGENCY_PHONE", "同一号码关联超 3 家企业，识别为代理记账号剔除");
+            // ④ 免费：工商对齐后名称或电话变了，再过一次防撞闸
+            Customer existing = gate.existing();
+            if (!Objects.equals(finalName, seedName) || !Objects.equals(finalPhone, r.phone())) {
+                GateResult gate2 = freeGates(tenantId, finalName, r.shopName(), finalPhone, batchPhoneCompanies);
+                if (gate2.blocked()) {
+                    switch (gate2.type()) {
+                        case "WH_HMAC" -> blockedHmac++;
+                        case "PRIVATE_LOCK" -> blockedPrivate++;
+                        default -> blockedAgency++;
+                    }
+                    addDetail(details, lineNo, maskName(finalName), gate2.type(), gate2.reason());
                     continue;
                 }
-            } else if (!"AMAP_POI".equals(seaSource) && !StringUtils.hasText(r.shopName())) {
-                // 既无手机号又非店铺榜单/POI扫楼行，则判无效
+                existing = gate2.existing() != null ? gate2.existing() : existing;
+            }
+
+            if (!StringUtils.hasText(finalPhone) && !"AMAP_POI".equals(seaSource) && !StringUtils.hasText(r.shopName())) {
                 blockedAgency++;
                 addDetail(details, lineNo, maskName(finalName), "NO_PHONE", "缺少手机号且未对齐到公开年报电话");
                 continue;
             }
 
-            // Step 3: 加盟云仓 AES+HMAC 保密老客白名单盲筛
-            if (isWarehouseHmacProtected(tenantId, finalName, r.shopName())) {
-                blockedHmac++;
-                addDetail(details, lineNo, maskName(finalName), "WH_HMAC", "命中加盟云仓竞争保护白名单，自动跳过护客");
-                continue;
-            }
-
-            // Step 4: 撞外部伙伴 90 天在锁私海或已签约客户
-            LambdaQueryWrapper<Customer> existQuery = new LambdaQueryWrapper<Customer>().eq(Customer::getTenantId, tenantId);
-            if (StringUtils.hasText(finalPhone)) {
-                existQuery.and(q -> q.eq(Customer::getName, finalName).or().eq(Customer::getPhone, finalPhone));
-            } else {
-                existQuery.eq(Customer::getName, finalName);
-            }
-            Customer existing = customers.selectOne(existQuery.last("LIMIT 1"));
             if (existing != null) {
-                if (isPrivateProtected(existing)) {
-                    blockedPrivate++;
-                    addDetail(details, lineNo, maskName(finalName), "PRIVATE_LOCK", "客户处于外部伙伴保护期或已签约，严禁冲单");
-                    continue;
-                }
-                MktPublicSeaMeta meta = seaMetas.selectById(existing.getId());
-                if (meta != null && "ARCHIVED_COLD".equals(meta.getClaimStatus())) {
-                    blockedAgency++;
-                    addDetail(details, lineNo, maskName(finalName), "COLD_ARCHIVE", "命中冷宫归档库，跳过重复外呼");
-                    continue;
-                }
                 if (!dryRun) {
                     upsertSeaMetaAndShop(existing.getId(), tenantId, projectId, seaSource, r, aligned, finalAddr, zoneCode, calcLow, calcHigh);
                     lastCustomerId = existing.getId();
@@ -440,10 +485,10 @@ public class MktPublicSeaWashService {
     private void upsertSeaMetaAndShop(Long customerId, Long tenantId, Long projectId, String seaSource,
                                       RawLeadRow r, MktExtDataGateway.CompanyProfile aligned,
                                       String finalAddr, String zoneCode, BigDecimal calcLow, BigDecimal calcHigh) {
-        MktPublicSeaMeta meta = seaMetas.selectById(customerId);
-        boolean isNew = (meta == null);
+        MktPublicSeaMeta existingMeta = seaMetas.selectById(customerId);
+        boolean isNew = (existingMeta == null);
+        final MktPublicSeaMeta meta = isNew ? new MktPublicSeaMeta() : existingMeta;
         if (isNew) {
-            meta = new MktPublicSeaMeta();
             meta.setCustomerId(customerId);
             meta.setTenantId(tenantId);
             meta.setProjectId(projectId);
@@ -455,7 +500,8 @@ public class MktPublicSeaWashService {
         }
         meta.setSeaSource(seaSource);
         meta.setZoneCode(zoneCode);
-        meta.setProvince(StringUtils.hasText(aligned.province()) ? aligned.province() : "广东省");
+        meta.setProvince(StringUtils.hasText(aligned.province()) ? aligned.province()
+                : (MktExtDataGateway.GD_ZONES.contains(zoneCode) ? "广东省" : null));
         if (StringUtils.hasText(aligned.city())) meta.setCity(aligned.city());
         if (StringUtils.hasText(aligned.district())) meta.setDistrict(aligned.district());
         if (StringUtils.hasText(r.shopName())) meta.setShopName(r.shopName());

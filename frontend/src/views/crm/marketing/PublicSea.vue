@@ -436,7 +436,7 @@
           </button>
 
           <div class="map-honest-foot">
-            GCJ-02 坐标实时投射（配置 <code>ext_amap_js_key</code> 后自动叠加高德实景街道瓦片；点击「🧭 唤起高德导航」直接打开高德 App 驾车路线）
+            示意坐标图（非真实比例）；在「外部数据连接器中心」开通高德后显示真实街道地图
           </div>
         </div>
       </div>
@@ -592,7 +592,10 @@
 
             <div v-if="detailDrawer.verifications.length" style="margin-bottom: 10px">
               <div v-for="v in detailDrawer.verifications" :key="v.id" class="drill-box" style="margin-bottom: 6px">
-                <b>✔ [{{ v.platform }}] 近30天核验单量：{{ v.verified30dOrders ?? '待货主扫码确认' }} 单</b>
+                <b>[{{ v.platform }}] 近30天单量：{{ v.verified30dOrders ?? '等待货主填写' }} 单</b>
+                <el-tag size="small" :type="v.status === 'OAUTH_VERIFIED' ? 'success' : 'warning'" style="margin-left: 6px">
+                  {{ v.status === 'OAUTH_VERIFIED' ? '官方核验' : v.status === 'SELF_REPORTED' ? '货主自报（未核验）' : '待填写' }}
+                </el-tag>
                 <span v-if="v.verifiedDailyAvg">（折合日均 {{ v.verifiedDailyAvg }} 单）</span>
               </div>
             </div>
@@ -775,65 +778,66 @@
       </template>
     </el-dialog>
 
-    <!-- 弹窗 4：外勤现场 500m GPS 定位 + 门头实拍打卡（解锁 15 天深度地推保护） -->
-    <el-dialog v-model="checkinDialog.visible" title="📸 外勤 500m GPS 定位 + 现场实拍打卡（延保15天）" width="min(540px, 95vw)">
+    <!-- 弹窗 4：外勤现场 500m GPS 定位 + 现场拍照打卡（解锁 15 天保护期） -->
+    <el-dialog v-model="checkinDialog.visible" title="📸 外勤现场打卡（500 米内 + 现场拍照）" width="min(540px, 95vw)">
       <div v-if="checkinDialog.row">
+        <el-alert
+          v-if="!checkinDialog.row.lng || !checkinDialog.row.lat"
+          type="warning"
+          :closable="false"
+          show-icon
+          title="该客户还没有落图坐标，无法校验距离，暂不能打卡。请先补全详细地址，并在连接器中心开通高德完成落图。"
+          style="margin-bottom: 10px"
+        />
         <div class="drill-box" style="margin-bottom: 12px">
           <div><b>拜访目标</b>：{{ checkinDialog.row.name }}</div>
-          <div class="sub-note">目标地址：{{ checkinDialog.row.address || '首次打卡将自动锚定客户门头坐标' }}</div>
+          <div class="sub-note">目标地址：{{ checkinDialog.row.address || '地址待补全' }}</div>
           <div style="margin-top: 8px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap">
-            <el-button size="small" type="primary" plain @click="locateBrowserGps">📍 获取手机实时 GPS</el-button>
-            <el-button
-              v-if="checkinDialog.row.lng && checkinDialog.row.lat"
-              size="small"
-              data-testid="btn-mock-near-gps"
-              @click="useMockFieldGps(true)"
-            >
-              模拟已到门头(约45m)
-            </el-button>
-            <el-button
-              v-if="checkinDialog.row.lng && checkinDialog.row.lat"
-              size="small"
-              data-testid="btn-mock-far-gps"
-              @click="useMockFieldGps(false)"
-            >
-              模拟异地超距(约1.5km)
-            </el-button>
+            <el-button size="small" type="primary" plain data-testid="btn-locate-gps" @click="locateBrowserGps">📍 获取当前定位</el-button>
+            <template v-if="isDevBuild && checkinDialog.row.lng && checkinDialog.row.lat">
+              <el-button size="small" data-testid="btn-mock-near-gps" @click="useMockFieldGps(true)">[开发环境] 模拟到门头</el-button>
+              <el-button size="small" data-testid="btn-mock-far-gps" @click="useMockFieldGps(false)">[开发环境] 模拟超距</el-button>
+            </template>
+          </div>
+          <div class="sub-note" style="margin-top: 6px">
+            当前定位：{{ checkinDialog.lng && checkinDialog.lat ? `${checkinDialog.lng}, ${checkinDialog.lat}` : '尚未获取（只能通过定位按钮获取，不能手填）' }}
           </div>
           <div v-if="checkinPreviewMeters != null" style="margin-top: 8px">
             <el-tag :type="checkinPreviewMeters <= (summaryData.checkinMaxMeters || 500) ? 'success' : 'danger'">
-              实测距目标门头：{{ checkinPreviewMeters }} 米
-              （阈值 ≤ {{ summaryData.checkinMaxMeters || 500 }} 米）
+              距客户门头约 {{ checkinPreviewMeters }} 米（要求 ≤ {{ summaryData.checkinMaxMeters || 500 }} 米）
             </el-tag>
           </div>
         </div>
 
         <el-form label-position="top">
-          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px">
-            <el-form-item label="现场经度 (GCJ-02)" required>
-              <el-input v-model="checkinDialog.lng" placeholder="113.xxxxxx" />
-            </el-form-item>
-            <el-form-item label="现场纬度 (GCJ-02)" required>
-              <el-input v-model="checkinDialog.lat" placeholder="23.xxxxxx" />
-            </el-form-item>
-          </div>
-          <el-form-item label="现场门头 / 待揽收快递堆实拍照片路径或上传凭证" required>
-            <el-input v-model="checkinDialog.photoUrl" placeholder="拍照上传或填写现场照片凭证路径，如 /uploads/checkin/door-101.jpg" />
+          <el-form-item label="现场照片（门头或待发包裹，须现场拍摄）" required>
+            <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap">
+              <PhotoCapture :disabled="checkinDialog.uploading" @capture="onCheckinPhoto" />
+              <span v-if="checkinDialog.uploading" class="sub-note">照片上传中…</span>
+              <el-tag v-else-if="checkinDialog.photoFileId" type="success" data-testid="checkin-photo-ok">✔ 照片已上传</el-tag>
+              <span v-else class="sub-note">请在 30 分钟内现场拍摄后提交</span>
+            </div>
           </el-form-item>
-          <el-form-item label="当面拜访核实纪要（至少4字）" required>
+          <el-form-item label="拜访纪要（至少 4 个字）" required>
             <el-input
               v-model="checkinDialog.note"
               type="textarea"
               :rows="3"
               maxlength="400"
-              placeholder="如：现场面见林老板，核实门口日发约1400单极兔+圆通，约定周四带样品看番禺一号仓"
+              placeholder="如：现场面见林老板，核实门口日发约1400单，约定周四看番禺一号仓"
             />
           </el-form-item>
         </el-form>
       </div>
       <template #footer>
         <el-button :disabled="checkinDialog.busy" @click="checkinDialog.visible = false">取消</el-button>
-        <el-button type="success" :loading="checkinDialog.busy" data-testid="btn-submit-checkin" @click="submitCheckin">
+        <el-button
+          type="success"
+          :loading="checkinDialog.busy"
+          :disabled="!canSubmitCheckin"
+          data-testid="btn-submit-checkin"
+          @click="submitCheckin"
+        >
           提交打卡并解锁 {{ summaryData.visitProtectDays || 15 }} 天保护期
         </el-button>
       </template>
@@ -920,6 +924,8 @@ import { ElMessage } from 'element-plus'
 import { hasPermission } from '@/utils/permission'
 import { useProjectStore } from '@/stores/project'
 import { mktPublicSeaApi, mktWarehouseApi, mktConnectorHubApi } from '@/api/marketing'
+import { fileApi } from '@/api/file'
+import PhotoCapture from '@/components/PhotoCapture.vue'
 import CustomerQuotePanel from './CustomerQuotePanel.vue'
 import { buildPublicSeaDrilldownCards } from './publicSeaDrilldown'
 
@@ -934,7 +940,8 @@ const GD_ZONES = [
   { code: 'DG', label: '东莞·虎门鞋服/大朗毛织' },
   { code: 'FS', label: '佛山·顺德小家电/南海内衣' },
   { code: 'SZ', label: '深圳·龙岗数码跨境' },
-  { code: 'YD', label: '粤东·普宁内衣/澄海玩具' }
+  { code: 'YD', label: '粤东·普宁内衣/澄海玩具' },
+  { code: 'UNKNOWN', label: '待定位（缺地址）' }
 ]
 const ZONE_NAMES = {
   GZ: '广州战区',
@@ -943,7 +950,8 @@ const ZONE_NAMES = {
   SZ: '深圳战区',
   YD: '粤东战区',
   OTHER_GD: '广东其他战区',
-  OUT_GD: '外省主体'
+  OUT_GD: '外省主体',
+  UNKNOWN: '待定位'
 }
 const GD_RADAR_HUBS = [
   { key: 'gz_by', label: '广州白云 · 嘉禾望岗/均禾美妆直播带', lng: 113.28561, lat: 23.22481, kw: '化妆品有限公司|美妆直播基地|电子商务园' },
@@ -1484,23 +1492,18 @@ async function submitAmapRadar() {
   }
 }
 
-// 4) 外勤 500m GPS 定位 + 现场实拍打卡（Haversine 实时预检）
+// 4) 外勤现场打卡：定位只能通过浏览器获取（不可手填），照片必须现场拍摄上传；开发环境才显示模拟按钮
+const isDevBuild = import.meta.env.DEV
 const checkinDialog = reactive({
-  visible: false, row: null, lng: '', lat: '', photoUrl: '', note: '', busy: false
+  visible: false, row: null, lng: '', lat: '', photoFileId: null, uploading: false, note: '', busy: false
 })
 function openCheckinDialog(row) {
   Object.assign(checkinDialog, {
-    visible: true,
-    row,
-    lng: row.lng ? String(row.lng) : '113.285610',
-    lat: row.lat ? String(row.lat) : '23.224810',
-    photoUrl: '/uploads/checkin/door-live.jpg',
-    note: '',
-    busy: false
+    visible: true, row, lng: '', lat: '', photoFileId: null, uploading: false, note: '', busy: false
   })
 }
 function useMockFieldGps(within500m) {
-  if (!checkinDialog.row?.lng || !checkinDialog.row?.lat) return
+  if (!isDevBuild || !checkinDialog.row?.lng || !checkinDialog.row?.lat) return
   const baseLng = Number(checkinDialog.row.lng)
   const baseLat = Number(checkinDialog.row.lat)
   checkinDialog.lng = (baseLng + (within500m ? 0.00032 : 0.0135)).toFixed(6)
@@ -1508,17 +1511,33 @@ function useMockFieldGps(within500m) {
 }
 function locateBrowserGps() {
   if (typeof navigator === 'undefined' || !navigator.geolocation) {
-    ElMessage.warning('当前环境不支持浏览器定位，可直接填入坐标或点门头校准')
+    ElMessage.warning('当前浏览器不支持定位，请用手机浏览器打开后再打卡')
     return
   }
   navigator.geolocation.getCurrentPosition(
     pos => {
       checkinDialog.lng = pos.coords.longitude.toFixed(6)
       checkinDialog.lat = pos.coords.latitude.toFixed(6)
-      ElMessage.success('已读取手机实时定位坐标')
+      ElMessage.success('已获取当前定位')
     },
-    () => ElMessage.warning('定位权限未开启，请开启定位或使用门头坐标校准')
+    () => ElMessage.warning('未获得定位权限，请在浏览器设置中允许定位'),
+    { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
   )
+}
+async function onCheckinPhoto(file) {
+  if (!file) return
+  checkinDialog.uploading = true
+  try {
+    const fd = new FormData()
+    fd.append('file', file)
+    const uploaded = await fileApi.upload(fd)
+    checkinDialog.photoFileId = uploaded?.id || null
+    if (!checkinDialog.photoFileId) ElMessage.error('照片上传失败，请重拍')
+  } catch (_) {
+    checkinDialog.photoFileId = null
+  } finally {
+    checkinDialog.uploading = false
+  }
 }
 
 const checkinPreviewMeters = computed(() => {
@@ -1527,9 +1546,7 @@ const checkinPreviewMeters = computed(() => {
   const lat1 = Number(checkinDialog.lat)
   const lng2 = Number(r?.lng)
   const lat2 = Number(r?.lat)
-  if (!Number.isFinite(lng1) || !Number.isFinite(lat1) || !Number.isFinite(lng2) || !Number.isFinite(lat2) || !r?.lng) {
-    return null
-  }
+  if (!checkinDialog.lng || !r?.lng || ![lng1, lat1, lng2, lat2].every(Number.isFinite)) return null
   const toRad = d => (d * Math.PI) / 180
   const radLat1 = toRad(lat1)
   const radLat2 = toRad(lat2)
@@ -1539,17 +1556,23 @@ const checkinPreviewMeters = computed(() => {
   return Math.round(s * 6378137)
 })
 
+const canSubmitCheckin = computed(() => {
+  const r = checkinDialog.row
+  return !!(r && r.lng && r.lat && checkinDialog.lng && checkinDialog.lat && checkinDialog.photoFileId
+    && !checkinDialog.uploading && String(checkinDialog.note || '').trim().length >= 4)
+})
+
 async function submitCheckin() {
-  if (!checkinDialog.row || checkinDialog.busy) return
+  if (!canSubmitCheckin.value || checkinDialog.busy) return
   checkinDialog.busy = true
   try {
     const res = await mktPublicSeaApi.visitCheckin(checkinDialog.row.customerId, {
       checkinLng: checkinDialog.lng,
       checkinLat: checkinDialog.lat,
-      photoUrl: checkinDialog.photoUrl,
+      photoUrl: `file:${checkinDialog.photoFileId}`,
       note: checkinDialog.note
     })
-    ElMessage.success(`现场打卡核验通过（偏差 ${res.distanceMeters}m），已解锁 ${res.visitProtectDays || 15} 天深度地推保护！`)
+    ElMessage.success(`打卡通过（距门头 ${res.distanceMeters} 米），已获得 ${res.visitProtectDays || 15} 天保护期`)
     checkinDialog.visible = false
     await reloadAll()
   } catch (_) {

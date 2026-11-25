@@ -2,106 +2,135 @@ package com.zhyq.park.marketing.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.zhyq.park.auth.BusinessRouteAccess;
-import com.zhyq.park.marketing.mapper.MktPublicSeaMetaMapper;
+import com.zhyq.park.common.exception.BizException;
 import com.zhyq.park.receivable.service.FieldEncryptionService;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.time.YearMonth;
 import java.util.Base64;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 /**
- * 18 通道热插拔外部数据连接器中心：权限隔离、AES-GCM 密钥保护、月度限额熔断与 6% 专票规则预检回归单测。
+ * 连接器中心：权限隔离、原子额度熔断、省钱锁、密钥加密保存守卫、验店防伪造、隐私小号如实返回、专票规则预审。
  */
 class MktConnectorHubServiceTest {
+
+    private static final String KEY_B64 = Base64.getEncoder().encodeToString("0123456789abcdef0123456789abcdef".getBytes());
+
+    private static Map<String, Object> row(String code, int enabled, int gdLock, int quota, int used, String cipher) {
+        Map<String, Object> r = new HashMap<>();
+        r.put("connector_code", code);
+        r.put("enabled", enabled);
+        r.put("gd_lock_only", gdLock);
+        r.put("monthly_quota_limit", quota);
+        r.put("usage_month", YearMonth.now().toString());
+        r.put("month_used_count", used);
+        r.put("blocked_out_gd_count", 0);
+        r.put("credentials_cipher", cipher);
+        r.put("last_health_status", "READY");
+        return r;
+    }
 
     @Test
     void connectorRoutesBlockExternalMpRoleAndAllowInternalRoles() {
         assertThat(BusinessRouteAccess.allowed("/crm/marketing/connectors/overview", "GET", Set.of("ROLE_MP"))).isFalse();
         assertThat(BusinessRouteAccess.allowed("/crm/marketing/connectors/QCC_PRO", "PUT", Set.of("ROLE_MP"))).isFalse();
-
         assertThat(BusinessRouteAccess.allowed("/crm/marketing/connectors/overview", "GET",
                 Set.of("crm:marketing:setting:query"))).isTrue();
         assertThat(BusinessRouteAccess.allowed("/crm/marketing/connectors/waybill-spot-check", "POST",
                 Set.of("crm:marketing:settlement:edit"))).isTrue();
-        assertThat(BusinessRouteAccess.allowed("/crm/marketing/connectors/invoice-verify", "POST",
-                Set.of("crm:marketing:withdrawal:audit"))).isTrue();
     }
 
     @Test
-    void overviewMergesEighteenDefaultConnectorsAndMonthlyQuotaFuseProtectsBudget() {
+    void overviewShowsEighteenConnectorsWithReadinessAndMaskedSecrets() {
         JdbcTemplate jdbc = mock(JdbcTemplate.class);
-        MktPublicSeaMetaMapper seaMetas = mock(MktPublicSeaMetaMapper.class);
-        MktAuditService audit = mock(MktAuditService.class);
-        String keyB64 = Base64.getEncoder().encodeToString("0123456789abcdef0123456789abcdef".getBytes());
-        FieldEncryptionService crypto = new FieldEncryptionService(keyB64);
-
-        // 模拟 QCC_PRO 当月调用已满 2000/2000 次 -> 自动触发 QUOTA_FUSED 熔断
+        FieldEncryptionService crypto = new FieldEncryptionService(KEY_B64);
         String cipher = crypto.encrypt("{\"appKey\":\"qcc_ak_123456\",\"secretKey\":\"qcc_sk_987654\"}");
-        when(jdbc.queryForList(contains("FROM crm_ext_connector_config"), eq(1L))).thenReturn(List.of(
-                Map.of(
-                        "connector_code", "QCC_PRO",
-                        "enabled", 1,
-                        "gd_lock_only", 1,
-                        "monthly_quota_limit", 2000,
-                        "usage_month", YearMonth.now().toString(),
-                        "month_used_count", 2000,
-                        "blocked_out_gd_count", 15,
-                        "cache_hit_count", 40,
-                        "credentials_cipher", cipher,
-                        "last_health_status", "OK"
-                )
-        ));
+        when(jdbc.queryForList(contains("FROM crm_ext_connector_config"), eq(1L)))
+                .thenReturn(List.of(row("QCC_PRO", 1, 1, 2000, 2000, cipher)));
 
-        MktConnectorHubService hub = new MktConnectorHubService(jdbc, new ObjectMapper(), crypto, seaMetas, audit);
-        Map<String, Object> overview = hub.hubOverview();
+        MktConnectorHubService hub = new MktConnectorHubService(jdbc, new ObjectMapper(), crypto, mock(MktAuditService.class));
         @SuppressWarnings("unchecked")
-        List<Map<String, Object>> list = (List<Map<String, Object>>) overview.get("connectors");
+        List<Map<String, Object>> list = (List<Map<String, Object>>) hub.hubOverview().get("connectors");
         assertThat(list).hasSize(18);
-
         Map<String, Object> qcc = list.stream().filter(m -> "QCC_PRO".equals(m.get("connectorCode"))).findFirst().orElseThrow();
         assertThat(qcc.get("healthStatus")).isEqualTo("QUOTA_FUSED");
-        @SuppressWarnings("unchecked")
-        Map<String, String> masked = (Map<String, String>) qcc.get("credentials");
-        assertThat(masked.get("appKey")).isEqualTo("qcc****456");
-
-        // 熔断后尝试获取调用配额必须返回 empty，绝不超支外发
-        assertThat(hub.acquireActiveCredentials(1L, "QCC_PRO", false)).isEmpty();
+        assertThat(((Map<?, ?>) qcc.get("credentials")).get("appKey")).isEqualTo("qcc****456");
+        Map<String, Object> axb = list.stream().filter(m -> "PRIVACY_AXB".equals(m.get("connectorCode"))).findFirst().orElseThrow();
+        assertThat(axb.get("readiness")).isEqualTo("DEV");
+        // 广告回调默认关闭（未填验签密钥不得接收）
+        assertThat(list.stream().filter(m -> String.valueOf(m.get("connectorCode")).startsWith("AD_"))
+                .allMatch(m -> Boolean.FALSE.equals(m.get("enabled")))).isTrue();
     }
 
     @Test
-    void vatInvoiceVerifierBlocksInvalidItemsAndStandbyDegradesGracefullyWhenUnconfigured() {
+    void acquireUsesAtomicQuotaUpdateAndRespectsGuangdongLock() {
         JdbcTemplate jdbc = mock(JdbcTemplate.class);
-        MktPublicSeaMetaMapper seaMetas = mock(MktPublicSeaMetaMapper.class);
-        MktAuditService audit = mock(MktAuditService.class);
-        FieldEncryptionService crypto = new FieldEncryptionService("");
+        FieldEncryptionService crypto = new FieldEncryptionService(KEY_B64);
+        String cipher = crypto.encrypt("{\"appKey\":\"qcc_ak_123456\",\"secretKey\":\"qcc_sk_987654\"}");
+        when(jdbc.queryForList(contains("connector_code = ?"), eq(1L), eq("QCC_PRO")))
+                .thenReturn(List.of(row("QCC_PRO", 1, 1, 2000, 10, cipher)));
+        MktConnectorHubService hub = new MktConnectorHubService(jdbc, new ObjectMapper(), crypto, mock(MktAuditService.class));
 
-        when(jdbc.queryForList(anyString(), eq(1L))).thenReturn(List.of());
-        when(jdbc.queryForList(anyString(), eq(String.class), eq(1L), anyString())).thenReturn(List.of());
+        // 原子扣减成功 → 返回凭证
+        when(jdbc.update(contains("month_used_count < monthly_quota_limit"), any(Object[].class))).thenReturn(1);
+        assertThat(hub.acquireActiveCredentials(1L, "QCC_PRO", false)).isPresent();
 
-        MktConnectorHubService hub = new MktConnectorHubService(jdbc, new ObjectMapper(), crypto, seaMetas, audit);
+        // 并发下额度已被别人用满（更新 0 行）→ 熔断，不返回凭证
+        when(jdbc.update(contains("month_used_count < monthly_quota_limit"), any(Object[].class))).thenReturn(0);
+        assertThat(hub.acquireActiveCredentials(1L, "QCC_PRO", false)).isEmpty();
 
-        // 非现代服务品目（如餐饮办公用品）直接拦截
-        Map<String, Object> badItem = hub.verifyVatInvoice(Map.of(
-                "invoiceNo", "26442000000011223344",
-                "itemName", "*餐饮服务*餐费",
-                "totalAmount", "10600.00"
-        ));
-        assertThat(badItem.get("verifyStatus")).isEqualTo("INVALID_RULE");
+        // 外省主体 + 省钱锁 → 不扣额度
+        clearInvocations(jdbc);
+        assertThat(hub.acquireActiveCredentials(1L, "QCC_PRO", true)).isEmpty();
+        verify(jdbc, never()).update(contains("month_used_count < monthly_quota_limit"), any(Object[].class));
+    }
 
-        // 合规现代服务品目且未填税局 Key 时，诚实返回 STANDBY_MANUAL 供财务复核版式
-        Map<String, Object> okStandby = hub.verifyVatInvoice(Map.of(
-                "invoiceNo", "26442000000088990011",
-                "itemName", "*现代服务*招商推广服务费",
-                "totalAmount", "21200.00"
-        ));
-        assertThat(okStandby.get("verifyStatus")).isEqualTo("STANDBY_MANUAL");
+    @Test
+    void savingSecretsWithoutEncryptionKeyIsRejected() {
+        JdbcTemplate jdbc = mock(JdbcTemplate.class);
+        MktConnectorHubService hub = new MktConnectorHubService(jdbc, new ObjectMapper(),
+                new FieldEncryptionService(""), mock(MktAuditService.class));
+        assertThatThrownBy(() -> hub.saveConnector("QCC_PRO", Map.of(
+                "enabled", true, "credentials", Map.of("appKey", "qcc_live_123456", "secretKey", "sk_live_987654"))))
+                .isInstanceOf(BizException.class).hasMessageContaining("ZHYQ_FIELD_ENCRYPTION_KEY");
+        verify(jdbc, never()).update(contains("INSERT INTO crm_ext_connector_config"), any(Object[].class));
+    }
+
+    @Test
+    void shopVerifySubmitIsSelfReportedOnlyAndRejectsExpiredOrRepeated() {
+        JdbcTemplate jdbc = mock(JdbcTemplate.class);
+        MktConnectorHubService hub = new MktConnectorHubService(jdbc, new ObjectMapper(),
+                new FieldEncryptionService(""), mock(MktAuditService.class));
+        when(jdbc.update(contains("status = 'PENDING' AND expires_at > NOW()"), any(Object[].class))).thenReturn(0);
+        assertThatThrownBy(() -> hub.submitShopVerifyResult("sv_x", 30000, null, null, "自报"))
+                .isInstanceOf(BizException.class).hasMessageContaining("已过期");
+
+        when(jdbc.update(contains("status = 'PENDING' AND expires_at > NOW()"), any(Object[].class))).thenReturn(1);
+        assertThat(hub.submitShopVerifyResult("sv_y", 30000, null, null, "自报").get("status")).isEqualTo("SELF_REPORTED");
+
+        Map<String, Object> invite = hub.createShopVerifyInvite(901L, "DOUYIN", "某抖店");
+        assertThat(invite.get("oauthConfigured")).isEqualTo(false);
+        assertThat(hub.bindPrivacyCall(901L, null).get("status")).isEqualTo("NOT_IMPLEMENTED");
+    }
+
+    @Test
+    void vatInvoiceBlocksInvalidItemsAndDegradesHonestlyWhenUnconfigured() {
+        JdbcTemplate jdbc = mock(JdbcTemplate.class);
+        MktConnectorHubService hub = new MktConnectorHubService(jdbc, new ObjectMapper(),
+                new FieldEncryptionService(""), mock(MktAuditService.class));
+        assertThat(hub.verifyVatInvoice(Map.of("invoiceNo", "26442000000011223344",
+                "itemName", "*餐饮服务*餐费", "totalAmount", "10600.00")).get("verifyStatus")).isEqualTo("INVALID_RULE");
+        assertThat(hub.verifyVatInvoice(Map.of("invoiceNo", "26442000000088990011",
+                "itemName", "*现代服务*招商推广服务费", "totalAmount", "21200.00")).get("verifyStatus")).isEqualTo("STANDBY_MANUAL");
     }
 }

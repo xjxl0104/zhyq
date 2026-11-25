@@ -32,19 +32,15 @@ class V132MigrationContractTest {
     }
 
     @Test
-    void v132SeedsGuangdongLockAndConnectorSettings() throws Exception {
+    void v132SeedsGuangdongLockRulesButNoPlaintextConnectorSecrets() throws Exception {
         String sql = read(V132);
         for (String key : List.of(
                 "'sea_region_lock_province'", "'广东省'",
                 "'sea_checkin_max_meters'", "'500'",
-                "'sea_visit_protect_days'", "'15'",
-                "'ext_amap_web_key'",
-                "'ext_amap_js_key'",
-                "'ext_qcc_appcode'",
-                "'ext_qcc_endpoint'",
-                "'ext_feiyu_token'")) {
+                "'sea_visit_protect_days'", "'15'")) {
             assertTrue(sql.contains(key), "V132 缺少预置配置键: " + key);
         }
+        assertFalse(sql.contains("'ext_"), "外部接口密钥不得再以明文写入 biz_setting，应统一放连接器中心");
     }
 
     private static String read(String resourcePath) throws Exception {

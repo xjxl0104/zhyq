@@ -102,17 +102,12 @@ CREATE TABLE IF NOT EXISTS crm_ext_ad_lead_inbox (
     UNIQUE KEY uk_ad_lead_ext (channel, external_lead_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='巨量飞鱼与腾讯广告免费Webhook幂等接收箱';
 
--- 预置第一批极简外部连接器与广东定向省钱锁规则参数
+-- 预置广东定向省钱锁与地推打卡规则参数（外部接口密钥统一放在 V133 连接器中心表，不在 biz_setting 存明文）
 INSERT INTO biz_setting (module, skey, svalue, remark, tenant_id, create_by, create_time, version, deleted)
 SELECT 'marketing', t.k, t.v, t.r, 1, 'system', NOW(), 1, 0
 FROM (
     SELECT 'sea_region_lock_province' AS k, '广东省' AS v, '公海外部付费API定向省钱锁省份（非本省主体自动跳过付费工商查询，填 ALL 不限省）' AS r
     UNION ALL SELECT 'sea_checkin_max_meters', '500', '公海地推现场GPS打卡最大允许偏差米数（默认500米内有效）'
     UNION ALL SELECT 'sea_visit_protect_days', '15',  '通过500米现场拍照打卡后授予的深度地推保护天数（默认15天）'
-    UNION ALL SELECT 'ext_amap_web_key',       '',    '高德开放平台Web服务API Key（用于免费地理编码算车程与周边10km电商园POI扫楼）'
-    UNION ALL SELECT 'ext_amap_js_key',        '',    '高德开放平台Web端JS API Key（用于后台与手机端实景地图渲染）'
-    UNION ALL SELECT 'ext_qcc_appcode',        '',    '阿里云云市场/APISpace/企查轻量工商接口AppCode（配30天本地缓存）'
-    UNION ALL SELECT 'ext_qcc_endpoint',       '',    '外部工商与网店查询网关URL（留空使用标准兼容适配器）'
-    UNION ALL SELECT 'ext_feiyu_token',        '',    '巨量引擎飞鱼CRM免费线索推送Webhook验签Signature密钥'
 ) t
 WHERE NOT EXISTS (SELECT 1 FROM biz_setting b WHERE b.module = 'marketing' AND b.skey = t.k AND b.deleted = 0);

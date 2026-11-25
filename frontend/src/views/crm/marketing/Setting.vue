@@ -14,16 +14,8 @@
     </div>
 
     <div v-else-if="activeTab === 'setting'" class="table-card">
-      <div class="webhook-banner">
-        <div>
-          <b>📣 巨量引擎「飞鱼 CRM」/ 腾讯线索通 0 元实时推送 Webhook 地址</b>：
-          <code>{{ feiyuWebhookUrl }}</code>
-          <div class="param-sub-hint">将该地址粘贴至飞鱼后台「线索自动推送 Webhook」，广东找仓表单提交后 0 秒验签防撞直入内部公海热单池（零软件接口费）。</div>
-        </div>
-        <el-button size="small" type="primary" plain @click="copyWebhook">复制 Webhook 地址</el-button>
-      </div>
       <div class="toolbar">
-        <span class="title">规则参数与第一批低成本外部连接器</span>
+        <span class="title">规则参数</span>
         <el-button type="primary" :loading="saving" @click="save">保存参数</el-button>
       </div>
       <el-table :data="list" v-loading="loading" border>
@@ -50,6 +42,7 @@
       <p class="hint">云仓按单佣金由 P4 在小程序按客户 / 品牌自定义（上限最多 8 人），可在「计佣订单 › 佣金分配」或「客户管理 › 按单佣金」查看。此处管理全局业务规则参数，已生成流水与锁定记录不受影响。</p>
       <p class="hint">提现窗口与自动提现说明：<code>withdraw_window_start_day = 0</code> 表示全月随时可申请提现；<code>auto_withdraw_day = 0</code> 表示关闭每月自动提现。</p>
       <p class="hint">推荐客户直接锁定三个自然月，签约成交后归属长期有效；到期未签约释放回公海。</p>
+      <p class="hint">外部数据接口（高德、企查查、广告回调等）的密钥请在「🔌 外部数据连接器中心」页签填写，统一加密保存。</p>
     </div>
 
     <div v-else-if="activeTab === 'position'" class="embedded-dict">
@@ -136,26 +129,6 @@ const SETTING_META = {
     label: '500米实拍打卡深度地推保护期（天）',
     hint: '现场 ≤500m 定位+门头实拍打卡通过后，自动解除 72h 弹回并授予的保护期天数（默认 15 天）'
   },
-  ext_amap_web_key: {
-    label: '高德开放平台 Web 服务 API Key（0元免费配额）',
-    hint: '用于广东地址免费转 GCJ-02 经纬度、算云仓车程与周边 10km 电商园 POI 扫楼雷达（已保存密钥自动脱敏显示）'
-  },
-  ext_amap_js_key: {
-    label: '高德开放平台 Web 端 JS API Key',
-    hint: '用于公海池「广东高德地推地图」实景瓦片加载；留空时自动启用内置广东产业带战术坐标沙盘'
-  },
-  ext_qcc_appcode: {
-    label: '阿里云市场 / APISpace / 企查轻量工商 AppCode',
-    hint: '百元级轻量资源包密钥（0.05~0.15元/次），配合 30 天本地缓存与广东省钱锁，自动对齐榜单背后企业电话地址'
-  },
-  ext_qcc_endpoint: {
-    label: '外部工商与网店查询网关 URL',
-    hint: '填写所购阿里云市场或 APISpace 企业工商查询接口完整 https:// 地址；未购包时留空诚实降级'
-  },
-  ext_feiyu_token: {
-    label: '巨量引擎飞鱼 CRM Webhook 验签密钥',
-    hint: '填写飞鱼后台推送配置的 Signature 密钥，开启 HMAC-SHA256 验签保护（已保存密钥自动脱敏）'
-  },
   old_channel_exclusive: {
     label: '传统中介渠道互斥开关',
     hint: '1 = 已走传统招商中介渠道的客户不再叠加全民营销佣金；0 = 不互斥'
@@ -186,18 +159,6 @@ const list = ref([])
 
 const labelOf = (skey) => SETTING_META[skey]?.label || skey
 const hintOf = (skey) => SETTING_META[skey]?.hint || ''
-const feiyuWebhookUrl = `${typeof window !== 'undefined' ? window.location.origin : ''}/api/open/v1/ad-leads/feiyu`
-
-async function copyWebhook() {
-  try {
-    if (navigator?.clipboard?.writeText) {
-      await navigator.clipboard.writeText(feiyuWebhookUrl)
-    }
-    ElMessage.success('已复制飞鱼免费 Webhook 接收地址')
-  } catch (_) {
-    ElMessage.info(`请手动复制：${feiyuWebhookUrl}`)
-  }
-}
 
 async function load() {
   loading.value = true
@@ -234,19 +195,6 @@ defineExpose({ activeTab, list, load, save, labelOf, hintOf })
   flex-wrap: wrap;
 }
 .toolbar { display: flex; align-items: center; }
-.webhook-banner {
-  background: #eff6ff;
-  border: 1px solid #bfdbfe;
-  border-radius: 8px;
-  padding: 10px 14px;
-  margin-bottom: 12px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-  font-size: 13px;
-}
 .title { font-weight: 600; margin-right: auto; }
 .param-label { font-weight: 500; color: var(--text-title, #111827); }
 .param-key { font-size: 11.5px; color: var(--el-text-color-secondary); }

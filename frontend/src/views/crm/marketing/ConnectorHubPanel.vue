@@ -3,7 +3,7 @@
     <!-- 顶部热插拔设计说明与批量派工条 -->
     <div class="hub-banner">
       <div class="hub-banner-text">
-        💡 <b>7大域 18 通道热插拔架构</b>：全部免费与商业付费接口均已预埋就绪！<b>未申请/未付费的通道保持关闭即 ¥0 成本且绝不报错</b>；日后派同事办好哪项，填进 Key 打开开关即刻点亮对应业务能力。
+        💡 <b>18 条外部数据通道</b>都已留好开关和密钥位：<b>没开的通道不发任何请求、不产生费用</b>。每条通道的完成程度见卡片上的标签（「待真Key联调」「需按对方文档适配」「开发中」），请据此安排同事申请。
       </div>
       <div class="hub-banner-actions">
         <el-button size="small" type="warning" @click="openBatchApplyModal" data-testid="btn-batch-colleague-sheet">
@@ -12,6 +12,15 @@
         <el-button size="small" @click="loadOverview">刷新状态</el-button>
       </div>
     </div>
+
+    <el-alert
+      v-if="summary.encryptionReady === false"
+      type="warning"
+      :closable="false"
+      show-icon
+      style="margin-bottom: 12px"
+      title="服务器尚未配置字段加密密钥（ZHYQ_FIELD_ENCRYPTION_KEY），为防密钥明文入库，暂时不能保存任何接口密钥。请先让运维配置。"
+    />
 
     <!-- 3 张 L1 -> L2 -> L3 同源下钻结论卡 -->
     <section class="hub-kpi-grid" aria-label="外部连接器点亮与省钱护栏分析">
@@ -62,6 +71,9 @@
               <el-tag v-if="conn.gdLockOnly" type="primary" size="small" effect="plain">
                 🔒 广东省钱锁保护
               </el-tag>
+              <el-tag :type="READINESS[conn.readiness]?.type || 'info'" size="small" :data-readiness="conn.readiness">
+                {{ READINESS[conn.readiness]?.label || '待评估' }}
+              </el-tag>
             </div>
           </div>
           <el-tag :type="statusTagType(conn)" size="small">
@@ -74,6 +86,7 @@
         <!-- Webhook 通道直接显示可复制回调地址 -->
         <div v-if="conn.connectorCode.startsWith('AD_')" class="webhook-url-box">
           <code>{{ webhookUrlOf(conn.connectorCode) }}</code>
+          <span class="sub-note">（须开启并填验签密钥，否则一律拒收）</span>
           <el-button link type="primary" size="small" @click="copyText(webhookUrlOf(conn.connectorCode), '已复制 Webhook 回调地址')">
             复制地址
           </el-button>
@@ -275,17 +288,24 @@ function countByCat(code) {
   return connectors.value.filter(c => c.categoryCode === code).length
 }
 
+const READINESS = {
+  READY: { label: '按官方文档实现·待真Key联调', type: 'success' },
+  ADAPT: { label: '通用接法·需按对方文档适配', type: 'warning' },
+  DEV: { label: '开发中·暂不可用', type: 'danger' }
+}
+
 function statusLabel(conn) {
-  if (!conn.enabled) return '○ 待开通(¥0)'
-  if (conn.healthStatus === 'QUOTA_FUSED') return '⚡ 已达月限额熔断'
-  if (conn.healthStatus === 'MISSING_KEY') return '待粘贴密钥'
-  return '● 已点亮就绪'
+  if (!conn.enabled) return '○ 未开通(¥0)'
+  if (conn.healthStatus === 'QUOTA_FUSED') return '⚡ 本月额度已用完'
+  if (conn.healthStatus === 'MISSING_KEY') return '待填密钥'
+  if (conn.healthStatus === 'DEV_PENDING') return '已存密钥·开发中'
+  return '● 已开启'
 }
 
 function statusTagType(conn) {
   if (!conn.enabled) return 'info'
   if (conn.healthStatus === 'QUOTA_FUSED') return 'danger'
-  if (conn.healthStatus === 'MISSING_KEY') return 'warning'
+  if (conn.healthStatus === 'MISSING_KEY' || conn.healthStatus === 'DEV_PENDING') return 'warning'
   return 'success'
 }
 

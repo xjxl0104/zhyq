@@ -33,7 +33,7 @@ public class PublicShopVerifyController {
         return Result.ok(connectorHub.getPublicShopVerifySession(token));
     }
 
-    @Operation(summary = "提交官方OAuth回调或核验近30天真实单量")
+    @Operation(summary = "货主提交近30天单量（仅记为货主自报，未经官方核验；72小时内且仅可提交一次）")
     @PostMapping("/{token}/submit")
     public Result<Map<String, Object>> submit(@PathVariable String token,
                                               @RequestBody Map<String, Object> body,
@@ -43,9 +43,8 @@ public class PublicShopVerifyController {
                 : parseIntSafe(body.get("orders30d"));
         BigDecimal returnRate = parseDecSafe(body.get("returnRatePct"));
         BigDecimal avgWeight = parseDecSafe(body.get("avgWeightKg"));
-        String proofNote = body.get("proofNote") == null ? "货主扫码确认近30天单量" : String.valueOf(body.get("proofNote"));
-        boolean oauth = Boolean.TRUE.equals(body.get("fromOfficialOauth"));
-        return Result.ok(connectorHub.submitShopVerifyResult(token, orders30d, returnRate, avgWeight, proofNote, oauth));
+        String proofNote = body.get("proofNote") == null ? "货主自报近30天单量" : String.valueOf(body.get("proofNote"));
+        return Result.ok(connectorHub.submitShopVerifyResult(token, orders30d, returnRate, avgWeight, proofNote));
     }
 
     private static Integer parseIntSafe(Object o) {

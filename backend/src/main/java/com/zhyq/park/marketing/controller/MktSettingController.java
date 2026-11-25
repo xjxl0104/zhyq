@@ -47,19 +47,8 @@ public class MktSettingController {
     private static final String SEA_CHECKIN_METERS_REMARK = "公海地推现场GPS打卡最大允许偏差米数（默认500米内有效）";
     private static final String SEA_VISIT_DAYS_KEY = "sea_visit_protect_days";
     private static final String SEA_VISIT_DAYS_REMARK = "通过500米现场拍照打卡后授予的深度地推保护天数（默认15天）";
-    private static final String EXT_AMAP_WEB_KEY = "ext_amap_web_key";
-    private static final String EXT_AMAP_WEB_REMARK = "高德开放平台Web服务API Key（免费地理编码算车程与周边10km电商园POI扫楼）";
-    private static final String EXT_AMAP_JS_KEY = "ext_amap_js_key";
-    private static final String EXT_AMAP_JS_REMARK = "高德开放平台Web端JS API Key（用于公海实景地图渲染）";
-    private static final String EXT_QCC_APPCODE_KEY = "ext_qcc_appcode";
-    private static final String EXT_QCC_APPCODE_REMARK = "阿里云云市场/APISpace/企查轻量工商接口AppCode（配30天本地缓存）";
-    private static final String EXT_QCC_ENDPOINT_KEY = "ext_qcc_endpoint";
-    private static final String EXT_QCC_ENDPOINT_REMARK = "外部工商与网店查询网关URL（如阿里云市场/APISpace接口地址）";
-    private static final String EXT_FEIYU_TOKEN_KEY = "ext_feiyu_token";
-    private static final String EXT_FEIYU_TOKEN_REMARK = "巨量引擎飞鱼CRM免费线索推送Webhook验签Signature密钥";
-
-    private static final Set<String> SECRET_KEYS = Set.of(
-            EXT_AMAP_WEB_KEY, EXT_QCC_APPCODE_KEY, EXT_FEIYU_TOKEN_KEY);
+    /** 外部接口密钥已统一迁到「外部数据连接器中心」，历史 ext_* 行不在规则参数页展示也不允许保存。 */
+    public static final String LEGACY_CONNECTOR_KEY_PREFIX = "ext_";
 
     /** 后端 0 次读取的幽灵历史参数:查询时不展示以防误导管理员。 */
     public static final Set<String> RETIRED_GHOST_KEYS = Set.of(
@@ -73,8 +62,7 @@ public class MktSettingController {
             "lock_cooldown_days", "lease_clawback_days",
             WINDOW_START_KEY, WINDOW_END_KEY, AUTO_WITHDRAW_KEY, ARRIVAL_TIME,
             SEA_SLA_HOURS_KEY, SEA_WH_DAILY_CAP_KEY, SEA_WH_ACTIVE_CAP_KEY,
-            SEA_REGION_LOCK_KEY, SEA_CHECKIN_METERS_KEY, SEA_VISIT_DAYS_KEY,
-            EXT_AMAP_WEB_KEY, EXT_AMAP_JS_KEY, EXT_QCC_APPCODE_KEY, EXT_QCC_ENDPOINT_KEY, EXT_FEIYU_TOKEN_KEY);
+            SEA_REGION_LOCK_KEY, SEA_CHECKIN_METERS_KEY, SEA_VISIT_DAYS_KEY);
 
     private final JdbcTemplate jdbc;
     private final MktAuditService auditService;
@@ -90,14 +78,7 @@ public class MktSettingController {
                         + "'attribution_rule', 'protect_days', 'dup_customer_fields', 'internal_commission', "
                         + "'monthly_cap', 'default_sign_mode', 'lease_renew_ratio', 'invite_grace_days') ORDER BY id", MODULE));
         rows.removeIf(row -> row != null && RETIRED_GHOST_KEYS.contains(String.valueOf(row.get("skey"))));
-        for (int i = 0; i < rows.size(); i++) {
-            Map<String, Object> r = rows.get(i);
-            String k = String.valueOf(r.get("skey"));
-            if (SECRET_KEYS.contains(k) && r.get("svalue") != null && !String.valueOf(r.get("svalue")).isBlank()) {
-                rows.set(i, Map.of("skey", k, "svalue", maskSecret(String.valueOf(r.get("svalue"))),
-                        "remark", r.get("remark") == null ? "" : r.get("remark")));
-            }
-        }
+        rows.removeIf(row -> row != null && String.valueOf(row.get("skey")).startsWith(LEGACY_CONNECTOR_KEY_PREFIX));
         // The defaults are visible without writing during GET; saving them creates any missing setting.
         ensureVirtualDefault(rows, ARRIVAL_TIME, MktWithdrawalService.DEFAULT_ARRIVAL_TIME, ARRIVAL_REMARK);
         ensureVirtualDefault(rows, WINDOW_START_KEY, "0", WINDOW_START_REMARK);
@@ -109,11 +90,6 @@ public class MktSettingController {
         ensureVirtualDefault(rows, SEA_REGION_LOCK_KEY, "广东省", SEA_REGION_LOCK_REMARK);
         ensureVirtualDefault(rows, SEA_CHECKIN_METERS_KEY, "500", SEA_CHECKIN_METERS_REMARK);
         ensureVirtualDefault(rows, SEA_VISIT_DAYS_KEY, "15", SEA_VISIT_DAYS_REMARK);
-        ensureVirtualDefault(rows, EXT_AMAP_WEB_KEY, "", EXT_AMAP_WEB_REMARK);
-        ensureVirtualDefault(rows, EXT_AMAP_JS_KEY, "", EXT_AMAP_JS_REMARK);
-        ensureVirtualDefault(rows, EXT_QCC_APPCODE_KEY, "", EXT_QCC_APPCODE_REMARK);
-        ensureVirtualDefault(rows, EXT_QCC_ENDPOINT_KEY, "", EXT_QCC_ENDPOINT_REMARK);
-        ensureVirtualDefault(rows, EXT_FEIYU_TOKEN_KEY, "", EXT_FEIYU_TOKEN_REMARK);
         return Result.ok(rows);
     }
 
@@ -136,6 +112,9 @@ public class MktSettingController {
             }
             if ("min_withdraw".equals(key) || "withdraw_free_times".equals(key)) {
                 throw new BizException("提现按分申请，不限每日次数且不收手续费；旧参数已停用，请刷新页面");
+            }
+            if (key != null && key.startsWith(LEGACY_CONNECTOR_KEY_PREFIX)) {
+                throw new BizException("外部接口密钥已迁至「规则与字典 › 外部数据连接器中心」统一加密保存，请刷新页面");
             }
             if (key == null || !ALLOWED.contains(key)) {
                 throw new BizException("不允许修改的参数: " + key);
@@ -193,24 +172,6 @@ public class MktSettingController {
                 upsertSetting(SEA_REGION_LOCK_KEY, prov, SEA_REGION_LOCK_REMARK, "公海定向省钱锁省份已变化，请刷新页面后重试");
                 continue;
             }
-            if (EXT_AMAP_WEB_KEY.equals(key) || EXT_AMAP_JS_KEY.equals(key)
-                    || EXT_QCC_APPCODE_KEY.equals(key) || EXT_QCC_ENDPOINT_KEY.equals(key)
-                    || EXT_FEIYU_TOKEN_KEY.equals(key)) {
-                String cleanVal = value == null ? "" : value.trim();
-                if (SECRET_KEYS.contains(key) && cleanVal.contains("****")) {
-                    // 前端批量提交原脱敏回显值时不覆盖真实密钥
-                    continue;
-                }
-                if (cleanVal.length() > 255) {
-                    throw new BizException("连接器配置长度不能超过 255 字符");
-                }
-                if (EXT_QCC_ENDPOINT_KEY.equals(key) && !cleanVal.isEmpty()
-                        && !cleanVal.startsWith("https://") && !cleanVal.startsWith("http://")) {
-                    throw new BizException("外部工商查询网关 URL 请以 https:// 或 http:// 开头，或留空");
-                }
-                upsertSetting(key, cleanVal, remarkOfExtKey(key), "外部连接器配置已变化，请刷新页面后重试");
-                continue;
-            }
             String before = jdbc.query("SELECT svalue FROM biz_setting WHERE module = ? AND skey = ? AND deleted = 0 LIMIT 1",
                     rs -> rs.next() ? rs.getString(1) : null, MODULE, key);
             if (value != null && !value.equals(before)) {
@@ -220,22 +181,6 @@ public class MktSettingController {
             }
         }
         return Result.ok();
-    }
-
-    private static String remarkOfExtKey(String key) {
-        return switch (key) {
-            case EXT_AMAP_WEB_KEY -> EXT_AMAP_WEB_REMARK;
-            case EXT_AMAP_JS_KEY -> EXT_AMAP_JS_REMARK;
-            case EXT_QCC_APPCODE_KEY -> EXT_QCC_APPCODE_REMARK;
-            case EXT_QCC_ENDPOINT_KEY -> EXT_QCC_ENDPOINT_REMARK;
-            default -> EXT_FEIYU_TOKEN_REMARK;
-        };
-    }
-
-    private static String maskSecret(String s) {
-        String t = s.trim();
-        if (t.length() <= 6) return "****";
-        return t.substring(0, 3) + "****" + t.substring(t.length() - 3);
     }
 
     private static int parseBoundedInt(String raw, int min, int max, String errorMsg) {
@@ -276,12 +221,6 @@ public class MktSettingController {
                     value, MODULE, key);
         }
         if (changed < 1) throw new BizException(conflictMsg);
-        if (SECRET_KEYS.contains(key)) {
-            auditService.log("setting.change", "setting", null, key,
-                    before == null || before.isBlank() ? "" : "***",
-                    value.isBlank() ? "" : "***");
-        } else {
-            auditService.log("setting.change", "setting", null, key, before, value);
-        }
+        auditService.log("setting.change", "setting", null, key, before, value);
     }
 }

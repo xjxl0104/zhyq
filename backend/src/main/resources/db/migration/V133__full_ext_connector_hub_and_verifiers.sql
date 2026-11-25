@@ -95,7 +95,7 @@ CREATE TABLE IF NOT EXISTS crm_invoice_verify_log (
     KEY idx_inv_verify_no (tenant_id, invoice_no)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='P4企业提现6%增值税专用发票OCR与税务总局真伪核验台账';
 
--- 幂等预置 7 大域 18 条全量外部数据连接器（免费推送默认就绪，商业付费接口默认 enabled=0 待同事申领 Key 后点亮）
+-- 幂等预置 7 大域 18 条全量外部数据连接器（全部默认 enabled=0 关闭；广告回调须填验签密钥后才可开启，付费接口待同事申领 Key 后开启）
 INSERT INTO crm_ext_connector_config
   (tenant_id, connector_code, category_code, display_name, fee_tier, fee_desc, description, enabled, gd_lock_only, monthly_quota_limit, field_schema_json, apply_url, apply_guide, sort_order)
 SELECT 1, t.code, t.cat, t.nm, t.tier, t.fdesc, t.descr, t.en, t.gd, t.quota, t.schema_j, t.url, t.guide, t.ord
@@ -137,16 +137,16 @@ FROM (
 
   UNION ALL SELECT 'AD_FEIYU', 'AD', '巨量引擎「飞鱼 CRM」广告线索 Webhook（抖音）', 'FREE', '¥0免费实时推送',
          '抖音/今日头条广东本地推找仓表单 0 秒 HMAC 验签、幂等防重并过三道防撞闸直入公海热单池。',
-         1, 0, 999999, '["signatureSecret"]', 'https://feiyu.oceanengine.com', '飞鱼CRM后台 › 设置 › 线索外部推送粘贴 /api/open/v1/ad-leads/feiyu → 将签名密钥填回 signatureSecret', 40
+         0, 0, 999999, '["signatureSecret"]', 'https://feiyu.oceanengine.com', '飞鱼CRM后台 › 设置 › 线索外部推送粘贴 /api/open/v1/ad-leads/feiyu → 将签名密钥填回 signatureSecret', 40
   UNION ALL SELECT 'AD_TENCENT', 'AD', '腾讯广告「线索通」免费 Webhook（朋友圈/视频号）', 'FREE', '¥0免费实时推送',
          '微信朋友圈、公众号与视频号广东找云仓广告表单 0 秒直推公海并联动企微群抢单。',
-         1, 0, 999999, '["tokenSecret"]', 'https://e.qq.com', '腾讯广告线索通后台配置 Webhook 指向 /api/open/v1/ad-leads/tencent → 将 Token 填回 tokenSecret', 41
+         0, 0, 999999, '["tokenSecret"]', 'https://e.qq.com', '腾讯广告线索通后台配置 Webhook 指向 /api/open/v1/ad-leads/tencent → 将 Token 填回 tokenSecret', 41
   UNION ALL SELECT 'AD_XHS', 'AD', '小红书「聚光平台」品牌找仓线索 Webhook', 'FREE', '¥0接口费(投流配套)',
          '承接小红书广东美妆/设计师女装品牌主私信留资表单，自动打 S 级高客单标签入公海。',
-         1, 0, 999999, '["secret"]', 'https://ad.xiaohongshu.com', '小红书聚光平台 › 线索管理 › Webhook 指向 /api/open/v1/ad-leads/xhs → 复制密钥填回 secret', 42
+         0, 0, 999999, '["secret"]', 'https://ad.xiaohongshu.com', '小红书聚光平台 › 线索管理 › Webhook 指向 /api/open/v1/ad-leads/xhs → 复制密钥填回 secret', 42
   UNION ALL SELECT 'AD_BAIDU', 'AD', '百度营销「基木鱼 / 爱番番」搜索线索 Webhook', 'FREE', '¥0接口费(投流配套)',
          '承接主动搜索「广州番禺/东莞云仓代发多少钱」的高意向精准询盘，0秒落库抢首通。',
-         1, 0, 999999, '["token"]', 'https://yingxiao.baidu.com', '百度基木鱼开发者中心配置线索推送 /api/open/v1/ad-leads/baidu → 复制 Token 填回 token', 43
+         0, 0, 999999, '["token"]', 'https://yingxiao.baidu.com', '百度基木鱼开发者中心配置线索推送 /api/open/v1/ad-leads/baidu → 复制 Token 填回 token', 43
 
   UNION ALL SELECT 'KUAIDI100', 'LOGI', '快递100 物流轨迹抽检 API（2%防空包刷佣金）', 'PAID_CALL', '按单约¥0.03/单(仅抽2%)',
          '月度佣金结算前自动按 2% 抽取云仓上报运单核验三通一达/极兔真实广东揽收与签收轨迹，命中空包自动冻结预警。',

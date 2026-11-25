@@ -388,52 +388,60 @@ public class MktPublicSeaService {
                 "claimStatus", "CLAIMED_ADMIN", "slaDeadlineAt", deadline, "hoursLeft", slaHours());
     }
 
+    /** 现场照片须在打卡前多少分钟内由本人上传。 */
+    static final int CHECKIN_PHOTO_MAX_AGE_MINUTES = 30;
+
     /**
-     * 外勤地推 500 米 GPS 定位校验 + 现场拍照打卡：
-     * 校验通过后自动解除 72h 弹回并授予 15 天（可配 sea_visit_protect_days）深度地推保护期！
+     * 外勤 500 米 GPS 定位 + 现场照片打卡（通过后解除 72h 弹回，授予 15 天保护期）。
+     * 防作弊/防抢单约束：
+     * 1. 客户必须已落图（有高德坐标），不再用打卡人位置当锚点；
+     * 2. 照片必须是本人 30 分钟内刚上传的图片附件（file:ID），不接受任意文本路径；
+     * 3. 只允许对待认领/投喂中的客户，或本人已认领的客户打卡；云仓已认领、冷宫、他人在跟的客户不得打卡接管（管理员除外）。
+     * 注：浏览器定位本身可被伪造，网页端只能提高门槛；彻底防伪需在小程序内用相机直拍 + 服务端水印（待做）。
      */
     @Transactional
     public Map<String, Object> visitCheckin(Long customerId, BigDecimal checkinLng, BigDecimal checkinLat, String photoUrl, String note) {
         if (checkinLng == null || checkinLat == null) {
-            throw new BizException(400, "缺少现场 GPS 经纬度定位，请授权定位后再打卡");
-        }
-        if (!StringUtils.hasText(photoUrl)) {
-            throw new BizException(400, "请现场实拍客户门头或待发快递包裹照片后再提交打卡");
+            throw new BizException(400, "缺少现场 GPS 定位，请允许浏览器定位后再打卡");
         }
         if (!StringUtils.hasText(note) || note.trim().length() < 4) {
-            throw new BizException(400, "请填写至少 4 个字的现场当面拜访纪要");
+            throw new BizException(400, "请填写至少 4 个字的现场拜访纪要");
         }
         MktPublicSeaMeta meta = seaMetas.selectById(customerId);
         if (meta == null) throw new BizException(404, "公海客户记录不存在");
 
+        String operator = MktAuditService.currentOperator();
+        boolean isAdmin = hasRole("ROLE_admin");
+        String status = meta.getClaimStatus();
+        if ("CLAIMED_WH".equals(status)) {
+            throw new BizException(409, "该客户已由加盟云仓认领跟进，内部专员不能打卡接管");
+        }
+        if ("ARCHIVED_COLD".equals(status)) {
+            throw new BizException(409, "该客户已归档冷宫，不能打卡");
+        }
+        if ("CLAIMED_ADMIN".equals(status) && !operator.equals(meta.getClaimHolderName()) && !isAdmin) {
+            throw new BizException(403, "该客户正由「" + meta.getClaimHolderName() + "」跟进中，只有跟进人本人可以打卡");
+        }
+        if (meta.getLng() == null || meta.getLat() == null) {
+            throw new BizException(400, "该客户还没有落图坐标，不能做距离校验；请先补全详细地址并开通高德完成落图后再打卡");
+        }
+        Long photoFileId = validateCheckinPhoto(photoUrl, operator);
+
         int maxMeters = checkinMaxMeters();
-        int distMeters = 0;
-        if (meta.getLng() != null && meta.getLat() != null) {
-            distMeters = MktExtDataGateway.haversineMeters(checkinLng, checkinLat, meta.getLng(), meta.getLat());
-            if (distMeters > maxMeters) {
-                throw new BizException(400, "GPS 超距拦截：您当前位置距客户落图坐标 " + distMeters
-                        + " 米（超过允许阈值 " + maxMeters + " 米），请到达客户现场门头后再打卡");
-            }
-        } else {
-            // 若该客户此前无坐标，以首次现场打卡坐标补全客户锚点
-            meta.setLng(checkinLng);
-            meta.setLat(checkinLat);
+        int distMeters = MktExtDataGateway.haversineMeters(checkinLng, checkinLat, meta.getLng(), meta.getLat());
+        if (distMeters > maxMeters) {
+            throw new BizException(400, "GPS 超距拦截：您当前位置距客户落图坐标 " + distMeters
+                    + " 米（超过允许阈值 " + maxMeters + " 米），请到达客户现场后再打卡");
         }
 
-        String operator = MktAuditService.currentOperator();
         LocalDateTime now = LocalDateTime.now();
         int protectDays = visitProtectDays();
         LocalDateTime protectedUntil = now.plusDays(protectDays);
+        String photoRef = "file:" + photoFileId;
 
-        jdbc.update("""
-                INSERT INTO crm_public_sea_checkin
-                  (customer_id, tenant_id, project_id, operator, checkin_lng, checkin_lat, distance_m, photo_url, visit_note, protected_until)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, customerId, meta.getTenantId(), meta.getProjectId(), operator,
-                checkinLng, checkinLat, distMeters, photoUrl.trim(), note.trim(), protectedUntil);
-
-        seaMetas.update(null, new LambdaUpdateWrapper<MktPublicSeaMeta>()
+        int updated = seaMetas.update(null, new LambdaUpdateWrapper<MktPublicSeaMeta>()
                 .eq(MktPublicSeaMeta::getCustomerId, customerId)
+                .eq(MktPublicSeaMeta::getClaimStatus, status)
                 .set(MktPublicSeaMeta::getClaimStatus, "CLAIMED_ADMIN")
                 .set(MktPublicSeaMeta::getClaimHolderType, "ADMIN")
                 .set(MktPublicSeaMeta::getClaimHolderName, operator)
@@ -444,19 +452,48 @@ public class MktPublicSeaService {
                 .set(MktPublicSeaMeta::getVisitProtectedUntil, protectedUntil)
                 .set(MktPublicSeaMeta::getLastCheckinDistM, distMeters)
                 .set(MktPublicSeaMeta::getLastCheckinAt, now)
-                .set(MktPublicSeaMeta::getLastCheckinPhoto, photoUrl.trim())
-                .set(meta.getLng() != null, MktPublicSeaMeta::getLng, meta.getLng())
-                .set(meta.getLat() != null, MktPublicSeaMeta::getLat, meta.getLat())
+                .set(MktPublicSeaMeta::getLastCheckinPhoto, photoRef)
                 .set(MktPublicSeaMeta::getUpdatedAt, now));
+        if (updated != 1) throw new BizException(409, "客户状态刚刚发生变化，请刷新后重试");
+
+        jdbc.update("""
+                INSERT INTO crm_public_sea_checkin
+                  (customer_id, tenant_id, project_id, operator, checkin_lng, checkin_lat, distance_m, photo_url, visit_note, protected_until)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, customerId, meta.getTenantId(), meta.getProjectId(), operator,
+                checkinLng, checkinLat, distMeters, photoRef, note.trim(), protectedUntil);
 
         customers.update(null, new LambdaUpdateWrapper<Customer>()
                 .eq(Customer::getId, customerId).isNull(Customer::getReferrerId)
                 .set(Customer::getOwner, operator));
         audit.log("public_sea.visit_checkin", "customer", customerId,
-                "现场 " + distMeters + "m 实拍打卡通过，授予 " + protectDays + " 天地推保护期");
+                "现场 " + distMeters + "m 照片打卡通过（" + photoRef + "），授予 " + protectDays + " 天保护期"
+                        + ("CLAIMED_ADMIN".equals(status) && !operator.equals(meta.getClaimHolderName()) ? "；管理员接管自 " + meta.getClaimHolderName() : ""));
 
         return Map.of("customerId", customerId, "distanceMeters", distMeters,
                 "visitProtectDays", protectDays, "visitProtectedUntil", protectedUntil);
+    }
+
+    /** 照片必须是本人 30 分钟内上传的图片附件，返回附件 ID。 */
+    private Long validateCheckinPhoto(String photoUrl, String operator) {
+        String ref = photoUrl == null ? "" : photoUrl.trim();
+        if (!ref.matches("^file:\\d{1,18}$")) {
+            throw new BizException(400, "请先现场拍照上传门头或待发包裹照片后再打卡");
+        }
+        Long fileId = Long.parseLong(ref.substring(5));
+        List<Map<String, Object>> rows = jdbc.queryForList(
+                "SELECT create_by, create_time, content_type FROM sys_file WHERE id = ? AND deleted = 0 LIMIT 1", fileId);
+        if (rows.isEmpty()) throw new BizException(400, "现场照片不存在，请重新拍照上传");
+        Map<String, Object> f = rows.get(0);
+        String createdBy = f.get("create_by") == null ? "" : String.valueOf(f.get("create_by"));
+        String contentType = f.get("content_type") == null ? "" : String.valueOf(f.get("content_type"));
+        if (!operator.equals(createdBy)) throw new BizException(403, "只能使用本人刚拍摄上传的现场照片");
+        if (!contentType.toLowerCase(Locale.ROOT).startsWith("image/")) throw new BizException(400, "现场凭证必须是照片");
+        Object ct = f.get("create_time");
+        if (ct != null && toLdt(ct).isBefore(LocalDateTime.now().minusMinutes(CHECKIN_PHOTO_MAX_AGE_MINUTES))) {
+            throw new BizException(400, "照片上传已超过 " + CHECKIN_PHOTO_MAX_AGE_MINUTES + " 分钟，请在现场重新拍照");
+        }
+        return fileId;
     }
 
     @Transactional(readOnly = true)
@@ -607,13 +644,19 @@ public class MktPublicSeaService {
 
         int from = Math.min(matched.size(), Math.max(0, (Math.max(1, pageNo) - 1) * Math.max(1, pageSize)));
         int to = Math.min(matched.size(), from + Math.max(1, pageSize));
-        return Map.of(
-                "warehouseId", wh.getId(), "warehouseName", wh.getName(),
-                "slaHours", slaHours(), "dailyCap", dailyCap, "dailyUsed", todayUsed,
-                "dailyLeft", Math.max(0, dailyCap - todayUsed), "activeCap", activeCap,
-                "activeUsed", activeUsed, "activeLeft", Math.max(0, activeCap - activeUsed),
-                "total", matched.size(), "records", matched.subList(from, to)
-        );
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("warehouseId", wh.getId());
+        out.put("warehouseName", wh.getName());
+        out.put("slaHours", slaHours());
+        out.put("dailyCap", dailyCap);
+        out.put("dailyUsed", todayUsed);
+        out.put("dailyLeft", Math.max(0, dailyCap - todayUsed));
+        out.put("activeCap", activeCap);
+        out.put("activeUsed", activeUsed);
+        out.put("activeLeft", Math.max(0, activeCap - activeUsed));
+        out.put("total", matched.size());
+        out.put("records", matched.subList(from, to));
+        return out;
     }
 
     /** 云仓主账号限时认领公海热单。 */

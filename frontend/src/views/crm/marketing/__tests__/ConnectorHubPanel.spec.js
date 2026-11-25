@@ -93,7 +93,7 @@ describe('ConnectorHubPanel.vue 7大域18通道外部数据连接器中心', () 
     })
     expect(cards).toHaveLength(3)
     expect(cards[0].primaryText).toBe('5 / 18 通道')
-    expect(cards[1].primaryText).toBe('省 ¥40.00')
+    expect(cards[1].primaryText).toBe('估算省 ¥40.00')
 
     const wrapper = mount(ConnectorHubPanel, {
       global: { plugins: [ElementPlus] }
@@ -103,7 +103,7 @@ describe('ConnectorHubPanel.vue 7大域18通道外部数据连接器中心', () 
     expect(wrapper.findAll('.hub-kpi-card')).toHaveLength(3)
     expect(wrapper.findAll('.conn-card')).toHaveLength(2)
     expect(wrapper.text()).toContain('企查查官方开放平台')
-    expect(wrapper.text()).toContain('○ 待开通(¥0)')
+    expect(wrapper.text()).toContain('○ 未开通(¥0)')
 
     // 点击「一键生成同事分批申领任务单」
     await wrapper.find('[data-testid="btn-batch-colleague-sheet"]').trigger('click')
