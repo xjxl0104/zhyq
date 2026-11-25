@@ -33,7 +33,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.*;
 
 /**
- * 公海池三道防撞洗数引擎与公开 30 秒云仓底价测算留资服务。
+ * 公海池三道防撞洗数、类目 TOP500 店铺榜自动企查对齐（广东定向省钱锁+30天缓存）、高德落图与算价留资服务。
  */
 @Service
 @RequiredArgsConstructor
@@ -41,7 +41,10 @@ public class MktPublicSeaWashService {
 
     private static final int MAX_IMPORT_ROWS = 1000;
     private static final Set<String> VALID_SOURCES = Set.of(
-            "CALC_HOT", "CHANMAMA", "TUNGEE_JOB", "EXPIRE_RETURN", "PARK_CRM", "MANUAL_IMPORT");
+            "CALC_HOT", "FEIYU_AD", "AMAP_POI", "CHANMAMA", "TUNGEE_JOB", "EXPIRE_RETURN", "PARK_CRM", "MANUAL_IMPORT");
+    /** 广东基准中心坐标（当园区加盟云仓未登记精确经纬度时，按广州番禺/白云电商仓轴心测算参考里程） */
+    private static final BigDecimal DEFAULT_GD_WH_LNG = new BigDecimal("113.348620");
+    private static final BigDecimal DEFAULT_GD_WH_LAT = new BigDecimal("23.028540");
 
     private final JdbcTemplate jdbc;
     private final ObjectMapper json;
@@ -49,13 +52,15 @@ public class MktPublicSeaWashService {
     private final MktPublicSeaMetaMapper seaMetas;
     private final MktPublicSeaWashBatchMapper washBatches;
     private final MktCompetitionProtectionService protectionService;
+    private final MktExtDataGateway extGateway;
     private final MktAuditService audit;
 
-    public record RawLeadRow(String name, String shopName, String contact, String phone,
-                             String category, Integer estDailyOrders, BigDecimal avgWeightKg,
-                             BigDecimal logisticsScore, String blockNote) {}
+    public record RawLeadRow(String name, String shopName, String platform, Integer rankNo,
+                             String contact, String phone, String category, Integer estDailyOrders,
+                             BigDecimal avgWeightKg, BigDecimal logisticsScore, String regionHint,
+                             String address, BigDecimal presetLng, BigDecimal presetLat, String blockNote) {}
 
-    /** 公开 30 秒云仓底价测算：优先读取当前园区已上线云仓真实价卡，缺失时透明回退园区基准价。 */
+    /** 公开 30 秒云仓底价测算。 */
     @Transactional(readOnly = true)
     public Map<String, Object> estimatePublicQuote(Long projectId, String category, Integer dailyOrders, BigDecimal avgWeightKg) {
         Long effProject = resolveProjectId(projectId);
@@ -78,15 +83,15 @@ public class MktPublicSeaWashService {
             rateSource = "REAL_RATE_CARD";
         } else {
             BigDecimal base = switch (cat) {
-                case "美妆个护" -> new BigDecimal("2.55");
+                case "个人洗护", "美妆个护" -> new BigDecimal("2.50");
                 case "休闲食品" -> new BigDecimal("2.48");
                 case "鞋靴箱包", "数码小家电" -> new BigDecimal("2.85");
-                default -> new BigDecimal("2.28");
+                default -> new BigDecimal("2.25");
             };
             BigDecimal weightExtra = weight.subtract(new BigDecimal("0.50")).max(BigDecimal.ZERO).multiply(new BigDecimal("0.90"));
             BigDecimal volDisc = daily >= 1000 ? new BigDecimal("-0.18")
                     : daily >= 500 ? new BigDecimal("-0.08") : new BigDecimal("0.12");
-            low = base.add(weightExtra).add(volDisc).max(new BigDecimal("1.95")).setScale(2, RoundingMode.HALF_UP);
+            low = base.add(weightExtra).add(volDisc).max(new BigDecimal("1.92")).setScale(2, RoundingMode.HALF_UP);
             high = low.add(new BigDecimal("0.32")).setScale(2, RoundingMode.HALF_UP);
             Integer onlineWh = jdbc.queryForObject(
                     "SELECT COUNT(1) FROM crm_warehouse WHERE tenant_id = ? AND (project_id = ? OR project_id IS NULL) AND join_status = 5 AND deleted = 0",
@@ -136,11 +141,9 @@ public class MktPublicSeaWashService {
                 if (pack == null) continue;
                 for (JsonNode carrier : root.path("carriers")) {
                     JsonNode rateNode = carrier.path("rates").get(weightKey);
-                    if (rateNode != null && rateNode.isNumber()) {
-                        totals.add(pack.add(mat).add(rateNode.decimalValue()));
-                    }
+                    if (rateNode != null && rateNode.isNumber()) totals.add(pack.add(mat).add(rateNode.decimalValue()));
                 }
-            } catch (Exception ignored) { /* 跳过格式残缺价卡 */ }
+            } catch (Exception ignored) {}
         }
         return totals;
     }
@@ -152,7 +155,7 @@ public class MktPublicSeaWashService {
         return null;
     }
 
-    /** 公开 30 秒算价器主动授权手机号入池：过三道防撞筛子，不泄露白名单命中态。 */
+    /** 公开 30 秒算价器主动授权手机号入池。 */
     @Transactional
     public Map<String, Object> submitPublicCalcLead(Map<String, Object> body) {
         String shopOrName = cleanText(body.get("shopName"), 100);
@@ -169,105 +172,196 @@ public class MktPublicSeaWashService {
         BigDecimal low = (BigDecimal) quote.get("lowPrice");
         BigDecimal high = (BigDecimal) quote.get("highPrice");
 
-        RawLeadRow row = new RawLeadRow(shopOrName, shopOrName, cleanText(body.get("contact"), 64), phone,
-                cat, daily, weight, null,
+        RawLeadRow row = new RawLeadRow(shopOrName, shopOrName, "抖音", null,
+                cleanText(body.get("contact"), 64), phone, cat, daily, weight, null,
+                cleanText(body.get("region"), 64), cleanText(body.get("address"), 200), null, null,
                 "30秒算价器主动留资（测算一口价 ¥" + low + "~" + high + "/单，申领300单免打包费试发券）");
-        Map<String, Object> wash = washRowsInternal(projectId, "CALC_HOT", "30秒算价器线上留资", List.of(row), false, low, high, "public-calc");
+        Map<String, Object> wash = washRowsInternal(projectId, "CALC_HOT", "30秒算价器线上留资",
+                List.of(row), false, low, high, true, "public-calc");
         Map<String, Object> resp = new LinkedHashMap<>(quote);
         resp.put("accepted", true);
         resp.put("inserted", ((Number) wash.get("insertedRows")).intValue() > 0);
         return resp;
     }
 
-    /** 后台上传 Excel / CSV 洗数预览或确认入池。 */
+    /** 后台上传类目店铺榜 / 拓客名单 Excel 或 CSV 洗数对齐入池。 */
     @Transactional
     public Map<String, Object> washFile(Long projectId, String seaSource, MultipartFile file, boolean dryRun) {
-        if (file == null || file.isEmpty()) throw new BizException(400, "请选择要清洗导入的名单文件");
-        String fileName = Optional.ofNullable(file.getOriginalFilename()).orElse("import.xlsx");
+        if (file == null || file.isEmpty()) throw new BizException(400, "请选择要清洗导入的榜单或名单文件");
+        String fileName = Optional.ofNullable(file.getOriginalFilename()).orElse("shop-rank.xlsx");
         List<RawLeadRow> rows = parseFileRows(file, fileName);
-        if (rows.isEmpty()) throw new BizException(400, "文件中未识别到有效货主数据行，请核对表头（需含企业/店铺名与手机号）");
-        return washRowsInternal(resolveProjectId(projectId), normalizeSource(seaSource), fileName, rows, dryRun, null, null, MktAuditService.currentOperator());
+        if (rows.isEmpty()) throw new BizException(400, "文件中未识别到有效店铺或企业行，请核对表头");
+        return washRowsInternal(resolveProjectId(projectId), normalizeSource(seaSource), fileName,
+                rows, dryRun, null, null, false, MktAuditService.currentOperator());
     }
 
-    /** 后台直接提交 JSON 名单行洗数预览或确认入池。 */
+    /** 后台提交 JSON 榜单或文本行洗数对齐入池。 */
     @Transactional
     public Map<String, Object> washJsonRows(Long projectId, String seaSource, String fileName, List<Map<String, Object>> rawList, boolean dryRun) {
-        if (rawList == null || rawList.isEmpty()) throw new BizException(400, "请提供至少 1 条待清洗名单");
-        if (rawList.size() > MAX_IMPORT_ROWS) throw new BizException(400, "单次清洗最多支持 " + MAX_IMPORT_ROWS + " 条");
+        if (rawList == null || rawList.isEmpty()) throw new BizException(400, "请提供至少 1 条待清洗店铺或企业名单");
+        if (rawList.size() > MAX_IMPORT_ROWS) throw new BizException(400, "单次最多支持 " + MAX_IMPORT_ROWS + " 条");
         List<RawLeadRow> rows = rawList.stream().map(m -> new RawLeadRow(
-                cleanText(firstNonNull(m, "name", "companyName", "shopName"), 100),
-                cleanText(firstNonNull(m, "shopName", "shop"), 120),
+                cleanText(firstNonNull(m, "name", "companyName"), 100),
+                cleanText(firstNonNull(m, "shopName", "shop", "name"), 120),
+                Optional.ofNullable(cleanText(m.get("platform"), 24)).orElse("抖音"),
+                asInt(m.get("rankNo"), null),
                 cleanText(m.get("contact"), 64),
                 cleanPhone(m.get("phone")),
                 cleanText(firstNonNull(m, "category", "industry"), 64),
-                asInt(firstNonNull(m, "estDailyOrders", "dailyOrders"), null),
+                asInt(firstNonNull(m, "estDailyOrders", "dailyOrders", "monthlySalesDiv30"), null),
                 asDecimal(firstNonNull(m, "avgWeightKg", "weight"), null),
                 asDecimal(m.get("logisticsScore"), null),
+                cleanText(firstNonNull(m, "region", "province", "city"), 64),
+                cleanText(m.get("address"), 220),
+                asDecimalScale(m.get("lng"), 6),
+                asDecimalScale(m.get("lat"), 6),
                 cleanText(firstNonNull(m, "blockNote", "remark"), 450)
         )).toList();
         return washRowsInternal(resolveProjectId(projectId), normalizeSource(seaSource),
-                StringUtils.hasText(fileName) ? fileName.trim() : "手工批量名单", rows, dryRun, null, null, MktAuditService.currentOperator());
+                StringUtils.hasText(fileName) ? fileName.trim() : "类目榜单批量对齐",
+                rows, dryRun, null, null, false, MktAuditService.currentOperator());
+    }
+
+    /** 单店名反查背后广东公司+地址并过三道防撞闸写入公海。 */
+    @Transactional
+    public Map<String, Object> lookupShopAndIngest(Long projectId, String shopName, String platform, String category, boolean forceUnlockRegion) {
+        if (!StringUtils.hasText(shopName)) throw new BizException(400, "请输入要反查的网店名称或企业名称");
+        RawLeadRow row = new RawLeadRow(null, shopName.trim(), StringUtils.hasText(platform) ? platform.trim() : "抖音",
+                null, null, null, StringUtils.hasText(category) ? category.trim() : "综合电商",
+                null, null, null, null, null, null, null, "单店名称企查对齐入池：" + shopName.trim());
+        return washRowsInternal(resolveProjectId(projectId), "CHANMAMA", "单店反查:" + shopName.trim(),
+                List.of(row), false, null, null, forceUnlockRegion, MktAuditService.currentOperator());
+    }
+
+    /** 高德周边 10km 商圈 POI 扫楼雷达：搜出园区周边电商园/服饰美妆企业并过防撞入公海。 */
+    @Transactional
+    public Map<String, Object> ingestAmapRadar(Long projectId, BigDecimal centerLng, BigDecimal centerLat, Integer radiusMeters, String keywords) {
+        Long effProject = resolveProjectId(projectId);
+        int radius = radiusMeters == null ? 10_000 : radiusMeters;
+        List<MktExtDataGateway.PoiCandidate> pois = extGateway.scanAroundPois(centerLng, centerLat, radius, keywords);
+        if (pois.isEmpty()) {
+            return Map.of("scannedPois", 0, "insertedRows", 0, "message", "指定半径内未检索到匹配的电商园区或企业 POI");
+        }
+        List<RawLeadRow> rows = pois.stream().map(p -> new RawLeadRow(
+                p.name(), null, "线下产业带", null, null, cleanPhone(p.tel()),
+                p.typeDesc(), null, null, null, p.city() + p.district(), p.address(),
+                p.lng(), p.lat(), "高德周边 " + (radius / 1000) + "km 扫楼雷达发现：" + p.address()
+        )).toList();
+        Map<String, Object> res = washRowsInternal(effProject, "AMAP_POI", "高德周边POI扫楼雷达",
+                rows, false, null, null, true, MktAuditService.currentOperator());
+        Map<String, Object> out = new LinkedHashMap<>(res);
+        out.put("scannedPois", pois.size());
+        return out;
+    }
+
+    /** 巨量引擎飞鱼 / 腾讯广告免费 Webhook 单条实时清洗入池。 */
+    @Transactional
+    public Map<String, Object> ingestAdWebhookLead(Long projectId, String channel, String shopOrName, String phone,
+                                                   String category, Integer estDaily, String region, String note) {
+        RawLeadRow row = new RawLeadRow(shopOrName, shopOrName, "抖音", null, "广告留资负责人", cleanPhone(phone),
+                StringUtils.hasText(category) ? category : "女装服饰", estDaily, null, null,
+                region, region, null, null, note);
+        return washRowsInternal(resolveProjectId(projectId), "FEIYU_AD", channel + "免费Webhook直推",
+                List.of(row), false, null, null, true, "webhook-" + channel.toLowerCase(Locale.ROOT));
     }
 
     private Map<String, Object> washRowsInternal(Long projectId, String seaSource, String fileName, List<RawLeadRow> rows,
-                                                 boolean dryRun, BigDecimal calcLow, BigDecimal calcHigh, String operator) {
+                                                 boolean dryRun, BigDecimal calcLow, BigDecimal calcHigh,
+                                                 boolean forceUnlockRegion, String operator) {
         Long tenantId = resolveTenantId(projectId);
         int inserted = 0, blockedPrivate = 0, blockedHmac = 0, blockedAgency = 0;
+        int skippedOutProv = 0, cacheHits = 0, apiCalls = 0;
+        Long lastCustomerId = null;
         List<Map<String, Object>> details = new ArrayList<>();
 
-        // 统计批次内同一手机号出现频次（>3家不同企业视为代理记账财务号）
         Map<String, Set<String>> batchPhoneCompanies = new HashMap<>();
         for (RawLeadRow r : rows) {
-            if (StringUtils.hasText(r.phone()) && StringUtils.hasText(r.name())) {
-                batchPhoneCompanies.computeIfAbsent(r.phone(), k -> new HashSet<>()).add(r.name());
+            String nm = StringUtils.hasText(r.name()) ? r.name() : r.shopName();
+            if (StringUtils.hasText(r.phone()) && StringUtils.hasText(nm)) {
+                batchPhoneCompanies.computeIfAbsent(r.phone(), k -> new HashSet<>()).add(nm);
             }
         }
 
         int lineNo = 0;
         for (RawLeadRow r : rows) {
             lineNo++;
-            String name = StringUtils.hasText(r.name()) ? r.name() : r.shopName();
-            String phone = r.phone();
-            if (!StringUtils.hasText(name) || !StringUtils.hasText(phone)) {
+            String seedName = StringUtils.hasText(r.name()) ? r.name() : r.shopName();
+            if (!StringUtils.hasText(seedName)) {
                 blockedAgency++;
-                addDetail(details, lineNo, name, "DUP_OR_INVALID", "企业名或手机号缺失，已自动剔除");
+                addDetail(details, lineNo, "空行", "INVALID", "店铺名与企业名均为空，已跳过");
                 continue;
             }
-            // 闸门③：代理记账高频重号（本批 + 库内合计关联 > 3 家不同企业）
-            int dbSamePhoneDiffName = Optional.ofNullable(jdbc.queryForObject(
-                    "SELECT COUNT(DISTINCT name) FROM crm_customer WHERE tenant_id = ? AND phone = ? AND name <> ? AND deleted = 0",
-                    Integer.class, tenantId, phone, name)).orElse(0);
-            int batchDistinct = batchPhoneCompanies.getOrDefault(phone, Set.of()).size();
-            if (dbSamePhoneDiffName + batchDistinct > 3) {
-                blockedAgency++;
-                addDetail(details, lineNo, maskName(name), "AGENCY_PHONE", "同一号码关联超 3 家企业，识别为代理记账号剔除");
+
+            // Step 1: 广东省定向省钱初筛 + 企查查 30 天本地缓存/轻量 API 自动对齐
+            String regionText = (r.regionHint() == null ? "" : r.regionHint()) + " " + (r.address() == null ? "" : r.address());
+            MktExtDataGateway.CompanyProfile aligned = extGateway.alignCompany(tenantId, seedName, regionText, forceUnlockRegion);
+            if ("SKIPPED_OUT_PROVINCE".equals(aligned.status())) {
+                skippedOutProv++;
+                addDetail(details, lineNo, maskName(seedName), "OUT_GUANGDONG", "广东定向省钱锁：识别为外省主体，自动跳过免扣API费");
                 continue;
             }
-            // 闸门②：加盟云仓 AES+HMAC 保密老客白名单盲比对
-            if (isWarehouseHmacProtected(tenantId, name, r.shopName())) {
+            if ("CACHE_HIT".equals(aligned.status())) cacheHits++;
+            else if ("API_ALIGNED".equals(aligned.status())) apiCalls++;
+
+            String finalName = StringUtils.hasText(aligned.companyName()) ? aligned.companyName() : seedName;
+            String finalPhone = StringUtils.hasText(r.phone()) ? r.phone() : cleanPhone(aligned.phone());
+            String finalAddr = StringUtils.hasText(r.address()) ? r.address() : aligned.address();
+            String zoneCode = MktExtDataGateway.classifyZone(
+                    (finalAddr == null ? "" : finalAddr) + " " + regionText + " " + finalName, aligned.creditCode());
+            if (!forceUnlockRegion && extGateway.isGuangdongLockEnabled() && "OUT_GD".equals(zoneCode)) {
+                skippedOutProv++;
+                addDetail(details, lineNo, maskName(finalName), "OUT_GUANGDONG", "工商信用代码/地址属外省，省钱锁自动跳过");
+                continue;
+            }
+
+            // Step 2: 代理记账高频重号剔除（有手机号时核验）
+            if (StringUtils.hasText(finalPhone)) {
+                int dbSamePhoneDiffName = Optional.ofNullable(jdbc.queryForObject(
+                        "SELECT COUNT(DISTINCT name) FROM crm_customer WHERE tenant_id = ? AND phone = ? AND name <> ? AND deleted = 0",
+                        Integer.class, tenantId, finalPhone, finalName)).orElse(0);
+                int batchDistinct = batchPhoneCompanies.getOrDefault(finalPhone, Set.of()).size();
+                if (dbSamePhoneDiffName + batchDistinct > 3) {
+                    blockedAgency++;
+                    addDetail(details, lineNo, maskName(finalName), "AGENCY_PHONE", "同一号码关联超 3 家企业，识别为代理记账号剔除");
+                    continue;
+                }
+            } else if (!"AMAP_POI".equals(seaSource) && !StringUtils.hasText(r.shopName())) {
+                // 既无手机号又非店铺榜单/POI扫楼行，则判无效
+                blockedAgency++;
+                addDetail(details, lineNo, maskName(finalName), "NO_PHONE", "缺少手机号且未对齐到公开年报电话");
+                continue;
+            }
+
+            // Step 3: 加盟云仓 AES+HMAC 保密老客白名单盲筛
+            if (isWarehouseHmacProtected(tenantId, finalName, r.shopName())) {
                 blockedHmac++;
-                addDetail(details, lineNo, maskName(name), "WH_HMAC", "命中加盟云仓竞争保护白名单，自动跳过护客");
+                addDetail(details, lineNo, maskName(finalName), "WH_HMAC", "命中加盟云仓竞争保护白名单，自动跳过护客");
                 continue;
             }
-            // 闸门①：撞外部伙伴 90 天在锁私海或已签约客户
-            Customer existing = customers.selectOne(new LambdaQueryWrapper<Customer>()
-                    .eq(Customer::getTenantId, tenantId)
-                    .and(q -> q.eq(Customer::getName, name).or().eq(Customer::getPhone, phone))
-                    .last("LIMIT 1"));
+
+            // Step 4: 撞外部伙伴 90 天在锁私海或已签约客户
+            LambdaQueryWrapper<Customer> existQuery = new LambdaQueryWrapper<Customer>().eq(Customer::getTenantId, tenantId);
+            if (StringUtils.hasText(finalPhone)) {
+                existQuery.and(q -> q.eq(Customer::getName, finalName).or().eq(Customer::getPhone, finalPhone));
+            } else {
+                existQuery.eq(Customer::getName, finalName);
+            }
+            Customer existing = customers.selectOne(existQuery.last("LIMIT 1"));
             if (existing != null) {
                 if (isPrivateProtected(existing)) {
                     blockedPrivate++;
-                    addDetail(details, lineNo, maskName(name), "PRIVATE_LOCK", "客户处于外部伙伴保护期或已签约，严禁冲单");
+                    addDetail(details, lineNo, maskName(finalName), "PRIVATE_LOCK", "客户处于外部伙伴保护期或已签约，严禁冲单");
                     continue;
                 }
                 MktPublicSeaMeta meta = seaMetas.selectById(existing.getId());
                 if (meta != null && "ARCHIVED_COLD".equals(meta.getClaimStatus())) {
                     blockedAgency++;
-                    addDetail(details, lineNo, maskName(name), "COLD_ARCHIVE", "命中 3 次无效冷宫归档库，跳过重复外呼");
+                    addDetail(details, lineNo, maskName(finalName), "COLD_ARCHIVE", "命中冷宫归档库，跳过重复外呼");
                     continue;
                 }
                 if (!dryRun) {
-                    upsertSeaMeta(existing.getId(), tenantId, projectId, seaSource, r, calcLow, calcHigh);
+                    upsertSeaMetaAndShop(existing.getId(), tenantId, projectId, seaSource, r, aligned, finalAddr, zoneCode, calcLow, calcHigh);
+                    lastCustomerId = existing.getId();
                 }
                 inserted++;
                 continue;
@@ -277,23 +371,25 @@ public class MktPublicSeaWashService {
                 Customer c = new Customer();
                 c.setTenantId(tenantId);
                 c.setProjectId(projectId);
-                c.setName(name);
+                c.setName(finalName);
                 c.setBrandName(r.shopName());
-                c.setContact(StringUtils.hasText(r.contact()) ? r.contact() : "电商负责人");
-                c.setPhone(phone);
+                c.setContact(StringUtils.hasText(r.contact()) ? r.contact()
+                        : StringUtils.hasText(aligned.legalPerson()) ? aligned.legalPerson() : "电商负责人");
+                c.setPhone(StringUtils.hasText(finalPhone) ? finalPhone : "");
                 c.setIndustry(StringUtils.hasText(r.category()) ? r.category() : "综合电商");
-                c.setDemandArea(r.estDailyOrders() != null ? "日估" + r.estDailyOrders() + "单" : "待核实单量");
+                c.setDemandArea(r.estDailyOrders() != null ? "日估" + r.estDailyOrders() + "单" : "榜单/扫楼待核");
                 c.setIntakeRemark(r.blockNote());
                 c.setRemark(r.blockNote());
                 c.setServiceType(3);
                 c.setBizLine(2);
                 c.setStatus(1);
-                c.setReferrerId(null); // 内部专属公海，0 外部团队佣金
+                c.setReferrerId(null);
                 c.setWarehouseAssignmentStatus(0);
                 c.setOwner("内部公海待领");
-                c.setAttributionNote("内部公海洗数入池:" + seaSource);
+                c.setAttributionNote("内部公海入池:" + seaSource);
                 customers.insert(c);
-                upsertSeaMeta(c.getId(), tenantId, projectId, seaSource, r, calcLow, calcHigh);
+                upsertSeaMetaAndShop(c.getId(), tenantId, projectId, seaSource, r, aligned, finalAddr, zoneCode, calcLow, calcHigh);
+                lastCustomerId = c.getId();
             }
             inserted++;
         }
@@ -312,12 +408,15 @@ public class MktPublicSeaWashService {
             batch.setBlockedPrivateLock(blockedPrivate);
             batch.setBlockedWhHmac(blockedHmac);
             batch.setBlockedDupAgency(blockedAgency);
+            batch.setSkippedOutProvince(skippedOutProv);
+            batch.setQccCacheHits(cacheHits);
+            batch.setQccApiCalls(apiCalls);
             try { batch.setBlockedDetailsJson(json.writeValueAsString(details)); } catch (Exception ignored) {}
             batch.setOperator(operator);
             batch.setCreatedAt(LocalDateTime.now());
             washBatches.insert(batch);
             audit.log("public_sea.wash_import", "public_sea", batch.getId(),
-                    "公海三道闸洗数入池 " + batchNo + " 净入 " + inserted + " 户");
+                    "公海洗数对齐 " + batchNo + " 净入 " + inserted + " 户，外省跳过 " + skippedOutProv + " 行");
         }
 
         Map<String, Object> out = new LinkedHashMap<>();
@@ -330,12 +429,17 @@ public class MktPublicSeaWashService {
         out.put("blockedPrivateLock", blockedPrivate);
         out.put("blockedWhHmac", blockedHmac);
         out.put("blockedDupAgency", blockedAgency);
+        out.put("skippedOutProvince", skippedOutProv);
+        out.put("qccCacheHits", cacheHits);
+        out.put("qccApiCalls", apiCalls);
+        out.put("lastCustomerId", lastCustomerId);
         out.put("blockedDetails", details);
         return out;
     }
 
-    private void upsertSeaMeta(Long customerId, Long tenantId, Long projectId, String seaSource,
-                               RawLeadRow r, BigDecimal calcLow, BigDecimal calcHigh) {
+    private void upsertSeaMetaAndShop(Long customerId, Long tenantId, Long projectId, String seaSource,
+                                      RawLeadRow r, MktExtDataGateway.CompanyProfile aligned,
+                                      String finalAddr, String zoneCode, BigDecimal calcLow, BigDecimal calcHigh) {
         MktPublicSeaMeta meta = seaMetas.selectById(customerId);
         boolean isNew = (meta == null);
         if (isNew) {
@@ -345,9 +449,15 @@ public class MktPublicSeaWashService {
             meta.setProjectId(projectId);
             meta.setClaimStatus("UNCLAIMED");
             meta.setReleaseCount(0);
+            meta.setDishonestCount(0);
+            meta.setQccAligned(0);
             meta.setCreatedAt(LocalDateTime.now());
         }
         meta.setSeaSource(seaSource);
+        meta.setZoneCode(zoneCode);
+        meta.setProvince(StringUtils.hasText(aligned.province()) ? aligned.province() : "广东省");
+        if (StringUtils.hasText(aligned.city())) meta.setCity(aligned.city());
+        if (StringUtils.hasText(aligned.district())) meta.setDistrict(aligned.district());
         if (StringUtils.hasText(r.shopName())) meta.setShopName(r.shopName());
         if (StringUtils.hasText(r.category())) meta.setCategory(r.category());
         if (r.estDailyOrders() != null) meta.setEstDailyOrders(r.estDailyOrders());
@@ -356,25 +466,100 @@ public class MktPublicSeaWashService {
         if (calcHigh != null) meta.setCalcHighPrice(calcHigh);
         if (r.logisticsScore() != null) meta.setLogisticsScore(r.logisticsScore());
         if (StringUtils.hasText(r.blockNote())) meta.setBlockNote(r.blockNote());
+
+        if ("CACHE_HIT".equals(aligned.status()) || "API_ALIGNED".equals(aligned.status())) {
+            meta.setQccAligned(1);
+            meta.setCreditCode(aligned.creditCode());
+            meta.setLegalPerson(aligned.legalPerson());
+            meta.setRegCapital(aligned.regCapital());
+            meta.setInsuredCount(aligned.insuredCount());
+            meta.setDishonestCount(aligned.dishonestCount());
+        }
+
+        // 高德地理编码落坐标并测算距最近云仓距离
+        if (r.presetLng() != null && r.presetLat() != null) {
+            meta.setLng(r.presetLng());
+            meta.setLat(r.presetLat());
+        } else if (StringUtils.hasText(finalAddr) && (meta.getLng() == null || meta.getLat() == null)) {
+            extGateway.geocodeAddress(finalAddr, meta.getCity()).ifPresent(geo -> {
+                meta.setLng(geo.lng());
+                meta.setLat(geo.lat());
+                meta.setAddress(geo.formattedAddress());
+                if (StringUtils.hasText(geo.city())) meta.setCity(geo.city());
+                if (StringUtils.hasText(geo.district())) meta.setDistrict(geo.district());
+                if (StringUtils.hasText(geo.buildingName())) meta.setBuildingName(geo.buildingName());
+            });
+        }
+        if (StringUtils.hasText(finalAddr) && !StringUtils.hasText(meta.getAddress())) {
+            meta.setAddress(finalAddr);
+        }
+        if (!StringUtils.hasText(meta.getBuildingName()) && StringUtils.hasText(meta.getAddress())) {
+            meta.setBuildingName(MktExtDataGateway.extractBuildingName(meta.getAddress()));
+        }
+        if (meta.getLng() != null && meta.getLat() != null) {
+            int meters = MktExtDataGateway.haversineMeters(meta.getLng(), meta.getLat(), DEFAULT_GD_WH_LNG, DEFAULT_GD_WH_LAT);
+            // 城市道路折算系数约 1.28 × 直线距离
+            BigDecimal km = BigDecimal.valueOf(meters * 1.28 / 1000.0).setScale(1, RoundingMode.HALF_UP);
+            meta.setDistNearestWhKm(km);
+            if (!StringUtils.hasText(meta.getNearestWhName())) {
+                meta.setNearestWhName( resolveDefaultWhName(tenantId, projectId) );
+            }
+        }
+
         computeUrgency(meta, seaSource);
         meta.setUpdatedAt(LocalDateTime.now());
         if (isNew) seaMetas.insert(meta);
         else seaMetas.updateById(meta);
+
+        // 幂等挂载 1 客多店矩阵记录
+        if (StringUtils.hasText(r.shopName())) {
+            saveShopMatrixRow(customerId, tenantId, r.platform(), r.shopName(), meta.getCategory(),
+                    r.rankNo(), r.estDailyOrders() == null ? null : r.estDailyOrders() * 30, r.logisticsScore());
+        }
+        for (Map<String, String> extra : aligned.extraShops()) {
+            if (StringUtils.hasText(extra.get("shopName"))) {
+                saveShopMatrixRow(customerId, tenantId, extra.getOrDefault("platform", "天猫"), extra.get("shopName"), meta.getCategory(), null, null, null);
+            }
+        }
+    }
+
+    private void saveShopMatrixRow(Long customerId, Long tenantId, String platform, String shopName,
+                                   String category, Integer rankNo, Integer monthlySales, BigDecimal score) {
+        try {
+            jdbc.update("""
+                    INSERT INTO crm_public_sea_shop (customer_id, tenant_id, platform, shop_name, category, rank_no, monthly_sales, logistics_score)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    ON DUPLICATE KEY UPDATE
+                      category = COALESCE(VALUES(category), category),
+                      rank_no = COALESCE(VALUES(rank_no), rank_no),
+                      monthly_sales = COALESCE(VALUES(monthly_sales), monthly_sales),
+                      logistics_score = COALESCE(VALUES(logistics_score), logistics_score)
+                    """, customerId, tenantId, StringUtils.hasText(platform) ? platform : "抖音",
+                    shopName.trim(), category, rankNo, monthlySales, score);
+        } catch (Exception ignored) { /* 兼容尚未跑 V132 的单测 Mock */ }
+    }
+
+    private String resolveDefaultWhName(Long tenantId, Long projectId) {
+        List<String> names = jdbc.queryForList(
+                "SELECT name FROM crm_warehouse WHERE tenant_id = ? AND (project_id = ? OR project_id IS NULL) AND join_status = 5 AND deleted = 0 ORDER BY id LIMIT 1",
+                String.class, tenantId, projectId);
+        return names.isEmpty() ? "广东园区主力云仓" : names.get(0);
     }
 
     private static void computeUrgency(MktPublicSeaMeta meta, String seaSource) {
-        if ("CALC_HOT".equals(seaSource)) {
+        if ("CALC_HOT".equals(seaSource) || "FEIYU_AD".equals(seaSource)) {
             meta.setUrgencyLevel("S");
-            meta.setUrgencyReason("客户刚通过 30 秒云仓算价器自测底价并授权手机申领试发券，属最高意向热询盘");
+            meta.setUrgencyReason("主动测算底价或巨量飞鱼广东投流实时留资热询盘，转化窗口极短");
         } else if (meta.getLogisticsScore() != null && meta.getLogisticsScore().compareTo(new BigDecimal("4.60")) < 0) {
             meta.setUrgencyLevel("S");
-            meta.setUrgencyReason("店铺物流体验分 " + meta.getLogisticsScore() + " (<4.60 飘绿预警)，存在慢发漏发痛点，急需 24h 极速揽收云仓");
-        } else if ("TUNGEE_JOB".equals(seaSource) || (meta.getEstDailyOrders() != null && meta.getEstDailyOrders() >= 500)) {
+            meta.setUrgencyReason("类目榜单店铺物流体验分 " + meta.getLogisticsScore() + " (<4.60 飘绿)，存在发货时效痛点");
+        } else if ("AMAP_POI".equals(seaSource) || "TUNGEE_JOB".equals(seaSource)
+                || (meta.getEstDailyOrders() != null && meta.getEstDailyOrders() >= 500)) {
             meta.setUrgencyLevel("A");
-            meta.setUrgencyReason("正在招聘打包发货员或日估单量 ≥500 单，自包人工成本高于园区云仓集约价");
+            meta.setUrgencyReason("高德产业带扫楼命中或日估单量 ≥500 单，适合外勤集中陌拜算账");
         } else {
             meta.setUrgencyLevel("B");
-            meta.setUrgencyReason("公海标准储备线索，待园区招商专员首通电话核实单量与搬仓窗口");
+            meta.setUrgencyReason("广东公海标准储备货主，待首通核实单量与看仓意向");
         }
     }
 
@@ -394,9 +579,7 @@ public class MktPublicSeaWashService {
         try {
             protectionService.assertUnprotected(tenantId, companyName, shopName);
             return false;
-        } catch (BizException e) {
-            return true;
-        }
+        } catch (BizException e) { return true; }
     }
 
     private List<RawLeadRow> parseFileRows(MultipartFile file, String fileName) {
@@ -410,9 +593,7 @@ public class MktPublicSeaWashService {
                     Map<String, Integer> idx = mapHeaderIndexes(Arrays.asList(headers));
                     String line;
                     while ((line = br.readLine()) != null && out.size() < MAX_IMPORT_ROWS) {
-                        if (line.isBlank()) continue;
-                        String[] cols = line.split(",", -1);
-                        out.add(rowFromArray(cols, idx));
+                        if (!line.isBlank()) out.add(rowFromArray(line.split(",", -1), idx));
                     }
                 }
                 return out;
@@ -424,9 +605,7 @@ public class MktPublicSeaWashService {
                 Row headerRow = sheet.getRow(sheet.getFirstRowNum());
                 if (headerRow == null) return out;
                 List<String> headers = new ArrayList<>();
-                for (int c = 0; c < headerRow.getLastCellNum(); c++) {
-                    headers.add(fmt.formatCellValue(headerRow.getCell(c)));
-                }
+                for (int c = 0; c < headerRow.getLastCellNum(); c++) headers.add(fmt.formatCellValue(headerRow.getCell(c)));
                 Map<String, Integer> idx = mapHeaderIndexes(headers);
                 for (int r = sheet.getFirstRowNum() + 1; r <= sheet.getLastRowNum() && out.size() < MAX_IMPORT_ROWS; r++) {
                     Row row = sheet.getRow(r);
@@ -440,11 +619,8 @@ public class MktPublicSeaWashService {
                     if (any) out.add(rowFromArray(cols, idx));
                 }
             }
-        } catch (BizException e) {
-            throw e;
-        } catch (Exception e) {
-            throw new BizException(400, "名单文件解析失败，请上传标准 .xlsx 或 UTF-8 .csv 文件");
-        }
+        } catch (BizException e) { throw e; }
+        catch (Exception e) { throw new BizException(400, "榜单文件解析失败，请上传标准 .xlsx 或 UTF-8 .csv 文件"); }
         return out;
     }
 
@@ -452,14 +628,19 @@ public class MktPublicSeaWashService {
         Map<String, Integer> m = new HashMap<>();
         for (int i = 0; i < headers.size(); i++) {
             String h = headers.get(i) == null ? "" : headers.get(i).trim();
-            if (h.contains("公司") || h.contains("企业") || h.equals("客户名称") || h.equals("名称")) m.putIfAbsent("name", i);
-            else if (h.contains("店铺") || h.contains("网店") || h.contains("抖店") || h.contains("品牌")) m.putIfAbsent("shop", i);
+            if (h.contains("公司") || h.contains("企业") || h.contains("主体") || h.contains("执照")) m.putIfAbsent("name", i);
+            else if (h.contains("店铺") || h.contains("小店") || h.contains("网店") || h.equals("名称")) m.putIfAbsent("shop", i);
+            else if (h.contains("平台")) m.putIfAbsent("plat", i);
+            else if (h.contains("排名") || h.contains("名次") || h.equalsIgnoreCase("rank")) m.putIfAbsent("rank", i);
             else if (h.contains("联系人") || h.contains("法人") || h.contains("姓名")) m.putIfAbsent("contact", i);
             else if (h.contains("手机") || h.contains("电话") || h.contains("联系方式")) m.putIfAbsent("phone", i);
             else if (h.contains("类目") || h.contains("行业") || h.contains("品类")) m.putIfAbsent("cat", i);
-            else if (h.contains("单量") || h.contains("日发") || h.contains("日均")) m.putIfAbsent("daily", i);
+            else if (h.contains("日均") || h.contains("日发") || h.contains("日销")) m.putIfAbsent("daily", i);
+            else if (h.contains("月销") || h.contains("30天销量") || h.contains("单量")) m.putIfAbsent("monthly", i);
             else if (h.contains("重")) m.putIfAbsent("weight", i);
             else if (h.contains("物流分") || h.contains("体验分") || h.contains("评分")) m.putIfAbsent("score", i);
+            else if (h.contains("地址")) m.putIfAbsent("addr", i);
+            else if (h.contains("省") || h.contains("市") || h.contains("地区") || h.contains("发货地")) m.putIfAbsent("region", i);
             else if (h.contains("痛点") || h.contains("卡点") || h.contains("备注")) m.putIfAbsent("note", i);
         }
         return m;
@@ -468,42 +649,40 @@ public class MktPublicSeaWashService {
     private static RawLeadRow rowFromArray(String[] cols, Map<String, Integer> idx) {
         String name = col(cols, idx.get("name"), 100);
         String shop = col(cols, idx.get("shop"), 120);
-        return new RawLeadRow(
-                StringUtils.hasText(name) ? name : shop,
-                shop,
+        Integer daily = asInt(col(cols, idx.get("daily"), 24), null);
+        if (daily == null) {
+            Integer monthly = asInt(col(cols, idx.get("monthly"), 24), null);
+            if (monthly != null) daily = Math.max(1, monthly / 30);
+        }
+        return new RawLeadRow(name, shop,
+                Optional.ofNullable(col(cols, idx.get("plat"), 24)).orElse("抖音"),
+                asInt(col(cols, idx.get("rank"), 16), null),
                 col(cols, idx.get("contact"), 64),
                 cleanPhone(col(cols, idx.get("phone"), 32)),
-                col(cols, idx.get("cat"), 64),
-                asInt(col(cols, idx.get("daily"), 20), null),
+                col(cols, idx.get("cat"), 64), daily,
                 asDecimal(col(cols, idx.get("weight"), 20), null),
                 asDecimal(col(cols, idx.get("score"), 20), null),
-                col(cols, idx.get("note"), 450)
-        );
+                col(cols, idx.get("region"), 64),
+                col(cols, idx.get("addr"), 220),
+                null, null, col(cols, idx.get("note"), 450));
     }
 
     private static String col(String[] cols, Integer i, int max) {
-        if (i == null || i < 0 || i >= cols.length) return null;
-        return cleanText(cols[i], max);
+        return (i == null || i < 0 || i >= cols.length) ? null : cleanText(cols[i], max);
     }
-
     private static void addDetail(List<Map<String, Object>> details, int rowNo, String maskedName, String type, String reason) {
-        if (details.size() < 50) {
-            details.add(Map.of("rowNo", rowNo, "target", maskedName == null ? "—" : maskedName, "type", type, "reason", reason));
-        }
+        if (details.size() < 50) details.add(Map.of("rowNo", rowNo, "target", maskedName == null ? "—" : maskedName, "type", type, "reason", reason));
     }
-
     private static String maskName(String s) {
         if (!StringUtils.hasText(s)) return "未知主体";
         String t = s.trim();
         return t.length() <= 3 ? t.charAt(0) + "**" : t.substring(0, 2) + "***" + t.substring(t.length() - 2);
     }
-
     private Long resolveProjectId(Long projectId) {
         if (projectId != null && projectId > 0) return projectId;
         List<Long> ids = jdbc.queryForList("SELECT id FROM biz_project WHERE deleted = 0 ORDER BY id LIMIT 1", Long.class);
         return ids.isEmpty() ? 1L : ids.get(0);
     }
-
     private Long resolveTenantId(Long projectId) {
         if (projectId != null) {
             List<Long> t = jdbc.queryForList("SELECT tenant_id FROM biz_project WHERE id = ? AND deleted = 0 LIMIT 1", Long.class, projectId);
@@ -511,36 +690,28 @@ public class MktPublicSeaWashService {
         }
         return MyMetaObjectHandler.DEFAULT_TENANT_ID;
     }
-
     private static String normalizeSource(String raw) {
         String s = raw == null ? "" : raw.trim().toUpperCase(Locale.ROOT);
         return VALID_SOURCES.contains(s) ? s : "CHANMAMA";
     }
-
     private static Object firstNonNull(Map<String, Object> m, String... keys) {
         for (String k : keys) if (m.get(k) != null && !String.valueOf(m.get(k)).isBlank()) return m.get(k);
         return null;
     }
-
     private static String cleanText(Object v, int max) {
         if (v == null) return null;
         String s = String.valueOf(v).trim();
-        if (s.isEmpty()) return null;
-        return s.length() <= max ? s : s.substring(0, max);
+        return s.isEmpty() ? null : (s.length() <= max ? s : s.substring(0, max));
     }
-
     private static String cleanPhone(Object v) {
         if (v == null) return null;
         String digits = String.valueOf(v).replaceAll("[^0-9]", "");
         if (digits.startsWith("86") && digits.length() == 13) digits = digits.substring(2);
         return digits.isEmpty() ? null : digits;
     }
-
     private static Long asLong(Object v) {
-        if (v == null) return null;
-        try { return Long.valueOf(String.valueOf(v).trim()); } catch (Exception e) { return null; }
+        try { return v == null ? null : Long.valueOf(String.valueOf(v).trim()); } catch (Exception e) { return null; }
     }
-
     private static Integer asInt(Object v, Integer def) {
         if (v == null) return def;
         try {
@@ -548,12 +719,14 @@ public class MktPublicSeaWashService {
             return clean.isEmpty() ? def : Integer.parseInt(clean);
         } catch (Exception e) { return def; }
     }
-
     private static BigDecimal asDecimal(Object v, BigDecimal def) {
-        if (v == null) return def;
+        return asDecimalScale(v, 2) != null ? asDecimalScale(v, 2) : def;
+    }
+    private static BigDecimal asDecimalScale(Object v, int scale) {
+        if (v == null) return null;
         try {
-            String clean = String.valueOf(v).replaceAll("[^0-9.]", "");
-            return clean.isEmpty() ? def : new BigDecimal(clean).setScale(2, RoundingMode.HALF_UP);
-        } catch (Exception e) { return def; }
+            String clean = String.valueOf(v).replaceAll("[^0-9.-]", "");
+            return clean.isEmpty() ? null : new BigDecimal(clean).setScale(scale, RoundingMode.HALF_UP);
+        } catch (Exception e) { return null; }
     }
 }

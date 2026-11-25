@@ -40,10 +40,11 @@ class MktWithdrawalSettingTest {
     @Test void readingMissingArrivalPolicyShowsEditableDefaultWithoutWritingIt() {
         when(jdbc.queryForList(anyString(), eq("marketing"))).thenReturn(List.of());
         var rows = controller.all().getData();
-        assertThat(rows).hasSize(4);
-        assertThat(rows).extracting(r -> r.get("skey")).containsExactly(
+        assertThat(rows).hasSize(15);
+        assertThat(rows).extracting(r -> r.get("skey")).containsSubsequence(
                 "withdraw_arrival_time", "withdraw_window_start_day", "withdraw_window_end_day",
-                "auto_withdraw_day");
+                "auto_withdraw_day", "sea_sla_hours", "sea_region_lock_province",
+                "sea_checkin_max_meters", "sea_visit_protect_days", "ext_amap_web_key", "ext_qcc_appcode");
         assertThat(rows.get(0)).containsEntry("skey", "withdraw_arrival_time")
                 .containsEntry("svalue", MktWithdrawalService.DEFAULT_ARRIVAL_TIME);
         assertThat(rows.get(1)).containsEntry("skey", "withdraw_window_start_day").containsEntry("svalue", "0");
@@ -59,7 +60,19 @@ class MktWithdrawalSettingTest {
         var rows = controller.all().getData();
         assertThat(rows.stream().filter(r -> "withdraw_arrival_time".equals(r.get("skey"))).toList())
                 .containsExactly(existing);
-        assertThat(rows).hasSize(4);
+        assertThat(rows).hasSize(15);
+    }
+
+    @Test void secretConnectorKeysAreMaskedOnReadAndSkippedIfSubmittedMasked() {
+        var stored = Map.<String, Object>of("skey", "ext_qcc_appcode", "svalue", "qcc_secret_987654", "remark", "企查密钥");
+        when(jdbc.queryForList(anyString(), eq("marketing"))).thenReturn(List.of(stored));
+        var rows = controller.all().getData();
+        var qccRow = rows.stream().filter(r -> "ext_qcc_appcode".equals(r.get("skey"))).findFirst().orElseThrow();
+        assertThat(String.valueOf(qccRow.get("svalue"))).isEqualTo("qcc****654");
+
+        // 原样回传含 **** 的脱敏值时不会覆写数据库真实密钥
+        controller.update(List.of(Map.of("skey", "ext_qcc_appcode", "svalue", "qcc****654")));
+        verify(jdbc, never()).update(anyString(), any(Object[].class));
     }
 
     @Test void retiredGhostKeysAreFilteredOutFromSettingsList() {

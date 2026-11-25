@@ -1,12 +1,68 @@
 <template>
   <div class="page-container mkt-public-sea">
+    <!-- 诚实连接器未配 Key 状态条（绝不伪造企查查或高德实景数据） -->
+    <div v-if="showConnectorHint" class="connector-honest-bar">
+      <div>
+        🔑 <b>外部连接器状态</b>：
+        高德地理编码/POI雷达 <b>{{ connectors.amapWebConfigured ? '已启用' : '待填免费Key' }}</b> ·
+        轻量工商/网店对齐 <b>{{ connectors.qccConfigured ? '已启用(30天缓存)' : '待填百元包AppCode（当前仅存基础线索，不伪造核验数据）' }}</b> ·
+        飞鱼免费Webhook <b>已就绪</b>
+      </div>
+      <el-button link type="primary" @click="router.push('/crm/marketing/setting')">去配置连接器密钥 ›</el-button>
+    </div>
+
+    <!-- 第1层：双视图切换 + 广东定向省钱硬锁 + 三大低成本获客武器 -->
     <div class="sea-banner">
-      <div class="sea-banner-text">
-        <b>内部自营公海弹药库</b>：仅对园区内部招商专员与加盟云仓主账号开放（对外部 P1–P4 完全隔离）；公海成单免切 70% 外部团队佣金，仅计提云仓 P0 15% 跟单奖。
+      <div class="sea-banner-left">
+        <div class="view-mode-seg" role="tablist" aria-label="公海列表与高德地图双视图切换">
+          <button
+            type="button"
+            class="seg-btn"
+            :class="{ active: viewMode === 'list' }"
+            data-testid="mode-list"
+            @click="viewMode = 'list'"
+          >
+            📋 列表电销视图 ({{ total }})
+          </button>
+          <button
+            type="button"
+            class="seg-btn"
+            :class="{ active: viewMode === 'map' }"
+            data-testid="mode-map"
+            @click="switchToMapView"
+          >
+            🗺️ 广东高德地推地图
+          </button>
+        </div>
+        <span class="gd-lock-badge">
+          💰 {{ connectors.regionLockProvince || '广东省' }}定向省钱锁：外省主体自动拦截免扣API费 · 成单0外部佣金
+        </span>
       </div>
-      <div class="sea-banner-actions">
-        <el-button v-if="canEdit" type="primary" @click="openWashDialog">Excel 防撞清洗导入</el-button>
+      <div v-if="canEdit" class="sea-banner-actions">
+        <el-button type="warning" plain size="small" @click="openRadarDialog">📡 高德广东商圈扫楼雷达</el-button>
+        <el-button type="success" plain size="small" @click="openShopLookupDialog">🛍️ 单店名反查公司</el-button>
+        <el-button type="primary" size="small" @click="openWashDialog">🏆 类目TOP500店铺榜对齐入池</el-button>
       </div>
+    </div>
+
+    <!-- 广东主力战区产业带分片区快切条 -->
+    <div class="gd-zone-bar" role="region" aria-label="广东主力战区分区快切">
+      <div class="gd-zone-buttons">
+        <span class="gd-zone-title">📍 广东主力战区分区：</span>
+        <button
+          v-for="z in GD_ZONES"
+          :key="z.code"
+          type="button"
+          class="zone-chip"
+          :class="{ active: query.zoneCode === z.code }"
+          :data-zone="z.code"
+          @click="selectZone(z.code)"
+        >
+          {{ z.label }}
+          <span v-if="zoneCountText(z.code)" class="zone-cnt">{{ zoneCountText(z.code) }}</span>
+        </button>
+      </div>
+      <span class="sub-note">🔒 严隔外部 P1–P4 推广员</span>
     </div>
 
     <el-alert
@@ -22,8 +78,8 @@
       </template>
     </el-alert>
 
-    <!-- 3 张核心分析结论卡（L1 结论卡面，右上角固定挂「下钻 ›」） -->
-    <section class="analysis-grid" aria-label="公海池经营分析结论">
+    <!-- 第2层：4 张核心分析结论卡（L1 结论卡面，右上角固定挂「下钻 ›」） -->
+    <section class="analysis-grid" aria-label="公海池经营与广东地推分析结论">
       <article v-for="card in analysisCards" :key="card.key" class="analysis-card" :data-analysis-key="card.key">
         <div class="analysis-head">
           <h2 class="analysis-title">{{ card.title }}</h2>
@@ -44,149 +100,255 @@
       </article>
     </section>
 
-    <!-- 筛选栏（纯查询控件，按反向约束不挂下钻） -->
+    <!-- 第3层：多维电销+高德地推筛选栏（纯查询控件，不挂下钻） -->
     <div class="search-bar">
       <el-form :inline="true" :model="query" class="sea-filter-form">
         <el-form-item label="数据源">
-          <el-select v-model="query.seaSource" style="width: 195px" @change="search">
-            <el-option value="ALL" label="全部 5 大数据源" />
+          <el-select v-model="query.seaSource" style="width: 175px" @change="search">
+            <el-option value="ALL" label="全部数据源" />
             <el-option value="CALC_HOT" label="🔥 30秒算价器留资" />
-            <el-option value="CHANMAMA" label="🎯 蝉妈妈低物流分+探迹" />
+            <el-option value="FEIYU_AD" label="📣 巨量飞鱼免费Webhook" />
+            <el-option value="AMAP_POI" label="📡 高德周边POI扫楼" />
+            <el-option value="CHANMAMA" label="🏆 店铺榜企查对齐" />
             <el-option value="TUNGEE_JOB" label="📦 招打包工特征库" />
-            <el-option value="EXPIRE_RETURN" label="♻️ 伙伴超期/弃单回流" />
-            <el-option value="PARK_CRM" label="🏢 园区看房&云仓调剂" />
+            <el-option value="EXPIRE_RETURN" label="♻️ 伙伴超期回流" />
+            <el-option value="PARK_CRM" label="🏢 园区/云仓调剂" />
           </el-select>
         </el-form-item>
-        <el-form-item label="认领状态">
-          <el-select v-model="query.claimStatus" style="width: 155px" @change="search">
+        <el-form-item label="高德距离">
+          <el-select v-model="query.distFilter" style="width: 160px" @change="search">
+            <el-option value="ALL" label="不限里程" />
+            <el-option value="5KM" label="⭕ 云仓5km黄金圈内" />
+            <el-option value="CLUSTER" label="🏢 同栋大厦聚集(≥2户)" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="关联平台">
+          <el-select v-model="query.platform" style="width: 135px" @change="search">
+            <el-option value="ALL" label="全部平台" />
+            <el-option value="抖音" label="含抖音小店" />
+            <el-option value="天猫" label="含天猫/淘宝店" />
+            <el-option value="1688" label="含1688源头厂" />
+            <el-option value="拼多多" label="含拼多多店" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="工商体检">
+          <el-select v-model="query.riskFilter" style="width: 160px" @change="search">
+            <el-option value="ALL" label="全部主体" />
+            <el-option value="CLEAN" label="🟢 0失信且参保≥5人" />
+            <el-option value="RISK" label="🔴 失信/限高预警" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="保活状态">
+          <el-select v-model="query.claimStatus" style="width: 150px" @change="search">
             <el-option value="ALL" label="全部状态" />
             <el-option value="UNCLAIMED" label="待认领跟进" />
-            <el-option value="CLAIMED_ADMIN" label="专员跟进中" />
+            <el-option value="VISIT_15D" label="📍 15天地推保护中" />
+            <el-option value="CLAIMED_ADMIN" label="专员电销跟进中" />
             <el-option value="FEED_WH" label="已投喂云仓池" />
             <el-option value="CLAIMED_WH" label="云仓已认领" />
           </el-select>
         </el-form-item>
         <el-form-item label="关键词">
-          <el-input v-model="query.keyword" clearable placeholder="企业名/网店/类目/手机" style="width: 200px" @keyup.enter="search" />
+          <el-input v-model="query.keyword" clearable placeholder="企业/网店/大厦路名/手机" style="width: 185px" @keyup.enter="search" />
         </el-form-item>
         <el-form-item>
           <el-button type="primary" @click="search">查询</el-button>
           <el-button @click="resetQuery">重置</el-button>
         </el-form-item>
       </el-form>
+
+      <!-- 勾选批量外勤路线与批量投喂条 -->
+      <div v-if="selectedRows.length > 0" class="batch-action-bar">
+        <div>
+          已勾选 <b>{{ selectedRows.length }}</b> 户广东目标货主（同片区集中扫楼拜访效率最高）
+        </div>
+        <div class="batch-btns">
+          <el-button size="small" type="success" @click="openAmapBatchRoute">
+            🚗 高德生成顺路拜访导航（串联 {{ selectedRows.length }} 站）
+          </el-button>
+          <el-button v-if="canEdit" size="small" type="primary" plain @click="openBatchFeedDialog">
+            🏭 批量投喂加盟云仓
+          </el-button>
+        </div>
+      </div>
     </div>
 
-    <!-- 列表区：桌面表格 + 手机卡片自适应 -->
-    <div class="table-card" v-loading="loading">
+    <!-- 视图 A：列表电销视图（桌面表格 + 手机窄视口卡片自适应） -->
+    <div v-if="viewMode === 'list'" class="table-card" v-loading="loading">
       <div class="toolbar">
         <span class="hint">
-          认领后启动 {{ summaryData.slaHours || 72 }} 小时首触达保活倒计时；提交首通核实纪要即解除自动弹回。云仓端每日限领 {{ summaryData.whDailyCap || 5 }} 户 / 在途上限 {{ summaryData.whActiveCap || 10 }} 户。
+          电销认领启动 {{ summaryData.slaHours || 72 }}h 首触达倒计时；外勤到达客户现场 ≤{{ summaryData.checkinMaxMeters || 500 }}m 实拍门头打卡即解锁 {{ summaryData.visitProtectDays || 15 }} 天深度地推保护。云仓每日限领 {{ summaryData.whDailyCap || 5 }} 户 / 在途 {{ summaryData.whActiveCap || 10 }} 户。
         </span>
       </div>
 
       <el-empty v-if="!loading && !list.length" description="当前筛选条件下暂无公海待跟进货主">
-        <el-button v-if="canEdit" type="primary" @click="openWashDialog">导入清洗名单补充活水</el-button>
+        <div style="display: flex; gap: 8px; justify-content: center; flex-wrap: wrap">
+          <el-button v-if="canEdit" type="warning" plain @click="openRadarDialog">📡 高德周边10km扫楼挖掘</el-button>
+          <el-button v-if="canEdit" type="primary" @click="openWashDialog">🏆 导入类目店铺榜补充活水</el-button>
+        </div>
       </el-empty>
 
       <template v-else>
         <div class="desktop-table-wrap">
-          <el-table :data="list" border stripe>
-            <el-table-column label="货主企业 / 关联店铺 / 电话" min-width="220">
+          <el-table :data="list" border stripe @selection-change="onSelectionChange">
+            <el-table-column type="selection" width="44" />
+
+            <el-table-column label="企业主体 / 工商体检 / 联系方式" min-width="235">
               <template #default="{ row }">
-                <div class="row-title">{{ row.name }}</div>
-                <div v-if="row.shopName" class="sub-note">{{ row.shopName }}</div>
-                <div class="sub-note">
-                  {{ row.contact || '负责人' }} · <b>{{ row.phone }}</b>
-                  <el-tag v-if="row.phoneUnlocked" type="success" size="small" effect="plain" style="margin-left: 6px">已解锁</el-tag>
+                <div class="row-title link-title" @click="openDetailDrawer(row, 'qcc')">{{ row.name }} ›</div>
+                <div v-if="row.qccAligned === 1" class="sub-note">
+                  法人 {{ row.legalPerson || '—' }} · {{ row.regCapital || '注册资本待核' }} · <b>参保 {{ row.insuredCount ?? 0 }}人</b>
+                </div>
+                <div v-else class="sub-note">工商待对齐（可点单店反查或配置百元企查包自动补全）</div>
+                <div class="tag-inline-row">
+                  <el-tag v-if="row.dishonestCount > 0" type="danger" size="small" @click="openDetailDrawer(row, 'qcc')" style="cursor: pointer">
+                    🔴 失信({{ row.dishonestCount }})·禁月结 ›
+                  </el-tag>
+                  <el-tag v-else-if="row.qccAligned === 1" type="success" size="small" effect="plain">🟢 企查0失信</el-tag>
+                  <span class="sub-note">{{ row.contact || '负责人' }} · <b>{{ row.phone }}</b></span>
+                  <el-tag v-if="row.phoneUnlocked" type="success" size="small" effect="plain">已解锁</el-tag>
                 </div>
               </template>
             </el-table-column>
 
-            <el-table-column label="数据来源" width="165">
+            <el-table-column label="1客多店电商矩阵" min-width="195">
               <template #default="{ row }">
-                <el-tag :type="row.seaSource === 'CALC_HOT' ? 'danger' : 'info'" size="small">
-                  {{ SOURCE_LABELS[row.seaSource] || row.seaSource }}
-                </el-tag>
+                <div class="shop-chip-list">
+                  <span
+                    v-for="(s, idx) in (row.shops || [])"
+                    :key="idx"
+                    class="shop-chip"
+                    :data-plat="s.platform"
+                  >
+                    {{ s.platform }}: {{ s.shopName }}<template v-if="s.rankNo"> #{{ s.rankNo }}</template>
+                  </span>
+                  <span v-if="!(row.shops && row.shops.length)" class="sub-note">线下产业带主体</span>
+                </div>
+                <el-button link type="primary" size="small" @click="openDetailDrawer(row, 'shops')">
+                  查看店铺矩阵 ({{ (row.shops || []).length }}) ›
+                </el-button>
               </template>
             </el-table-column>
 
-            <el-table-column label="货盘画像与上轮卡点" min-width="230">
+            <el-table-column label="广东地址 · 云仓车程与大厦聚集" min-width="225">
               <template #default="{ row }">
-                <div>
+                <div class="addr-line">📍 {{ row.address || `${row.city || '广东'}${row.district || ''}（待落坐标）` }}</div>
+                <div class="tag-inline-row">
+                  <button
+                    v-if="row.distNearestWhKm != null"
+                    type="button"
+                    class="geo-pill"
+                    @click="focusRowOnMap(row)"
+                  >
+                    🚗 距{{ row.nearestWhName || '本园云仓' }} {{ row.distNearestWhKm }}km · 看图 ›
+                  </button>
+                  <span v-if="row.buildingName && row.buildingPeerCount >= 2" class="cluster-pill">
+                    🏢 {{ row.buildingName }}(同楼{{ row.buildingPeerCount }}户)
+                  </span>
+                </div>
+              </template>
+            </el-table-column>
+
+            <el-table-column label="货盘画像与换仓痛点评级" min-width="210">
+              <template #default="{ row }">
+                <div class="tag-inline-row">
+                  <el-tag :type="['CALC_HOT', 'FEIYU_AD'].includes(row.seaSource) ? 'danger' : 'info'" size="small">
+                    {{ SOURCE_LABELS[row.seaSource] || row.seaSource }}
+                  </el-tag>
+                  <button type="button" class="urgency-pill" :data-level="row.urgencyLevel || 'B'" @click="openUrgencyDrawer(row)">
+                    {{ row.urgencyLevel || 'B' }}级{{ URGENCY_TEXT[row.urgencyLevel] || '储备' }}
+                    <span v-if="row.logisticsScore"> · {{ row.logisticsScore }}分</span> ›
+                  </button>
+                </div>
+                <div style="margin-top: 4px">
                   <b>{{ row.category || '综合电商' }}</b>
                   <span v-if="row.estDailyOrders"> · 日估 {{ row.estDailyOrders }} 单</span>
-                  <span v-if="row.avgWeightKg"> · 均重 {{ row.avgWeightKg }}kg</span>
+                  <span v-if="row.avgWeightKg"> · {{ row.avgWeightKg }}kg</span>
                 </div>
-                <div class="sub-note">{{ row.blockNote || '待首通电话核实实际单量与搬仓窗口' }}</div>
+                <div class="sub-note">{{ row.blockNote || '待首通核实单量与搬仓窗口' }}</div>
               </template>
             </el-table-column>
 
-            <el-table-column label="换仓痛点评级" width="165">
+            <el-table-column label="保活与地推延保" width="175">
               <template #default="{ row }">
-                <button type="button" class="urgency-pill" :data-level="row.urgencyLevel || 'B'" @click="openUrgencyDrawer(row)">
-                  {{ row.urgencyLevel || 'B' }}级{{ URGENCY_TEXT[row.urgencyLevel] || '储备' }}
-                  <span v-if="row.logisticsScore"> · {{ row.logisticsScore }}分</span> ›
-                </button>
-                <div class="sub-note">0 外部佣金 · 15% P0奖</div>
-              </template>
-            </el-table-column>
-
-            <el-table-column label="跟进与保活时效" width="175">
-              <template #default="{ row }">
-                <el-tag :type="claimTagType(row)" size="small">{{ CLAIM_LABELS[row.claimStatus] || row.claimStatus }}</el-tag>
+                <el-tag v-if="row.visitDaysLeft" type="success" size="small">
+                  📍 500m打卡保护 · 剩{{ row.visitDaysLeft }}天
+                </el-tag>
+                <el-tag v-else :type="claimTagType(row)" size="small">
+                  {{ CLAIM_LABELS[row.claimStatus] || row.claimStatus }}
+                </el-tag>
                 <div v-if="row.claimHolderName" class="sub-note">{{ row.claimHolderName }}</div>
-                <div v-if="row.firstTouchedAt" class="sub-note ok-text">✔ 已首触达保活</div>
+                <div v-if="row.lastCheckinDistM != null" class="sub-note ok-text">
+                  📸 距址 {{ row.lastCheckinDistM }}m 已实拍打卡
+                </div>
+                <div v-else-if="row.firstTouchedAt" class="sub-note ok-text">✔ 已首触达保活</div>
                 <div v-else-if="row.hoursLeft != null" class="sub-note" :class="{ 'warn-text': row.hoursLeft <= 12 }">
-                  ⏱ 剩 {{ row.hoursLeft }}h 首触达期限
+                  ⏱ 剩 {{ row.hoursLeft }}h 须首触达
                 </div>
               </template>
             </el-table-column>
 
-            <el-table-column label="操作" width="235" fixed="right">
+            <el-table-column label="操作" width="210" fixed="right">
               <template #default="{ row }">
-                <el-button
-                  v-if="canEdit && ['UNCLAIMED', 'FEED_WH'].includes(row.claimStatus)"
-                  type="primary"
-                  size="small"
-                  @click="handleClaim(row)"
-                >
-                  认领电销
-                </el-button>
-                <el-button
-                  v-else-if="canEdit"
-                  size="small"
-                  @click="openTouchDrawer(row)"
-                >
-                  首通纪要
-                </el-button>
-                <el-button v-if="canEdit" link type="primary" @click="openFeedDialog(row)">投喂云仓</el-button>
-                <el-button link type="primary" @click="openTouchDrawer(row)">详情比价</el-button>
-                <el-button v-if="canEdit" link type="warning" @click="openReleaseDialog(row)">释放</el-button>
+                <div class="row-action-col">
+                  <div class="row-action-line">
+                    <el-button
+                      v-if="canEdit && ['UNCLAIMED', 'FEED_WH'].includes(row.claimStatus)"
+                      type="primary"
+                      size="small"
+                      @click="handleClaim(row)"
+                    >
+                      认领电销
+                    </el-button>
+                    <el-button
+                      v-if="canEdit"
+                      type="success"
+                      plain
+                      size="small"
+                      data-testid="btn-visit-checkin"
+                      @click="openCheckinDialog(row)"
+                    >
+                      📍500m打卡
+                    </el-button>
+                  </div>
+                  <div class="row-action-line">
+                    <el-button link type="primary" size="small" @click="openDetailDrawer(row, 'quote')">360°与比价</el-button>
+                    <el-button v-if="canEdit" link type="primary" size="small" @click="openFeedDialog(row)">投喂云仓</el-button>
+                    <el-button v-if="canEdit" link type="warning" size="small" @click="openReleaseDialog(row)">释放</el-button>
+                  </div>
+                </div>
               </template>
             </el-table-column>
           </el-table>
         </div>
 
-        <!-- 手机窄视口自适应卡片列表（防 390px 横向溢出与遮挡） -->
+        <!-- 手机外勤端自适应卡片列表（防 390px 横向溢出与遮挡） -->
         <div class="mobile-card-list">
           <div v-for="row in list" :key="row.customerId" class="mobile-sea-card">
             <div class="m-card-top">
-              <b>{{ row.name }}</b>
-              <el-tag :type="row.seaSource === 'CALC_HOT' ? 'danger' : 'info'" size="small">
+              <b class="link-title" @click="openDetailDrawer(row, 'qcc')">{{ row.name }}</b>
+              <el-tag :type="['CALC_HOT', 'FEIYU_AD'].includes(row.seaSource) ? 'danger' : 'info'" size="small">
                 {{ SOURCE_LABELS[row.seaSource] || row.seaSource }}
               </el-tag>
             </div>
-            <div class="sub-note">{{ row.shopName || '未填店铺名' }} · {{ row.category || '综合电商' }}</div>
+            <div class="shop-chip-list" style="margin: 4px 0">
+              <span v-for="(s, idx) in (row.shops || []).slice(0, 2)" :key="idx" class="shop-chip" :data-plat="s.platform">
+                {{ s.platform }}: {{ s.shopName }}
+              </span>
+            </div>
+            <div class="sub-note">📍 {{ row.address || row.city || '广东产业带' }}</div>
             <div class="sub-note">
+              <span v-if="row.distNearestWhKm != null">距云仓 {{ row.distNearestWhKm }}km · </span>
               <span v-if="row.estDailyOrders">日估 {{ row.estDailyOrders }} 单 · </span>
-              {{ row.contact || '负责人' }} {{ row.phone }}
+              {{ row.contact || '负责人' }} <b>{{ row.phone }}</b>
             </div>
             <div class="m-card-tags">
               <button type="button" class="urgency-pill" :data-level="row.urgencyLevel || 'B'" @click="openUrgencyDrawer(row)">
-                {{ row.urgencyLevel || 'B' }}级痛点判据 ›
+                {{ row.urgencyLevel || 'B' }}级痛点 ›
               </button>
-              <el-tag :type="claimTagType(row)" size="small">{{ CLAIM_LABELS[row.claimStatus] || row.claimStatus }}</el-tag>
-              <span v-if="!row.firstTouchedAt && row.hoursLeft != null" class="sub-note">剩 {{ row.hoursLeft }}h</span>
+              <el-tag v-if="row.dishonestCount > 0" type="danger" size="small">🔴 失信预警</el-tag>
+              <el-tag v-if="row.visitDaysLeft" type="success" size="small">📍 延保剩{{ row.visitDaysLeft }}天</el-tag>
+              <el-tag v-else :type="claimTagType(row)" size="small">{{ CLAIM_LABELS[row.claimStatus] || row.claimStatus }}</el-tag>
             </div>
             <div class="m-card-actions">
               <el-button
@@ -195,10 +357,13 @@
                 size="small"
                 @click="handleClaim(row)"
               >
-                认领解锁电话
+                认领电销
               </el-button>
-              <el-button size="small" @click="openTouchDrawer(row)">纪要与比价</el-button>
-              <el-button v-if="canEdit" size="small" @click="openFeedDialog(row)">投喂云仓</el-button>
+              <el-button v-if="canEdit" type="success" plain size="small" @click="openCheckinDialog(row)">
+                📍500m打卡
+              </el-button>
+              <el-button size="small" @click="openDetailDrawer(row, 'quote')">360°与比价</el-button>
+              <el-button size="small" @click="openSingleAmapNav(row)">🧭导航</el-button>
             </div>
           </div>
         </div>
@@ -216,7 +381,98 @@
       </template>
     </div>
 
-    <!-- 三层下钻抽屉（L1 核心问题 -> L2 判据列表 -> L3 五联物证） -->
+    <!-- 视图 B：广东高德地推战术地图（5km黄金圈 + 大厦多户聚类 + 一键导航与500m打卡） -->
+    <div v-else class="map-workspace" data-testid="gd-map-workspace">
+      <div class="map-canvas-wrap">
+        <div class="map-floating-bar">
+          <el-tag type="primary" effect="dark" size="small">🏭 本园基准云仓 · 5km(15min车程)黄金地推圈</el-tag>
+          <el-tag type="warning" size="small">🏢 紫标 = 同栋大厦聚集多户</el-tag>
+          <el-button size="small" type="success" @click="routePreviewOn = !routePreviewOn">
+            {{ routePreviewOn ? '隐藏顺路拜访线' : '🚗 预览最优顺路串联线' }}
+          </el-button>
+        </div>
+
+        <!-- 若已配置高德 Web JS Key 则挂载真实高德瓦片容器，否则展示高精 GCJ-02 广东产业带坐标战术图 -->
+        <div v-if="connectors.amapJsConfigured" id="gd-amap-real-canvas" class="amap-real-canvas"></div>
+        <div v-else class="tactical-map-stage">
+          <div class="wh-golden-circle">
+            <span class="circle-caption">⭕ 云仓 5km 黄金揽收圈（短驳最低成本区）</span>
+          </div>
+
+          <svg v-if="routePreviewOn && mapPins.length >= 2" class="route-svg" viewBox="0 0 100 100" preserveAspectRatio="none">
+            <polyline
+              :points="routePolylinePoints"
+              fill="none"
+              stroke="#2563eb"
+              stroke-width="0.9"
+              stroke-dasharray="2 1.5"
+            />
+          </svg>
+
+          <!-- 园区中心云仓锚点 -->
+          <div class="map-pin wh-pin" style="left: 48%; top: 50%">
+            <span>🏭 广东园区主力云仓</span>
+          </div>
+
+          <!-- 公海客户坐标锚点 -->
+          <button
+            v-for="pin in mapPins"
+            :key="pin.row.customerId"
+            type="button"
+            class="map-pin cust-pin"
+            :class="{
+              active: activeMapRow?.customerId === pin.row.customerId,
+              cluster: pin.row.buildingPeerCount >= 2,
+              hot: ['CALC_HOT', 'FEIYU_AD'].includes(pin.row.seaSource)
+            }"
+            :style="{ left: `${pin.x}%`, top: `${pin.y}%` }"
+            @click="activeMapCustomerId = pin.row.customerId"
+          >
+            <span v-if="pin.row.buildingPeerCount >= 2">🏢 {{ pin.row.buildingName }}({{ pin.row.buildingPeerCount }}户)</span>
+            <span v-else>📍 {{ shortName(pin.row.name) }}</span>
+          </button>
+
+          <div class="map-honest-foot">
+            GCJ-02 坐标实时投射（配置 <code>ext_amap_js_key</code> 后自动叠加高德实景街道瓦片；点击「🧭 唤起高德导航」直接打开高德 App 驾车路线）
+          </div>
+        </div>
+      </div>
+
+      <!-- 地图右侧选中点位作战卡 -->
+      <aside class="map-side-card">
+        <template v-if="activeMapRow">
+          <div class="side-card-head">
+            <el-tag size="small" type="primary">{{ ZONE_NAMES[activeMapRow.zoneCode] || '广东战区' }}</el-tag>
+            <el-tag v-if="activeMapRow.dishonestCount > 0" size="small" type="danger">🔴 失信禁月结</el-tag>
+            <el-tag v-else size="small" type="success">🟢 信用正常</el-tag>
+          </div>
+          <h3 class="side-cust-name">{{ activeMapRow.name }}</h3>
+          <div class="sub-note">📍 {{ activeMapRow.address || '地址待扫楼补录' }}</div>
+          <div v-if="activeMapRow.distNearestWhKm != null" class="sub-note" style="margin-top: 4px">
+            🚗 距 <b>{{ activeMapRow.nearestWhName || '本园云仓' }}</b> 约 <b>{{ activeMapRow.distNearestWhKm }} km</b>
+            <span v-if="activeMapRow.buildingPeerCount >= 2"> · 同楼共 {{ activeMapRow.buildingPeerCount }} 户可连访</span>
+          </div>
+
+          <div class="side-info-box">
+            <div><b>主营与单量</b>：{{ activeMapRow.category || '综合电商' }} · 日估 {{ activeMapRow.estDailyOrders || '待核' }} 单</div>
+            <div><b>联系人电话</b>：{{ activeMapRow.contact || '负责人' }} · <b>{{ activeMapRow.phone }}</b></div>
+            <div><b>名下网店</b>：{{ (activeMapRow.shops || []).map(s => `${s.platform}:${s.shopName}`).join(' / ') || '待穿透' }}</div>
+            <div><b>痛点备忘</b>：{{ activeMapRow.blockNote || '适合上门当面算打包人工替代账' }}</div>
+          </div>
+
+          <div class="side-btn-stack">
+            <el-button type="primary" @click="openSingleAmapNav(activeMapRow)">🧭 唤起高德驾车导航去现场</el-button>
+            <el-button v-if="canEdit" type="success" @click="openCheckinDialog(activeMapRow)">
+              📸 现场 ≤{{ summaryData.checkinMaxMeters || 500 }}m 拍照打卡（解锁{{ summaryData.visitProtectDays || 15 }}天保护）
+            </el-button>
+            <el-button @click="openDetailDrawer(activeMapRow, 'quote')">📊 打开 360° 全景与多仓比价单</el-button>
+          </div>
+        </template>
+        <el-empty v-else description="当前筛选无落图客户，请切换广东分区或执行扫楼雷达" />
+      </aside>
+    </div>
+
+    <!-- 三层下钻抽屉（L1 核心结论 -> L2 判据列表 -> L3 五联物证） -->
     <el-drawer
       v-model="drill.visible"
       :title="activeDrillCard ? `下钻溯源 · ${activeDrillCard.title}` : '下钻溯源'"
@@ -275,118 +531,291 @@
         <div class="drill-box">
           <span class="layer-chip">L1 评级结论</span>
           <h3 style="margin: 6px 0">{{ urgencyDrawer.row.name }} · {{ urgencyDrawer.row.urgencyLevel }}级</h3>
-          <div class="sub-note">{{ urgencyDrawer.row.urgencyReason || '公海标准线索，待首通电话核实' }}</div>
+          <div class="sub-note">{{ urgencyDrawer.row.urgencyReason || '广东公海标准储备线索，待首通核实' }}</div>
         </div>
         <div class="drill-box">
           <span class="layer-chip">L3 原始物证快照</span>
           <div class="sub-note" style="margin-top: 6px">
-            <code>seaSource={{ urgencyDrawer.row.seaSource }}, category={{ urgencyDrawer.row.category || '—' }}, estDailyOrders={{ urgencyDrawer.row.estDailyOrders ?? '—' }}, logisticsScore={{ urgencyDrawer.row.logisticsScore ?? '—' }}</code>
+            <code>zone={{ urgencyDrawer.row.zoneCode || 'GZ' }}, seaSource={{ urgencyDrawer.row.seaSource }}, category={{ urgencyDrawer.row.category || '—' }}, estDailyOrders={{ urgencyDrawer.row.estDailyOrders ?? '—' }}, logisticsScore={{ urgencyDrawer.row.logisticsScore ?? '—' }}</code>
           </div>
         </div>
       </div>
     </el-drawer>
 
-    <!-- 客户公海档案、首通核实纪要与多仓价卡比价抽屉 -->
-    <el-drawer v-model="touchDrawer.visible" :title="touchDrawer.row?.name || '公海跟进与比价'" size="min(640px, 94vw)" append-to-body>
-      <div v-if="touchDrawer.row" class="drill-body">
-        <el-descriptions :column="1" border size="small">
-          <el-descriptions-item label="货主 / 网店">{{ touchDrawer.row.name }}（{{ touchDrawer.row.shopName || '未填网店' }}）</el-descriptions-item>
-          <el-descriptions-item label="联系方式">{{ touchDrawer.row.contact || '负责人' }} · {{ touchDrawer.row.phone }}</el-descriptions-item>
-          <el-descriptions-item label="当前卡点">{{ touchDrawer.row.blockNote || '暂无记录' }}</el-descriptions-item>
-          <el-descriptions-item v-if="touchDrawer.row.calcLowPrice" label="算价器参考底价">
-            ¥ {{ touchDrawer.row.calcLowPrice }} ~ ¥ {{ touchDrawer.row.calcHighPrice }} / 单
-          </el-descriptions-item>
-        </el-descriptions>
-
-        <CustomerQuotePanel
-          v-if="touchDrawer.visible && effectiveProjectId"
-          :key="`${effectiveProjectId}/${touchDrawer.row.customerId}`"
-          :customer-id="touchDrawer.row.customerId"
-          :project-id="effectiveProjectId"
-        />
-
-        <el-form v-if="canEdit" label-position="top" style="margin-top: 10px">
-          <el-form-item label="核实后主营类目">
-            <el-input v-model="touchDrawer.category" maxlength="64" placeholder="如：女装服饰 / 美妆个护 / 休闲食品" />
-          </el-form-item>
-          <el-form-item label="核实日均发货单量（单/天）">
-            <el-input-number v-model="touchDrawer.estDailyOrders" :min="0" :max="200000" style="width: 100%" />
-          </el-form-item>
-          <el-form-item label="首通电话核实纪要（保存即解除 72h 超时弹回）" required>
-            <el-input
-              v-model="touchDrawer.note"
-              type="textarea"
-              :rows="3"
-              maxlength="500"
-              show-word-limit
-              placeholder="请记录实际日单量、件重、当前仓库痛点与意向试发时间..."
+    <!-- 客户 360° 全景档案（4页签：工商与失信 / 店铺矩阵 / 高德与打卡足迹 / 多仓价卡比价&首通纪要） -->
+    <el-drawer v-model="detailDrawer.visible" :title="`客户 360° 作战全景 · ${detailDrawer.row?.name || ''}`" size="min(680px, 95vw)" append-to-body>
+      <div v-if="detailDrawer.row" class="drill-body">
+        <el-tabs v-model="detailDrawer.tab">
+          <el-tab-pane label="🏢 工商与失信体检" name="qcc">
+            <el-alert
+              v-if="detailDrawer.row.dishonestCount > 0"
+              type="error"
+              :closable="false"
+              show-icon
+              style="margin-bottom: 12px"
+              :title="`高危风控：该主体命中 ${detailDrawer.row.dishonestCount} 条失信/限高记录，签约仅允许预充值扣费，严禁开放月结账期！`"
             />
-          </el-form-item>
-          <div style="display: flex; gap: 8px; justify-content: flex-end">
-            <el-button @click="touchDrawer.visible = false">关闭</el-button>
-            <el-button type="primary" :loading="touchDrawer.busy" @click="submitFirstTouch">保存首通核实纪要</el-button>
-          </div>
-        </el-form>
+            <el-descriptions :column="2" border size="small">
+              <el-descriptions-item label="企业全称" :span="2">{{ detailDrawer.row.name }}</el-descriptions-item>
+              <el-descriptions-item label="统一信用代码">{{ detailDrawer.row.creditCode || '待企查对齐' }}</el-descriptions-item>
+              <el-descriptions-item label="法定代表人">{{ detailDrawer.row.legalPerson || '待核实' }}</el-descriptions-item>
+              <el-descriptions-item label="注册资本">{{ detailDrawer.row.regCapital || '待核实' }}</el-descriptions-item>
+              <el-descriptions-item label="社保参保人数">{{ detailDrawer.row.insuredCount ?? '—' }} 人</el-descriptions-item>
+              <el-descriptions-item label="广东战区分区">{{ ZONE_NAMES[detailDrawer.row.zoneCode] || detailDrawer.row.zoneCode || '广州战区' }}</el-descriptions-item>
+              <el-descriptions-item label="联系方式">{{ detailDrawer.row.contact || '负责人' }} · {{ detailDrawer.row.phone }}</el-descriptions-item>
+            </el-descriptions>
+          </el-tab-pane>
+
+          <el-tab-pane :label="`🛍️ 店铺矩阵 (${(detailDrawer.row.shops || []).length})`" name="shops">
+            <div v-if="(detailDrawer.row.shops || []).length" class="drill-body">
+              <div v-for="(s, idx) in detailDrawer.row.shops" :key="idx" class="drill-box">
+                <div class="drill-box-head">
+                  <b>{{ s.platform }} · {{ s.shopName }}</b>
+                  <el-tag v-if="s.rankNo" size="small" type="warning">类目榜 #{{ s.rankNo }}</el-tag>
+                </div>
+                <div class="sub-note" style="margin-top: 4px">
+                  <span v-if="s.monthlySales">近30天销量约 {{ s.monthlySales }} 单 · </span>
+                  <span v-if="s.logisticsScore">物流体验分 {{ s.logisticsScore }}</span>
+                  <span v-else>同一营业执照关联电商店铺</span>
+                </div>
+              </div>
+            </div>
+            <el-empty v-else description="当前主体暂无关联线上店铺明细" />
+          </el-tab-pane>
+
+          <el-tab-pane label="📍 高德位置与打卡足迹" name="checkin">
+            <div class="drill-box" style="margin-bottom: 12px">
+              <div><b>标准详细地址</b>：{{ detailDrawer.row.address || '待补充详细门牌' }}</div>
+              <div class="sub-note" style="margin-top: 4px">
+                GCJ-02 坐标：{{ detailDrawer.row.lng || '—' }}, {{ detailDrawer.row.lat || '—' }}
+                <span v-if="detailDrawer.row.distNearestWhKm != null"> · 距{{ detailDrawer.row.nearestWhName || '本园云仓' }} {{ detailDrawer.row.distNearestWhKm }}km</span>
+              </div>
+              <div style="margin-top: 8px; display: flex; gap: 8px; flex-wrap: wrap">
+                <el-button size="small" type="primary" plain @click="openSingleAmapNav(detailDrawer.row)">🧭 高德导航去现场</el-button>
+                <el-button v-if="canEdit" size="small" type="success" @click="openCheckinDialog(detailDrawer.row)">📸 立即提交 500m 现场打卡</el-button>
+              </div>
+            </div>
+
+            <div class="row-title" style="margin-bottom: 8px">历史现场 GPS 实拍打卡留痕</div>
+            <div v-if="detailDrawer.checkins.length" class="drill-body">
+              <div v-for="ck in detailDrawer.checkins" :key="ck.id" class="drill-box">
+                <div class="drill-box-head">
+                  <b>{{ ck.operator }} · 距客户坐标 {{ ck.distanceMeters }}m</b>
+                  <el-tag type="success" size="small">延保至 {{ String(ck.protectedUntil || '').slice(0, 10) }}</el-tag>
+                </div>
+                <div class="sub-note" style="margin-top: 4px">纪要：{{ ck.visitNote }}</div>
+                <div class="sub-note">实拍凭证：<code>{{ ck.photoUrl }}</code> · {{ ck.createdAt }}</div>
+              </div>
+            </div>
+            <div v-else class="sub-note">暂无现场 GPS 打卡记录（到达客户门头 ≤500m 拍照打卡可解锁 15 天深度保护期）。</div>
+          </el-tab-pane>
+
+          <el-tab-pane label="💰 多仓比价 & 首通纪要" name="quote">
+            <CustomerQuotePanel
+              v-if="detailDrawer.visible && effectiveProjectId"
+              :key="`${effectiveProjectId}/${detailDrawer.row.customerId}`"
+              :customer-id="detailDrawer.row.customerId"
+              :project-id="effectiveProjectId"
+            />
+            <el-form v-if="canEdit" label-position="top" style="margin-top: 12px">
+              <el-form-item label="核实后主营类目">
+                <el-input v-model="detailDrawer.category" maxlength="64" placeholder="如：个人洗护 / 女装服饰 / 数码小家电" />
+              </el-form-item>
+              <el-form-item label="核实日均发货单量（单/天）">
+                <el-input-number v-model="detailDrawer.estDailyOrders" :min="0" :max="200000" style="width: 100%" />
+              </el-form-item>
+              <el-form-item label="电销首通核实纪要（保存即解除 72h 超时自动弹回）" required>
+                <el-input
+                  v-model="detailDrawer.note"
+                  type="textarea"
+                  :rows="3"
+                  maxlength="500"
+                  show-word-limit
+                  placeholder="记录实际日单量、件重、当前发货痛点与约看仓时间..."
+                />
+              </el-form-item>
+              <div style="display: flex; gap: 8px; justify-content: flex-end">
+                <el-button @click="detailDrawer.visible = false">关闭</el-button>
+                <el-button type="primary" :loading="detailDrawer.busy" @click="submitFirstTouch">保存首通核实纪要</el-button>
+              </div>
+            </el-form>
+          </el-tab-pane>
+        </el-tabs>
       </div>
     </el-drawer>
 
-    <!-- Excel / 名单三道闸防撞清洗导入弹窗 -->
-    <el-dialog v-model="washDialog.visible" title="外部数据源导入与三道闸防撞洗数" width="min(620px, 94vw)">
+    <!-- 弹窗 1：类目 TOP500 店铺榜自动企查对齐 + 广东定向省钱锁洗数入池 -->
+    <el-dialog v-model="washDialog.visible" title="🏆 类目 TOP500 店铺榜自动对齐 & 三道防撞洗数" width="min(650px, 95vw)">
       <el-alert
-        type="info"
+        type="success"
         :closable="false"
         show-icon
-        title="入库前强制自动执行三道防撞闸：① 撞 90 天在锁私海跳过护客；② 撞加盟云仓 AES+HMAC 保密老客跳过；③ 剔除关联 >3 家企业的代账财务重号。"
+        title="省钱与护客双流水线：① 外省主体自动跳过免扣API费 → ② 命中30天本地工商缓存0扣费 → ③ 护90天私海、护云仓HMAC老客、剔代账重号。"
       />
       <el-form label-position="top" style="margin-top: 14px">
-        <el-form-item label="数据源渠道标签">
+        <el-form-item label="榜单/名单来源渠道">
           <el-select v-model="washDialog.seaSource" style="width: 100%">
-            <el-option value="CHANMAMA" label="🎯 蝉妈妈/考古加低物流分 + 探迹实名表" />
-            <el-option value="TUNGEE_JOB" label="📦 探迹“正在招打包工”特征名单" />
-            <el-option value="PARK_CRM" label="🏢 展会参展名录 / 园区物业调剂名单" />
-            <el-option value="MANUAL_IMPORT" label="📋 其他合规拓客名单" />
+            <el-option value="CHANMAMA" label="🏆 蝉妈妈/考古加/电霸 类目TOP500店铺榜（支持无手机号自动企查对齐）" />
+            <el-option value="TUNGEE_JOB" label="📦 探迹/BOSS直聘“正在招打包工”广东企业表" />
+            <el-option value="PARK_CRM" label="🏢 广州美博会/展会名录 & 园区调剂名单" />
+            <el-option value="MANUAL_IMPORT" label="📋 其他广东产业带拓客名单" />
           </el-select>
         </el-form-item>
 
         <el-radio-group v-model="washDialog.mode" style="margin-bottom: 12px">
-          <el-radio-button value="file">上传 Excel / CSV 文件</el-radio-button>
-          <el-radio-button value="paste">快捷粘贴文本名单</el-radio-button>
+          <el-radio-button value="paste">快捷粘贴榜单/名单</el-radio-button>
+          <el-radio-button value="file">上传 Excel / CSV 表格</el-radio-button>
         </el-radio-group>
 
-        <el-form-item v-if="washDialog.mode === 'file'" label="选择标准表格文件（表头含：企业名/店铺名、手机号、类目、日均单量、物流分）">
+        <el-form-item v-if="washDialog.mode === 'file'" label="选择表格文件（支持表头：店铺名、公司名、平台、手机号、类目、月销/日均单量、物流分、地址/地区）">
           <input type="file" accept=".xlsx,.xls,.csv" @change="onPickWashFile" />
         </el-form-item>
-        <el-form-item v-else label="每行一条：企业名称,手机号,类目,日均单量,物流分（逗号分隔）">
+        <el-form-item v-else label="每行一条：企业或店铺名,手机号(可留空),类目,日均单量,物流分,广东地址">
           <el-input
             v-model="washDialog.pasteText"
             type="textarea"
             :rows="5"
-            placeholder="杭州衣恋服饰有限公司,13857198821,女装服饰,1200,4.42&#10;湖州肌研生物科技,13967203319,美妆个护,950,4.48"
+            placeholder="广州白云悦颜生物科技有限公司,13826019920,个人洗护,1350,4.43,广州市白云区嘉禾望岗美妆电商大厦9楼&#10;杭州四季青某服饰店,13957102211,女装服饰,900,4.51,浙江省杭州市上城区"
           />
         </el-form-item>
       </el-form>
 
       <div v-if="washDialog.preview" class="wash-result-box">
-        <div><b>预检批次统计（总计 {{ washDialog.preview.totalRows }} 行）</b>：</div>
+        <div><b>洗数与省钱对账结果（总计 {{ washDialog.preview.totalRows }} 行）</b>：</div>
         <div class="wash-stats-grid">
+          <div>💰 外省锁自动跳过省钱：<b>{{ washDialog.preview.skippedOutProvince || 0 }}</b> 行</div>
+          <div>⚡ 命中30天本地缓存：<b>{{ washDialog.preview.qccCacheHits || 0 }}</b> 次</div>
           <div>🛡️ 护在锁私海拦截：<b>{{ washDialog.preview.blockedPrivateLock }}</b> 行</div>
           <div>🔐 护云仓 HMAC 老客：<b>{{ washDialog.preview.blockedWhHmac }}</b> 行</div>
-          <div>🧹 剔除代账重号/冷宫：<b>{{ washDialog.preview.blockedDupAgency }}</b> 行</div>
-          <div class="ok-text">✅ 干净净增可入公海：<b>{{ washDialog.preview.insertedRows }}</b> 户</div>
+          <div>🧹 剔除代账重号/无号：<b>{{ washDialog.preview.blockedDupAgency }}</b> 行</div>
+          <div class="ok-text">✅ 广东净增可入公海：<b>{{ washDialog.preview.insertedRows }}</b> 户</div>
         </div>
       </div>
 
       <template #footer>
         <el-button :disabled="washDialog.busy" @click="washDialog.visible = false">取消</el-button>
-        <el-button :loading="washDialog.busy" @click="submitWash(true)">先预检防撞结果</el-button>
+        <el-button :loading="washDialog.busy" @click="submitWash(true)">先预检省钱与防撞结果</el-button>
         <el-button type="primary" :loading="washDialog.busy" @click="submitWash(false)">确认洗数入池</el-button>
       </template>
     </el-dialog>
 
-    <!-- 定向投喂加盟云仓限时认领池弹窗 -->
-    <el-dialog v-model="feedDialog.visible" title="定向投喂至加盟云仓限时认领池" width="min(520px, 94vw)">
+    <!-- 弹窗 2：单店名称反查背后广东公司并入池 -->
+    <el-dialog v-model="shopDialog.visible" title="🛍️ 输入网店名 → 反查广东工商主体与地址入池" width="min(520px, 94vw)">
+      <el-form label-position="top">
+        <el-form-item label="所属电商平台">
+          <el-select v-model="shopDialog.platform" style="width: 100%">
+            <el-option value="抖音" label="抖音小店" />
+            <el-option value="天猫" label="天猫 / 淘宝皇冠店" />
+            <el-option value="拼多多" label="拼多多旗舰店" />
+            <el-option value="1688" label="1688 广东源头厂店" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="网店名称或经营主体关键词" required>
+          <el-input v-model="shopDialog.shopName" placeholder="例如：广州悦颜洗护旗舰店" clearable />
+        </el-form-item>
+        <el-form-item label="主营类目">
+          <el-input v-model="shopDialog.category" placeholder="如：个人洗护 / 女装服饰 / 休闲食品" />
+        </el-form-item>
+        <el-checkbox v-model="shopDialog.forceUnlockRegion">特批解锁外省主体（默认仅对齐广东省内主体）</el-checkbox>
+      </el-form>
+      <template #footer>
+        <el-button :disabled="shopDialog.busy" @click="shopDialog.visible = false">取消</el-button>
+        <el-button type="primary" :loading="shopDialog.busy" @click="submitShopLookup">穿透防撞并入池</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 弹窗 3：高德周边 10km 广东电商园/商圈 POI 扫楼雷达 -->
+    <el-dialog v-model="radarDialog.visible" title="📡 高德周边 10km 广东商圈 POI 扫楼雷达（0元免费配额）" width="min(540px, 94vw)">
+      <el-form label-position="top">
+        <el-form-item label="选择广东核心电商产业带中心锚点">
+          <el-select v-model="radarDialog.hubKey" style="width: 100%" @change="onPickRadarHub">
+            <el-option v-for="h in GD_RADAR_HUBS" :key="h.key" :value="h.key" :label="h.label" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="扫描半径（米）">
+          <el-input-number v-model="radarDialog.radiusMeters" :min="1000" :max="30000" :step="1000" style="width: 100%" />
+        </el-form-item>
+        <el-form-item label="高德 POI 行业关键词（竖线分隔）">
+          <el-input v-model="radarDialog.keywords" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button :disabled="radarDialog.busy" @click="radarDialog.visible = false">取消</el-button>
+        <el-button type="warning" :loading="radarDialog.busy" @click="submitAmapRadar">启动周边扫楼入池</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 弹窗 4：外勤现场 500m GPS 定位 + 门头实拍打卡（解锁 15 天深度地推保护） -->
+    <el-dialog v-model="checkinDialog.visible" title="📸 外勤 500m GPS 定位 + 现场实拍打卡（延保15天）" width="min(540px, 95vw)">
+      <div v-if="checkinDialog.row">
+        <div class="drill-box" style="margin-bottom: 12px">
+          <div><b>拜访目标</b>：{{ checkinDialog.row.name }}</div>
+          <div class="sub-note">目标地址：{{ checkinDialog.row.address || '首次打卡将自动锚定客户门头坐标' }}</div>
+          <div style="margin-top: 8px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap">
+            <el-button size="small" type="primary" plain @click="locateBrowserGps">📍 获取手机实时 GPS</el-button>
+            <el-button
+              v-if="checkinDialog.row.lng && checkinDialog.row.lat"
+              size="small"
+              data-testid="btn-mock-near-gps"
+              @click="useMockFieldGps(true)"
+            >
+              模拟已到门头(约45m)
+            </el-button>
+            <el-button
+              v-if="checkinDialog.row.lng && checkinDialog.row.lat"
+              size="small"
+              data-testid="btn-mock-far-gps"
+              @click="useMockFieldGps(false)"
+            >
+              模拟异地超距(约1.5km)
+            </el-button>
+          </div>
+          <div v-if="checkinPreviewMeters != null" style="margin-top: 8px">
+            <el-tag :type="checkinPreviewMeters <= (summaryData.checkinMaxMeters || 500) ? 'success' : 'danger'">
+              实测距目标门头：{{ checkinPreviewMeters }} 米
+              （阈值 ≤ {{ summaryData.checkinMaxMeters || 500 }} 米）
+            </el-tag>
+          </div>
+        </div>
+
+        <el-form label-position="top">
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px">
+            <el-form-item label="现场经度 (GCJ-02)" required>
+              <el-input v-model="checkinDialog.lng" placeholder="113.xxxxxx" />
+            </el-form-item>
+            <el-form-item label="现场纬度 (GCJ-02)" required>
+              <el-input v-model="checkinDialog.lat" placeholder="23.xxxxxx" />
+            </el-form-item>
+          </div>
+          <el-form-item label="现场门头 / 待揽收快递堆实拍照片路径或上传凭证" required>
+            <el-input v-model="checkinDialog.photoUrl" placeholder="拍照上传或填写现场照片凭证路径，如 /uploads/checkin/door-101.jpg" />
+          </el-form-item>
+          <el-form-item label="当面拜访核实纪要（至少4字）" required>
+            <el-input
+              v-model="checkinDialog.note"
+              type="textarea"
+              :rows="3"
+              maxlength="400"
+              placeholder="如：现场面见林老板，核实门口日发约1400单极兔+圆通，约定周四带样品看番禺一号仓"
+            />
+          </el-form-item>
+        </el-form>
+      </div>
+      <template #footer>
+        <el-button :disabled="checkinDialog.busy" @click="checkinDialog.visible = false">取消</el-button>
+        <el-button type="success" :loading="checkinDialog.busy" data-testid="btn-submit-checkin" @click="submitCheckin">
+          提交打卡并解锁 {{ summaryData.visitProtectDays || 15 }} 天保护期
+        </el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 定向投喂加盟云仓限时认领池弹窗（支持单户与批量） -->
+    <el-dialog v-model="feedDialog.visible" title="🏭 定向投喂至加盟云仓限时认领池" width="min(520px, 94vw)">
       <p class="sub-note" style="margin-top: 0">
-        将「<b>{{ feedDialog.row?.name }}</b>」开放给已上线加盟云仓主账号限时认领（认领前隐藏客户电话，认领后 {{ summaryData.slaHours || 72 }}h 内须回填接洽结果，成单免 70% 外部佣金）：
+        将
+        <b v-if="feedDialog.batchIds.length">所勾选的 {{ feedDialog.batchIds.length }} 户广东货主</b>
+        <b v-else>「{{ feedDialog.row?.name }}」</b>
+        开放给已上线加盟云仓主账号限时认领（认领前隐藏电话，认领后 {{ summaryData.slaHours || 72 }}h 内须回填接洽结果，成单免 70% 外部佣金）：
       </p>
       <el-form label-position="top">
         <el-form-item label="限定可认领云仓（留空表示开放给本园区全部已上线云仓）">
@@ -395,7 +824,7 @@
           </el-select>
         </el-form-item>
         <el-form-item label="给云仓的货盘与卡点提示">
-          <el-input v-model="feedDialog.note" type="textarea" :rows="3" maxlength="400" placeholder="如：日均 1200 单女装，急需下周 500 件爆款试发..." />
+          <el-input v-model="feedDialog.note" type="textarea" :rows="3" maxlength="400" placeholder="如：日均 1200 单个人洗护，需气泡柱防漏打包与下周试发..." />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -421,7 +850,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { hasPermission } from '@/utils/permission'
@@ -435,9 +864,36 @@ const projectStore = useProjectStore()
 const canEdit = computed(() => hasPermission('crm:marketing:public-sea:edit') || hasPermission('crm:marketing:customer:edit'))
 const effectiveProjectId = computed(() => projectStore.currentProjectId || null)
 
+const GD_ZONES = [
+  { code: 'ALL_GD', label: '广东全境' },
+  { code: 'GZ', label: '广州·白云美妆/番禺女装' },
+  { code: 'DG', label: '东莞·虎门鞋服/大朗毛织' },
+  { code: 'FS', label: '佛山·顺德小家电/南海内衣' },
+  { code: 'SZ', label: '深圳·龙岗数码跨境' },
+  { code: 'YD', label: '粤东·普宁内衣/澄海玩具' }
+]
+const ZONE_NAMES = {
+  GZ: '广州战区',
+  DG: '东莞战区',
+  FS: '佛山战区',
+  SZ: '深圳战区',
+  YD: '粤东战区',
+  OTHER_GD: '广东其他战区',
+  OUT_GD: '外省主体'
+}
+const GD_RADAR_HUBS = [
+  { key: 'gz_by', label: '广州白云 · 嘉禾望岗/均禾美妆直播带', lng: 113.28561, lat: 23.22481, kw: '化妆品有限公司|美妆直播基地|电子商务园' },
+  { key: 'gz_py', label: '广州番禺 · 南村万博/大石女装电商带', lng: 113.34862, lat: 23.02854, kw: '服饰有限公司|女装直播基地|服装电商大厦' },
+  { key: 'dg_hm', label: '东莞虎门 · 博涌服装城/鞋服供应链带', lng: 113.67312, lat: 22.82195, kw: '服装电子商务|鞋服供应链|电商产业园' },
+  { key: 'fs_sd', label: '佛山顺德 · 北滘小家电/南海内衣带', lng: 113.21684, lat: 22.93218, kw: '电器电子商务|小家电有限公司|内衣电商园' },
+  { key: 'sz_lg', label: '深圳龙岗 · 坂田/华南城3C数码电商带', lng: 114.06521, lat: 22.65842, kw: '数码电子商务|科技供应链|跨境电商园' }
+]
+
 const SOURCE_LABELS = {
   CALC_HOT: '🔥 30秒算价留资',
-  CHANMAMA: '🎯 蝉妈妈+探迹',
+  FEIYU_AD: '📣 巨量飞鱼Webhook',
+  AMAP_POI: '📡 高德POI扫楼',
+  CHANMAMA: '🏆 榜单企查对齐',
   TUNGEE_JOB: '📦 招打包工库',
   EXPIRE_RETURN: '♻️ 伙伴超期回流',
   PARK_CRM: '🏢 园区/云仓调剂',
@@ -451,6 +907,10 @@ const CLAIM_LABELS = {
 }
 const URGENCY_TEXT = { S: '急迫', A: '高潜', B: '储备' }
 
+const viewMode = ref('list')
+const routePreviewOn = ref(false)
+const activeMapCustomerId = ref(null)
+const selectedRows = ref([])
 const summaryData = ref({})
 const list = ref([])
 const total = ref(0)
@@ -458,13 +918,39 @@ const loading = ref(false)
 const loadError = ref('')
 const onlineWarehouses = ref([])
 
+const connectors = computed(() => summaryData.value?.connectors || {})
+const showConnectorHint = computed(() => {
+  const c = connectors.value
+  return c && Object.keys(c).length > 0 && (!c.amapWebConfigured || !c.qccConfigured)
+})
+
 const query = reactive({
+  zoneCode: 'ALL_GD',
   seaSource: 'ALL',
   claimStatus: 'ALL',
+  distFilter: 'ALL',
+  platform: 'ALL',
+  riskFilter: 'ALL',
   keyword: '',
   pageNo: 1,
   pageSize: 20
 })
+
+function zoneCountText(code) {
+  const zc = summaryData.value?.zoneCounts
+  if (!zc || typeof zc !== 'object') return ''
+  if (code === 'ALL_GD') {
+    const sum = Object.entries(zc).reduce((acc, [k, v]) => (k === 'OUT_GD' ? acc : acc + Number(v || 0)), 0)
+    return sum > 0 ? String(sum) : ''
+  }
+  const n = Number(zc[code] || 0)
+  return n > 0 ? String(n) : ''
+}
+
+function selectZone(code) {
+  query.zoneCode = code
+  search()
+}
 
 const analysisCards = computed(() => buildPublicSeaDrilldownCards(summaryData.value))
 const drill = reactive({ visible: false, key: 'pool' })
@@ -488,6 +974,14 @@ function runDrillAction(ev) {
   drill.visible = false
   if (ev.toPath) { router.push(ev.toPath); return }
   if (ev.openImport) { openWashDialog(); return }
+  if (ev.switchMap5km) {
+    query.distFilter = '5KM'
+    viewMode.value = 'map'
+    search()
+    return
+  }
+  if (ev.filterDist) { query.distFilter = ev.filterDist; search(); return }
+  if (ev.filterRisk) { query.riskFilter = ev.filterRisk; search(); return }
   if (ev.filterSource) { query.seaSource = ev.filterSource; query.claimStatus = 'ALL'; search(); return }
   if (ev.filterClaimStatus) { query.claimStatus = ev.filterClaimStatus; query.seaSource = 'ALL'; search() }
 }
@@ -496,6 +990,125 @@ function claimTagType(row) {
   if (row.claimStatus === 'UNCLAIMED') return 'primary'
   if (!row.firstTouchedAt && row.hoursLeft != null && row.hoursLeft <= 12) return 'warning'
   return 'success'
+}
+
+// 地图锚点投影（将广东经纬度映射为战术地图画布百分比坐标；无经纬度时按客户ID确定性分布）
+const mapPins = computed(() => {
+  const rows = list.value
+  if (!rows.length) return []
+  return rows.slice(0, 30).map((row, idx) => {
+    const lng = Number(row.lng)
+    const lat = Number(row.lat)
+    let x = 22 + ((idx * 19) % 58)
+    let y = 24 + ((idx * 23) % 54)
+    if (Number.isFinite(lng) && Number.isFinite(lat) && lng > 108 && lat > 20) {
+      // 以广州/珠三角轴心 (113.35, 23.03) 做比例缩放并钳位在可视画布内
+      x = Math.max(14, Math.min(86, Math.round(48 + (lng - 113.35) * 42)))
+      y = Math.max(16, Math.min(84, Math.round(50 - (lat - 23.03) * 58)))
+    }
+    return { row, x, y }
+  })
+})
+
+const activeMapRow = computed(() => {
+  if (!list.value.length) return null
+  return list.value.find(r => r.customerId === activeMapCustomerId.value) || list.value[0]
+})
+
+const routePolylinePoints = computed(() => {
+  const pts = [{ x: 48, y: 50 }, ...mapPins.value.slice(0, 5)]
+  return pts.map(p => `${p.x},${p.y}`).join(' ')
+})
+
+function shortName(s) {
+  const t = String(s || '').replace(/^(广东省|广州市|东莞市|深圳市|佛山市|揭阳市)/, '')
+  return t.length > 8 ? `${t.slice(0, 8)}…` : t
+}
+
+function switchToMapView() {
+  viewMode.value = 'map'
+  if (!activeMapCustomerId.value && list.value.length) {
+    activeMapCustomerId.value = list.value[0].customerId
+  }
+  if (connectors.value.amapJsConfigured && connectors.value.amapJsKey) {
+    nextTick(() => mountRealAmapIfConfigured())
+  }
+}
+
+function focusRowOnMap(row) {
+  activeMapCustomerId.value = row.customerId
+  switchToMapView()
+}
+
+function mountRealAmapIfConfigured() {
+  const key = connectors.value.amapJsKey
+  const el = document.getElementById('gd-amap-real-canvas')
+  if (!key || !el || typeof window === 'undefined') return
+  const render = () => {
+    if (!window.AMap) return
+    const center = activeMapRow.value?.lng && activeMapRow.value?.lat
+      ? [Number(activeMapRow.value.lng), Number(activeMapRow.value.lat)]
+      : [113.34862, 23.02854]
+    const map = new window.AMap.Map(el, { zoom: 12, center })
+    list.value.forEach(r => {
+      if (r.lng && r.lat) {
+        const marker = new window.AMap.Marker({
+          position: [Number(r.lng), Number(r.lat)],
+          title: r.name
+        })
+        marker.on('click', () => { activeMapCustomerId.value = r.customerId })
+        map.add(marker)
+      }
+    })
+  }
+  if (window.AMap) { render(); return }
+  if (!document.getElementById('amap-js-sdk')) {
+    const sc = document.createElement('script')
+    sc.id = 'amap-js-sdk'
+    sc.src = `https://webapi.amap.com/maps?v=2.0&key=${encodeURIComponent(key)}`
+    sc.onload = render
+    document.head.appendChild(sc)
+  }
+}
+
+function onSelectionChange(rows) {
+  selectedRows.value = rows || []
+}
+
+function buildAmapSingleUri(row) {
+  const name = encodeURIComponent(row.address || row.name || '广东目标客户')
+  if (row.lng && row.lat) {
+    return `https://uri.amap.com/marker?position=${row.lng},${row.lat}&name=${name}&callnative=1`
+  }
+  return `https://uri.amap.com/search?keyword=${name}&city=${encodeURIComponent(row.city || '广州')}&callnative=1`
+}
+
+function openSingleAmapNav(row) {
+  const uri = buildAmapSingleUri(row)
+  ElMessage.success(`已生成「${row.name}」高德导航指令：${row.address || row.city || '广东战区'}`)
+  if (typeof window !== 'undefined' && window.navigator?.clipboard?.writeText) {
+    window.navigator.clipboard.writeText(uri).catch(() => {})
+  }
+}
+
+function openAmapBatchRoute() {
+  const rows = selectedRows.value
+  if (!rows.length) return
+  const dest = rows[rows.length - 1]
+  const vias = rows.slice(0, -1).filter(r => r.lng && r.lat).slice(0, 3)
+  let uri = buildAmapSingleUri(dest)
+  if (dest.lng && dest.lat) {
+    const viaParam = vias.length
+      ? `&via=${vias.map(v => `${v.lng},${v.lat},${encodeURIComponent(shortName(v.name))}`).join('|')}`
+      : ''
+    uri = `https://uri.amap.com/navigation?to=${dest.lng},${dest.lat},${encodeURIComponent(shortName(dest.name))}${viaParam}&mode=car&callnative=1`
+  }
+  if (typeof window !== 'undefined' && window.navigator?.clipboard?.writeText) {
+    window.navigator.clipboard.writeText(uri).catch(() => {})
+  }
+  viewMode.value = 'map'
+  routePreviewOn.value = true
+  ElMessage.success(`已串联 ${rows.length} 站广东顺路拜访路线并复制高德导航链接`)
 }
 
 async function loadSummary() {
@@ -507,14 +1120,21 @@ async function loadPage() {
   try {
     const res = await mktPublicSeaApi.page({
       projectId: effectiveProjectId.value,
+      zoneCode: query.zoneCode,
       seaSource: query.seaSource,
       claimStatus: query.claimStatus,
+      distFilter: query.distFilter,
+      platform: query.platform,
+      riskFilter: query.riskFilter,
       keyword: query.keyword || undefined,
       pageNo: query.pageNo,
       pageSize: query.pageSize
     })
     list.value = res?.records || []
     total.value = Number(res?.total || 0)
+    if (list.value.length && !list.value.some(r => r.customerId === activeMapCustomerId.value)) {
+      activeMapCustomerId.value = list.value[0].customerId
+    }
   } finally {
     loading.value = false
   }
@@ -535,8 +1155,12 @@ function search() {
 }
 
 function resetQuery() {
+  query.zoneCode = 'ALL_GD'
   query.seaSource = 'ALL'
   query.claimStatus = 'ALL'
+  query.distFilter = 'ALL'
+  query.platform = 'ALL'
+  query.riskFilter = 'ALL'
   query.keyword = ''
   search()
 }
@@ -544,9 +1168,9 @@ function resetQuery() {
 async function handleClaim(row) {
   try {
     const res = await mktPublicSeaApi.claim(row.customerId)
-    ElMessage.success(`认领成功，已解锁手机号 ${res.phone || ''}，请于 ${res.hoursLeft || 72}h 内提交首通核实纪要`)
+    ElMessage.success(`认领成功，已解锁电话 ${res.phone || ''}，请于 ${res.hoursLeft || 72}h 内首触达或现场500m打卡`)
     await reloadAll()
-  } catch (e) { /* request.js 已统一弹错 */ }
+  } catch (_) { /* request.js 统一处理报错 */ }
 }
 
 const urgencyDrawer = reactive({ visible: false, row: null })
@@ -555,34 +1179,47 @@ function openUrgencyDrawer(row) {
   urgencyDrawer.visible = true
 }
 
-const touchDrawer = reactive({ visible: false, row: null, category: '', estDailyOrders: 0, note: '', busy: false })
-function openTouchDrawer(row) {
-  touchDrawer.row = row
-  touchDrawer.category = row.category || ''
-  touchDrawer.estDailyOrders = row.estDailyOrders || 0
-  touchDrawer.note = row.firstTouchNote || ''
-  touchDrawer.visible = true
-}
-
-async function submitFirstTouch() {
-  if (!touchDrawer.row || touchDrawer.busy) return
-  touchDrawer.busy = true
-  try {
-    await mktPublicSeaApi.firstTouch(touchDrawer.row.customerId, {
-      note: touchDrawer.note,
-      category: touchDrawer.category,
-      estDailyOrders: touchDrawer.estDailyOrders || undefined
-    })
-    ElMessage.success('首通核实纪要已保存，超时自动弹回预警已解除')
-    touchDrawer.visible = false
-    await reloadAll()
-  } finally {
-    touchDrawer.busy = false
+const detailDrawer = reactive({
+  visible: false, tab: 'qcc', row: null,
+  category: '', estDailyOrders: 0, note: '', checkins: [], busy: false
+})
+async function openDetailDrawer(row, tab = 'qcc') {
+  detailDrawer.row = row
+  detailDrawer.tab = tab
+  detailDrawer.category = row.category || ''
+  detailDrawer.estDailyOrders = row.estDailyOrders || 0
+  detailDrawer.note = row.firstTouchNote || ''
+  detailDrawer.checkins = []
+  detailDrawer.visible = true
+  if (mktPublicSeaApi.checkins) {
+    try {
+      detailDrawer.checkins = (await mktPublicSeaApi.checkins(row.customerId)) || []
+    } catch (_) { detailDrawer.checkins = [] }
   }
 }
 
+async function submitFirstTouch() {
+  if (!detailDrawer.row || detailDrawer.busy) return
+  detailDrawer.busy = true
+  try {
+    await mktPublicSeaApi.firstTouch(detailDrawer.row.customerId, {
+      note: detailDrawer.note,
+      category: detailDrawer.category,
+      estDailyOrders: detailDrawer.estDailyOrders || undefined
+    })
+    ElMessage.success('首通核实纪要已保存，72h 超时自动弹回已解除')
+    detailDrawer.visible = false
+    await reloadAll()
+  } catch (_) {
+    /* request.js 已统一弹出业务错误提示 */
+  } finally {
+    detailDrawer.busy = false
+  }
+}
+
+// 1) 类目 TOP500 店铺榜洗数对齐弹窗
 const washDialog = reactive({
-  visible: false, mode: 'file', seaSource: 'CHANMAMA',
+  visible: false, mode: 'paste', seaSource: 'CHANMAMA',
   file: null, pasteText: '', preview: null, busy: false
 })
 function openWashDialog() {
@@ -598,15 +1235,18 @@ function parsePasteRows(text) {
     .split(/\r?\n/)
     .map(l => l.trim())
     .filter(Boolean)
-    .map(line => {
-      const [name, phone, category, daily, score] = line.split(/[，,\t]/).map(s => s?.trim())
+    .map((line, idx) => {
+      const [name, phone, category, daily, score, addr] = line.split(/[，,\t]/).map(s => s?.trim())
       return {
         name,
         shopName: name,
-        phone,
-        category: category || '综合电商',
+        rankNo: idx + 1,
+        phone: phone || undefined,
+        category: category || '个人洗护',
         estDailyOrders: daily ? Number(daily) : undefined,
-        logisticsScore: score || undefined
+        logisticsScore: score || undefined,
+        address: addr || undefined,
+        region: addr || undefined
       }
     })
 }
@@ -617,7 +1257,7 @@ async function submitWash(dryRun) {
   try {
     let res
     if (washDialog.mode === 'file') {
-      if (!washDialog.file) { ElMessage.warning('请先选择 Excel 或 CSV 名单文件'); return }
+      if (!washDialog.file) { ElMessage.warning('请先选择 Excel 或 CSV 榜单文件'); return }
       const fd = new FormData()
       fd.append('file', washDialog.file)
       res = await mktPublicSeaApi.washFile(fd, {
@@ -627,27 +1267,176 @@ async function submitWash(dryRun) {
       })
     } else {
       const rows = parsePasteRows(washDialog.pasteText)
-      if (!rows.length) { ElMessage.warning('请先输入至少 1 行待清洗名单'); return }
+      if (!rows.length) { ElMessage.warning('请先输入至少 1 行待清洗店铺或企业名单'); return }
       res = await mktPublicSeaApi.washRows({
         projectId: effectiveProjectId.value || undefined,
         seaSource: washDialog.seaSource,
-        fileName: '文本快捷清洗',
+        fileName: '类目TOP500榜单对齐',
         dryRun,
         rows
       })
     }
     washDialog.preview = res
     if (!dryRun) {
-      ElMessage.success(`清洗入池完成：净入公海 ${res.insertedRows} 户（防撞拦截 ${res.totalRows - res.insertedRows} 行）`)
+      ElMessage.success(`入池完成：广东净入 ${res.insertedRows} 户，外省锁省钱跳过 ${res.skippedOutProvince || 0} 行`)
       washDialog.visible = false
       await reloadAll()
     }
+  } catch (_) {
+    /* request.js 已统一弹出业务错误提示 */
   } finally {
     washDialog.busy = false
   }
 }
 
-const feedDialog = reactive({ visible: false, row: null, warehouseIds: [], note: '', busy: false })
+// 2) 单店名反查背后广东公司
+const shopDialog = reactive({
+  visible: false, platform: '抖音', shopName: '', category: '个人洗护', forceUnlockRegion: false, busy: false
+})
+function openShopLookupDialog() {
+  Object.assign(shopDialog, { visible: true, platform: '抖音', shopName: '', category: '个人洗护', forceUnlockRegion: false, busy: false })
+}
+async function submitShopLookup() {
+  if (!shopDialog.shopName.trim()) { ElMessage.warning('请输入要反查的网店名称或企业名称'); return }
+  shopDialog.busy = true
+  try {
+    const res = await mktPublicSeaApi.shopLookup({
+      projectId: effectiveProjectId.value || undefined,
+      platform: shopDialog.platform,
+      shopName: shopDialog.shopName.trim(),
+      category: shopDialog.category,
+      forceUnlockRegion: shopDialog.forceUnlockRegion
+    })
+    if (res.skippedOutProvince > 0) {
+      ElMessage.warning('识别为外省主体，已被广东定向省钱锁自动拦截免扣费（如需入池可勾选特批解锁）')
+    } else if (res.insertedRows > 0) {
+      ElMessage.success(`单店穿透成功，已通过防撞闸写入广东公海池`)
+      shopDialog.visible = false
+      await reloadAll()
+    } else {
+      ElMessage.warning(res.blockedDetails?.[0]?.reason || '该主体命中防撞保护白名单，未重复入池')
+    }
+  } catch (_) {
+    /* request.js 已统一弹出业务错误提示 */
+  } finally {
+    shopDialog.busy = false
+  }
+}
+
+// 3) 高德周边 10km 商圈 POI 扫楼雷达
+const radarDialog = reactive({
+  visible: false, hubKey: 'gz_by', centerLng: 113.28561, centerLat: 23.22481,
+  radiusMeters: 10000, keywords: '化妆品有限公司|美妆直播基地|电子商务园', busy: false
+})
+function openRadarDialog() {
+  onPickRadarHub('gz_by')
+  radarDialog.visible = true
+}
+function onPickRadarHub(k) {
+  const h = GD_RADAR_HUBS.find(item => item.key === k) || GD_RADAR_HUBS[0]
+  radarDialog.hubKey = h.key
+  radarDialog.centerLng = h.lng
+  radarDialog.centerLat = h.lat
+  radarDialog.keywords = h.kw
+}
+async function submitAmapRadar() {
+  if (radarDialog.busy) return
+  radarDialog.busy = true
+  try {
+    const res = await mktPublicSeaApi.amapRadar({
+      projectId: effectiveProjectId.value || undefined,
+      centerLng: radarDialog.centerLng,
+      centerLat: radarDialog.centerLat,
+      radiusMeters: radarDialog.radiusMeters,
+      keywords: radarDialog.keywords
+    })
+    ElMessage.success(`高德周边雷达扫描 ${res.scannedPois || 0} 个 POI，防撞净入公海 ${res.insertedRows || 0} 户`)
+    radarDialog.visible = false
+    await reloadAll()
+  } catch (_) {
+    /* request.js 已统一弹出业务错误提示 */
+  } finally {
+    radarDialog.busy = false
+  }
+}
+
+// 4) 外勤 500m GPS 定位 + 现场实拍打卡（Haversine 实时预检）
+const checkinDialog = reactive({
+  visible: false, row: null, lng: '', lat: '', photoUrl: '', note: '', busy: false
+})
+function openCheckinDialog(row) {
+  Object.assign(checkinDialog, {
+    visible: true,
+    row,
+    lng: row.lng ? String(row.lng) : '113.285610',
+    lat: row.lat ? String(row.lat) : '23.224810',
+    photoUrl: '/uploads/checkin/door-live.jpg',
+    note: '',
+    busy: false
+  })
+}
+function useMockFieldGps(within500m) {
+  if (!checkinDialog.row?.lng || !checkinDialog.row?.lat) return
+  const baseLng = Number(checkinDialog.row.lng)
+  const baseLat = Number(checkinDialog.row.lat)
+  checkinDialog.lng = (baseLng + (within500m ? 0.00032 : 0.0135)).toFixed(6)
+  checkinDialog.lat = (baseLat + (within500m ? 0.00024 : 0.0085)).toFixed(6)
+}
+function locateBrowserGps() {
+  if (typeof navigator === 'undefined' || !navigator.geolocation) {
+    ElMessage.warning('当前环境不支持浏览器定位，可直接填入坐标或点门头校准')
+    return
+  }
+  navigator.geolocation.getCurrentPosition(
+    pos => {
+      checkinDialog.lng = pos.coords.longitude.toFixed(6)
+      checkinDialog.lat = pos.coords.latitude.toFixed(6)
+      ElMessage.success('已读取手机实时定位坐标')
+    },
+    () => ElMessage.warning('定位权限未开启，请开启定位或使用门头坐标校准')
+  )
+}
+
+const checkinPreviewMeters = computed(() => {
+  const r = checkinDialog.row
+  const lng1 = Number(checkinDialog.lng)
+  const lat1 = Number(checkinDialog.lat)
+  const lng2 = Number(r?.lng)
+  const lat2 = Number(r?.lat)
+  if (!Number.isFinite(lng1) || !Number.isFinite(lat1) || !Number.isFinite(lng2) || !Number.isFinite(lat2) || !r?.lng) {
+    return null
+  }
+  const toRad = d => (d * Math.PI) / 180
+  const radLat1 = toRad(lat1)
+  const radLat2 = toRad(lat2)
+  const a = radLat1 - radLat2
+  const b = toRad(lng1 - lng2)
+  const s = 2 * Math.asin(Math.sqrt(Math.sin(a / 2) ** 2 + Math.cos(radLat1) * Math.cos(radLat2) * Math.sin(b / 2) ** 2))
+  return Math.round(s * 6378137)
+})
+
+async function submitCheckin() {
+  if (!checkinDialog.row || checkinDialog.busy) return
+  checkinDialog.busy = true
+  try {
+    const res = await mktPublicSeaApi.visitCheckin(checkinDialog.row.customerId, {
+      checkinLng: checkinDialog.lng,
+      checkinLat: checkinDialog.lat,
+      photoUrl: checkinDialog.photoUrl,
+      note: checkinDialog.note
+    })
+    ElMessage.success(`现场打卡核验通过（偏差 ${res.distanceMeters}m），已解锁 ${res.visitProtectDays || 15} 天深度地推保护！`)
+    checkinDialog.visible = false
+    await reloadAll()
+  } catch (_) {
+    /* request.js 已统一弹出业务错误提示 */
+  } finally {
+    checkinDialog.busy = false
+  }
+}
+
+// 5) 单户与批量投喂加盟云仓
+const feedDialog = reactive({ visible: false, row: null, batchIds: [], warehouseIds: [], note: '', busy: false })
 async function ensureWarehousesLoaded() {
   if (onlineWarehouses.value.length) return
   try {
@@ -657,19 +1446,41 @@ async function ensureWarehousesLoaded() {
 }
 async function openFeedDialog(row) {
   await ensureWarehousesLoaded()
-  Object.assign(feedDialog, { visible: true, row, warehouseIds: [], note: row.blockNote || '', busy: false })
+  Object.assign(feedDialog, { visible: true, row, batchIds: [], warehouseIds: [], note: row.blockNote || '', busy: false })
+}
+async function openBatchFeedDialog() {
+  await ensureWarehousesLoaded()
+  Object.assign(feedDialog, {
+    visible: true,
+    row: null,
+    batchIds: selectedRows.value.map(r => r.customerId),
+    warehouseIds: [],
+    note: '广东同产业带集中开放认领',
+    busy: false
+  })
 }
 async function submitFeed() {
-  if (!feedDialog.row || feedDialog.busy) return
+  if (feedDialog.busy) return
   feedDialog.busy = true
   try {
-    await mktPublicSeaApi.feedWarehouses(feedDialog.row.customerId, {
-      warehouseIds: feedDialog.warehouseIds,
-      note: feedDialog.note
-    })
-    ElMessage.success('已定向投喂至加盟云仓限时认领池')
+    if (feedDialog.batchIds.length) {
+      await mktPublicSeaApi.batchFeedWarehouses({
+        customerIds: feedDialog.batchIds,
+        warehouseIds: feedDialog.warehouseIds,
+        note: feedDialog.note
+      })
+      ElMessage.success(`已将 ${feedDialog.batchIds.length} 户货主批量投喂至加盟云仓限时认领池`)
+    } else if (feedDialog.row) {
+      await mktPublicSeaApi.feedWarehouses(feedDialog.row.customerId, {
+        warehouseIds: feedDialog.warehouseIds,
+        note: feedDialog.note
+      })
+      ElMessage.success('已定向投喂至加盟云仓限时认领池')
+    }
     feedDialog.visible = false
     await reloadAll()
+  } catch (_) {
+    /* request.js 已统一弹出业务错误提示 */
   } finally {
     feedDialog.busy = false
   }
@@ -690,6 +1501,8 @@ async function submitRelease() {
     ElMessage.success(releaseDialog.archiveCold ? '已归档至冷宫库' : '已释放回公海待认领池')
     releaseDialog.visible = false
     await reloadAll()
+  } catch (_) {
+    /* request.js 已统一弹出业务错误提示 */
   } finally {
     releaseDialog.busy = false
   }
@@ -700,31 +1513,127 @@ onMounted(reloadAll)
 </script>
 
 <style scoped>
+.connector-honest-bar {
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  color: #92400e;
+  border-radius: 8px;
+  padding: 8px 14px;
+  margin-bottom: 10px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 12.5px;
+}
 .sea-banner {
   background: linear-gradient(90deg, #eff6ff, #f8fafc);
   border: 1px solid #bfdbfe;
   color: #1e3a8a;
   border-radius: 10px;
-  padding: 12px 16px;
-  margin-bottom: 14px;
+  padding: 10px 14px;
+  margin-bottom: 10px;
   display: flex;
   flex-wrap: wrap;
   justify-content: space-between;
   align-items: center;
   gap: 10px;
-  font-size: 13px;
+}
+.sea-banner-left {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.sea-banner-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.view-mode-seg {
+  display: inline-flex;
+  background: #dbeafe;
+  padding: 3px;
+  border-radius: 8px;
+  gap: 3px;
+}
+.seg-btn {
+  border: 0;
+  background: transparent;
+  color: #1e3a8a;
+  padding: 5px 11px;
+  border-radius: 6px;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.seg-btn.active {
+  background: #2563eb;
+  color: #fff;
+}
+.gd-lock-badge {
+  background: #dcfce7;
+  color: #166534;
+  border: 1px solid #bbf7d0;
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.gd-zone-bar {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 8px 12px;
+  margin-bottom: 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.gd-zone-buttons {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.gd-zone-title {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #1e3a8a;
+}
+.zone-chip {
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  color: #334155;
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.zone-chip.active {
+  background: #2563eb;
+  border-color: #2563eb;
+  color: #fff;
+  font-weight: 600;
+}
+.zone-cnt {
+  margin-left: 3px;
+  opacity: 0.88;
 }
 .analysis-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
-  margin-bottom: 14px;
+  margin-bottom: 12px;
 }
 .analysis-card {
   background: #fff;
   border: 1px solid var(--el-border-color-lighter, #e2e8f0);
   border-radius: 10px;
-  padding: 14px 16px;
+  padding: 13px 15px;
 }
 .analysis-head {
   display: flex;
@@ -747,6 +1656,7 @@ onMounted(reloadAll)
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
+  white-space: nowrap;
 }
 .analysis-main {
   display: flex;
@@ -756,7 +1666,7 @@ onMounted(reloadAll)
   flex-wrap: wrap;
 }
 .analysis-value {
-  font-size: 24px;
+  font-size: 22px;
   font-weight: 800;
   color: #0f172a;
 }
@@ -765,7 +1675,67 @@ onMounted(reloadAll)
   color: #64748b;
   line-height: 1.5;
 }
+.batch-action-bar {
+  margin-top: 8px;
+  padding: 8px 12px;
+  background: #ecfdf5;
+  border: 1px solid #a7f3d0;
+  border-radius: 8px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 12.5px;
+  color: #065f46;
+}
+.batch-btns { display: flex; gap: 8px; flex-wrap: wrap; }
 .row-title { font-weight: 600; color: #0f172a; }
+.link-title { color: #1d4ed8; cursor: pointer; }
+.link-title:hover { text-decoration: underline; }
+.tag-inline-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 4px;
+}
+.shop-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.shop-chip {
+  display: inline-block;
+  font-size: 11.5px;
+  padding: 1px 7px;
+  border-radius: 6px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  border: 1px solid #bfdbfe;
+}
+.shop-chip[data-plat="抖音"] { background: #fff1f2; color: #be123c; border-color: #fecdd3; }
+.shop-chip[data-plat="天猫"] { background: #fffbeb; color: #b45309; border-color: #fde68a; }
+.shop-chip[data-plat="拼多多"] { background: #f5f3ff; color: #6d28d9; border-color: #ddd6fe; }
+.addr-line { font-size: 12.5px; color: #1e293b; }
+.geo-pill {
+  border: 1px solid #bfdbfe;
+  background: #eff6ff;
+  color: #1d4ed8;
+  border-radius: 6px;
+  padding: 2px 7px;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.cluster-pill {
+  background: #f5f3ff;
+  color: #6d28d9;
+  border: 1px solid #ddd6fe;
+  border-radius: 6px;
+  padding: 2px 7px;
+  font-size: 11.5px;
+  font-weight: 600;
+}
 .ok-text { color: #16a34a; font-weight: 600; }
 .warn-text { color: #d97706; font-weight: 600; }
 .urgency-pill {
@@ -773,7 +1743,7 @@ onMounted(reloadAll)
   background: #fffbeb;
   color: #b45309;
   border-radius: 999px;
-  padding: 2px 10px;
+  padding: 2px 9px;
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
@@ -783,6 +1753,147 @@ onMounted(reloadAll)
   background: #fff1f2;
   color: #e11d48;
 }
+.row-action-col { display: flex; flex-direction: column; gap: 5px; }
+.row-action-line { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+
+/* 广东高德地推地图视图 */
+.map-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: 12px;
+  min-height: 480px;
+}
+.map-canvas-wrap {
+  position: relative;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid #cbd5e1;
+  min-height: 460px;
+  background: #e0f2fe;
+}
+.map-floating-bar {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  right: 12px;
+  z-index: 5;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.amap-real-canvas, .tactical-map-stage {
+  width: 100%;
+  height: 100%;
+  min-height: 460px;
+  position: relative;
+}
+.tactical-map-stage {
+  background:
+    radial-gradient(circle at 48% 50%, rgba(37, 99, 235, 0.1) 0%, transparent 55%),
+    linear-gradient(0deg, rgba(148, 163, 184, 0.16) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(148, 163, 184, 0.16) 1px, transparent 1px),
+    linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 52%, #ecfdf5 100%);
+  background-size: 100% 100%, 36px 36px, 36px 36px, 100% 100%;
+}
+.wh-golden-circle {
+  position: absolute;
+  left: 48%;
+  top: 50%;
+  width: 250px;
+  height: 250px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  border: 2px dashed rgba(37, 99, 235, 0.55);
+  background: rgba(59, 130, 246, 0.08);
+  pointer-events: none;
+}
+.circle-caption {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  font-size: 11px;
+  color: #1d4ed8;
+  font-weight: 600;
+}
+.route-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+.map-pin {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.18);
+  white-space: nowrap;
+}
+.wh-pin {
+  background: #0f172a;
+  color: #fff;
+  z-index: 3;
+}
+.cust-pin {
+  border: 2px solid #fff;
+  background: #2563eb;
+  color: #fff;
+  cursor: pointer;
+  z-index: 4;
+}
+.cust-pin.cluster { background: #7c3aed; }
+.cust-pin.hot { background: #e11d48; }
+.cust-pin.active {
+  outline: 3px solid #f59e0b;
+  transform: translate(-50%, -50%) scale(1.08);
+  z-index: 6;
+}
+.map-honest-foot {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: 8px;
+  background: rgba(255, 255, 255, 0.9);
+  border-radius: 6px;
+  padding: 5px 10px;
+  font-size: 11.5px;
+  color: #475569;
+}
+.map-side-card {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.side-card-head { display: flex; gap: 6px; flex-wrap: wrap; }
+.side-cust-name { margin: 4px 0 0; font-size: 15px; color: #0f172a; }
+.side-info-box {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 10px;
+  font-size: 12.5px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.side-btn-stack {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.side-btn-stack :deep(.el-button) { margin-left: 0; width: 100%; }
+
 .pager { margin-top: 14px; justify-content: flex-end; }
 .drill-body { display: flex; flex-direction: column; gap: 12px; }
 .drill-box {
@@ -798,63 +1909,79 @@ onMounted(reloadAll)
   gap: 8px;
 }
 .layer-chip {
-  display: inline-block;
   font-size: 11px;
   font-weight: 700;
   color: #1d4ed8;
   background: #dbeafe;
-  padding: 2px 7px;
-  border-radius: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
 }
-.drill-q { margin: 6px 0; font-size: 13px; color: #334155; }
-.l2-item { border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; }
+.drill-q { margin: 8px 0; font-size: 13px; color: #334155; line-height: 1.6; }
+.l2-item {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  overflow: hidden;
+}
 .l2-summary {
   width: 100%;
   border: 0;
-  background: #f8fafc;
+  background: #fff;
   padding: 10px 12px;
-  text-align: left;
   display: flex;
   justify-content: space-between;
   align-items: center;
   gap: 10px;
+  text-align: left;
   cursor: pointer;
 }
-.l2-right { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
-.expand-hint { font-size: 11px; color: #2563eb; }
+.l2-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.expand-hint { font-size: 12px; color: #2563eb; font-weight: 600; }
 .l3-panel {
+  background: #f8fafc;
+  border-top: 1px dashed #cbd5e1;
   padding: 10px 12px;
-  background: #fff;
-  border-top: 1px dashed #e2e8f0;
-  font-size: 12.5px;
-  color: #475569;
-  display: grid;
+  font-size: 12px;
+  color: #334155;
+  display: flex;
+  flex-direction: column;
   gap: 5px;
+  word-break: break-all;
 }
 .wash-result-box {
   margin-top: 12px;
-  background: #f8fafc;
-  border: 1px solid #cbd5e1;
-  border-radius: 8px;
   padding: 12px;
+  border-radius: 8px;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
   font-size: 13px;
 }
 .wash-stats-grid {
+  margin-top: 8px;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-  margin-top: 8px;
+  gap: 6px;
 }
-.mobile-card-list { display: none; flex-direction: column; gap: 10px; }
-.mobile-sea-card { border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px; background: #fff; }
-.m-card-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; margin-bottom: 4px; }
-.m-card-tags { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 8px 0; }
-.m-card-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 
-@media (max-width: 768px) {
+.mobile-card-list { display: none; }
+@media (max-width: 1100px) {
+  .analysis-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .map-workspace { grid-template-columns: 1fr; }
+}
+@media (max-width: 860px) {
   .analysis-grid { grid-template-columns: 1fr; }
   .desktop-table-wrap { display: none; }
-  .mobile-card-list { display: flex; }
+  .mobile-card-list { display: flex; flex-direction: column; gap: 10px; }
+  .mobile-sea-card {
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    padding: 12px;
+    background: #fff;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .m-card-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
+  .m-card-tags, .m-card-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
   .wash-stats-grid { grid-template-columns: 1fr; }
 }
 </style>

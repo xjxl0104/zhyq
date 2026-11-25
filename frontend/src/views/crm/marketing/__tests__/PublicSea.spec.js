@@ -6,6 +6,10 @@ import ElementPlus from 'element-plus'
 const mockSummary = vi.fn()
 const mockPage = vi.fn()
 const mockClaim = vi.fn()
+const mockVisitCheckin = vi.fn()
+const mockCheckins = vi.fn()
+const mockShopLookup = vi.fn()
+const mockAmapRadar = vi.fn()
 const mockFirstTouch = vi.fn()
 const mockWashRows = vi.fn()
 const mockFeed = vi.fn()
@@ -23,13 +27,18 @@ vi.mock('@/api/marketing', () => ({
     summary: (...args) => mockSummary(...args),
     page: (...args) => mockPage(...args),
     claim: (...args) => mockClaim(...args),
+    visitCheckin: (...args) => mockVisitCheckin(...args),
+    checkins: (...args) => mockCheckins(...args),
+    shopLookup: (...args) => mockShopLookup(...args),
+    amapRadar: (...args) => mockAmapRadar(...args),
     firstTouch: (...args) => mockFirstTouch(...args),
     washRows: (...args) => mockWashRows(...args),
     feedWarehouses: (...args) => mockFeed(...args),
+    batchFeedWarehouses: vi.fn(),
     release: vi.fn()
   },
   mktWarehouseApi: {
-    page: vi.fn().mockResolvedValue({ records: [{ id: 10, name: '星逸一号云仓' }] })
+    page: vi.fn().mockResolvedValue({ records: [{ id: 10, name: '广州番禺一号云仓' }] })
   }
 }))
 
@@ -39,23 +48,34 @@ vi.mock('../CustomerQuotePanel.vue', () => ({
 
 import PublicSea from '../PublicSea.vue'
 
-describe('PublicSea.vue 内部专属公海池交互与下钻', () => {
+describe('PublicSea.vue 广东公海双视图、四卡三层下钻与500m打卡交互', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
     mockSummary.mockResolvedValue({
-      fetchedAt: '2026-11-25 01:05:00',
-      activeTotal: 42,
-      calcHotCount: 12,
-      chanmamaCount: 18,
-      tungeeJobCount: 6,
-      expireReturnCount: 4,
-      parkCrmCount: 2,
-      washTotalRows: 100,
-      washInsertedRows: 70,
+      fetchedAt: '2026-11-25 15:58:00',
+      activeTotal: 68,
+      calcHotCount: 16,
+      feiyuAdCount: 6,
+      amapPoiCount: 12,
+      chanmamaCount: 28,
+      tungeeJobCount: 4,
+      expireReturnCount: 5,
+      parkCrmCount: 3,
+      zoneCounts: { GZ: 32, DG: 18, FS: 10, SZ: 5, YD: 3 },
+      within5kmCount: 39,
+      clusterBuildingCount: 5,
+      totalLinkedShops: 126,
+      dishonestRiskCount: 1,
+      visitProtectedCount: 9,
+      washTotalRows: 120,
+      washInsertedRows: 68,
       blockedPrivateLock: 15,
       blockedWhHmac: 9,
       blockedDupAgency: 6,
+      skippedOutProvince: 22,
+      qccCacheHits: 31,
+      qccApiCalls: 15,
       adminClaimedTotal: 10,
       adminTouchedCount: 9,
       whClaimedTotal: 5,
@@ -63,60 +83,117 @@ describe('PublicSea.vue 内部专属公海池交互与下钻', () => {
       nearExpireCount: 1,
       slaHours: 72,
       whDailyCap: 5,
-      whActiveCap: 10
+      whActiveCap: 10,
+      checkinMaxMeters: 500,
+      visitProtectDays: 15,
+      connectors: {
+        regionLockProvince: '广东省',
+        amapWebConfigured: false,
+        amapJsConfigured: false,
+        amapJsKey: '',
+        qccConfigured: false
+      }
     })
     mockPage.mockResolvedValue({
       total: 1,
       records: [
         {
           customerId: 901,
-          name: '杭州衣恋女装有限公司',
-          shopName: '衣恋抖店',
+          name: '广州衣恋风尚服饰电子商务有限公司',
+          shopName: '衣恋广派女装旗舰店',
+          shops: [
+            { platform: '抖音', shopName: '衣恋广派女装旗舰店', rankNo: 18 },
+            { platform: '1688', shopName: '广州番禺衣恋制衣厂' }
+          ],
+          zoneCode: 'GZ',
+          city: '广州市',
+          district: '番禺区',
+          address: '广州市番禺区南村万博直播电商大厦802室',
+          buildingName: '南村万博直播电商大厦',
+          buildingPeerCount: 4,
+          lng: 113.34921,
+          lat: 23.02912,
+          nearestWhName: '广州番禺一号云仓',
+          distNearestWhKm: 3.1,
+          qccAligned: 1,
+          legalPerson: '林晓峰',
+          regCapital: '200万',
+          insuredCount: 14,
+          dishonestCount: 0,
           contact: '林总',
           phone: '138****8821',
           phoneUnlocked: false,
           seaSource: 'CALC_HOT',
           category: '女装服饰',
-          estDailyOrders: 1200,
-          avgWeightKg: 0.45,
+          estDailyOrders: 1400,
+          avgWeightKg: 0.42,
           urgencyLevel: 'S',
           urgencyReason: '30秒算价器主动留资热询盘',
-          blockNote: '期望48h内500件爆款分仓试发',
+          blockNote: '十三行爆单慢发被扣分，期望本周试发500件',
           claimStatus: 'UNCLAIMED'
         }
       ]
     })
-    mockClaim.mockResolvedValue({ customerId: 901, phone: '13857198821', hoursLeft: 72 })
+    mockClaim.mockResolvedValue({ customerId: 901, phone: '13826098821', hoursLeft: 72 })
+    mockVisitCheckin.mockResolvedValue({ customerId: 901, distanceMeters: 42, visitProtectDays: 15 })
+    mockCheckins.mockResolvedValue([])
   })
 
-  it('渲染顶部 3 张带下钻入口的分析卡与桌面/移动双视图列表，并支持认领解锁', async () => {
+  it('渲染诚实连接器状态条、广东分区快切、4张L1-L3下钻卡，并支持双视图切换与认领/500m打卡', async () => {
     const wrapper = mount(PublicSea, {
       global: { plugins: [ElementPlus] }
     })
     await flushPromises()
 
+    // 顶部 4 张分析卡
     const cards = wrapper.findAll('.analysis-card')
-    expect(cards).toHaveLength(3)
-    expect(cards[0].text()).toContain('42 户')
-    expect(cards[1].text()).toContain('30.0%')
-    expect(cards[2].text()).toContain('72h 首触达履约率')
+    expect(cards).toHaveLength(4)
+    expect(cards[0].text()).toContain('68 户')
+    expect(cards[1].text()).toContain('39 户')
+    expect(cards[2].text()).toContain('126 店')
+    expect(cards[3].text()).toContain('86.7%')
 
-    // 同时挂载桌面表格容器与移动端自适应卡片容器
+    // 诚实未配 Key 提示可见
+    expect(wrapper.find('.connector-honest-bar').exists()).toBe(true)
+
+    // 桌面表格与手机自适应卡片同时存在
     expect(wrapper.find('.desktop-table-wrap').exists()).toBe(true)
     expect(wrapper.findAll('.mobile-sea-card')).toHaveLength(1)
-    expect(wrapper.text()).toContain('杭州衣恋女装有限公司')
+    expect(wrapper.text()).toContain('广州衣恋风尚服饰电子商务有限公司')
+    expect(wrapper.text()).toContain('南村万博直播电商大厦(同楼4户)')
 
-    // 点击下钻按钮打开 L1/L2/L3 下钻态
+    // 切换广东东莞战区触发带 zoneCode=DG 的分页查询
+    await wrapper.find('[data-zone="DG"]').trigger('click')
+    await flushPromises()
+    expect(mockPage).toHaveBeenLastCalledWith(expect.objectContaining({ zoneCode: 'DG' }))
+
+    // 切换至广东高德地推地图视图
+    await wrapper.find('[data-testid="mode-map"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="gd-map-workspace"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('云仓 5km 黄金揽收圈')
+
+    // 切回列表视图并测试下钻与认领
+    await wrapper.find('[data-testid="mode-list"]').trigger('click')
+    await flushPromises()
     await wrapper.find('.drilldown-trigger').trigger('click')
     await flushPromises()
     expect(document.body.innerHTML).toContain('L2 判定逻辑')
-    expect(document.body.innerHTML).toContain('30秒云仓算价器主动留资')
+    expect(document.body.innerHTML).toContain('巨量飞鱼免费 Webhook')
 
-    // 点击认领按钮触发后端原子认领接口
     const claimBtn = wrapper.findAll('button').find(b => b.text().includes('认领电销'))
     expect(claimBtn).toBeTruthy()
     await claimBtn.trigger('click')
     await flushPromises()
     expect(mockClaim).toHaveBeenCalledWith(901)
+
+    // 打开 500m 打卡弹窗并提交现场打卡
+    await wrapper.find('[data-testid="btn-visit-checkin"]').trigger('click')
+    await flushPromises()
+    await wrapper.find('[data-testid="btn-submit-checkin"]').trigger('click')
+    await flushPromises()
+    expect(mockVisitCheckin).toHaveBeenCalledWith(901, expect.objectContaining({
+      photoUrl: '/uploads/checkin/door-live.jpg'
+    }))
   })
 })

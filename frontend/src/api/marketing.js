@@ -274,8 +274,13 @@ export const mktPublicSeaApi = {
     timeout: 60000
   }),
   washRows: (data) => request.post(`${PUBLIC_SEA}/wash-rows`, data, { timeout: 60000 }),
+  shopLookup: (data) => request.post(`${PUBLIC_SEA}/shop-lookup`, data, { timeout: 30000 }),
+  amapRadar: (data) => request.post(`${PUBLIC_SEA}/amap-radar`, data, { timeout: 30000 }),
   claim: (customerId) => request.post(`${PUBLIC_SEA}/${customerId}/claim`),
+  visitCheckin: (customerId, data) => request.post(`${PUBLIC_SEA}/${customerId}/visit-checkin`, data),
+  checkins: (customerId) => request.get(`${PUBLIC_SEA}/${customerId}/checkins`),
   firstTouch: (customerId, data) => request.post(`${PUBLIC_SEA}/${customerId}/first-touch`, data),
   feedWarehouses: (customerId, data) => request.post(`${PUBLIC_SEA}/${customerId}/feed-warehouses`, data),
+  batchFeedWarehouses: (data) => request.post(`${PUBLIC_SEA}/batch-feed-warehouses`, data),
   release: (customerId, data) => request.post(`${PUBLIC_SEA}/${customerId}/release`, data)
 }

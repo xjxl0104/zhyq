@@ -8,7 +8,7 @@ import lombok.Data;
 import java.time.LocalDateTime;
 
 /**
- * 公海入池三道防撞洗数批次审计记录（供三层下钻同源聚合）。
+ * 公海入池三道防撞洗数与广东省钱对齐批次审计记录。
  */
 @Data
 @TableName("crm_public_sea_wash_batch")
@@ -25,6 +25,9 @@ public class MktPublicSeaWashBatch {
     private Integer blockedPrivateLock;
     private Integer blockedWhHmac;
     private Integer blockedDupAgency;
+    private Integer skippedOutProvince;
+    private Integer qccCacheHits;
+    private Integer qccApiCalls;
     private String blockedDetailsJson;
     private String operator;
     private LocalDateTime createdAt;
