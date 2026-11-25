@@ -14,8 +14,8 @@ vi.mock('@/api/file', () => ({ fileApi: { attachVerified: vi.fn(), list: vi.fn()
 
 let mobile = true
 const rows = [
-  { id: 17, code: 'CONTRACT-017', tenantRefId: 3, projectId: 4, startDate: '2026-09-01', endDate: '2027-08-31', rentPrice: 20, rentArea: 100.25, deposit: 12345.6, status: 1 },
-  { id: 18, code: 'CONTRACT-018', tenantRefId: 3, projectId: 4, rentPrice: 30, rentArea: 200.5, deposit: 1000.5, status: 5 }
+  { id: 17, code: 'CONTRACT-017', tenantRefId: 3, projectId: 4, leaseScope: 'DI PARK第二层', startDate: '2026-09-01', endDate: '2027-08-31', rentPrice: 20, rentArea: 100.25, deposit: 12345.6, status: 1 },
+  { id: 18, code: 'CONTRACT-018', tenantRefId: 3, projectId: 4, leaseScope: '首层A区', rentPrice: 30, rentArea: 200.5, deposit: 1000.5, status: 5 }
 ]
 const wrappers = []
 function mountPage() {
@@ -59,7 +59,7 @@ describe('合同手机版保留主线台账能力', () => {
       field.get('dt').text(), field.get('dd').text()
     ]))
     expect(fields).toMatchObject({
-      序号: '1', 合同编号: 'CONTRACT-017', 租客: '测试租客', 园区: '测试园区',
+      序号: '1', 合同编号: 'CONTRACT-017', 租客: '测试租客', 区域: 'DI PARK第二层',
       起止日期: '2026-09-01 ~ 2027-08-31', 租赁单价: '20 元/㎡', 面积: '100.25 ㎡', 保证金: '12,345.60 元', 状态: '草稿'
     })
   })

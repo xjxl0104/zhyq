@@ -23,6 +23,8 @@ public class Contract extends BaseEntity {
     /** 租客 */
     private Long tenantRefId;
     private Long projectId;
+    /** 租赁区域/范围(手工填写优先;为空时列表按关联房源/应收登记表/租金合同台账自动汇总展示) */
+    private String leaseScope;
     /** 合同类型 */
     private Integer contractType;
     /** 合同状态 */

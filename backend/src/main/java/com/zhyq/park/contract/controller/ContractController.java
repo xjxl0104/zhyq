@@ -85,6 +85,7 @@ public class ContractController {
           .orderByDesc(Contract::getId);
         IPage<Contract> p = contractMapper.selectPage(new Page<>(pageNo, pageSize), qw);
         fillTenantNames(p.getRecords());
+        fillLeaseScopes(p.getRecords());
         fillAttachmentCounts(p.getRecords());
         return Result.ok(PageResult.of(p.getTotal(), p.getRecords()));
     }
@@ -303,6 +304,111 @@ public class ContractController {
         bizTenantMapper.selectBatchIds(ids)
                 .forEach(t -> names.put(t.getId(), t.getName()));
         contracts.forEach(c -> c.setTenantName(names.get(c.getTenantRefId())));
+    }
+
+    /**
+     * 填充合同租赁区域/范围:
+     * 1. 若合同本身已填 leaseScope 则直接保留;
+     * 2. 否则按合同关联房源(biz_contract_room + biz_room + biz_floor)汇总;
+     * 3. 仍为空时依次回落至应收登记表(fin_receivable_register.space_name_raw)与租金合同台账(eng_lease_contract.unit_name)。
+     */
+    private void fillLeaseScopes(List<Contract> contracts) {
+        if (jdbcTemplate == null || contracts == null || contracts.isEmpty()) return;
+        List<Contract> missing = contracts.stream()
+                .filter(c -> c.getId() != null && !StringUtils.hasText(c.getLeaseScope())).toList();
+        if (missing.isEmpty()) return;
+
+        String ids = missing.stream().map(c -> String.valueOf(c.getId()))
+                .collect(java.util.stream.Collectors.joining(","));
+
+        // 1) 关联房源
+        Map<Long, java.util.LinkedHashSet<String>> byRoom = new HashMap<>();
+        for (Map<String, Object> row : jdbcTemplate.queryForList(
+                "SELECT cr.contract_id, f.name AS floor_name, r.room_no, r.code AS room_code"
+                        + " FROM biz_contract_room cr"
+                        + " JOIN biz_room r ON r.id = cr.room_id AND r.deleted = 0"
+                        + " LEFT JOIN biz_floor f ON f.id = r.floor_id AND f.deleted = 0"
+                        + " WHERE cr.deleted = 0 AND cr.contract_id IN (" + ids + ")"
+                        + " ORDER BY f.sort, f.floor_no, r.room_no, r.id")) {
+            Long cid = ((Number) row.get("contract_id")).longValue();
+            String floorName = row.get("floor_name") == null ? "" : row.get("floor_name").toString().trim();
+            String roomNo = row.get("room_no") == null ? "" : row.get("room_no").toString().trim();
+            String roomCode = row.get("room_code") == null ? "" : row.get("room_code").toString().trim();
+            String label = StringUtils.hasText(roomNo) ? roomNo : roomCode;
+            if (StringUtils.hasText(floorName) && StringUtils.hasText(label) && !label.contains(floorName)) {
+                label = floorName + " " + label;
+            } else if (!StringUtils.hasText(label)) {
+                label = floorName;
+            }
+            if (StringUtils.hasText(label)) {
+                byRoom.computeIfAbsent(cid, k -> new java.util.LinkedHashSet<>()).add(label);
+            }
+        }
+        for (Contract c : missing) {
+            java.util.LinkedHashSet<String> set = byRoom.get(c.getId());
+            if (set != null && !set.isEmpty()) c.setLeaseScope(String.join("、", set));
+        }
+
+        // 2) 应收登记表 space_name_raw
+        List<Contract> stillMissing = missing.stream().filter(c -> !StringUtils.hasText(c.getLeaseScope())).toList();
+        if (!stillMissing.isEmpty()) {
+            String remIds = stillMissing.stream().map(c -> String.valueOf(c.getId()))
+                    .collect(java.util.stream.Collectors.joining(","));
+            Map<Long, java.util.LinkedHashSet<String>> byRecv = new HashMap<>();
+            for (Map<String, Object> row : jdbcTemplate.queryForList(
+                    "SELECT contract_id, space_name_raw FROM fin_receivable_register"
+                            + " WHERE deleted = 0 AND contract_id IN (" + remIds + ")"
+                            + " AND space_name_raw IS NOT NULL AND space_name_raw <> ''")) {
+                Long cid = ((Number) row.get("contract_id")).longValue();
+                byRecv.computeIfAbsent(cid, k -> new java.util.LinkedHashSet<>())
+                        .add(row.get("space_name_raw").toString().trim());
+            }
+            for (Contract c : stillMissing) {
+                java.util.LinkedHashSet<String> set = byRecv.get(c.getId());
+                if (set != null && !set.isEmpty()) c.setLeaseScope(String.join("、", set));
+            }
+        }
+
+        // 3) 租金合同台账 eng_lease_contract.unit_name
+        stillMissing = missing.stream().filter(c -> !StringUtils.hasText(c.getLeaseScope())).toList();
+        if (!stillMissing.isEmpty()) {
+            List<Map<String, Object>> leaseRows;
+            try {
+                leaseRows = jdbcTemplate.queryForList(
+                        "SELECT tenant_name, unit_name, lease_area, rent_unit_price, start_date"
+                                + " FROM eng_lease_contract WHERE deleted = 0");
+            } catch (Exception ignored) {
+                leaseRows = List.of();
+            }
+            for (Contract c : stillMissing) {
+                if (!StringUtils.hasText(c.getTenantName())) continue;
+                String best = null;
+                int bestScore = 0;
+                for (Map<String, Object> lr : leaseRows) {
+                    String tn = lr.get("tenant_name") == null ? "" : lr.get("tenant_name").toString().trim();
+                    String unit = lr.get("unit_name") == null ? "" : lr.get("unit_name").toString().trim();
+                    if (!StringUtils.hasText(unit) || !tn.equals(c.getTenantName().trim())) continue;
+                    int score = 1;
+                    BigDecimal area = lr.get("lease_area") instanceof BigDecimal bd ? bd : null;
+                    BigDecimal price = lr.get("rent_unit_price") instanceof BigDecimal bd ? bd : null;
+                    Object sd = lr.get("start_date");
+                    if (area != null && c.getRentArea() != null && area.subtract(c.getRentArea()).abs().compareTo(new BigDecimal("1")) <= 0) {
+                        score += 4;
+                    }
+                    if (price != null && c.getRentPrice() != null && price.subtract(c.getRentPrice()).abs().compareTo(new BigDecimal("0.1")) <= 0) {
+                        score += 4;
+                    }
+                    if (sd != null && c.getStartDate() != null && sd.toString().startsWith(c.getStartDate().toString())) {
+                        score += 2;
+                    }
+                    if (score > bestScore) {
+                        bestScore = score;
+                        best = unit;
+                    }
+                }
+                if (best != null) c.setLeaseScope(best);
+            }
+        }
     }
 
     private void fillAttachmentCounts(List<Contract> contracts) {

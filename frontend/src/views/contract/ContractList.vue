@@ -59,7 +59,7 @@
         <template #default="{ row, index }">
           <div class="mobile-record-summary">
             <strong>{{ tenantName(row.tenantRefId) }}</strong>
-            <span>{{ projectName(row.projectId) }}</span>
+            <span>{{ row.leaseScope || projectName(row.projectId) }}</span>
           </div>
           <div class="mobile-record-meta">{{ row.startDate || '-' }} ~ {{ row.endDate || '-' }}</div>
           <details class="mobile-record-details">
@@ -68,7 +68,7 @@
               <div class="mobile-record-field"><dt>序号</dt><dd>{{ index + 1 }}</dd></div>
               <div class="mobile-record-field mobile-record-field--wide"><dt>合同编号</dt><dd>{{ row.code || '-' }}</dd></div>
               <div class="mobile-record-field"><dt>租客</dt><dd>{{ tenantName(row.tenantRefId) }}</dd></div>
-              <div class="mobile-record-field"><dt>园区</dt><dd>{{ projectName(row.projectId) }}</dd></div>
+              <div class="mobile-record-field"><dt>区域</dt><dd>{{ row.leaseScope || projectName(row.projectId) }}</dd></div>
               <div class="mobile-record-field mobile-record-field--wide"><dt>起止日期</dt><dd>{{ row.startDate || '-' }} ~ {{ row.endDate || '-' }}</dd></div>
               <div class="mobile-record-field"><dt>租赁单价</dt><dd>{{ row.rentPrice }} 元/㎡</dd></div>
               <div class="mobile-record-field"><dt>面积</dt><dd>{{ row.rentArea }} ㎡</dd></div>
@@ -103,8 +103,8 @@
         <el-table-column label="租客" min-width="150">
           <template #default="{ row }">{{ tenantName(row.tenantRefId) }}</template>
         </el-table-column>
-        <el-table-column label="园区" min-width="130">
-          <template #default="{ row }">{{ projectName(row.projectId) }}</template>
+        <el-table-column label="区域" min-width="180" show-overflow-tooltip>
+          <template #default="{ row }">{{ row.leaseScope || '-' }}</template>
         </el-table-column>
         <el-table-column label="合同类型" width="100">
           <template #default="{ row }">{{ contractTypeText(row.contractType) }}</template>
@@ -206,6 +206,11 @@
               <el-select v-model="form.projectId" placeholder="选择园区" style="width: 100%">
                 <el-option v-for="p in projects" :key="p.id" :label="p.name" :value="p.id" />
               </el-select>
+            </el-form-item>
+          </el-col>
+          <el-col :span="24">
+            <el-form-item label="租赁区域">
+              <el-input v-model="form.leaseScope" placeholder="如：DI PARK数智云仓产业园第二层 / 首层A区（留空自动按关联房源显示）" />
             </el-form-item>
           </el-col>
           <el-col :span="12">
@@ -585,7 +590,7 @@ async function doPdfImport() {
 }
 const dialog = reactive({ visible: false, title: '' })
 const emptyForm = () => ({
-  id: null, code: '', contractType: 1, tenantRefId: null, projectId: null,
+  id: null, code: '', contractType: 1, tenantRefId: null, projectId: null, leaseScope: '',
   startDate: '', endDate: '', rentPrice: 0, propertyPrice: 0, rentArea: 0,
   deposit: 0, chargeMode: 1, payCycle: 3, freeMonths: 0, remark: ''
 })
