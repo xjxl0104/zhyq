@@ -85,6 +85,10 @@ public class LeaseFeeService {
                                 Integer propertyDepositStatus, BigDecimal propertyDepositPaid, LocalDate propertyDepositPaidDate,
                                 String depositRemark) {}
 
+    public record DepositNoticeConfig(String parkName, String noticePrefix, LocalDate issueDate, LocalDate dueDate,
+                                      String rentPayeeName, String rentPaymentAccount, String rentContactName, String rentContactPhone,
+                                      String propertyPayeeName, String propertyPaymentAccount, String propertyContactName, String propertyContactPhone) {}
+
     // ------------------------------------------------------------------ 合同台账 CRUD
 
     public List<LeaseContract> listContracts(boolean includeDisabled) {
@@ -143,6 +147,140 @@ public class LeaseFeeService {
                 .orElseGet(() -> contractMapper.selectById(contractId));
     }
 
+    public DepositNoticeConfig getDepositConfig() {
+        List<Map<String, Object>> rows = jdbc.queryForList("SELECT * FROM eng_deposit_config WHERE id = 1 LIMIT 1");
+        if (!rows.isEmpty()) {
+            Map<String, Object> r = rows.get(0);
+            Map<String, String> map = hasMaskedMarker(
+                    Objects.toString(r.get("rent_payment_account"), null),
+                    Objects.toString(r.get("property_payment_account"), null))
+                    ? loadMaskedToPlainMap() : Map.of();
+            String rentAcc = unmaskText(Objects.toString(r.get("rent_payment_account"), ""), map);
+            String propAcc = unmaskText(Objects.toString(r.get("property_payment_account"), ""), map);
+            return new DepositNoticeConfig(
+                    Objects.toString(r.get("park_name"), DEFAULT_PARK),
+                    Objects.toString(r.get("notice_prefix"), "DIPARK"),
+                    toLocalDate(r.get("issue_date")),
+                    toLocalDate(r.get("due_date")),
+                    Objects.toString(r.get("rent_payee_name"), ""),
+                    rentAcc,
+                    Objects.toString(r.get("rent_contact_name"), ""),
+                    Objects.toString(r.get("rent_contact_phone"), ""),
+                    Objects.toString(r.get("property_payee_name"), ""),
+                    propAcc,
+                    Objects.toString(r.get("property_contact_name"), ""),
+                    Objects.toString(r.get("property_contact_phone"), "")
+            );
+        }
+        // 首次未单独配置时，优先沿用最新租金/物业费账期(自动解密完整账号)或财务收款账户表
+        LeaseFeePeriod latest = periodMapper.selectOne(new LambdaQueryWrapper<LeaseFeePeriod>()
+                .orderByDesc(LeaseFeePeriod::getPeriod).last("LIMIT 1"));
+        if (latest != null) {
+            unmaskPeriodAccountsIfNeeded(latest);
+            return new DepositNoticeConfig(
+                    StringUtils.hasText(latest.getParkName()) ? latest.getParkName() : DEFAULT_PARK,
+                    StringUtils.hasText(latest.getNoticePrefix()) ? latest.getNoticePrefix() : "DIPARK",
+                    LocalDate.now(),
+                    null,
+                    Objects.toString(latest.getRentPayeeName(), ""),
+                    Objects.toString(latest.getRentPaymentAccount(), ""),
+                    Objects.toString(latest.getRentContactName(), ""),
+                    Objects.toString(latest.getRentContactPhone(), ""),
+                    Objects.toString(latest.getPropertyPayeeName(), ""),
+                    Objects.toString(latest.getPropertyPaymentAccount(), ""),
+                    Objects.toString(latest.getPropertyContactName(), ""),
+                    Objects.toString(latest.getPropertyContactPhone(), "")
+            );
+        }
+        LeaseFeePeriod tmp = new LeaseFeePeriod();
+        populateDefaultPayeesFromCollectionAccounts(tmp);
+        return new DepositNoticeConfig(
+                DEFAULT_PARK, "DIPARK", LocalDate.now(), null,
+                Objects.toString(tmp.getRentPayeeName(), ""),
+                Objects.toString(tmp.getRentPaymentAccount(), ""),
+                "", "",
+                Objects.toString(tmp.getPropertyPayeeName(), ""),
+                Objects.toString(tmp.getPropertyPaymentAccount(), ""),
+                "", ""
+        );
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public DepositNoticeConfig saveDepositConfig(DepositNoticeConfig req) {
+        if (req == null) throw new BizException("配置参数不能为空");
+        String park = StringUtils.hasText(req.parkName()) ? req.parkName().trim() : DEFAULT_PARK;
+        String prefix = StringUtils.hasText(req.noticePrefix()) ? req.noticePrefix().trim() : "DIPARK";
+        Long cnt = jdbc.queryForObject("SELECT COUNT(*) FROM eng_deposit_config WHERE id = 1", Long.class);
+        if (cnt != null && cnt > 0) {
+            jdbc.update("""
+                    UPDATE eng_deposit_config
+                    SET park_name=?, notice_prefix=?, issue_date=?, due_date=?,
+                        rent_payee_name=?, rent_payment_account=?, rent_contact_name=?, rent_contact_phone=?,
+                        property_payee_name=?, property_payment_account=?, property_contact_name=?, property_contact_phone=?,
+                        update_time=NOW()
+                    WHERE id = 1
+                    """,
+                    park, prefix, req.issueDate(), req.dueDate(),
+                    req.rentPayeeName(), req.rentPaymentAccount(), req.rentContactName(), req.rentContactPhone(),
+                    req.propertyPayeeName(), req.propertyPaymentAccount(), req.propertyContactName(), req.propertyContactPhone());
+        } else {
+            jdbc.update("""
+                    INSERT INTO eng_deposit_config (
+                        id, park_name, notice_prefix, issue_date, due_date,
+                        rent_payee_name, rent_payment_account, rent_contact_name, rent_contact_phone,
+                        property_payee_name, property_payment_account, property_contact_name, property_contact_phone,
+                        update_time
+                    ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+                    """,
+                    park, prefix, req.issueDate(), req.dueDate(),
+                    req.rentPayeeName(), req.rentPaymentAccount(), req.rentContactName(), req.rentContactPhone(),
+                    req.propertyPayeeName(), req.propertyPaymentAccount(), req.propertyContactName(), req.propertyContactPhone());
+        }
+        return getDepositConfig();
+    }
+
+    /** 按「2个月租金 + 2个月物管费」标准校准在租合同的应收保证金(不影响已缴金额与回执) */
+    @Transactional(rollbackFor = Exception.class)
+    public Map<String, Object> calibrateDepositsTwoMonths() {
+        List<LeaseContract> contracts = listContracts(false);
+        int updated = 0;
+        for (LeaseContract c : contracts) {
+            BigDecimal twoMonthsRent = twoMonthsRentOf(c);
+            BigDecimal twoMonthsProp = twoMonthsPropertyOf(c);
+            boolean diff = c.getRentDeposit() == null || c.getRentDeposit().compareTo(twoMonthsRent) != 0
+                    || c.getPropertyDeposit() == null || c.getPropertyDeposit().compareTo(twoMonthsProp) != 0;
+            if (diff) {
+                contractMapper.update(null, new LambdaUpdateWrapper<LeaseContract>()
+                        .eq(LeaseContract::getId, c.getId())
+                        .set(LeaseContract::getRentDeposit, twoMonthsRent)
+                        .set(LeaseContract::getPropertyDeposit, twoMonthsProp));
+                updated++;
+            }
+        }
+        return Map.of("total", contracts.size(), "updated", updated);
+    }
+
+    static BigDecimal twoMonthsRentOf(LeaseContract c) {
+        if (c == null) return BigDecimal.ZERO;
+        BigDecimal monthly = (c.getFixedMonthlyRent() != null && c.getFixedMonthlyRent().signum() > 0)
+                ? c.getFixedMonthlyRent()
+                : nz(c.getLeaseArea()).multiply(nz(c.getRentUnitPrice()));
+        return LeaseFeeCalculator.money(monthly.multiply(BigDecimal.valueOf(2)));
+    }
+
+    static BigDecimal twoMonthsPropertyOf(LeaseContract c) {
+        if (c == null) return BigDecimal.ZERO;
+        BigDecimal monthly = nz(c.getLeaseArea()).multiply(nz(c.getPropertyUnitPrice()));
+        return LeaseFeeCalculator.money(monthly.multiply(BigDecimal.valueOf(2)));
+    }
+
+    private static LocalDate toLocalDate(Object v) {
+        if (v == null) return null;
+        if (v instanceof LocalDate ld) return ld;
+        if (v instanceof java.sql.Date d) return d.toLocalDate();
+        try { return LocalDate.parse(v.toString().substring(0, 10)); } catch (Exception e) { return null; }
+    }
+
     private static int normalizeDepositStatus(Integer status, Integer fallback) {
         int val = status != null ? status : (fallback != null ? fallback : 0);
         if (val < 0 || val > 2) throw new BizException("保证金状态只能为 0(未缴纳)、1(部分缴纳) 或 2(已缴纳)");
@@ -166,6 +304,8 @@ public class LeaseFeeService {
             if (input.getEscalationMonths() == null || input.getEscalationMonths() <= 0) input.setEscalationMonths(36);
             if (input.getEscalationRate() == null) input.setEscalationRate(BigDecimal.ZERO);
             if (input.getPropertyUnitPrice() == null) input.setPropertyUnitPrice(new BigDecimal("2"));
+            if (input.getRentDeposit() == null) input.setRentDeposit(twoMonthsRentOf(input));
+            if (input.getPropertyDeposit() == null) input.setPropertyDeposit(twoMonthsPropertyOf(input));
             if (input.getRentDepositStatus() == null) input.setRentDepositStatus(0);
             if (input.getRentDepositPaid() == null) input.setRentDepositPaid(BigDecimal.ZERO);
             if (input.getPropertyDepositStatus() == null) input.setPropertyDepositStatus(0);

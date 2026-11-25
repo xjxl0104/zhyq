@@ -90,7 +90,7 @@ public final class BusinessRouteAccess {
                     "/energy/property", "/energy/summary");
             case "oa/seal" -> {
                 if (hasMenu(grants, "/oa/seal") || hasPrefix(grants, "oa:seal:")) yield true;
-                boolean canUseSeal = anyMenu(grants, "/energy/summary", "/energy/rent", "/energy/property",
+                boolean canUseSeal = anyMenu(grants, "/energy/summary", "/energy/deposit", "/energy/rent", "/energy/property",
                         "/energy/electric", "/energy/water", "/energy/garbage", "/service/decoration")
                         || hasPrefix(grants, "energy:feebill:")
                         || hasPrefix(grants, "service:decoration:");

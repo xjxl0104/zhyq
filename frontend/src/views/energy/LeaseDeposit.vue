@@ -1,5 +1,22 @@
 <template>
   <div class="page-container">
+    <div class="view-switch-bar">
+      <el-radio-group v-model="activeView">
+        <el-radio-button value="summary">保证金缴费情况（分昌记 / 数智云仓 · 通知单）</el-radio-button>
+        <el-radio-button value="ledger">合同保证金台账（逐份登记与回执）</el-radio-button>
+      </el-radio-group>
+      <el-button type="primary" plain size="small" @click="contractDialog = true">合同基础台账</el-button>
+    </div>
+
+    <DepositPaymentSummary
+      v-if="activeView === 'summary'"
+      :contracts="list"
+      :loading="loading"
+      @open-deposit="openDeposit"
+      @calibrated="load"
+    />
+
+    <template v-else>
     <div class="summary-grid">
       <div class="summary-item">
         <span>在租合同</span>
@@ -111,6 +128,7 @@
         </el-table-column>
       </el-table>
     </div>
+    </template>
 
     <!-- 保证金缴纳登记与回执上传弹窗 -->
     <el-dialog v-model="dialog.visible" :title="`保证金缴纳登记与回执 - ${dialog.row?.tenantName || ''}`"
@@ -252,10 +270,12 @@ import { fileApi } from '@/api/file'
 import { startFileDownload } from '@/utils/fileDownload'
 import { money } from './feePeriod'
 import LeaseContractDialog from './components/LeaseContractDialog.vue'
+import DepositPaymentSummary from './components/DepositPaymentSummary.vue'
 
 const BIZ_RENT = 'lease_deposit_rent_receipt'
 const BIZ_PROP = 'lease_deposit_property_receipt'
 
+const activeView = ref('summary')
 const loading = ref(false)
 const list = ref([])
 const keyword = ref('')
@@ -447,6 +467,7 @@ onMounted(load)
 </script>
 
 <style scoped>
+.view-switch-bar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; margin-bottom: 12px; }
 .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; margin-bottom: 12px; }
 .summary-item { padding: 12px 14px; border: 1px solid var(--el-border-color-lighter); border-radius: 8px; display: flex; flex-direction: column; gap: 4px; background: var(--el-fill-color-blank); }
 .summary-item span { font-size: 12px; color: var(--el-text-color-secondary); }

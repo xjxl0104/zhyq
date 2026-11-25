@@ -72,6 +72,26 @@ public class LeaseFeeController {
         return Result.ok(service.updateDeposit(id, req));
     }
 
+    @Operation(summary = "获取保证金缴费通知单抬头与收取单位(昌记/数智云仓)")
+    @GetMapping("/deposit-config")
+    public Result<LeaseFeeService.DepositNoticeConfig> depositConfig() {
+        return Result.ok(service.getDepositConfig());
+    }
+
+    @Operation(summary = "保存保证金缴费通知单抬头与收取单位")
+    @OperationLog(module = "合同保证金", action = "修改通知单抬头")
+    @PutMapping("/deposit-config")
+    public Result<LeaseFeeService.DepositNoticeConfig> saveDepositConfig(@RequestBody LeaseFeeService.DepositNoticeConfig req) {
+        return Result.ok(service.saveDepositConfig(req));
+    }
+
+    @Operation(summary = "按2个月租金/物管费标准校准全部在租合同保证金")
+    @OperationLog(module = "合同保证金", action = "按2个月标准校准")
+    @PostMapping("/deposits/calibrate")
+    public Result<Map<String, Object>> calibrateDeposits() {
+        return Result.ok(service.calibrateDepositsTwoMonths());
+    }
+
     @Operation(summary = "新增或修改计费合同")
     @OperationLog(module = "租金物业费合同", action = "保存")
     @PostMapping("/contracts")
