@@ -19,6 +19,7 @@ import com.zhyq.park.energy.mapper.LeaseFeePeriodMapper;
 import com.zhyq.park.energy.service.LeaseFeeCalculator.ContractMonthRow;
 import com.zhyq.park.finance.entity.Bill;
 import com.zhyq.park.finance.mapper.BillMapper;
+import com.zhyq.park.receivable.service.FieldEncryptionService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -53,6 +54,7 @@ public class LeaseFeeService {
     private final JdbcTemplate jdbc;
     private final ObjectMapper objectMapper;
     private final LeaseFeePaymentService payments;
+    private final FieldEncryptionService encryption;
 
     public record Sheet(LeaseFeePeriod period, String feeType,
                         BigDecimal totalArea, BigDecimal standardRentTotal, BigDecimal standardPropertyTotal,
@@ -321,6 +323,7 @@ public class LeaseFeeService {
         LeaseFeePeriod existed = periodMapper.selectOne(new LambdaQueryWrapper<LeaseFeePeriod>()
                 .eq(LeaseFeePeriod::getPeriod, ym.toString()).last("LIMIT 1"));
         if (existed != null) {
+            unmaskPeriodAccountsIfNeeded(existed);
             return decorate(existed);
         }
         LeaseFeePeriod latest = periodMapper.selectOne(new LambdaQueryWrapper<LeaseFeePeriod>()
@@ -334,14 +337,16 @@ public class LeaseFeeService {
         p.setIssueDate(LocalDate.now());
         p.setDueDate(ym.atEndOfMonth());
         if (latest != null) {
+            Map<String, String> maskedToPlain = hasMaskedMarker(latest.getRentPaymentAccount(), latest.getPropertyPaymentAccount())
+                    ? loadMaskedToPlainMap() : Map.of();
             p.setParkName(latest.getParkName());
             p.setNoticePrefix(latest.getNoticePrefix());
             p.setRentPayeeName(latest.getRentPayeeName());
-            p.setRentPaymentAccount(latest.getRentPaymentAccount());
+            p.setRentPaymentAccount(unmaskText(latest.getRentPaymentAccount(), maskedToPlain));
             p.setRentContactName(latest.getRentContactName());
             p.setRentContactPhone(latest.getRentContactPhone());
             p.setPropertyPayeeName(latest.getPropertyPayeeName());
-            p.setPropertyPaymentAccount(latest.getPropertyPaymentAccount());
+            p.setPropertyPaymentAccount(unmaskText(latest.getPropertyPaymentAccount(), maskedToPlain));
             p.setPropertyContactName(latest.getPropertyContactName());
             p.setPropertyContactPhone(latest.getPropertyContactPhone());
         } else {
@@ -358,18 +363,20 @@ public class LeaseFeeService {
         return decorate(p);
     }
 
-    /** 首次建账期时尝试从财务收款账户表读取租金/物业管理费默认收取单位(各自独立) */
+    /** 首次建账期时从财务收款账户表解密读取租金/物业管理费完整对公收款账号(各自独立) */
     private void populateDefaultPayeesFromCollectionAccounts(LeaseFeePeriod p) {
         try {
             List<Map<String, Object>> accounts = jdbc.queryForList(
-                    "SELECT account_type, account_name, bank_name, account_no_masked FROM fin_collection_account"
+                    "SELECT account_type, account_name, bank_name, account_no_cipher, account_no_masked FROM fin_collection_account"
                             + " WHERE deleted = 0 AND status = 'ACTIVE' ORDER BY id ASC");
             for (Map<String, Object> a : accounts) {
                 String type = String.valueOf(a.get("account_type") == null ? "" : a.get("account_type")).toUpperCase();
                 String name = Objects.toString(a.get("account_name"), "");
                 String bank = Objects.toString(a.get("bank_name"), "");
-                String mask = Objects.toString(a.get("account_no_masked"), "");
-                String detail = (name + (bank.isBlank() ? "" : "\n开户行：" + bank) + (mask.isBlank() ? "" : "\n账号：" + mask)).trim();
+                String accountNo = decryptOrFallback(
+                        Objects.toString(a.get("account_no_cipher"), ""),
+                        Objects.toString(a.get("account_no_masked"), ""));
+                String detail = (name + (bank.isBlank() ? "" : "\n开户行：" + bank) + (accountNo.isBlank() ? "" : "\n账号：" + accountNo)).trim();
                 if (type.contains("RENT") && !StringUtils.hasText(p.getRentPayeeName())) {
                     p.setRentPayeeName(name);
                     p.setRentPaymentAccount(detail);
@@ -389,9 +396,86 @@ public class LeaseFeeService {
         }
     }
 
+    private String decryptOrFallback(String cipher, String masked) {
+        if (StringUtils.hasText(cipher)) {
+            try {
+                String plain = encryption.decrypt(cipher);
+                if (StringUtils.hasText(plain)) {
+                    return plain.trim();
+                }
+            } catch (Exception ignored) {
+                // 未配置加密密钥等异常环境时回退脱敏值，避免阻断打开账期
+            }
+        }
+        return masked == null ? "" : masked.trim();
+    }
+
+    private Map<String, String> loadMaskedToPlainMap() {
+        Map<String, String> map = new LinkedHashMap<>();
+        try {
+            List<Map<String, Object>> accounts = jdbc.queryForList(
+                    "SELECT account_no_cipher, account_no_masked FROM fin_collection_account"
+                            + " WHERE deleted = 0 AND status = 'ACTIVE' ORDER BY id ASC");
+            for (Map<String, Object> a : accounts) {
+                String masked = Objects.toString(a.get("account_no_masked"), "").trim();
+                String cipher = Objects.toString(a.get("account_no_cipher"), "").trim();
+                if (!masked.isEmpty() && !cipher.isEmpty()) {
+                    String plain = decryptOrFallback(cipher, "");
+                    if (!plain.isEmpty() && !plain.equals(masked)) {
+                        map.put(masked, plain);
+                    }
+                }
+            }
+        } catch (Exception ignored) {
+            // ignore
+        }
+        return map;
+    }
+
+    private void unmaskPeriodAccountsIfNeeded(LeaseFeePeriod p) {
+        if (p == null || !hasMaskedMarker(p.getRentPaymentAccount(), p.getPropertyPaymentAccount())) {
+            return;
+        }
+        Map<String, String> map = loadMaskedToPlainMap();
+        if (map.isEmpty()) return;
+        String newRent = unmaskText(p.getRentPaymentAccount(), map);
+        String newProp = unmaskText(p.getPropertyPaymentAccount(), map);
+        boolean changed = !Objects.equals(newRent, p.getRentPaymentAccount())
+                || !Objects.equals(newProp, p.getPropertyPaymentAccount());
+        if (changed) {
+            p.setRentPaymentAccount(newRent);
+            p.setPropertyPaymentAccount(newProp);
+            periodMapper.update(null, new LambdaUpdateWrapper<LeaseFeePeriod>()
+                    .eq(LeaseFeePeriod::getId, p.getId())
+                    .set(LeaseFeePeriod::getRentPaymentAccount, newRent)
+                    .set(LeaseFeePeriod::getPropertyPaymentAccount, newProp));
+        }
+    }
+
+    static boolean hasMaskedMarker(String... texts) {
+        for (String t : texts) {
+            if (t != null && t.contains("****")) return true;
+        }
+        return false;
+    }
+
+    static String unmaskText(String text, Map<String, String> maskedToPlain) {
+        if (text == null || !text.contains("****") || maskedToPlain == null || maskedToPlain.isEmpty()) {
+            return text;
+        }
+        String out = text;
+        for (Map.Entry<String, String> e : maskedToPlain.entrySet()) {
+            if (out.contains(e.getKey())) {
+                out = out.replace(e.getKey(), e.getValue());
+            }
+        }
+        return out;
+    }
+
     public LeaseFeePeriod require(Long id) {
         LeaseFeePeriod p = periodMapper.selectById(id);
         if (p == null) throw new BizException("租金/物业费账期不存在: " + id);
+        unmaskPeriodAccountsIfNeeded(p);
         return decorate(p);
     }
 
@@ -607,12 +691,23 @@ public class LeaseFeeService {
                 .eq(LeaseFeeNotice::getLeasePeriodId, periodId)
                 .orderByAsc(LeaseFeeNotice::getSort).orderByAsc(LeaseFeeNotice::getId));
         if (list.isEmpty()) return list;
+        boolean anyMasked = list.stream().anyMatch(n -> hasMaskedMarker(n.getPaymentAccount()));
+        Map<String, String> maskedToPlain = anyMasked ? loadMaskedToPlainMap() : Map.of();
         List<Long> ids = list.stream().map(LeaseFeeNotice::getId).toList();
         Map<Long, List<LeaseFeeNoticeItem>> byNotice = itemMapper.selectList(new LambdaQueryWrapper<LeaseFeeNoticeItem>()
                 .in(LeaseFeeNoticeItem::getNoticeId, ids)
                 .orderByAsc(LeaseFeeNoticeItem::getSort).orderByAsc(LeaseFeeNoticeItem::getId))
                 .stream().collect(Collectors.groupingBy(LeaseFeeNoticeItem::getNoticeId));
         for (LeaseFeeNotice n : list) {
+            if (!maskedToPlain.isEmpty() && hasMaskedMarker(n.getPaymentAccount())) {
+                String fixed = unmaskText(n.getPaymentAccount(), maskedToPlain);
+                if (!Objects.equals(fixed, n.getPaymentAccount())) {
+                    n.setPaymentAccount(fixed);
+                    noticeMapper.update(null, new LambdaUpdateWrapper<LeaseFeeNotice>()
+                            .eq(LeaseFeeNotice::getId, n.getId())
+                            .set(LeaseFeeNotice::getPaymentAccount, fixed));
+                }
+            }
             n.setItems(byNotice.getOrDefault(n.getId(), List.of()));
             LeaseFeePaymentService.normalizeStatus(n);
         }
