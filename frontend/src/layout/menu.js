@@ -43,6 +43,7 @@ export const menuTree = [
           { title: '营销看板', path: '/crm/marketing/dashboard', group: '看板' },
           { title: '伙伴管理', path: '/crm/marketing/promoter', group: '伙伴' },
           { title: '客户管理', path: '/crm/marketing/customer', group: '客户' },
+          { title: '公海线索池', path: '/crm/marketing/public-sea', group: '客户' },
           { title: '云仓管理', path: '/crm/marketing/warehouse', group: '云仓' },
           { title: '加盟申请', path: '/crm/marketing/onboarding', group: '云仓' },
           { title: '单量与ERP对接', path: '/crm/marketing/erp', group: '云仓' },

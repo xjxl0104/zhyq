@@ -66,6 +66,10 @@ export function publicQuoteRequest(method, tokenValue, data) {
   const quoteBase = BASE.replace(/\/mp\/v1\/?$/, '/open/quote-intake')
   return requestWith(quoteBase, token, '', method, '/' + tokenValue, data, true)
 }
+export function publicCalcRequest(path, data = {}) {
+  const calcBase = BASE.replace(/\/mp\/v1\/?$/, '/open/public-calc')
+  return requestWith(calcBase, token, '', 'POST', path, data, true)
+}
 export function warehouseRequest(method, url, data = {}) {
   return requestWith(WH_BASE, warehouseToken, '/pages/warehouse-login/index', method, url, data)
 }

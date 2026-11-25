@@ -25,6 +25,15 @@
       <view class="role-arrow">›</view>
     </view>
 
+    <view class="card role-card pressable" @click="goPublicCalc">
+      <view class="role-mark calc">¥</view>
+      <view class="role-main">
+        <view class="role-title">30秒测算云仓底价</view>
+        <view class="role-desc">我是发货货主 · 免登录测多仓一口价领试发券</view>
+      </view>
+      <view class="role-arrow">›</view>
+    </view>
+
     <view v-if="showDemo" class="demo-aux-wrap">
       <button class="demo-aux-link" @click="goDemo">查看功能演示（示例数据） ›</button>
     </view>
@@ -58,6 +67,9 @@ function goPartner() {
 function goWarehouse() {
   uni.reLaunch({ url: warehouseToken.get() ? '/pages/warehouse-dashboard/index' : '/pages/warehouse-login/index' })
 }
+function goPublicCalc() {
+  uni.navigateTo({ url: '/pages/public-calc/index' })
+}
 function goDemo() { if (showDemo) uni.navigateTo({ url: '/pages/demo/index' }) }
 </script>
 
@@ -71,6 +83,7 @@ function goDemo() { if (showDemo) uni.navigateTo({ url: '/pages/demo/index' }) }
 .role-mark { display: flex; align-items: center; justify-content: center; width: 88rpx; height: 88rpx; flex: 0 0 88rpx; border-radius: 22rpx; color: #fff; font-size: 40rpx; font-weight: 700; }
 .role-mark.partner { background: linear-gradient(145deg, var(--park-blue-2), var(--park-blue)); }
 .role-mark.warehouse { background: linear-gradient(145deg, #50c7d8, #299cb0); }
+.role-mark.calc { background: linear-gradient(145deg, #f59e0b, #d97706); }
 .role-main { flex: 1; }
 .role-title { color: var(--park-ink); font-size: 32rpx; font-weight: 650; }
 .role-desc { margin-top: 8rpx; color: var(--park-muted); font-size: 25rpx; }

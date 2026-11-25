@@ -41,6 +41,7 @@ const routes = [
       { path: 'crm/marketing/position', meta: { title: '角色与称号' }, component: () => import('@/views/crm/marketing/Position.vue') },
       { path: 'crm/marketing/grade', meta: { title: '客户评级' }, component: () => import('@/views/crm/marketing/Grade.vue') },
       { path: 'crm/marketing/customer', meta: { title: '客户管理' }, component: () => import('@/views/crm/marketing/Customer.vue') },
+      { path: 'crm/marketing/public-sea', meta: { title: '公海线索池' }, component: () => import('@/views/crm/marketing/PublicSea.vue') },
       { path: 'crm/marketing/contract', meta: { title: '服务合同' }, component: () => import('@/views/crm/marketing/ServiceContract.vue') },
       { path: 'crm/marketing/template', meta: { title: '合同模板' }, component: () => import('@/views/crm/marketing/ContractTemplate.vue') },
       { path: 'crm/marketing/warehouse', meta: { title: '云仓管理' }, component: () => import('@/views/crm/marketing/Warehouse.vue') },

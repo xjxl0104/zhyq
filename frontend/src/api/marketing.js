@@ -263,3 +263,19 @@ export const mktSettlementApi = {
   // 票数对账:ERP(云山)发货票数 vs 系统计佣订单数
   ticketReconcile: (params) => request.get(`${BASE}/settlement/ticket-reconcile`, { params })
 }
+
+const PUBLIC_SEA = `${BASE}/public-sea`
+export const mktPublicSeaApi = {
+  summary: (params) => request.get(`${PUBLIC_SEA}/summary`, { params }),
+  page: (params) => request.get(`${PUBLIC_SEA}/page`, { params }),
+  washFile: (formData, params) => request.post(`${PUBLIC_SEA}/wash-file`, formData, {
+    params,
+    headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: 60000
+  }),
+  washRows: (data) => request.post(`${PUBLIC_SEA}/wash-rows`, data, { timeout: 60000 }),
+  claim: (customerId) => request.post(`${PUBLIC_SEA}/${customerId}/claim`),
+  firstTouch: (customerId, data) => request.post(`${PUBLIC_SEA}/${customerId}/first-touch`, data),
+  feedWarehouses: (customerId, data) => request.post(`${PUBLIC_SEA}/${customerId}/feed-warehouses`, data),
+  release: (customerId, data) => request.post(`${PUBLIC_SEA}/${customerId}/release`, data)
+}

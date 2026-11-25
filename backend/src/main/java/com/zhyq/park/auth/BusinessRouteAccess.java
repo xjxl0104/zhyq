@@ -45,6 +45,15 @@ public final class BusinessRouteAccess {
         }
         if (path.startsWith("/crm/marketing/quote/customers/"))
             return "GET".equals(method) && grants.contains("crm:marketing:customer:query");
+        if (path.equals("/crm/marketing/public-sea") || path.startsWith("/crm/marketing/public-sea/")) {
+            if ("GET".equals(method)) {
+                return grants.contains("crm:marketing:public-sea:query")
+                        || grants.contains("crm:marketing:customer:query")
+                        || hasMenu(grants, "/crm/marketing/public-sea");
+            }
+            return grants.contains("crm:marketing:public-sea:edit")
+                    || grants.contains("crm:marketing:customer:edit");
+        }
 
         String[] parts = path.split("/");
         if (parts.length < 2) return false;

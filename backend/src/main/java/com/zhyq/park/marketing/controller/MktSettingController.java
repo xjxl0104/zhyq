@@ -35,6 +35,12 @@ public class MktSettingController {
     private static final String WINDOW_END_REMARK = "提现申请开放截止日（1–31，起始日为 0 时忽略）";
     private static final String AUTO_WITHDRAW_KEY = "auto_withdraw_day";
     private static final String AUTO_WITHDRAW_REMARK = "每月自动提现日：当天 10:00 自动将可提现余额发起提现申请（0 关闭，1–28）";
+    private static final String SEA_SLA_HOURS_KEY = "sea_sla_hours";
+    private static final String SEA_SLA_HOURS_REMARK = "公海认领后首触达保活时限（小时，超时未填核实纪要自动弹回公海）";
+    private static final String SEA_WH_DAILY_CAP_KEY = "sea_wh_daily_cap";
+    private static final String SEA_WH_DAILY_CAP_REMARK = "加盟云仓每日最多认领公海热单户数";
+    private static final String SEA_WH_ACTIVE_CAP_KEY = "sea_wh_active_cap";
+    private static final String SEA_WH_ACTIVE_CAP_REMARK = "加盟云仓在途未签约公海客户上限户数";
 
     /** 后端 0 次读取的幽灵历史参数:查询时不展示以防误导管理员。 */
     public static final Set<String> RETIRED_GHOST_KEYS = Set.of(
@@ -46,7 +52,8 @@ public class MktSettingController {
             "daily_referral_cap", "clawback_days",
             "old_channel_exclusive", "tax_mode", "tax_rate",
             "lock_cooldown_days", "lease_clawback_days",
-            WINDOW_START_KEY, WINDOW_END_KEY, AUTO_WITHDRAW_KEY, ARRIVAL_TIME);
+            WINDOW_START_KEY, WINDOW_END_KEY, AUTO_WITHDRAW_KEY, ARRIVAL_TIME,
+            SEA_SLA_HOURS_KEY, SEA_WH_DAILY_CAP_KEY, SEA_WH_ACTIVE_CAP_KEY);
 
     private final JdbcTemplate jdbc;
     private final MktAuditService auditService;
@@ -67,6 +74,9 @@ public class MktSettingController {
         ensureVirtualDefault(rows, WINDOW_START_KEY, "0", WINDOW_START_REMARK);
         ensureVirtualDefault(rows, WINDOW_END_KEY, "31", WINDOW_END_REMARK);
         ensureVirtualDefault(rows, AUTO_WITHDRAW_KEY, "10", AUTO_WITHDRAW_REMARK);
+        ensureVirtualDefault(rows, SEA_SLA_HOURS_KEY, "72", SEA_SLA_HOURS_REMARK);
+        ensureVirtualDefault(rows, SEA_WH_DAILY_CAP_KEY, "5", SEA_WH_DAILY_CAP_REMARK);
+        ensureVirtualDefault(rows, SEA_WH_ACTIVE_CAP_KEY, "10", SEA_WH_ACTIVE_CAP_REMARK);
         return Result.ok(rows);
     }
 
@@ -115,6 +125,21 @@ public class MktSettingController {
                 upsertSetting(AUTO_WITHDRAW_KEY, String.valueOf(day), AUTO_WITHDRAW_REMARK, "自动提现日设置已变化，请刷新页面后重试");
                 continue;
             }
+            if (SEA_SLA_HOURS_KEY.equals(key)) {
+                int h = parseBoundedInt(value, 1, 720, "公海首触达保活时限请填写 1–720 小时");
+                upsertSetting(SEA_SLA_HOURS_KEY, String.valueOf(h), SEA_SLA_HOURS_REMARK, "公海保活时限设置已变化，请刷新页面后重试");
+                continue;
+            }
+            if (SEA_WH_DAILY_CAP_KEY.equals(key)) {
+                int cap = parseBoundedInt(value, 1, 50, "云仓每日认领上限请填写 1–50 户");
+                upsertSetting(SEA_WH_DAILY_CAP_KEY, String.valueOf(cap), SEA_WH_DAILY_CAP_REMARK, "云仓每日认领上限已变化，请刷新页面后重试");
+                continue;
+            }
+            if (SEA_WH_ACTIVE_CAP_KEY.equals(key)) {
+                int cap = parseBoundedInt(value, 1, 200, "云仓在途公海客户上限请填写 1–200 户");
+                upsertSetting(SEA_WH_ACTIVE_CAP_KEY, String.valueOf(cap), SEA_WH_ACTIVE_CAP_REMARK, "云仓在途上限已变化，请刷新页面后重试");
+                continue;
+            }
             String before = jdbc.query("SELECT svalue FROM biz_setting WHERE module = ? AND skey = ? AND deleted = 0 LIMIT 1",
                     rs -> rs.next() ? rs.getString(1) : null, MODULE, key);
             if (value != null && !value.equals(before)) {
@@ -127,7 +152,7 @@ public class MktSettingController {
     }
 
     private static int parseBoundedInt(String raw, int min, int max, String errorMsg) {
-        if (raw == null || !raw.trim().matches("\\d{1,2}")) {
+        if (raw == null || !raw.trim().matches("\\d{1,3}")) {
             throw new BizException(errorMsg);
         }
         int parsed = Integer.parseInt(raw.trim());
