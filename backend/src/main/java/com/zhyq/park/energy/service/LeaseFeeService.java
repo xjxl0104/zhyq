@@ -98,9 +98,10 @@ public class LeaseFeeService {
     }
 
     /**
-     * 与招商租赁「正式合同」(biz_contract)双向对齐:
-     * 1) 已存在的合同基础台账按(租户名+起止日+面积+单价)自动关联正式合同，并用基础台账里正确的协议编号修正正式合同编号;
-     * 2) 招商租赁中新增的正式合同自动引入合同基础台账，作为缴费管理下所有收费项的统一合同数据源。
+     * 单向同步：以「合同基础台账」(eng_lease_contract)为准，完善招商租赁「正式合同」(biz_contract)，
+     * 绝不向合同基础台账插入或改动任何数据：
+     * 1) 已存在的正式合同按(租户名+起止日+面积+单价)自动关联，并按基础台账的协议编号/区域/面积/单价/保证金更新正式合同；
+     * 2) 正式合同里缺失的在租合同，自动从合同基础台账抽取信息补建到正式合同。
      */
     @Transactional(rollbackFor = Exception.class)
     public Map<String, Object> syncFromFormalContracts() {
@@ -111,44 +112,75 @@ public class LeaseFeeService {
                        bc.increase_rate, bc.remark
                 FROM biz_contract bc
                 JOIN biz_tenant bt ON bt.id = bc.tenant_ref_id AND bt.deleted = 0
-                WHERE bc.deleted = 0 AND bc.contract_type = 1 AND bc.status IN (4, 5, 6)
+                WHERE bc.deleted = 0 AND bc.contract_type = 1
                 ORDER BY bc.id ASC
                 """);
-        List<LeaseContract> existing = listContracts(true);
+        List<LeaseContract> existing = listContracts(false);
         java.util.Set<Long> linkedBizIds = new java.util.HashSet<>();
         for (LeaseContract lc : existing) {
             if (lc.getBizContractId() != null) linkedBizIds.add(lc.getBizContractId());
         }
 
         int linked = 0;
-        int codesSynced = 0;
-        int inserted = 0;
+        int updated = 0;
         int formalCreated = 0;
-        int maxSeq = existing.stream().map(LeaseContract::getSeqNo).filter(Objects::nonNull).max(Integer::compareTo).orElse(0);
-
-        // 1) 尝试把未关联的基础台账行与正式合同配对，并同步正确编号到正式合同；正式合同里没有的则从基础台账补建正式合同
         Long defaultProjectId = resolveDefaultProjectId();
+
+        // Pass 1: 精确匹配(同租户 + 起止日 + 面积 + 单价最接近)
+        for (LeaseContract lc : existing) {
+            if (lc.getBizContractId() != null) continue;
+            Map<String, Object> best = null;
+            BigDecimal bestPriceDiff = null;
+            for (Map<String, Object> fr : formalRows) {
+                Long bid = ((Number) fr.get("id")).longValue();
+                if (linkedBizIds.contains(bid)) continue;
+                String tName = Objects.toString(fr.get("tenant_name"), "");
+                LocalDate sd = toLocalDate(fr.get("start_date"));
+                LocalDate ed = toLocalDate(fr.get("end_date"));
+                BigDecimal area = fr.get("rent_area") == null ? BigDecimal.ZERO : new BigDecimal(fr.get("rent_area").toString());
+                if (Objects.equals(tName, lc.getTenantName())
+                        && Objects.equals(sd, lc.getStartDate())
+                        && Objects.equals(ed, lc.getEndDate())
+                        && area.subtract(nz(lc.getLeaseArea())).abs().compareTo(new BigDecimal("0.05")) < 0) {
+                    BigDecimal rp = fr.get("rent_price") == null ? BigDecimal.ZERO : new BigDecimal(fr.get("rent_price").toString());
+                    BigDecimal diff = rp.subtract(nz(lc.getRentUnitPrice())).abs();
+                    if (best == null || diff.compareTo(bestPriceDiff) < 0) {
+                        best = fr;
+                        bestPriceDiff = diff;
+                    }
+                }
+            }
+            if (best != null) {
+                Long bid = ((Number) best.get("id")).longValue();
+                lc.setBizContractId(bid);
+                contractMapper.update(null, new LambdaUpdateWrapper<LeaseContract>()
+                        .eq(LeaseContract::getId, lc.getId())
+                        .set(LeaseContract::getBizContractId, bid));
+                linkedBizIds.add(bid);
+                linked++;
+            }
+        }
+
+        // Pass 2: 宽松匹配(同租户下尚未关联的正式合同) -> 仍找不到才新建正式合同；最后以基础台账条款完善正式合同
         for (LeaseContract lc : existing) {
             if (lc.getBizContractId() == null) {
                 Map<String, Object> best = null;
+                BigDecimal bestAreaDiff = null;
                 BigDecimal bestPriceDiff = null;
                 for (Map<String, Object> fr : formalRows) {
                     Long bid = ((Number) fr.get("id")).longValue();
                     if (linkedBizIds.contains(bid)) continue;
                     String tName = Objects.toString(fr.get("tenant_name"), "");
-                    LocalDate sd = toLocalDate(fr.get("start_date"));
-                    LocalDate ed = toLocalDate(fr.get("end_date"));
+                    if (!Objects.equals(tName, lc.getTenantName())) continue;
                     BigDecimal area = fr.get("rent_area") == null ? BigDecimal.ZERO : new BigDecimal(fr.get("rent_area").toString());
-                    if (Objects.equals(tName, lc.getTenantName())
-                            && Objects.equals(sd, lc.getStartDate())
-                            && Objects.equals(ed, lc.getEndDate())
-                            && area.subtract(nz(lc.getLeaseArea())).abs().compareTo(new BigDecimal("0.05")) < 0) {
-                        BigDecimal rp = fr.get("rent_price") == null ? BigDecimal.ZERO : new BigDecimal(fr.get("rent_price").toString());
-                        BigDecimal diff = rp.subtract(nz(lc.getRentUnitPrice())).abs();
-                        if (best == null || diff.compareTo(bestPriceDiff) < 0) {
-                            best = fr;
-                            bestPriceDiff = diff;
-                        }
+                    BigDecimal rp = fr.get("rent_price") == null ? BigDecimal.ZERO : new BigDecimal(fr.get("rent_price").toString());
+                    BigDecimal aDiff = area.subtract(nz(lc.getLeaseArea())).abs();
+                    BigDecimal pDiff = rp.subtract(nz(lc.getRentUnitPrice())).abs();
+                    if (best == null || aDiff.compareTo(bestAreaDiff) < 0
+                            || (aDiff.compareTo(bestAreaDiff) == 0 && pDiff.compareTo(bestPriceDiff) < 0)) {
+                        best = fr;
+                        bestAreaDiff = aDiff;
+                        bestPriceDiff = pDiff;
                     }
                 }
                 if (best != null) {
@@ -159,8 +191,7 @@ public class LeaseFeeService {
                             .set(LeaseContract::getBizContractId, bid));
                     linkedBizIds.add(bid);
                     linked++;
-                } else if (Integer.valueOf(1).equals(lc.getStatus())) {
-                    // 正式合同里还没有：从合同基础台账抽取完整信息自动补建正式合同
+                } else {
                     Long newFormalId = createFormalContractFromLedger(lc, defaultProjectId);
                     if (newFormalId != null) {
                         lc.setBizContractId(newFormalId);
@@ -172,58 +203,40 @@ public class LeaseFeeService {
                     }
                 }
             }
-            if (lc.getBizContractId() != null && syncCodeToFormalContract(lc.getBizContractId(), lc.getAgreementNo())) {
-                codesSynced++;
+            if (lc.getBizContractId() != null && syncLedgerToFormalContract(lc)) {
+                updated++;
             }
         }
+        return Map.of("linked", linked, "updated", updated, "formalCreated", formalCreated);
+    }
 
-        // 2) 将招商正式合同里尚未入账的新合同自动引入合同基础台账
-        for (Map<String, Object> fr : formalRows) {
-            Long bid = ((Number) fr.get("id")).longValue();
-            if (linkedBizIds.contains(bid)) continue;
-            LocalDate sd = toLocalDate(fr.get("start_date"));
-            LocalDate ed = toLocalDate(fr.get("end_date"));
-            if (sd == null || ed == null) continue;
-            BigDecimal area = fr.get("rent_area") == null ? BigDecimal.ZERO : new BigDecimal(fr.get("rent_area").toString());
-            BigDecimal rentPrice = fr.get("rent_price") == null ? BigDecimal.ZERO : new BigDecimal(fr.get("rent_price").toString());
-            BigDecimal propPrice = fr.get("property_price") == null ? new BigDecimal("2") : new BigDecimal(fr.get("property_price").toString());
-            if (propPrice.signum() <= 0) propPrice = new BigDecimal("2");
-            BigDecimal incPct = fr.get("increase_rate") == null ? BigDecimal.ZERO : new BigDecimal(fr.get("increase_rate").toString());
-            BigDecimal escRate = incPct.compareTo(BigDecimal.ONE) > 0
-                    ? incPct.divide(BigDecimal.valueOf(100), 4, java.math.RoundingMode.HALF_UP) : incPct;
-            String scope = Objects.toString(fr.get("lease_scope"), "").trim();
-            if (scope.isEmpty()) scope = resolveFormalRoomsScope(bid);
-            if (scope.isEmpty()) scope = "待补充区域";
-
-            LeaseContract nc = new LeaseContract();
-            nc.setSeqNo(++maxSeq);
-            nc.setBizContractId(bid);
-            nc.setProjectId(fr.get("project_id") == null ? null : ((Number) fr.get("project_id")).longValue());
-            nc.setTenantRefId(((Number) fr.get("tenant_ref_id")).longValue());
-            nc.setTenantName(Objects.toString(fr.get("tenant_name"), ""));
-            nc.setUnitName(scope);
-            nc.setAgreementNo(Objects.toString(fr.get("code"), ""));
-            nc.setLeaseArea(area);
-            nc.setStartDate(sd);
-            nc.setEndDate(ed);
-            nc.setRentUnitPrice(rentPrice);
-            nc.setPropertyUnitPrice(propPrice);
-            nc.setEscalationRate(escRate);
-            nc.setEscalationMonths(36);
-            nc.setRentDeposit(twoMonthsRentOf(nc));
-            nc.setPropertyDeposit(twoMonthsPropertyOf(nc));
-            nc.setRentDepositStatus(0);
-            nc.setRentDepositPaid(BigDecimal.ZERO);
-            nc.setPropertyDepositStatus(0);
-            nc.setPropertyDepositPaid(BigDecimal.ZERO);
-            nc.setStatus(1);
-            nc.setRemark(Objects.toString(fr.get("remark"), null));
-            contractMapper.insert(nc);
-            linkedBizIds.add(bid);
-            inserted++;
+    private boolean syncLedgerToFormalContract(LeaseContract lc) {
+        if (lc == null || lc.getBizContractId() == null) return false;
+        boolean changed = syncCodeToFormalContract(lc.getBizContractId(), lc.getAgreementNo());
+        try {
+            BigDecimal rentPrice = nz(lc.getRentUnitPrice());
+            if (rentPrice.signum() <= 0 && lc.getFixedMonthlyRent() != null && lc.getFixedMonthlyRent().signum() > 0
+                    && lc.getLeaseArea() != null && lc.getLeaseArea().signum() > 0) {
+                rentPrice = lc.getFixedMonthlyRent().divide(lc.getLeaseArea(), 2, java.math.RoundingMode.HALF_UP);
+            } else {
+                rentPrice = rentPrice.setScale(2, java.math.RoundingMode.HALF_UP);
+            }
+            BigDecimal propPrice = nz(lc.getPropertyUnitPrice()).setScale(2, java.math.RoundingMode.HALF_UP);
+            BigDecimal deposit = nz(lc.getRentDeposit()).add(nz(lc.getPropertyDeposit())).setScale(2, java.math.RoundingMode.HALF_UP);
+            BigDecimal increasePct = nz(lc.getEscalationRate()).multiply(BigDecimal.valueOf(100)).setScale(2, java.math.RoundingMode.HALF_UP);
+            int rows = jdbc.update("""
+                    UPDATE biz_contract
+                    SET lease_scope = ?, start_date = ?, end_date = ?, rent_area = ?,
+                        rent_price = ?, property_price = ?, deposit = ?, increase_rate = ?,
+                        update_time = NOW()
+                    WHERE id = ? AND deleted = 0
+                    """,
+                    lc.getUnitName(), lc.getStartDate(), lc.getEndDate(), nz(lc.getLeaseArea()),
+                    rentPrice, propPrice, deposit, increasePct, lc.getBizContractId());
+            return changed || rows > 0;
+        } catch (Exception ignored) {
+            return changed;
         }
-        if (inserted > 0) touchDrafts();
-        return Map.of("linked", linked, "codesSynced", codesSynced, "inserted", inserted, "formalCreated", formalCreated);
     }
 
     private Long resolveDefaultProjectId() {
@@ -356,6 +369,156 @@ public class LeaseFeeService {
             return rooms.isEmpty() ? "" : String.join("、", rooms);
         } catch (Exception e) {
             return "";
+        }
+    }
+
+    /**
+     * 启动时检查：若有尚未关联到「正式合同」的在租「合同基础台账」，自动单向补齐到正式合同（绝不修改基础台账数据）。
+     */
+    @org.springframework.context.event.EventListener(org.springframework.boot.context.event.ApplicationReadyEvent.class)
+    public void autoAlignMissingFormalContractsOnStartup() {
+        try {
+            Long unlinked = contractMapper.selectCount(new LambdaQueryWrapper<LeaseContract>()
+                    .eq(LeaseContract::getStatus, 1)
+                    .isNull(LeaseContract::getBizContractId));
+            if (unlinked != null && unlinked > 0) {
+                syncFromFormalContracts();
+            }
+        } catch (Exception ignored) {
+        }
+    }
+
+    /**
+     * 未来新增联动：用户在「招商租赁 → 正式合同」录入新租户正式合同时，自动在「合同基础台账」新增对应客户记录。
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public void syncNewFormalContractToLedger(com.zhyq.park.contract.entity.Contract fc, String tenantName) {
+        if (fc == null || fc.getId() == null) return;
+        if (fc.getContractType() != null && fc.getContractType() != 1) return;
+        Long existed = contractMapper.selectCount(new LambdaQueryWrapper<LeaseContract>()
+                .eq(LeaseContract::getBizContractId, fc.getId()));
+        if (existed != null && existed > 0) return;
+
+        LeaseContract lc = new LeaseContract();
+        lc.setBizContractId(fc.getId());
+        lc.setProjectId(fc.getProjectId());
+        lc.setTenantRefId(fc.getTenantRefId());
+        lc.setTenantName(StringUtils.hasText(tenantName) ? tenantName.trim() : "未命名租户");
+        lc.setAgreementNo(StringUtils.hasText(fc.getCode()) ? fc.getCode().trim() : "");
+        String scope = StringUtils.hasText(fc.getLeaseScope()) ? fc.getLeaseScope().trim() : resolveFormalRoomsScope(fc.getId());
+        lc.setUnitName(scope);
+        BigDecimal area = nz(fc.getRentArea());
+        BigDecimal rentPrice = nz(fc.getRentPrice());
+        BigDecimal propPrice = fc.getPropertyPrice() != null ? fc.getPropertyPrice() : new BigDecimal("2.00");
+        lc.setLeaseArea(area);
+        lc.setStartDate(fc.getStartDate());
+        lc.setEndDate(fc.getEndDate());
+        lc.setTotalMonths(calcContractMonths(fc.getStartDate(), fc.getEndDate()));
+        lc.setPricingMode(fc.getChargeMode() != null && fc.getChargeMode() == 2 ? "固定月租" : "按面积单价");
+        lc.setRentUnitPrice(rentPrice);
+        lc.setPropertyUnitPrice(propPrice);
+        BigDecimal incPct = nz(fc.getIncreaseRate());
+        lc.setEscalationRate(incPct.divide(BigDecimal.valueOf(100), 4, java.math.RoundingMode.HALF_UP));
+        if (incPct.signum() > 0) {
+            lc.setEscalationMonths(12);
+        }
+        applyDepositSplitFromFormal(lc, fc.getDeposit(), area, rentPrice, propPrice);
+        lc.setDepositTerms("2个月租金及2个月物管费");
+        lc.setRentDepositStatus(0);
+        lc.setRentDepositPaid(BigDecimal.ZERO);
+        lc.setPropertyDepositStatus(0);
+        lc.setPropertyDepositPaid(BigDecimal.ZERO);
+        lc.setSeqNo(nextLeaseContractSeqNo());
+        lc.setStatus(1);
+        lc.setRemark(fc.getRemark());
+        contractMapper.insert(lc);
+    }
+
+    /**
+     * 编辑草稿正式合同时，同步更新其刚自动生成的「合同基础台账」记录（仅限草稿状态调用，不影响既有台账）。
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public void updateLedgerFromDraftFormalContract(com.zhyq.park.contract.entity.Contract fc, String tenantName) {
+        if (fc == null || fc.getId() == null) return;
+        if (fc.getContractType() != null && fc.getContractType() != 1) return;
+        LeaseContract lc = contractMapper.selectOne(new LambdaQueryWrapper<LeaseContract>()
+                .eq(LeaseContract::getBizContractId, fc.getId())
+                .last("LIMIT 1"));
+        if (lc == null) {
+            syncNewFormalContractToLedger(fc, tenantName);
+            return;
+        }
+        if (StringUtils.hasText(tenantName)) lc.setTenantName(tenantName.trim());
+        lc.setTenantRefId(fc.getTenantRefId());
+        lc.setProjectId(fc.getProjectId());
+        if (StringUtils.hasText(fc.getCode())) lc.setAgreementNo(fc.getCode().trim());
+        if (StringUtils.hasText(fc.getLeaseScope())) lc.setUnitName(fc.getLeaseScope().trim());
+        BigDecimal area = nz(fc.getRentArea());
+        BigDecimal rentPrice = nz(fc.getRentPrice());
+        BigDecimal propPrice = fc.getPropertyPrice() != null ? fc.getPropertyPrice() : nz(lc.getPropertyUnitPrice());
+        lc.setLeaseArea(area);
+        lc.setStartDate(fc.getStartDate());
+        lc.setEndDate(fc.getEndDate());
+        lc.setTotalMonths(calcContractMonths(fc.getStartDate(), fc.getEndDate()));
+        lc.setRentUnitPrice(rentPrice);
+        lc.setPropertyUnitPrice(propPrice);
+        if (fc.getIncreaseRate() != null) {
+            lc.setEscalationRate(fc.getIncreaseRate().divide(BigDecimal.valueOf(100), 4, java.math.RoundingMode.HALF_UP));
+        }
+        if (nz(lc.getRentDepositPaid()).signum() == 0 && nz(lc.getPropertyDepositPaid()).signum() == 0) {
+            applyDepositSplitFromFormal(lc, fc.getDeposit(), area, rentPrice, propPrice);
+        }
+        lc.setRemark(fc.getRemark());
+        contractMapper.updateById(lc);
+    }
+
+    /** 删除草稿正式合同时，若关联基础台账尚未产生保证金实收则一并删除。 */
+    @Transactional(rollbackFor = Exception.class)
+    public void deleteLedgerForDraftFormalContract(Long bizContractId) {
+        if (bizContractId == null) return;
+        LeaseContract lc = contractMapper.selectOne(new LambdaQueryWrapper<LeaseContract>()
+                .eq(LeaseContract::getBizContractId, bizContractId)
+                .last("LIMIT 1"));
+        if (lc != null && nz(lc.getRentDepositPaid()).signum() == 0 && nz(lc.getPropertyDepositPaid()).signum() == 0) {
+            contractMapper.deleteById(lc.getId());
+        }
+    }
+
+    private Integer calcContractMonths(LocalDate start, LocalDate end) {
+        if (start == null || end == null || end.isBefore(start)) return null;
+        java.time.Period p = java.time.Period.between(start, end.plusDays(1));
+        int months = p.getYears() * 12 + p.getMonths() + (p.getDays() >= 15 ? 1 : 0);
+        return Math.max(months, 1);
+    }
+
+    private void applyDepositSplitFromFormal(LeaseContract lc, BigDecimal totalDeposit,
+                                             BigDecimal area, BigDecimal rentPrice, BigDecimal propPrice) {
+        BigDecimal stdRentDep = area.multiply(rentPrice).multiply(BigDecimal.valueOf(2))
+                .setScale(2, java.math.RoundingMode.HALF_UP);
+        BigDecimal stdPropDep = area.multiply(propPrice).multiply(BigDecimal.valueOf(2))
+                .setScale(2, java.math.RoundingMode.HALF_UP);
+        if (totalDeposit != null && totalDeposit.signum() > 0) {
+            BigDecimal dep = totalDeposit.setScale(2, java.math.RoundingMode.HALF_UP);
+            if (stdPropDep.signum() > 0 && dep.compareTo(stdPropDep) > 0) {
+                lc.setPropertyDeposit(stdPropDep);
+                lc.setRentDeposit(dep.subtract(stdPropDep));
+            } else {
+                lc.setRentDeposit(dep);
+                lc.setPropertyDeposit(BigDecimal.ZERO);
+            }
+        } else {
+            lc.setRentDeposit(stdRentDep);
+            lc.setPropertyDeposit(stdPropDep);
+        }
+    }
+
+    private int nextLeaseContractSeqNo() {
+        try {
+            Integer max = jdbc.queryForObject(
+                    "SELECT COALESCE(MAX(seq_no), 0) FROM eng_lease_contract WHERE deleted = 0", Integer.class);
+            return (max == null ? 0 : max) + 1;
+        } catch (Exception e) {
+            return 1;
         }
     }
 
@@ -586,7 +749,7 @@ public class LeaseFeeService {
             if (input.getBizContractId() == null) input.setBizContractId(existed.getBizContractId());
             contractMapper.updateById(input);
             if (input.getBizContractId() != null) {
-                syncCodeToFormalContract(input.getBizContractId(), input.getAgreementNo());
+                syncLedgerToFormalContract(input);
             }
         }
         touchDrafts();

@@ -68,7 +68,9 @@ public class DecorationController {
     @Operation(summary = "自动生成下一个申请表编号")
     @GetMapping("/next-no")
     public Result<String> nextNo(@RequestParam(defaultValue = "DECORATION") String applyType,
-                                 @RequestParam(required = false) LocalDate applyDate) {
+                                 @RequestParam(required = false)
+                                 @org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE)
+                                 LocalDate applyDate) {
         return Result.ok(generateApplyNo(applyType, applyDate));
     }
 

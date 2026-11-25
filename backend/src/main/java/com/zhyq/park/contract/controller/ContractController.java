@@ -65,6 +65,8 @@ public class ContractController {
     private final BizSettings settings;
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.zhyq.park.energy.service.LeaseFeeService leaseFeeService;
 
     @Operation(summary = "分页查询合同")
     @PreAuthorize("hasAuthority('contract:query')")
@@ -214,6 +216,9 @@ public class ContractController {
             throw new BizException("合同编号已存在: " + contract.getCode());
         }
         contractMapper.insert(contract);
+        if (leaseFeeService != null) {
+            leaseFeeService.syncNewFormalContractToLedger(contract, resolveTenantName(contract));
+        }
         return Result.ok(contract.getId());
     }
 
@@ -229,6 +234,12 @@ public class ContractController {
     @PutMapping
     public Result<Void> update(@RequestBody Contract contract) {
         contractService.updateDraft(contract);
+        if (leaseFeeService != null && contract.getId() != null) {
+            Contract saved = contractMapper.selectById(contract.getId());
+            if (saved != null) {
+                leaseFeeService.updateLedgerFromDraftFormalContract(saved, resolveTenantName(saved));
+            }
+        }
         return Result.ok();
     }
 
@@ -239,7 +250,20 @@ public class ContractController {
         int changed = contractMapper.delete(new LambdaQueryWrapper<Contract>()
                 .eq(Contract::getId, id).eq(Contract::getStatus, 1));
         if (changed != 1) throw new BizException("仅草稿合同可删除，其他合同请按终止或归档流程处理");
+        if (leaseFeeService != null) {
+            leaseFeeService.deleteLedgerForDraftFormalContract(id);
+        }
         return Result.ok();
+    }
+
+    private String resolveTenantName(Contract contract) {
+        if (contract == null) return "";
+        if (StringUtils.hasText(contract.getTenantName())) return contract.getTenantName().trim();
+        if (contract.getTenantRefId() != null) {
+            BizTenant t = bizTenantMapper.selectById(contract.getTenantRefId());
+            if (t != null && StringUtils.hasText(t.getName())) return t.getName().trim();
+        }
+        return "";
     }
 
     /**

@@ -26,12 +26,12 @@
     <div class="table-card">
       <div class="toolbar">
         <el-button type="primary" @click="openEdit(null)"><el-icon><Plus /></el-icon>新增合同</el-button>
-        <el-button type="success" plain :loading="syncing" @click="syncFormal">同步招商正式合同</el-button>
+        <el-button type="success" plain :loading="syncing" @click="syncFormal">同步完善正式合同</el-button>
         <el-input v-model="keyword" placeholder="搜索租户名称 / 楼层区域 / 合同编号" clearable style="width: 260px" />
         <el-checkbox v-model="showDisabled">显示停用合同</el-checkbox>
       </div>
       <div class="toolbar-tip">
-        本台账是「缴费管理」下保证金、租金、物业费等所有收费模块的统一合同数据源，与招商租赁「正式合同」保持同步；修改协议编号后会自动同步到对应正式合同，修改单价/月固定总价/递增/免租规则后所有草稿月份自动重算。
+        本台账是「缴费管理」下保证金、租金、物业费等所有收费模块的统一合同数据源。点击「同步完善正式合同」会以本台账的合同编号与条款为准，单向同步完善招商「正式合同」（不会改动本台账已有数据）；后续新租户在「招商租赁 → 正式合同」录入正式合同时，也会自动同步新增到本台账。
       </div>
 
       <el-table :data="viewRows" v-loading="loading" border size="small" row-key="id" show-summary :summary-method="tableSummary">
@@ -200,7 +200,7 @@ async function syncFormal() {
   syncing.value = true
   try {
     const r = await leaseFeeApi.syncFormalContracts()
-    ElMessage.success(`同步完成：关联 ${r.linked} 份，回写编号 ${r.codesSynced} 份，补建正式合同 ${r.formalCreated || 0} 份，引入新合同 ${r.inserted} 份`)
+    ElMessage.success(`已按基础台账完善正式合同：关联 ${r.linked} 份，更新 ${r.updated || 0} 份，补建 ${r.formalCreated || 0} 份`)
     await load()
   } finally {
     syncing.value = false
@@ -258,10 +258,7 @@ function tableSummary({ columns, data }) {
   })
 }
 
-onMounted(async () => {
-  try { await leaseFeeApi.syncFormalContracts() } catch { /* 静默对齐正式合同 */ }
-  await load()
-})
+onMounted(load)
 </script>
 
 <style scoped>
