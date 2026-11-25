@@ -63,6 +63,8 @@ public class ContractController {
     private final ReceivableRegisterMapper receivableRegisterMapper;
     private final BizTenantMapper bizTenantMapper;
     private final BizSettings settings;
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
 
     @Operation(summary = "分页查询合同")
     @PreAuthorize("hasAuthority('contract:query')")
@@ -83,6 +85,7 @@ public class ContractController {
           .orderByDesc(Contract::getId);
         IPage<Contract> p = contractMapper.selectPage(new Page<>(pageNo, pageSize), qw);
         fillTenantNames(p.getRecords());
+        fillAttachmentCounts(p.getRecords());
         return Result.ok(PageResult.of(p.getTotal(), p.getRecords()));
     }
 
@@ -300,6 +303,20 @@ public class ContractController {
         bizTenantMapper.selectBatchIds(ids)
                 .forEach(t -> names.put(t.getId(), t.getName()));
         contracts.forEach(c -> c.setTenantName(names.get(c.getTenantRefId())));
+    }
+
+    private void fillAttachmentCounts(List<Contract> contracts) {
+        if (jdbcTemplate == null || contracts == null || contracts.isEmpty()) return;
+        String ids = contracts.stream().map(Contract::getId).filter(Objects::nonNull)
+                .map(String::valueOf).collect(java.util.stream.Collectors.joining(","));
+        if (ids.isEmpty()) return;
+        Map<Long, Integer> counts = new HashMap<>();
+        for (Map<String, Object> row : jdbcTemplate.queryForList(
+                "SELECT biz_id, COUNT(*) AS c FROM sys_file WHERE deleted = 0 AND biz_type = 'contract'"
+                        + " AND biz_id IN (" + ids + ") GROUP BY biz_id")) {
+            counts.put(((Number) row.get("biz_id")).longValue(), ((Number) row.get("c")).intValue());
+        }
+        contracts.forEach(c -> c.setAttachmentCount(counts.getOrDefault(c.getId(), 0)));
     }
 
     private static Map<String, Object> summary(int deleted, int kept) {

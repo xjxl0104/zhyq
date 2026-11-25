@@ -1,16 +1,20 @@
 <template>
   <div class="page-container">
-    <!-- 合同类型页签 -->
-    <el-tabs v-model="typeTab" @tab-change="onTypeTab">
-      <el-tab-pane label="全部合同" name="all" />
-      <el-tab-pane label="正式合同" name="1" />
-      <el-tab-pane label="意向合同" name="2" />
-      <el-tab-pane label="草稿合同" name="3" />
-      <el-tab-pane label="电子合同" name="4" />
-      <el-tab-pane label="优惠合同" name="5" />
-      <el-tab-pane label="成本合同" name="6" />
-      <el-tab-pane label="合作合同" name="7" />
-    </el-tabs>
+    <!-- 到期预警(原合同归档页合并而来) -->
+    <section v-if="expiryAlerts.length" class="expiry-warning" aria-label="合同到期预警">
+      <div class="expiry-warning__heading">
+        <span>合同到期预警</span>
+        <span>未来两个月内有 {{ expiryAlerts.length }} 份在租合同到期，请提前续签或办理退租。</span>
+      </div>
+      <div class="expiry-warning__items">
+        <div v-for="item in expiryAlerts" :key="item.id" class="expiry-warning__item">
+          <strong>{{ item.code }}</strong>
+          <span>{{ item.tenantName || '未关联租客' }}</span>
+          <span>{{ item.endDate }} 到期 · 剩余 {{ item.daysRemaining }} 天</span>
+          <el-button link type="warning" @click="viewExpiryContract(item)">查看</el-button>
+        </div>
+      </div>
+    </section>
 
     <!-- 查询区 -->
     <details class="search-bar" :open="!isMobile">
@@ -44,6 +48,7 @@
         <el-button type="primary" @click="openDialog()"><el-icon><Plus /></el-icon>新增合同</el-button>
         <el-button @click="importDialog.visible = true"><el-icon><Upload /></el-icon>导入合同</el-button>
         <el-button type="success" plain @click="triggerPhoto"><el-icon><Camera /></el-icon>拍照录入</el-button>
+        <el-button @click="exportContracts"><el-icon><Download /></el-icon>导出合同台账</el-button>
         <input ref="photoInput" type="file" accept="image/*" capture="environment" hidden @change="onPhoto" />
       </div>
       <MobileRecordList v-if="isMobile" :items="list" :loading="loading" empty-text="暂无合同">
@@ -74,6 +79,7 @@
         </template>
         <template #actions="{ row }">
           <el-button :aria-label="`查看合同 ${row.code} 详情`" link type="primary" @click="showDetail(row)">详情</el-button>
+          <el-button link type="primary" @click="openAttachments(row)">合同附件</el-button>
           <el-button v-if="row.status === 1" :aria-label="`编辑合同 ${row.code}`" link type="primary" @click="openDialog(row)">编辑</el-button>
           <el-popconfirm v-if="row.status === 1" title="确认提交审批?" @confirm="submit(row.id)">
             <template #reference><el-button :aria-label="`提交合同 ${row.code} 审批`" link type="warning">提交审批</el-button></template>
@@ -81,6 +87,9 @@
           <el-button v-if="row.status === 2" :aria-label="`办理合同 ${row.code} 审批`" link type="success" @click="openApproval(row.id)">办理审批</el-button>
           <el-popconfirm v-if="[5, 8].includes(row.status)" title="确认退租?房源将被释放" @confirm="terminate(row.id)">
             <template #reference><el-button :aria-label="`办理合同 ${row.code} 退租`" link type="danger">退租</el-button></template>
+          </el-popconfirm>
+          <el-popconfirm v-if="[8, 9].includes(row.status)" title="确认归档该合同?" @confirm="archive(row.id)">
+            <template #reference><el-button link type="info">归档</el-button></template>
           </el-popconfirm>
           <el-popconfirm v-if="row.status === 1" title="确认删除?" @confirm="remove(row.id)">
             <template #reference><el-button :aria-label="`删除合同 ${row.code}`" link type="danger">删除</el-button></template>
@@ -112,14 +121,22 @@
         <el-table-column prop="deposit" label="保证金" width="110">
           <template #default="{ row }">{{ money(row.deposit) }} 元</template>
         </el-table-column>
-        <el-table-column label="状态" width="100">
+        <el-table-column label="合同附件" width="110" align="center">
+          <template #default="{ row }">
+            <el-button link :type="Number(row.attachmentCount) > 0 ? 'success' : 'primary'" @click="openAttachments(row)">
+              {{ Number(row.attachmentCount) > 0 ? `附件 (${row.attachmentCount})` : '上传附件' }}
+            </el-button>
+          </template>
+        </el-table-column>
+        <el-table-column label="状态" width="95">
           <template #default="{ row }">
             <el-tag :type="statusTagType(row.status)">{{ statusText(row.status) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="280" fixed="right">
+        <el-table-column label="操作" width="310" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click="showDetail(row)">详情</el-button>
+            <el-button link type="primary" @click="openAttachments(row)">合同附件</el-button>
             <el-button v-if="row.status === 1" link type="primary" @click="openDialog(row)">编辑</el-button>
             <!-- 草稿:提交审批 -->
             <el-popconfirm v-if="row.status === 1" title="确认提交审批?" @confirm="submit(row.id)">
@@ -130,6 +147,10 @@
             <!-- 执行中:退租 -->
             <el-popconfirm v-if="[5, 8].includes(row.status)" title="确认退租?房源将被释放" @confirm="terminate(row.id)">
               <template #reference><el-button link type="danger">退租</el-button></template>
+            </el-popconfirm>
+            <!-- 已到期/已终止:归档 -->
+            <el-popconfirm v-if="[8, 9].includes(row.status)" title="确认归档该合同?" @confirm="archive(row.id)">
+              <template #reference><el-button link type="info">归档</el-button></template>
             </el-popconfirm>
             <el-popconfirm v-if="row.status === 1" title="确认删除?" @confirm="remove(row.id)">
               <template #reference><el-button link type="danger">删除</el-button></template>
@@ -276,7 +297,7 @@
         </el-tab-pane>
         <el-tab-pane label="PDF 合同原件" name="pdf">
           <el-alert type="info" :closable="false" show-icon>
-            上传 PDF 原件后会打开新增合同草稿。请补齐合同信息并保存，PDF 将自动关联到该合同；在“合作合同”页签导入时，会自动设为合作合同。
+            上传 PDF 原件后会打开新增合同草稿。请补齐合同信息并保存，PDF 将自动关联到该合同。
           </el-alert>
           <el-upload class="import-upload" drag :auto-upload="false" :limit="1"
                      accept="application/pdf,.pdf" :on-change="onPdfFile" :on-remove="() => pdfFile = null">
@@ -293,6 +314,23 @@
       </template>
     </el-dialog>
 
+    <!-- 合同附件管理弹窗(合并自原合同归档,随时上传/下载扫描件与补充协议) -->
+    <el-dialog v-model="attachmentDialog.visible" :title="attachmentDialog.title" width="580px" @closed="onAttachmentsClosed">
+      <el-alert type="info" :closable="false" show-icon>
+        可随时上传正式合同扫描件、补充协议等附件；上传即保存，点击下方「下载查看」可下载原件。
+      </el-alert>
+      <div class="attachment-uploader">
+        <FileUpload v-model="archiveFiles" biz-type="contract" :biz-id="attachmentDialog.contract?.id"
+                    accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png,.zip,.rar" />
+      </div>
+      <div v-if="archiveFiles.length" class="attachment-downloads">
+        <div v-for="file in archiveFiles" :key="file.id" class="attachment-download">
+          <span class="attachment-name" :title="file.originalName || file.name">{{ file.originalName || file.name || '合同附件' }}</span>
+          <el-button link type="primary" :loading="downloadingFileId === file.id" @click="downloadAttachment(file)">下载查看</el-button>
+        </div>
+      </div>
+    </el-dialog>
+
   </div>
 </template>
 
@@ -301,9 +339,10 @@ import { computed, reactive, ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { money } from '@/utils/format'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Upload, UploadFilled, Camera } from '@element-plus/icons-vue'
+import { Upload, UploadFilled, Camera, Download } from '@element-plus/icons-vue'
 import { contractApi } from '@/api/contract'
 import { fileApi } from '@/api/file'
+import { startFileDownload } from '@/utils/fileDownload'
 import FileUpload from '@/components/FileUpload.vue'
 import { tenantApi } from '@/api/tenant'
 import { projectApi } from '@/api/building'
@@ -368,8 +407,8 @@ function statusTagType(v) {
 const loading = ref(false)
 const list = ref([])
 const total = ref(0)
-const typeTab = ref('all')
-const query = reactive({ pageNo: 1, pageSize: 10, code: '', tenantRefId: null, status: null, contractType: null })
+const expiryAlerts = ref([])
+const query = reactive({ pageNo: 1, pageSize: 10, code: '', tenantRefId: null, status: null })
 
 /**
  * 本页合计 —— 列表是分页的,只能合计当前页已加载的行,故标「本页合计」而非「合计」,
@@ -394,9 +433,64 @@ function pageSummary({ columns }) {
   })
 }
 
-function onTypeTab(name) {
-  query.pageNo = 1
-  query.contractType = name === 'all' ? null : Number(name)
+async function loadExpiryAlerts() {
+  if (!contractApi.expiryAlerts) return
+  try {
+    expiryAlerts.value = await contractApi.expiryAlerts() || []
+  } catch (e) {
+    expiryAlerts.value = []
+  }
+}
+function viewExpiryContract(item) {
+  Object.assign(query, { pageNo: 1, code: item.code, status: 5 })
+  load()
+}
+
+const archiveFiles = ref([])
+const downloadingFileId = ref(null)
+const attachmentDialog = reactive({ visible: false, title: '合同附件', contract: null })
+async function openAttachments(row) {
+  attachmentDialog.contract = row
+  attachmentDialog.title = `合同附件 · ${row.code || '-'}`
+  attachmentDialog.visible = true
+  archiveFiles.value = []
+  try {
+    archiveFiles.value = await fileApi.list('contract', row.id) || []
+  } catch (e) {
+    ElMessage.error('附件加载失败，请稍后重试')
+  }
+}
+function onAttachmentsClosed() {
+  if (attachmentDialog.contract) {
+    attachmentDialog.contract.attachmentCount = archiveFiles.value.length
+  }
+  archiveFiles.value = []
+  attachmentDialog.contract = null
+}
+async function downloadAttachment(file) {
+  if (!file?.id) return ElMessage.warning('附件尚未上传完成，请稍后重试')
+  downloadingFileId.value = file.id
+  try {
+    await startFileDownload(file.id, file.originalName || file.name || '合同附件')
+    ElMessage.success('已交给浏览器下载，请在下载列表查看进度')
+  } catch (e) {
+    ElMessage.error('附件下载失败，请稍后重试')
+  } finally {
+    downloadingFileId.value = null
+  }
+}
+async function exportContracts() {
+  const response = await contractApi.export({ code: query.code, tenantRefId: query.tenantRefId, status: query.status })
+  const url = URL.createObjectURL(response.data)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = '正式合同台账.xlsx'
+  link.click()
+  URL.revokeObjectURL(url)
+}
+async function archive(id) {
+  await contractApi.archive(id)
+  ElMessage.success('归档成功')
   load()
 }
 
@@ -543,8 +637,6 @@ async function openDialog(row) {
     return
   }
   Object.assign(form, emptyForm())
-  // 从“合作合同”页签新增或导入 PDF 时，默认写入合作合同类型。
-  if (typeTab.value === '7') form.contractType = 7
   // 新增:编号与租期/保证金规则都来自「合同设置」,用户不必对着空框猜格式
   try {
     const d = await contractApi.defaults()
@@ -626,7 +718,7 @@ function showDetail(row) {
   router.push(`/contract/detail/${row.id}`)
 }
 
-onMounted(() => { loadRefs(); load() })
+onMounted(() => { loadRefs(); load(); loadExpiryAlerts() })
 </script>
 
 <style scoped>
@@ -635,4 +727,17 @@ onMounted(() => { loadRefs(); load() })
 .import-upload { margin-top: 20px; }
 .import-upload :deep(.el-upload), .import-upload :deep(.el-upload-dragger) { width: 100%; }
 .tenant-picker { display: flex; gap: 8px; width: 100%; }
+.attachment-uploader { margin-top: 16px; }
+.attachment-downloads { margin-top: 12px; border-top: 1px solid var(--el-border-color-lighter); }
+.attachment-download { display: flex; align-items: center; gap: 10px; padding: 8px 0; }
+.attachment-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.expiry-warning {
+  margin-bottom: 14px; padding: 12px 16px; border-radius: 8px;
+  border: 1px solid var(--el-color-warning-light-7); background: var(--el-color-warning-light-9);
+}
+.expiry-warning__heading { display: flex; gap: 12px; align-items: center; color: var(--el-color-warning-dark-2); font-size: 13px; }
+.expiry-warning__heading span:first-child { font-weight: 700; }
+.expiry-warning__items { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 8px; font-size: 13px; }
+.expiry-warning__item { display: flex; align-items: center; gap: 8px; color: var(--el-text-color-regular); }
+.expiry-warning__item strong { color: var(--el-text-color-primary); }
 </style>

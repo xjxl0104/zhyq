@@ -17,7 +17,8 @@ import java.util.Map;
 public class MktDocumentAccessService {
     private final FileBusinessAccessMapper businessAccess;
     private static final Map<String, String> RESOURCES = Map.ofEntries(
-            Map.entry("contract", "contract"), Map.entry("customer", "crm:customer"),
+            Map.entry("contract", "contract"), Map.entry("simple_contract", "contract"),
+            Map.entry("contract_template", "contract"), Map.entry("customer", "crm:customer"),
             Map.entry("crm_lead", "crm:lead"), Map.entry("budget", "budget"),
             Map.entry("pur_request", "pur:request"), Map.entry("supplier", "pur:supplier"),
             Map.entry("supplier_contract", "pur:supplierContract"), Map.entry("invoice", "finance:invoice"),

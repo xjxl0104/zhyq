@@ -19,3 +19,20 @@ export const contractApi = {
   terminate: (id) => request.post(`/contract/${id}/terminate`),
   archive: (id) => request.post(`/contract/${id}/archive`)
 }
+
+// 简易合同(注册公司用,按楼层 + 自编号房号 X01/X02)
+export const simpleContractApi = {
+  list: (params) => request.get('/contract/simple/list', { params }),
+  nextRoom: (floorNo) => request.get('/contract/simple/next-room', { params: { floorNo } }),
+  add: (data) => request.post('/contract/simple', data),
+  update: (data) => request.put('/contract/simple', data),
+  remove: (id) => request.delete(`/contract/simple/${id}`)
+}
+
+// 合同模板库(租赁合同 / 物业合同 / 简易合同 / 补充协议等)
+export const contractTemplateApi = {
+  list: (params) => request.get('/contract/template/list', { params }),
+  add: (data) => request.post('/contract/template', data),
+  update: (data) => request.put('/contract/template', data),
+  remove: (id) => request.delete(`/contract/template/${id}`)
+}

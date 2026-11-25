@@ -62,9 +62,11 @@ const routes = [
       { path: 'tenant/message', meta: { title: '站内信管理' }, component: () => import('@/views/tenant/Message.vue') },
 
       // 合同
-      { path: 'contract/list', meta: { title: '合同列表' }, component: () => import('@/views/contract/ContractList.vue') },
+      { path: 'contract/list', meta: { title: '正式合同' }, component: () => import('@/views/contract/ContractList.vue') },
       { path: 'contract/detail/:id', meta: { title: '合同详情' }, component: () => import('@/views/contract/ContractDetail.vue') },
-      { path: 'contract/archive', meta: { title: '合同归档' }, component: () => import('@/views/contract/Archive.vue') },
+      { path: 'contract/archive', redirect: '/contract/list' },
+      { path: 'contract/simple', meta: { title: '简易合同' }, component: () => import('@/views/contract/SimpleContract.vue') },
+      { path: 'contract/template', meta: { title: '合同模板' }, component: () => import('@/views/contract/ContractTemplate.vue') },
       { path: 'contract/setting', meta: { title: '合同设置' }, component: () => import('@/views/contract/Setting.vue') },
 
       // 财务

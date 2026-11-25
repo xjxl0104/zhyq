@@ -54,8 +54,9 @@ export const menuTree = [
       },
       {
         title: '合同', icon: 'Document', children: [
-          { title: '合同列表', path: '/contract/list' },
-          { title: '合同归档', path: '/contract/archive' },
+          { title: '正式合同', path: '/contract/list' },
+          { title: '简易合同', path: '/contract/simple' },
+          { title: '合同模板', path: '/contract/template' },
           { title: '合同设置', path: '/contract/setting' }
         ]
       },
@@ -110,7 +111,7 @@ export const menuTree = [
   },
   {
     title: '园区运营', icon: 'Calendar', children: [
-      { title: '物资管理', path: '/property/asset' },
+      { title: '物资管理', icon: 'Box', path: '/property/asset' },
       {
         title: '缴费管理', icon: 'Tickets', children: [
           { title: '保证金', path: '/energy/deposit' },
@@ -149,7 +150,7 @@ export const menuTree = [
           { title: '资料库', path: '/archive/doc' }
         ]
       },
-      { title: '应用中心', path: '/app/center' }
+      { title: '应用中心', icon: 'Grid', path: '/app/center' }
     ]
   },
   {

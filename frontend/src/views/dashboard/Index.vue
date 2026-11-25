@@ -152,7 +152,7 @@ const trendData = reactive({ months: [], receivable: [], received: [] })
 
 const quicks = [
   { name: '租控管理', path: '/building/room', icon: 'OfficeBuilding' },
-  { name: '合同列表', path: '/contract/list', icon: 'Document' },
+  { name: '正式合同', path: '/contract/list', icon: 'Document' },
   { name: '账单管理', path: '/finance/bill', icon: 'Money' },
   { name: '物业报修', path: '/property/workorder', icon: 'Tools' },
   { name: '线索管理', path: '/crm/lead', icon: 'Promotion' },

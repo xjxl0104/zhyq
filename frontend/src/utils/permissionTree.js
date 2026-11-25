@@ -4,6 +4,7 @@ const pathOf = path => path ? `/${path.replace(/^\/+|\/+$/g, '')}` : ''
 const ALIASES = {
   '/budget/supplier': '/property/responsible-unit',
   '/budget/supplier-contract': '/property/responsible-unit',
+  '/contract/archive': '/contract/list',
   '/crm/marketing/position': '/crm/marketing/setting',
   '/crm/marketing/grade': '/crm/marketing/setting',
   '/crm/marketing/template': '/crm/marketing/contract'

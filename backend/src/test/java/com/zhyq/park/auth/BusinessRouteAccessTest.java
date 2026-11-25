@@ -90,4 +90,10 @@ class BusinessRouteAccessTest {
         assertThat(BusinessRouteAccess.allowed("/iot/device/page", "GET", Set.of("MENU:/iot/fire"))).isTrue();
         assertThat(BusinessRouteAccess.allowed("/iot/device/page", "GET", Set.of("MENU:/iot/alarm"))).isFalse();
     }
+
+    @Test void simpleAndTemplateContractMenusAllowContractEndpoints() {
+        assertThat(BusinessRouteAccess.allowed("/contract/simple/list", "GET", Set.of("MENU:/contract/simple"))).isTrue();
+        assertThat(BusinessRouteAccess.allowed("/contract/template/list", "GET", Set.of("MENU:/contract/template"))).isTrue();
+        assertThat(BusinessRouteAccess.allowed("/contract/simple/list", "GET", Set.of())).isFalse();
+    }
 }

@@ -53,7 +53,8 @@ public final class BusinessRouteAccess {
         if ("dashboard".equals(area))
             return anyMenu(grants, "/dashboard", "/overview", "/data/center");
         if ("contract".equals(area))
-            return anyMenu(grants, "/contract/list", "/contract/archive", "/contract/setting")
+            return anyMenu(grants, "/contract/list", "/contract/simple", "/contract/template",
+                    "/contract/archive", "/contract/setting")
                     || hasPrefix(grants, "contract:");
         if ("budget".equals(area))
             return hasPrefix(grants, "budget:") || hasMenu(grants, "/budget/annual")

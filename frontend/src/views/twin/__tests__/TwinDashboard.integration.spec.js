@@ -28,7 +28,7 @@ describe('three dimensional homepage in the existing application layout', () => 
     useAccessStore(pinia).admin = true
     const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/', component: Layout, children: [
       { path: 'dashboard', component: TwinDashboard },
-      { path: 'contract/list', component: { template: '<div>合同列表</div>' } },
+      { path: 'contract/list', component: { template: '<div>正式合同</div>' } },
     ] }] })
     await router.push('/dashboard')
     const wrapper = mount({ template: '<router-view />' }, { global: { plugins: [pinia, router, ElementPlus], components: icons } })
@@ -46,11 +46,11 @@ describe('three dimensional homepage in the existing application layout', () => 
     const titles = wrapper.findAll('.el-sub-menu__title')
     await titles.find(item => item.text().includes('招商租赁')).trigger('click')
     await titles.find(item => item.text() === '合同').trigger('click')
-    await wrapper.findAll('.el-menu-item').find(item => item.text() === '合同列表').trigger('click')
+    await wrapper.findAll('.el-menu-item').find(item => item.text() === '正式合同').trigger('click')
     await flushPromises()
     expect(router.currentRoute.value.path).toBe('/contract/list')
     expect(sceneUnmounted.mock.calls.length).toBe(unmountedBefore + 2)
-    expect(wrapper.text()).toContain('合同列表')
+    expect(wrapper.text()).toContain('正式合同')
     wrapper.unmount()
     localStorage.clear()
   })

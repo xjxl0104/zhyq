@@ -52,7 +52,10 @@ public class Contract extends BaseEntity {
     /** 退租时间 */
     private LocalDate terminateDate;
     private String remark;
-    /** 列表展示字段:租客名。合同列表与合同归档共用,免得页面上只有一个裸 tenant_ref_id */
+    /** 列表展示字段:租客名。正式合同列表共用,免得页面上只有一个裸 tenant_ref_id */
     @com.baomidou.mybatisplus.annotation.TableField(exist = false)
     private String tenantName;
+    /** 列表展示字段:已上传合同附件数 */
+    @com.baomidou.mybatisplus.annotation.TableField(exist = false)
+    private Integer attachmentCount;
 }
