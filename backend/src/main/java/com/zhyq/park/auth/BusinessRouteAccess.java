@@ -86,7 +86,7 @@ public final class BusinessRouteAccess {
             case "energy/reading" -> hasMenu(grants, "/energy/meter");
             case "energy/fee-period" -> anyMenu(grants, "/energy/electric", "/energy/water",
                     "/energy/garbage", "/energy/summary");
-            case "energy/lease-fee" -> anyMenu(grants, "/energy/deposit", "/energy/rent",
+            case "energy/lease-fee" -> anyMenu(grants, "/energy/contracts", "/energy/deposit", "/energy/rent",
                     "/energy/property", "/energy/summary");
             case "oa/seal" -> {
                 if (hasMenu(grants, "/oa/seal") || hasPrefix(grants, "oa:seal:")) yield true;

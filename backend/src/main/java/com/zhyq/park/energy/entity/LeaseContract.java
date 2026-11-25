@@ -16,6 +16,8 @@ import java.time.LocalDate;
 public class LeaseContract extends BaseEntity {
 
     private Integer seqNo;
+    /** 关联招商租赁正式合同ID(biz_contract.id) */
+    private Long bizContractId;
     private Long projectId;
     private Long tenantRefId;
     private String tenantName;

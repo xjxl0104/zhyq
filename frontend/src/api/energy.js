@@ -34,6 +34,7 @@ export const feePeriodApi = {
 // 租金与物业管理费月度账期(与水电费同模式,租金与物业费收取单位独立)
 export const leaseFeeApi = {
   contracts: (includeDisabled = true) => request.get('/energy/lease-fee/contracts', { params: { includeDisabled } }),
+  syncFormalContracts: () => request.post('/energy/lease-fee/contracts/sync-formal'),
   saveContract: (data) => request.post('/energy/lease-fee/contracts', data),
   deleteContract: (id) => request.delete(`/energy/lease-fee/contracts/${id}`),
   deposits: (includeDisabled = true) => request.get('/energy/lease-fee/deposits', { params: { includeDisabled } }),

@@ -111,7 +111,7 @@ const routes = [
       { path: 'service/decoration', meta: { title: '装修及动火' }, component: () => import('@/views/service/Decoration.vue') },
 
       // 办公管理
-      { path: 'oa/task', meta: { title: '任务' }, component: () => import('@/views/oa/Task.vue') },
+      { path: 'oa/task', meta: { title: '任务管理' }, component: () => import('@/views/oa/Task.vue') },
       { path: 'oa/approval', meta: { title: '审批中心' }, component: () => import('@/views/oa/Approval.vue') },
       { path: 'oa/seal', meta: { title: '印章管理' }, component: () => import('@/views/oa/Seal.vue') },
       { path: 'oa/document', meta: { title: '公文管理' }, component: () => import('@/views/oa/Document.vue') },
@@ -124,7 +124,8 @@ const routes = [
       { path: 'app/vending', meta: { title: '自动售货机' }, component: () => import('@/views/app/Vending.vue') },
 
       // 缴费管理(园区运营下)
-      // 保证金按合同台账一次性登记;租金 / 物业费 一组件两路由,靠 meta.leaseFeeType 区分;电费 / 水费 一组件两路由,靠 meta.energyType 区分
+      // 合同基础台账统一对接招商正式合同;保证金按合同台账登记;租金 / 物业费 一组件两路由;电费 / 水费 一组件两路由
+      { path: 'energy/contracts', meta: { title: '合同基础台账' }, component: () => import('@/views/energy/LeaseContracts.vue') },
       { path: 'energy/deposit', meta: { title: '保证金' }, component: () => import('@/views/energy/LeaseDeposit.vue') },
       { path: 'energy/rent', meta: { title: '租金', leaseFeeType: 'RENT' }, component: () => import('@/views/energy/LeaseFeeSheet.vue') },
       { path: 'energy/property', meta: { title: '物业费', leaseFeeType: 'PROPERTY' }, component: () => import('@/views/energy/LeaseFeeSheet.vue') },

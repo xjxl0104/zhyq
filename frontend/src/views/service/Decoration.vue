@@ -99,7 +99,11 @@
               <el-row :gutter="12">
                 <el-col :span="12">
                   <el-form-item label="申请表编号">
-                    <el-input v-model="form.applyNo" placeholder="留空自动生成，如 DIPARK-装批-2026001" />
+                    <el-input v-model="form.applyNo" placeholder="自动生成，如 DIPARK-装批-2026001">
+                      <template #append>
+                        <el-button @click="generateNo">自动生成</el-button>
+                      </template>
+                    </el-input>
                   </el-form-item>
                 </el-col>
                 <el-col :span="12">
@@ -301,7 +305,15 @@
           <el-tab-pane label="正面：作业基本信息、核验与审批" name="p1">
             <el-form :model="form" label-width="112px" size="small">
               <el-row :gutter="12">
-                <el-col :span="12"><el-form-item label="动火编号"><el-input v-model="form.applyNo" placeholder="留空自动生成，如 〔2026〕动字第001号" /></el-form-item></el-col>
+                <el-col :span="12">
+                  <el-form-item label="动火编号">
+                    <el-input v-model="form.applyNo" placeholder="自动生成，如 〔2026〕动字第001号">
+                      <template #append>
+                        <el-button @click="generateNo">自动生成</el-button>
+                      </template>
+                    </el-input>
+                  </el-form-item>
+                </el-col>
                 <el-col :span="12"><el-form-item label="申请日期"><el-date-picker v-model="form.applyDate" type="date" value-format="YYYY-MM-DD" style="width: 100%" /></el-form-item></el-col>
                 <el-col :span="12">
                   <el-form-item label="选择园区租户">
@@ -561,6 +573,13 @@ function calcPlanDays() {
   if (diff > 0) deco.planDays = String(diff)
 }
 
+async function generateNo() {
+  try {
+    const no = await decorationApi.nextNo(form.applyType, form.applyDate || undefined)
+    if (no) form.applyNo = no
+  } catch { /* 保存时后端也会兜底生成 */ }
+}
+
 async function openForm(type, row = null) {
   const targetType = row?.applyType || type || 'DECORATION'
   Object.assign(form, emptyBase(targetType))
@@ -580,6 +599,9 @@ async function openForm(type, row = null) {
     try { attachFiles.value = (await fileApi.list('decoration', row.id)) || [] } catch { /* ignore */ }
   }
   dialog.visible = true
+  if (!form.applyNo) {
+    await generateNo()
+  }
 }
 
 function buildWorkAreaSummary() {

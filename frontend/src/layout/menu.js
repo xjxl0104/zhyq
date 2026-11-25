@@ -89,7 +89,6 @@ export const menuTree = [
     title: '物业服务', icon: 'Tools', children: [
       { title: '工单汇总', path: '/property/workorder-summary' },
       { title: '物业报修', path: '/property/workorder' },
-      { title: '供应商档案', path: '/property/responsible-unit' },
       { title: '设备巡检', path: '/property/inspection' },
       { title: '安防巡更', path: '/property/patrol' },
       { title: '保洁检查', path: '/property/check-clean' },
@@ -110,16 +109,18 @@ export const menuTree = [
     title: '园区运营', icon: 'Calendar', children: [
       {
         title: '办公管理', icon: 'Calendar', children: [
-          { title: '任务', path: '/oa/task' },
-          { title: '审批中心', path: '/oa/approval' },
+          { title: '供应商档案', path: '/property/responsible-unit' },
+          { title: '任务管理', path: '/oa/task' },
           { title: '印章管理', path: '/oa/seal' },
           { title: '公文管理', path: '/oa/document' },
+          { title: '审批中心', path: '/oa/approval' },
           { title: '流程管理', path: '/oa/flow' }
         ]
       },
       { title: '物资管理', icon: 'Box', path: '/property/asset' },
       {
         title: '缴费管理', icon: 'Tickets', children: [
+          { title: '合同基础台账', path: '/energy/contracts' },
           { title: '保证金', path: '/energy/deposit' },
           { title: '租金', path: '/energy/rent' },
           { title: '物业费', path: '/energy/property' },

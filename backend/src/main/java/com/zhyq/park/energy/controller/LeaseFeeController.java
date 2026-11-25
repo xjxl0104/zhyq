@@ -58,6 +58,13 @@ public class LeaseFeeController {
         return Result.ok(service.listContracts(includeDisabled));
     }
 
+    @Operation(summary = "从招商租赁正式合同同步到合同基础台账，并回写正确合同编号")
+    @OperationLog(module = "合同基础台账", action = "同步招商正式合同")
+    @PostMapping("/contracts/sync-formal")
+    public Result<Map<String, Object>> syncFormalContracts() {
+        return Result.ok(service.syncFromFormalContracts());
+    }
+
     @Operation(summary = "查询合同保证金台账(含回执份数)")
     @GetMapping("/deposits")
     public Result<List<LeaseContract>> deposits(@RequestParam(defaultValue = "true") boolean includeDisabled) {

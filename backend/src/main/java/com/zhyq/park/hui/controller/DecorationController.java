@@ -16,6 +16,9 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
+import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * 物业服务-装修及动火申请
@@ -62,6 +65,13 @@ public class DecorationController {
         return Result.ok(PageResult.of(p.getTotal(), p.getRecords()));
     }
 
+    @Operation(summary = "自动生成下一个申请表编号")
+    @GetMapping("/next-no")
+    public Result<String> nextNo(@RequestParam(defaultValue = "DECORATION") String applyType,
+                                 @RequestParam(required = false) LocalDate applyDate) {
+        return Result.ok(generateApplyNo(applyType, applyDate));
+    }
+
     @Operation(summary = "申请详情")
     @GetMapping("/{id}")
     public Result<Decoration> get(@PathVariable Long id) {
@@ -93,16 +103,42 @@ public class DecorationController {
         if (!StringUtils.hasText(decoration.getApplyType())) {
             decoration.setApplyType("DECORATION");
         }
+        if (!StringUtils.hasText(decoration.getApplyNo())) {
+            decoration.setApplyNo(generateApplyNo(decoration.getApplyType(), decoration.getApplyDate()));
+        }
         decorationMapper.updateById(decoration);
         return Result.ok();
     }
 
+    private static final Pattern TAIL_NUM = Pattern.compile("(\\d+)(?!.*\\d)");
+
     private String generateApplyNo(String applyType, LocalDate applyDate) {
+        String type = StringUtils.hasText(applyType) ? applyType.trim().toUpperCase() : "DECORATION";
         int year = (applyDate != null ? applyDate : LocalDate.now()).getYear();
-        Long count = decorationMapper.selectCount(new LambdaQueryWrapper<Decoration>()
-                .eq(Decoration::getApplyType, applyType));
-        long seq = (count != null ? count : 0L) + 1;
-        if ("HOT_WORK".equalsIgnoreCase(applyType)) {
+        String yearTag = String.valueOf(year);
+        List<Decoration> existing = decorationMapper.selectList(new LambdaQueryWrapper<Decoration>()
+                .select(Decoration::getApplyNo)
+                .eq(Decoration::getApplyType, type));
+        long maxSeq = 0;
+        for (Decoration item : existing) {
+            String no = item.getApplyNo();
+            if (!StringUtils.hasText(no) || !no.contains(yearTag)) continue;
+            Matcher m = TAIL_NUM.matcher(no);
+            if (m.find()) {
+                try {
+                    String digits = m.group(1);
+                    // 装修编号格式 DIPARK-装批-2026001 时取后3位流水，避免把年份拼进序号
+                    long val = (digits.length() > 4 && digits.startsWith(yearTag))
+                            ? Long.parseLong(digits.substring(4))
+                            : Long.parseLong(digits);
+                    if (val > maxSeq) maxSeq = val;
+                } catch (NumberFormatException ignored) {
+                    // ignore non-numeric suffixes
+                }
+            }
+        }
+        long seq = maxSeq + 1;
+        if ("HOT_WORK".equalsIgnoreCase(type)) {
             return String.format("〔%d〕动字第%03d号", year, seq);
         }
         return String.format("DIPARK-装批-%d%03d", year, seq);

@@ -2,11 +2,7 @@
   <div class="page-container">
     <!-- 年月表 + 图表(与电费/水费同模式) -->
     <template v-if="!month">
-      <LeaseMonthPicker ref="picker" :kind="kind" @select="(m) => (month = m)" @year="(y) => (chartYear = y)">
-        <template #actions>
-          <el-button type="primary" plain @click="contractDialog = true">合同基础台账</el-button>
-        </template>
-      </LeaseMonthPicker>
+      <LeaseMonthPicker ref="picker" :kind="kind" @select="(m) => (month = m)" @year="(y) => (chartYear = y)" />
       <LeaseFeeCharts ref="charts" :kind="kind" :year="chartYear" />
     </template>
 
@@ -37,7 +33,6 @@
           <el-button type="primary" :disabled="locked || !dirtyCount" :loading="savingEntries" @click="saveEntries">
             保存本月调整<span v-if="dirtyCount">（{{ dirtyCount }} 条）</span>
           </el-button>
-          <el-button :disabled="locked" @click="contractDialog = true">合同基础台账</el-button>
           <el-button :disabled="locked" :loading="generating" @click="generate">生成 / 重新生成通知单</el-button>
           <el-button link type="primary" @click="$router.push('/energy/summary')">去缴费汇总 →</el-button>
           <span class="toolbar-tip">
@@ -96,12 +91,10 @@
           </el-table-column>
         </el-table>
 
-        <div v-if="!loading && !rows.length" class="empty-tip">本月没有在租合同。点击「合同基础台账」查看或新增合同。</div>
+        <div v-if="!loading && !rows.length" class="empty-tip">本月没有在租合同，请前往「缴费管理 → 合同基础台账」查看或同步正式合同。</div>
         <div v-if="dirtyCount" class="dirty-tip">有 {{ dirtyCount }} 条合同调整尚未保存；保存后通知单可按最新金额重新生成。</div>
       </div>
     </template>
-
-    <LeaseContractDialog v-model="contractDialog" @changed="afterContractChanged" />
   </div>
 </template>
 
@@ -116,7 +109,6 @@ import FeeFilterBar from './components/FeeFilterBar.vue'
 import FeeBillFiles from './components/FeeBillFiles.vue'
 import LeaseMonthPicker from './components/LeaseMonthPicker.vue'
 import LeaseFeeCharts from './components/LeaseFeeCharts.vue'
-import LeaseContractDialog from './components/LeaseContractDialog.vue'
 
 const route = useRoute()
 const feeType = computed(() => route.meta.leaseFeeType || 'RENT')
@@ -131,7 +123,6 @@ const rows = ref([])
 const loading = ref(false)
 const savingEntries = ref(false)
 const generating = ref(false)
-const contractDialog = ref(false)
 const picker = ref(null)
 const charts = ref(null)
 const dirty = reactive(new Set())

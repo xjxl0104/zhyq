@@ -5,7 +5,6 @@
         <el-radio-button value="summary">保证金缴费情况（分昌记 / 数智云仓 · 通知单）</el-radio-button>
         <el-radio-button value="ledger">合同保证金台账（逐份登记与回执）</el-radio-button>
       </el-radio-group>
-      <el-button type="primary" plain size="small" @click="contractDialog = true">合同基础台账</el-button>
     </div>
 
     <DepositPaymentSummary
@@ -51,7 +50,6 @@
         </el-select>
         <el-checkbox v-model="showDisabled">显示停用合同</el-checkbox>
         <div class="spacer" />
-        <el-button type="primary" plain @click="contractDialog = true">合同基础台账</el-button>
       </div>
       <div class="toolbar-tip">
         保证金按合同一次性收取（无需开具发票），系统按租户合同逐份管理租金保证金与物业保证金；点击「缴纳 / 回执」上传汇款回执或收据后即可标记为「已缴纳」。
@@ -257,8 +255,6 @@
         <el-button type="primary" :loading="dialog.saving" @click="saveDeposit">保存登记</el-button>
       </template>
     </el-dialog>
-
-    <LeaseContractDialog v-model="contractDialog" @changed="load" />
   </div>
 </template>
 
@@ -269,7 +265,6 @@ import { leaseFeeApi } from '@/api/energy'
 import { fileApi } from '@/api/file'
 import { startFileDownload } from '@/utils/fileDownload'
 import { money } from './feePeriod'
-import LeaseContractDialog from './components/LeaseContractDialog.vue'
 import DepositPaymentSummary from './components/DepositPaymentSummary.vue'
 
 const BIZ_RENT = 'lease_deposit_rent_receipt'
@@ -281,7 +276,6 @@ const list = ref([])
 const keyword = ref('')
 const statusFilter = ref('')
 const showDisabled = ref(false)
-const contractDialog = ref(false)
 
 const activeContracts = computed(() => list.value.filter((r) => r.status === 1))
 const hasPropDeposit = (r) => Number(r.propertyDeposit || 0) > 0
