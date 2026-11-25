@@ -123,9 +123,11 @@ public class LeaseFeeService {
         int linked = 0;
         int codesSynced = 0;
         int inserted = 0;
+        int formalCreated = 0;
         int maxSeq = existing.stream().map(LeaseContract::getSeqNo).filter(Objects::nonNull).max(Integer::compareTo).orElse(0);
 
-        // 1) 尝试把未关联的基础台账行与正式合同配对，并同步正确编号到正式合同
+        // 1) 尝试把未关联的基础台账行与正式合同配对，并同步正确编号到正式合同；正式合同里没有的则从基础台账补建正式合同
+        Long defaultProjectId = resolveDefaultProjectId();
         for (LeaseContract lc : existing) {
             if (lc.getBizContractId() == null) {
                 Map<String, Object> best = null;
@@ -157,6 +159,17 @@ public class LeaseFeeService {
                             .set(LeaseContract::getBizContractId, bid));
                     linkedBizIds.add(bid);
                     linked++;
+                } else if (Integer.valueOf(1).equals(lc.getStatus())) {
+                    // 正式合同里还没有：从合同基础台账抽取完整信息自动补建正式合同
+                    Long newFormalId = createFormalContractFromLedger(lc, defaultProjectId);
+                    if (newFormalId != null) {
+                        lc.setBizContractId(newFormalId);
+                        contractMapper.update(null, new LambdaUpdateWrapper<LeaseContract>()
+                                .eq(LeaseContract::getId, lc.getId())
+                                .set(LeaseContract::getBizContractId, newFormalId));
+                        linkedBizIds.add(newFormalId);
+                        formalCreated++;
+                    }
                 }
             }
             if (lc.getBizContractId() != null && syncCodeToFormalContract(lc.getBizContractId(), lc.getAgreementNo())) {
@@ -210,7 +223,109 @@ public class LeaseFeeService {
             inserted++;
         }
         if (inserted > 0) touchDrafts();
-        return Map.of("linked", linked, "codesSynced", codesSynced, "inserted", inserted);
+        return Map.of("linked", linked, "codesSynced", codesSynced, "inserted", inserted, "formalCreated", formalCreated);
+    }
+
+    private Long resolveDefaultProjectId() {
+        try {
+            List<Long> ids = jdbc.queryForList("SELECT id FROM biz_project WHERE deleted = 0 ORDER BY id ASC LIMIT 1", Long.class);
+            return ids.isEmpty() ? 1L : ids.get(0);
+        } catch (Exception e) {
+            return 1L;
+        }
+    }
+
+    private Long ensureBizTenantId(String tenantName, Long projectId) {
+        if (!StringUtils.hasText(tenantName)) return null;
+        String name = tenantName.trim();
+        try {
+            List<Long> ids = jdbc.queryForList(
+                    "SELECT id FROM biz_tenant WHERE deleted = 0 AND name = ? ORDER BY id ASC LIMIT 1", Long.class, name);
+            if (!ids.isEmpty()) return ids.get(0);
+            String code = "ZK-" + System.currentTimeMillis() + "-" + Math.abs(name.hashCode() % 1000);
+            org.springframework.jdbc.support.KeyHolder kh = new org.springframework.jdbc.support.GeneratedKeyHolder();
+            jdbc.update(con -> {
+                var ps = con.prepareStatement(
+                        "INSERT INTO biz_tenant (code, name, tenant_type, project_id, status, tenant_id, create_by, create_time, version, deleted)"
+                                + " VALUES (?, ?, 1, ?, 1, 1, 'system', NOW(), 1, 0)",
+                        java.sql.Statement.RETURN_GENERATED_KEYS);
+                ps.setString(1, code);
+                ps.setString(2, name);
+                ps.setLong(3, projectId != null ? projectId : 1L);
+                return ps;
+            }, kh);
+            return kh.getKey() != null ? kh.getKey().longValue() : null;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private Long createFormalContractFromLedger(LeaseContract lc, Long defaultProjectId) {
+        if (lc == null || !StringUtils.hasText(lc.getTenantName())) return null;
+        Long projectId = lc.getProjectId() != null ? lc.getProjectId() : defaultProjectId;
+        Long tenantId = lc.getTenantRefId() != null ? lc.getTenantRefId() : ensureBizTenantId(lc.getTenantName(), projectId);
+        if (tenantId == null) return null;
+        if (!Objects.equals(tenantId, lc.getTenantRefId())) {
+            lc.setTenantRefId(tenantId);
+            contractMapper.update(null, new LambdaUpdateWrapper<LeaseContract>()
+                    .eq(LeaseContract::getId, lc.getId())
+                    .set(LeaseContract::getTenantRefId, tenantId));
+        }
+
+        String candidate = StringUtils.hasText(lc.getAgreementNo()) ? lc.getAgreementNo().trim() : "";
+        if (candidate.isEmpty() || "待补充".equals(candidate) || candidate.length() > 160) {
+            int y = lc.getStartDate() != null ? lc.getStartDate().getYear() : LocalDate.now().getYear();
+            candidate = String.format("HT%d-JC-%03d", y, lc.getSeqNo() != null ? lc.getSeqNo() : lc.getId());
+        }
+        try {
+            Long dup = jdbc.queryForObject("SELECT COUNT(*) FROM biz_contract WHERE code = ? AND deleted = 0", Long.class, candidate);
+            if (dup != null && dup > 0) {
+                candidate = candidate + "-" + lc.getId();
+                if (candidate.length() > 160) candidate = "HT-JC-" + lc.getId();
+            }
+            BigDecimal rentPrice = nz(lc.getRentUnitPrice());
+            if (rentPrice.signum() <= 0 && lc.getFixedMonthlyRent() != null && lc.getFixedMonthlyRent().signum() > 0
+                    && lc.getLeaseArea() != null && lc.getLeaseArea().signum() > 0) {
+                rentPrice = lc.getFixedMonthlyRent().divide(lc.getLeaseArea(), 2, java.math.RoundingMode.HALF_UP);
+            } else {
+                rentPrice = rentPrice.setScale(2, java.math.RoundingMode.HALF_UP);
+            }
+            BigDecimal propPrice = nz(lc.getPropertyUnitPrice()).setScale(2, java.math.RoundingMode.HALF_UP);
+            BigDecimal deposit = nz(lc.getRentDeposit()).add(nz(lc.getPropertyDeposit())).setScale(2, java.math.RoundingMode.HALF_UP);
+            BigDecimal increasePct = nz(lc.getEscalationRate()).multiply(BigDecimal.valueOf(100)).setScale(2, java.math.RoundingMode.HALF_UP);
+            int chargeMode = (lc.getFixedMonthlyRent() != null && lc.getFixedMonthlyRent().signum() > 0) ? 2 : 1;
+            String finalCode = candidate;
+            BigDecimal finalRentPrice = rentPrice;
+
+            org.springframework.jdbc.support.KeyHolder kh = new org.springframework.jdbc.support.GeneratedKeyHolder();
+            jdbc.update(con -> {
+                var ps = con.prepareStatement("""
+                        INSERT INTO biz_contract (
+                            code, tenant_ref_id, project_id, lease_scope, contract_type, status,
+                            start_date, end_date, rent_price, property_price, rent_area, deposit,
+                            charge_mode, pay_cycle, free_months, increase_rate, source, remark,
+                            tenant_id, create_by, create_time, version, deleted
+                        ) VALUES (?, ?, ?, ?, 1, 5, ?, ?, ?, ?, ?, ?, ?, 1, 0, ?, '合同基础台账同步', ?, 1, 'system', NOW(), 1, 0)
+                        """, java.sql.Statement.RETURN_GENERATED_KEYS);
+                ps.setString(1, finalCode);
+                ps.setLong(2, tenantId);
+                ps.setLong(3, projectId != null ? projectId : 1L);
+                ps.setString(4, lc.getUnitName());
+                ps.setObject(5, lc.getStartDate());
+                ps.setObject(6, lc.getEndDate());
+                ps.setBigDecimal(7, finalRentPrice);
+                ps.setBigDecimal(8, propPrice);
+                ps.setBigDecimal(9, nz(lc.getLeaseArea()));
+                ps.setBigDecimal(10, deposit);
+                ps.setInt(11, chargeMode);
+                ps.setBigDecimal(12, increasePct);
+                ps.setString(13, lc.getRemark());
+                return ps;
+            }, kh);
+            return kh.getKey() != null ? kh.getKey().longValue() : null;
+        } catch (Exception ignored) {
+            return null;
+        }
     }
 
     private boolean syncCodeToFormalContract(Long bizContractId, String agreementNo) {
@@ -1273,7 +1388,7 @@ public class LeaseFeeService {
         if (!StringUtils.hasText(tenantName)) return null;
         try {
             List<Long> ids = jdbc.queryForList(
-                    "SELECT id FROM crm_tenant WHERE deleted = 0 AND name = ? ORDER BY id ASC LIMIT 1",
+                    "SELECT id FROM biz_tenant WHERE deleted = 0 AND name = ? ORDER BY id ASC LIMIT 1",
                     Long.class, tenantName.trim());
             return ids.isEmpty() ? null : ids.get(0);
         } catch (Exception e) {

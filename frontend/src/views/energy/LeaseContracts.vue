@@ -200,7 +200,7 @@ async function syncFormal() {
   syncing.value = true
   try {
     const r = await leaseFeeApi.syncFormalContracts()
-    ElMessage.success(`同步完成：关联正式合同 ${r.linked} 份，回写正确编号 ${r.codesSynced} 份，引入新合同 ${r.inserted} 份`)
+    ElMessage.success(`同步完成：关联 ${r.linked} 份，回写编号 ${r.codesSynced} 份，补建正式合同 ${r.formalCreated || 0} 份，引入新合同 ${r.inserted} 份`)
     await load()
   } finally {
     syncing.value = false
