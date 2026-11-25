@@ -111,7 +111,6 @@ export const menuTree = [
       {
         title: '办公管理', icon: 'Calendar', children: [
           { title: '任务', path: '/oa/task' },
-          { title: '日程', path: '/oa/schedule' },
           { title: '审批中心', path: '/oa/approval' },
           { title: '印章管理', path: '/oa/seal' },
           { title: '公文管理', path: '/oa/document' },

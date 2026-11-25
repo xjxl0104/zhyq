@@ -72,7 +72,7 @@ it('flattens overview, property service and smart iot menus and organizes park o
   expect(smartIot.children.map(c => c.title)).toEqual(['预警事件', '智能安防', '智慧停车场', '智慧安消'])
   const ops = menuTree.find(n => n.title === '园区运营')
   expect(ops.children[0].title).toBe('办公管理')
-  expect(ops.children[0].children.map(c => c.title)).toEqual(['任务', '日程', '审批中心', '印章管理', '公文管理', '流程管理'])
+  expect(ops.children[0].children.map(c => c.title)).toEqual(['任务', '审批中心', '印章管理', '公文管理', '流程管理'])
   expect(ops.children[1].title).toBe('物资管理')
   expect(ops.children[1].icon).toBeTruthy()
   const leasing = menuTree.find(n => n.title === '招商租赁')

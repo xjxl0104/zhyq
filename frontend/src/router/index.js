@@ -112,7 +112,6 @@ const routes = [
 
       // 办公管理
       { path: 'oa/task', meta: { title: '任务' }, component: () => import('@/views/oa/Task.vue') },
-      { path: 'oa/schedule', meta: { title: '日程' }, component: () => import('@/views/oa/Schedule.vue') },
       { path: 'oa/approval', meta: { title: '审批中心' }, component: () => import('@/views/oa/Approval.vue') },
       { path: 'oa/seal', meta: { title: '印章管理' }, component: () => import('@/views/oa/Seal.vue') },
       { path: 'oa/document', meta: { title: '公文管理' }, component: () => import('@/views/oa/Document.vue') },
