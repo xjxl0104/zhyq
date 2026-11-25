@@ -44,6 +44,7 @@ public class LeaseFeeNotice extends BaseEntity {
     private Integer invoiceStatus;
     private Integer sort;
     private String remark;
+    private String headerOverrideJson;
 
     @TableField(exist = false)
     private List<LeaseFeeNoticeItem> items;

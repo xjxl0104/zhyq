@@ -246,14 +246,33 @@
     </el-dialog>
 
     <!-- 调整单张通知单 -->
-    <el-dialog v-model="editDialog.visible" :title="`调整通知单 - ${editForm.noticeNo || ''}`" width="880px" destroy-on-close>
-      <el-form :model="editForm" label-width="110px" size="small">
+    <el-dialog v-model="editDialog.visible" :title="`调整通知单 - ${editForm.noticeNo || ''}`" width="960px" top="4vh" destroy-on-close>
+      <el-form :model="editForm" label-width="112px" size="small">
+        <el-divider content-position="left">通知单抬头与基本信息（仅对本张通知单生效）</el-divider>
         <el-row :gutter="12">
-          <el-col :span="12"><el-form-item label="租户/公司名称"><el-input v-model="editForm.tenantName" /></el-form-item></el-col>
+          <el-col :span="12"><el-form-item label="园区名称"><el-input v-model="editForm.parkName" /></el-form-item></el-col>
+          <el-col :span="12"><el-form-item label="单据编号"><el-input v-model="editForm.noticeNo" /></el-form-item></el-col>
           <el-col :span="12"><el-form-item label="收取单位"><el-input v-model="editForm.payeeName" /></el-form-item></el-col>
+          <el-col :span="12"><el-form-item label="租户/公司名称"><el-input v-model="editForm.tenantName" /></el-form-item></el-col>
+          <el-col :span="12"><el-form-item label="楼层/区域"><el-input v-model="editForm.unitName" /></el-form-item></el-col>
+          <el-col :span="12"><el-form-item label="对应协议编号"><el-input v-model="editForm.agreementNo" /></el-form-item></el-col>
+          <el-col :span="12">
+            <el-form-item label="收费期间">
+              <div style="display:flex;align-items:center;gap:6px;width:100%">
+                <el-date-picker v-model="editForm.periodStart" type="date" value-format="YYYY-MM-DD" style="flex:1" />
+                <span>~</span>
+                <el-date-picker v-model="editForm.periodEnd" type="date" value-format="YYYY-MM-DD" style="flex:1" />
+              </div>
+            </el-form-item>
+          </el-col>
+          <el-col :span="6"><el-form-item label="开具日期" label-width="72px"><el-date-picker v-model="editForm.issueDate" type="date" value-format="YYYY-MM-DD" style="width: 100%" /></el-form-item></el-col>
+          <el-col :span="6"><el-form-item label="缴费截止日" label-width="82px"><el-date-picker v-model="editForm.dueDate" type="date" value-format="YYYY-MM-DD" style="width: 100%" /></el-form-item></el-col>
+          <el-col :span="8"><el-form-item label="计租面积(㎡)"><el-input-number v-model="editForm.leaseArea" :min="0" :precision="2" :controls="false" style="width: 100%" /></el-form-item></el-col>
+          <el-col :span="8"><el-form-item label="联系人" label-width="64px"><el-input v-model="editForm.contactName" /></el-form-item></el-col>
+          <el-col :span="8"><el-form-item label="联系电话" label-width="74px"><el-input v-model="editForm.contactPhone" /></el-form-item></el-col>
+          <el-col :span="24"><el-form-item label="收款账户/方式"><el-input v-model="editForm.paymentAccount" type="textarea" :rows="2" /></el-form-item></el-col>
           <el-col :span="12"><el-form-item label="已付金额"><el-input-number v-model="editForm.paidAmount" :min="0" :precision="2" :controls="false" style="width: 100%" /></el-form-item></el-col>
           <el-col :span="12"><el-form-item label="前期欠费"><el-input-number v-model="editForm.priorArrears" :min="0" :precision="2" :controls="false" style="width: 100%" /></el-form-item></el-col>
-          <el-col :span="24"><el-form-item label="收款账户/方式"><el-input v-model="editForm.paymentAccount" type="textarea" :rows="2" /></el-form-item></el-col>
           <el-col :span="24"><el-form-item label="备注"><el-input v-model="editForm.remark" type="textarea" :rows="2" /></el-form-item></el-col>
         </el-row>
       </el-form>
@@ -323,6 +342,7 @@ import { leaseFeeApi } from '@/api/energy'
 import { sealApi } from '@/api/oa'
 import { BILL_KINDS, applyFilter, downloadBlob, filterOptions, money, num } from '../feePeriod'
 import { LEASE_NOTICE_CSS, leaseNoticeHtml, printLeaseNotices } from '../leaseNoticePrint'
+import { parseHeaderOverride } from '../noticePrint'
 import FeeBillFiles from './FeeBillFiles.vue'
 import FeeFilterBar from './FeeFilterBar.vue'
 import LeaseNoticePayment from './LeaseNoticePayment.vue'
@@ -430,9 +450,21 @@ const editDialog = reactive({ visible: false, saving: false })
 const editForm = reactive({})
 const editItems = ref([])
 function openEdit(row) {
+  const p = period.value || {}
+  const ov = parseHeaderOverride(row.headerOverrideJson)
+  const isRent = row.feeCategory === 'RENT'
   Object.assign(editForm, {
-    id: row.id, noticeNo: row.noticeNo, tenantName: row.tenantName, unitName: row.unitName,
-    payeeName: row.payeeName || '', paymentAccount: row.paymentAccount || '',
+    id: row.id, noticeNo: row.noticeNo || '', tenantName: row.tenantName, unitName: row.unitName,
+    agreementNo: row.agreementNo || '', leaseArea: Number(row.leaseArea || 0),
+    payeeName: row.payeeName || (isRent ? p.rentPayeeName : p.propertyPayeeName) || '',
+    paymentAccount: row.paymentAccount || (isRent ? p.rentPaymentAccount : p.propertyPaymentAccount) || '',
+    parkName: ov.parkName || p.parkName || '',
+    periodStart: ov.periodStart || p.periodStart || null,
+    periodEnd: ov.periodEnd || p.periodEnd || null,
+    issueDate: ov.issueDate || p.issueDate || null,
+    dueDate: ov.dueDate || p.dueDate || null,
+    contactName: ov.contactName ?? (isRent ? p.rentContactName : p.propertyContactName) ?? '',
+    contactPhone: ov.contactPhone ?? (isRent ? p.rentContactPhone : p.propertyContactPhone) ?? '',
     paidAmount: Number(row.paidAmount || 0), priorArrears: Number(row.priorArrears || 0), remark: row.remark || ''
   })
   editItems.value = (row.items || []).map((it) => ({
@@ -448,9 +480,24 @@ async function saveEdit() {
   const manualItems = editItems.value.filter((r) => !r.auto).map((r) => ({ feeItem: r.feeItem, amount: r.amount, remark: r.remark }))
   const itemRemarks = {}
   editItems.value.filter((r) => r.auto && r.id).forEach((r) => { itemRemarks[r.id] = r.remark || '' })
+  const headerOverrideJson = JSON.stringify({
+    parkName: editForm.parkName || '',
+    periodStart: editForm.periodStart || null,
+    periodEnd: editForm.periodEnd || null,
+    issueDate: editForm.issueDate || null,
+    dueDate: editForm.dueDate || null,
+    contactName: editForm.contactName || '',
+    contactPhone: editForm.contactPhone || ''
+  })
   editDialog.saving = true
   try {
-    await leaseFeeApi.editNotice({ ...editForm, itemRemarks, manualItems })
+    await leaseFeeApi.editNotice({
+      id: editForm.id, noticeNo: editForm.noticeNo, tenantName: editForm.tenantName, unitName: editForm.unitName,
+      agreementNo: editForm.agreementNo, leaseArea: editForm.leaseArea,
+      payeeName: editForm.payeeName, paymentAccount: editForm.paymentAccount,
+      paidAmount: editForm.paidAmount, priorArrears: editForm.priorArrears,
+      remark: editForm.remark, headerOverrideJson, itemRemarks, manualItems
+    })
     editDialog.visible = false
     ElMessage.success('通知单已更新')
     await load()

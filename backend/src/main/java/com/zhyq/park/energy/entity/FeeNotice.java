@@ -58,6 +58,7 @@ public class FeeNotice extends BaseEntity {
     private Long billId;
     private Integer sort;
     private String remark;
+    private String headerOverrideJson;
 
     @TableField(exist = false)
     private List<FeeNoticeItem> items = new ArrayList<>();

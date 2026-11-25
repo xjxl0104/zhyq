@@ -16,6 +16,18 @@ const dateCn = (s) => {
   return `${y}年${Number(m)}月${Number(d)}日`
 }
 
+/** 解析单张通知单独立抬头覆盖配置 */
+export function parseHeaderOverride(json) {
+  if (!json) return {}
+  if (typeof json === 'object') return json
+  try {
+    const parsed = JSON.parse(json)
+    return parsed && typeof parsed === 'object' ? parsed : {}
+  } catch {
+    return {}
+  }
+}
+
 /** 根据模板印章排版配置渲染绝对定位的电子印章 */
 export function renderSealOverlay(sealPlacement, pageWidthMm = 273) {
   if (!sealPlacement || Number(sealPlacement.enabled) !== 1 || !sealPlacement.sealImageData) return ''
@@ -31,7 +43,19 @@ export function renderSealOverlay(sealPlacement, pageWidthMm = 273) {
 
 /** 一张通知单的 HTML,版式照线下表的缴费通知单 sheet */
 export function noticeHtml(period, notice, sealPlacement = null) {
-  const range = periodRange(period)
+  const ov = parseHeaderOverride(notice.headerOverrideJson)
+  const eff = {
+    ...period,
+    parkName: ov.parkName || period.parkName,
+    periodStart: ov.periodStart || period.periodStart,
+    periodEnd: ov.periodEnd || period.periodEnd,
+    issueDate: ov.issueDate || period.issueDate,
+    dueDate: ov.dueDate || period.dueDate,
+    contactName: ov.contactName ?? period.contactName,
+    contactPhone: ov.contactPhone ?? period.contactPhone,
+    paymentAccount: ov.paymentAccount || period.paymentAccount
+  }
+  const range = periodRange(eff)
   const rows = (notice.items || []).map((it) => {
     const detail = /_DETAIL$/.test(it.itemType)
     return `<tr class="${detail ? 'detail' : ''}">
@@ -48,13 +72,13 @@ export function noticeHtml(period, notice, sealPlacement = null) {
     </tr>`
   }).join('')
   return `<section class="notice">
-    <h1>${esc(period.parkName || '')}缴费通知单</h1>
+    <h1>${esc(eff.parkName || '')}缴费通知单</h1>
     <p class="sub">本表用于向租户列明水电费及垃圾清运费；</p>
     <table class="head">
-      <tr><th>园区名称</th><td>${esc(period.parkName)}</td><th>租户/公司名称</th><td>${esc(notice.tenantName)}</td><th>单据编号</th><td>${esc(notice.noticeNo)}</td></tr>
-      <tr><th>厂房/单元</th><td>${esc(notice.unitName)}</td><th>收费期间</th><td>${esc(range)}</td><th>缴费截止日</th><td>${dateCn(period.dueDate)}</td></tr>
-      <tr><th>联系人</th><td>${esc(period.contactName)}</td><th>联系电话</th><td>${esc(period.contactPhone)}</td><th>收款账户/方式</th><td>${br(period.paymentAccount)}</td></tr>
-      <tr><th>开具日期</th><td>${dateCn(period.issueDate)}</td><th>备注</th><td colspan="3">${esc(notice.remark)}</td></tr>
+      <tr><th>园区名称</th><td>${esc(eff.parkName)}</td><th>租户/公司名称</th><td>${esc(notice.tenantName)}</td><th>单据编号</th><td>${esc(notice.noticeNo)}</td></tr>
+      <tr><th>厂房/单元</th><td>${esc(notice.unitName)}</td><th>收费期间</th><td>${esc(range)}</td><th>缴费截止日</th><td>${dateCn(eff.dueDate)}</td></tr>
+      <tr><th>联系人</th><td>${esc(eff.contactName)}</td><th>联系电话</th><td>${esc(eff.contactPhone)}</td><th>收款账户/方式</th><td>${br(eff.paymentAccount)}</td></tr>
+      <tr><th>开具日期</th><td>${dateCn(eff.issueDate)}</td><th>备注</th><td colspan="3">${esc(notice.remark)}</td></tr>
     </table>
     <table class="items">
       <thead><tr><th>序号</th><th>费用项目</th><th>计费期间</th><th>上期读数</th><th>本期读数</th><th>计费数量</th><th>单位</th><th>单价（元）</th><th>金额（元）</th><th>备注</th></tr></thead>
@@ -96,12 +120,22 @@ export const NOTICE_CSS = `
   @media print { body { padding: 0; } @page { size: A4 landscape; margin: 12mm; } }
 `
 
+export function utilityPrintTitle(period, notices) {
+  const p = period?.period || ''
+  const list = Array.isArray(notices) ? notices : []
+  if (list.length === 1 && list[0]?.tenantName) {
+    return `${p}_${list[0].tenantName}_水电垃圾费缴费通知单`
+  }
+  return `${p}_水电垃圾费缴费通知单`
+}
+
 /** 新开窗口打印:一张或全部(每张一页) */
 export function printNotices(period, notices, autoPrint = true, sealPlacement = null) {
   const win = window.open('', '_blank')
   if (!win) return false
   const body = notices.map((n) => noticeHtml(period, n, sealPlacement)).join('')
-  win.document.write(`<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>${esc(period.period)} 缴费通知单</title><style>${NOTICE_CSS}</style></head><body>${body}</body></html>`)
+  const title = utilityPrintTitle(period, notices)
+  win.document.write(`<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>${esc(title)}</title><style>${NOTICE_CSS}</style></head><body>${body}</body></html>`)
   win.document.close()
   if (autoPrint) {
     win.focus()

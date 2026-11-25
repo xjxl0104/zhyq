@@ -66,8 +66,9 @@ public class LeaseFeeService {
     public record ManualItemInput(String feeItem, BigDecimal leaseArea, BigDecimal unitPrice,
                                   BigDecimal amount, String remark) {}
 
-    public record NoticeEdit(Long id, String tenantName, String unitName, String payeeName, String paymentAccount,
-                             BigDecimal paidAmount, BigDecimal priorArrears, String remark,
+    public record NoticeEdit(Long id, String noticeNo, String tenantName, String unitName, String agreementNo,
+                             BigDecimal leaseArea, String payeeName, String paymentAccount,
+                             BigDecimal paidAmount, BigDecimal priorArrears, String remark, String headerOverrideJson,
                              Map<Long, String> itemRemarks, List<ManualItemInput> manualItems) {}
 
     public record GenerateResult(LeaseFeePeriod period, List<LeaseFeeNotice> notices) {}
@@ -623,13 +624,19 @@ public class LeaseFeeService {
         LeaseFeeNotice n = noticeMapper.selectById(in.id());
         if (n == null) throw new BizException("通知单不存在");
         requireDraft(n.getLeasePeriodId());
+        if (StringUtils.hasText(in.noticeNo())) n.setNoticeNo(in.noticeNo().trim());
         if (StringUtils.hasText(in.tenantName())) n.setTenantName(in.tenantName().trim());
         if (StringUtils.hasText(in.unitName())) n.setUnitName(in.unitName().trim());
+        if (in.agreementNo() != null) n.setAgreementNo(in.agreementNo().trim());
+        if (in.leaseArea() != null) n.setLeaseArea(in.leaseArea());
         if (in.payeeName() != null) n.setPayeeName(in.payeeName().trim());
         if (in.paymentAccount() != null) n.setPaymentAccount(in.paymentAccount().trim());
         n.setPaidAmount(nz(in.paidAmount()));
         n.setPriorArrears(nz(in.priorArrears()));
         n.setRemark(in.remark());
+        if (in.headerOverrideJson() != null) {
+            n.setHeaderOverrideJson(StringUtils.hasText(in.headerOverrideJson()) ? in.headerOverrideJson() : null);
+        }
 
         List<LeaseFeeNoticeItem> current = itemMapper.selectList(new LambdaQueryWrapper<LeaseFeeNoticeItem>()
                 .eq(LeaseFeeNoticeItem::getNoticeId, n.getId()).orderByAsc(LeaseFeeNoticeItem::getSort));

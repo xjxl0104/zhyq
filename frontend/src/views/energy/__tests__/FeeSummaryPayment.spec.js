@@ -3,6 +3,8 @@ import { ref, reactive } from 'vue'
 import { beforeEach, expect, it, vi } from 'vitest'
 import FeeSummary from '../FeeSummary.vue'
 import { feePeriodApi } from '@/api/energy'
+import { leasePrintTitle } from '../leaseNoticePrint'
+import { utilityPrintTitle } from '../noticePrint'
 
 const state = vi.hoisted(() => ({ hook: null, opened: null }))
 vi.mock('../feePeriod', async (original) => ({
@@ -65,4 +67,18 @@ it('已出账仍可登记缴费，保存后只更新状态并使该通知单整�
   expect(rows()[1].classes()).toContain('notice-invoice-issued')
   expect(rows()[1].text()).toContain('已开票')
   wrapper.unmount()
+})
+
+it('打印租金、物业管理费与水电垃圾费通知单时使用各自区分的默认文件名', () => {
+  const p = { period: '2026-12' }
+  expect(leasePrintTitle(p, [{ feeCategory: 'RENT', tenantName: '广东云山供应链科技有限公司' }]))
+    .toBe('2026-12_广东云山供应链科技有限公司_租金缴费通知单')
+  expect(leasePrintTitle(p, [{ feeCategory: 'PROPERTY', tenantName: '广东云山供应链科技有限公司' }]))
+    .toBe('2026-12_广东云山供应链科技有限公司_物业管理费缴费通知单')
+  expect(leasePrintTitle(p, [{ feeCategory: 'RENT' }, { feeCategory: 'RENT' }]))
+    .toBe('2026-12_租金缴费通知单')
+  expect(leasePrintTitle(p, [{ feeCategory: 'PROPERTY' }, { feeCategory: 'PROPERTY' }]))
+    .toBe('2026-12_物业管理费缴费通知单')
+  expect(utilityPrintTitle(p, [{ tenantName: '广东云山供应链科技有限公司' }]))
+    .toBe('2026-12_广东云山供应链科技有限公司_水电垃圾费缴费通知单')
 })

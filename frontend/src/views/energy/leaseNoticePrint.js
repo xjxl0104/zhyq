@@ -1,5 +1,5 @@
 import { money, periodRange } from './feePeriod'
-import { renderSealOverlay } from './noticePrint'
+import { parseHeaderOverride, renderSealOverlay } from './noticePrint'
 
 const esc = (v) => String(v ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]))
 const br = (v) => esc(v).replace(/\n/g, '<br>')
@@ -23,11 +23,20 @@ const factorText = (v) => {
 export function leaseNoticeHtml(period, notice, sealPlacement = null) {
   const isRent = notice.feeCategory === 'RENT'
   const categoryTitle = isRent ? '租金' : '物业管理费'
+  const ov = parseHeaderOverride(notice.headerOverrideJson)
+  const eff = {
+    ...period,
+    parkName: ov.parkName || period.parkName,
+    periodStart: ov.periodStart || period.periodStart,
+    periodEnd: ov.periodEnd || period.periodEnd,
+    issueDate: ov.issueDate || period.issueDate,
+    dueDate: ov.dueDate || period.dueDate
+  }
   const payeeName = notice.payeeName || (isRent ? period.rentPayeeName : period.propertyPayeeName) || ''
   const paymentAccount = notice.paymentAccount || (isRent ? period.rentPaymentAccount : period.propertyPaymentAccount) || ''
-  const contactName = isRent ? period.rentContactName : period.propertyContactName
-  const contactPhone = isRent ? period.rentContactPhone : period.propertyContactPhone
-  const range = periodRange(period)
+  const contactName = ov.contactName ?? (isRent ? period.rentContactName : period.propertyContactName)
+  const contactPhone = ov.contactPhone ?? (isRent ? period.rentContactPhone : period.propertyContactPhone)
+  const range = periodRange(eff)
 
   const rows = (notice.items || []).map((it) => `<tr>
     <td class="c">${esc(it.seq)}</td>
@@ -55,12 +64,12 @@ export function leaseNoticeHtml(period, notice, sealPlacement = null) {
       ]
 
   return `<section class="notice">
-    <h1>${esc(period.parkName || '')} ${categoryTitle}缴费通知单</h1>
+    <h1>${esc(eff.parkName || '')} ${categoryTitle}缴费通知单</h1>
     <p class="sub">收取单位：<strong>${esc(payeeName || '待配置')}</strong>　｜　费用类别：${categoryTitle}</p>
     <table class="head">
       <tr><th>收取单位</th><td><strong>${esc(payeeName)}</strong></td><th>租户/公司名称</th><td>${esc(notice.tenantName)}</td><th>单据编号</th><td>${esc(notice.noticeNo)}</td></tr>
-      <tr><th>楼层/区域</th><td>${esc(notice.unitName)}</td><th>收费期间</th><td>${esc(range)}</td><th>缴费截止日</th><td>${dateCn(period.dueDate)}</td></tr>
-      <tr><th>对应协议编号</th><td>${esc(notice.agreementNo || '-')}</td><th>计租面积合计</th><td>${n2(notice.leaseArea)} ㎡</td><th>开具日期</th><td>${dateCn(period.issueDate)}</td></tr>
+      <tr><th>楼层/区域</th><td>${esc(notice.unitName)}</td><th>收费期间</th><td>${esc(range)}</td><th>缴费截止日</th><td>${dateCn(eff.dueDate)}</td></tr>
+      <tr><th>对应协议编号</th><td>${esc(notice.agreementNo || '-')}</td><th>计租面积合计</th><td>${n2(notice.leaseArea)} ㎡</td><th>开具日期</th><td>${dateCn(eff.issueDate)}</td></tr>
       <tr><th>联系人/电话</th><td>${esc([contactName, contactPhone].filter(Boolean).join(' / ') || '-')}</td><th>收款账户/方式</th><td colspan="3">${br(paymentAccount || '-')}</td></tr>
       ${notice.remark ? `<tr><th>备注</th><td colspan="5">${esc(notice.remark)}</td></tr>` : ''}
     </table>
@@ -109,6 +118,19 @@ export const LEASE_NOTICE_CSS = `
   @media print { body { padding: 0; } @page { size: A4 landscape; margin: 12mm; } }
 `
 
+export function leasePrintTitle(period, notices) {
+  const p = period?.period || ''
+  const list = Array.isArray(notices) ? notices : []
+  const cats = new Set(list.map((n) => n?.feeCategory).filter(Boolean))
+  const catTitle = cats.size === 1
+    ? (cats.has('RENT') ? '租金缴费通知单' : '物业管理费缴费通知单')
+    : '租金与物业管理费缴费通知单'
+  if (list.length === 1 && list[0]?.tenantName) {
+    return `${p}_${list[0].tenantName}_${catTitle}`
+  }
+  return `${p}_${catTitle}`
+}
+
 export function printLeaseNotices(period, notices, autoPrint = true, sealMap = null) {
   const win = window.open('', '_blank')
   if (!win) return false
@@ -116,7 +138,8 @@ export function printLeaseNotices(period, notices, autoPrint = true, sealMap = n
     const placement = sealMap ? (n.feeCategory === 'RENT' ? sealMap.RENT : sealMap.PROPERTY) : null
     return leaseNoticeHtml(period, n, placement)
   }).join('')
-  win.document.write(`<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>${esc(period.period)} 租金与物业管理费缴费通知单</title><style>${LEASE_NOTICE_CSS}</style></head><body>${body}</body></html>`)
+  const title = leasePrintTitle(period, notices)
+  win.document.write(`<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>${esc(title)}</title><style>${LEASE_NOTICE_CSS}</style></head><body>${body}</body></html>`)
   win.document.close()
   if (autoPrint) {
     win.focus()
