@@ -1,5 +1,5 @@
 import { money, periodRange } from './feePeriod'
-import { parseHeaderOverride, renderSealOverlay } from './noticePrint'
+import { AUTO_FIT_PRINT_SCRIPT, parseHeaderOverride, renderSealOverlay } from './noticePrint'
 
 const esc = (v) => String(v ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]))
 const br = (v) => esc(v).replace(/\n/g, '<br>')
@@ -83,13 +83,15 @@ export function leaseNoticeHtml(period, notice, sealPlacement = null) {
       </thead>
       <tbody>${rows}</tbody>
     </table>
-    <table class="foot">
-      <tr><td class="note" rowspan="4"><b>收费说明（请核对收款单位）</b><br>${notes.map(esc).join('<br>')}</td><th>费用小计</th><td class="r">${money(notice.subtotal)}</td><td>${categoryTitle}小计</td></tr>
-      <tr><th>已付金额</th><td class="r">${money(notice.paidAmount)}</td><td>-</td></tr>
-      <tr><th>前期欠费</th><td class="r">${money(notice.priorArrears)}</td><td>${Number(notice.priorArrears || 0) ? '' : '无'}</td></tr>
-      <tr><th>本期应收合计</th><td class="r total">${money(notice.totalDue)}</td><td></td></tr>
-    </table>
-    <div class="sign"><span>收取单位确认（签字/盖章）：${esc(payeeName)}</span><span>租户确认（签字/盖章）：</span></div>
+    <div class="foot-block">
+      <table class="foot">
+        <tr><td class="note" rowspan="4"><b>收费说明（请核对收款单位）</b><br>${notes.map(esc).join('<br>')}</td><th>费用小计</th><td class="r">${money(notice.subtotal)}</td><td>${categoryTitle}小计</td></tr>
+        <tr><th>已付金额</th><td class="r">${money(notice.paidAmount)}</td><td>-</td></tr>
+        <tr><th>前期欠费</th><td class="r">${money(notice.priorArrears)}</td><td>${Number(notice.priorArrears || 0) ? '' : '无'}</td></tr>
+        <tr><th>本期应收合计</th><td class="r total">${money(notice.totalDue)}</td><td></td></tr>
+      </table>
+      <div class="sign"><span>收取单位确认（签字/盖章）：${esc(payeeName)}</span><span>租户确认（签字/盖章）：</span></div>
+    </div>
     ${renderSealOverlay(sealPlacement, 273)}
   </section>`
 }
@@ -97,25 +99,37 @@ export function leaseNoticeHtml(period, notice, sealPlacement = null) {
 export const LEASE_NOTICE_CSS = `
   * { box-sizing: border-box; }
   body { font-family: "Microsoft YaHei", "PingFang SC", sans-serif; font-size: 12px; color: #111; margin: 0; padding: 16px; }
-  .notice { position: relative; page-break-after: always; max-width: 1080px; margin: 0 auto 32px; }
-  .notice:last-child { page-break-after: auto; }
+  .notice { position: relative; page-break-after: always; break-after: page; max-width: 1080px; margin: 0 auto 32px; }
+  .notice:last-child { page-break-after: auto; break-after: auto; }
   .seal-stamp { position: absolute; z-index: 20; pointer-events: none; mix-blend-mode: multiply; height: auto; }
   h1 { text-align: center; font-size: 20px; margin: 0 0 4px; letter-spacing: 2px; }
   .sub { text-align: center; margin: 0 0 10px; color: #333; font-size: 13px; }
   table { width: 100%; border-collapse: collapse; margin-bottom: 8px; }
+  thead { display: table-header-group; }
   th, td { border: 1px solid #333; padding: 5px 6px; vertical-align: middle; }
   th { background: #f3f3f3; font-weight: 600; text-align: center; white-space: nowrap; }
-  .head th { width: 11%; }
-  .head td { width: 22%; }
+  .head th { width: 10%; }
+  .head td { width: 23.3%; }
+  .items tr, .foot-block, .foot, .sign { break-inside: avoid; page-break-inside: avoid; }
   .items td.c, .items th { text-align: center; }
   .items td.r { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
   .items td.remark { font-size: 11px; color: #333; }
-  .foot td.note { width: 62%; font-size: 11px; line-height: 1.6; vertical-align: top; }
+  .foot td.note { width: 62%; font-size: 11px; line-height: 1.55; vertical-align: top; }
   .foot th { width: 14%; }
   .foot td.r { text-align: right; width: 12%; font-variant-numeric: tabular-nums; }
   .foot td.total { font-weight: 700; font-size: 14px; }
-  .sign { display: flex; justify-content: space-between; margin-top: 28px; padding: 0 8px; }
-  @media print { body { padding: 0; } @page { size: A4 landscape; margin: 12mm; } }
+  .sign { display: flex; justify-content: space-between; margin-top: 22px; padding: 0 8px; }
+  @media print {
+    body { padding: 0; font-size: 11px; }
+    .notice { max-width: none; margin: 0; padding-bottom: 4px; }
+    h1 { font-size: 18px; margin-bottom: 3px; }
+    .sub { margin-bottom: 6px; font-size: 12px; }
+    table { margin-bottom: 6px; }
+    th, td { padding: 3.5px 5px; line-height: 1.35; }
+    .foot td.note { line-height: 1.45; }
+    .sign { margin-top: 14px; }
+    @page { size: A4 landscape; margin: 8mm 10mm; }
+  }
 `
 
 export function leasePrintTitle(period, notices) {
@@ -139,11 +153,11 @@ export function printLeaseNotices(period, notices, autoPrint = true, sealMap = n
     return leaseNoticeHtml(period, n, placement)
   }).join('')
   const title = leasePrintTitle(period, notices)
-  win.document.write(`<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>${esc(title)}</title><style>${LEASE_NOTICE_CSS}</style></head><body>${body}</body></html>`)
+  win.document.write(`<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>${esc(title)}</title><style>${LEASE_NOTICE_CSS}</style></head><body>${body}${AUTO_FIT_PRINT_SCRIPT}</body></html>`)
   win.document.close()
   if (autoPrint) {
     win.focus()
-    setTimeout(() => win.print(), 300)
+    setTimeout(() => win.print(), 350)
   }
   return true
 }

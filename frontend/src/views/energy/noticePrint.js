@@ -84,13 +84,15 @@ export function noticeHtml(period, notice, sealPlacement = null) {
       <thead><tr><th>序号</th><th>费用项目</th><th>计费期间</th><th>上期读数</th><th>本期读数</th><th>计费数量</th><th>单位</th><th>单价（元）</th><th>金额（元）</th><th>备注</th></tr></thead>
       <tbody>${rows}</tbody>
     </table>
-    <table class="foot">
-      <tr><td class="note" rowspan="4"><b>收费说明</b><br>${NOTES.map(esc).join('<br>')}</td><th>费用小计</th><td class="r">${money(notice.subtotal)}</td><td>本期应收合计</td></tr>
-      <tr><th>已付金额</th><td class="r">${money(notice.paidAmount)}</td><td>-</td></tr>
-      <tr><th>前期欠费</th><td class="r">${money(notice.priorArrears)}</td><td>${Number(notice.priorArrears || 0) ? '' : '无'}</td></tr>
-      <tr><th>本期应收合计</th><td class="r total">${money(notice.totalDue)}</td><td></td></tr>
-    </table>
-    <div class="sign"><span>园区方确认（签字/盖章）：</span><span>租户确认（签字/盖章）：</span></div>
+    <div class="foot-block">
+      <table class="foot">
+        <tr><td class="note" rowspan="4"><b>收费说明</b><br>${NOTES.map(esc).join('<br>')}</td><th>费用小计</th><td class="r">${money(notice.subtotal)}</td><td>本期应收合计</td></tr>
+        <tr><th>已付金额</th><td class="r">${money(notice.paidAmount)}</td><td>-</td></tr>
+        <tr><th>前期欠费</th><td class="r">${money(notice.priorArrears)}</td><td>${Number(notice.priorArrears || 0) ? '' : '无'}</td></tr>
+        <tr><th>本期应收合计</th><td class="r total">${money(notice.totalDue)}</td><td></td></tr>
+      </table>
+      <div class="sign"><span>园区方确认（签字/盖章）：</span><span>租户确认（签字/盖章）：</span></div>
+    </div>
     ${renderSealOverlay(sealPlacement, 273)}
   </section>`
 }
@@ -98,27 +100,60 @@ export function noticeHtml(period, notice, sealPlacement = null) {
 export const NOTICE_CSS = `
   * { box-sizing: border-box; }
   body { font-family: "Microsoft YaHei", "PingFang SC", sans-serif; font-size: 12px; color: #111; margin: 0; padding: 16px; }
-  .notice { position: relative; page-break-after: always; max-width: 1040px; margin: 0 auto 32px; }
-  .notice:last-child { page-break-after: auto; }
+  .notice { position: relative; page-break-after: always; break-after: page; max-width: 1040px; margin: 0 auto 32px; }
+  .notice:last-child { page-break-after: auto; break-after: auto; }
   .seal-stamp { position: absolute; z-index: 20; pointer-events: none; mix-blend-mode: multiply; height: auto; }
   h1 { text-align: center; font-size: 20px; margin: 0 0 4px; letter-spacing: 2px; }
   .sub { text-align: center; margin: 0 0 10px; color: #444; }
   table { width: 100%; border-collapse: collapse; margin-bottom: 8px; }
+  thead { display: table-header-group; }
   th, td { border: 1px solid #333; padding: 5px 6px; vertical-align: middle; }
   th { background: #f3f3f3; font-weight: 600; text-align: center; white-space: nowrap; }
   .head th { width: 11%; }
   .head td { width: 22%; }
+  .items tr, .foot-block, .foot, .sign { break-inside: avoid; page-break-inside: avoid; }
   .items td.c, .items th { text-align: center; }
   .items td.r { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
   .items td.remark { font-size: 11px; color: #333; }
   .items tr.detail td { color: #555; font-size: 11px; }
-  .foot td.note { width: 62%; font-size: 11px; line-height: 1.6; vertical-align: top; }
+  .foot td.note { width: 62%; font-size: 11px; line-height: 1.55; vertical-align: top; }
   .foot th { width: 14%; }
   .foot td.r { text-align: right; width: 12%; font-variant-numeric: tabular-nums; }
   .foot td.total { font-weight: 700; font-size: 14px; }
-  .sign { display: flex; justify-content: space-between; margin-top: 28px; padding: 0 8px; }
-  @media print { body { padding: 0; } @page { size: A4 landscape; margin: 12mm; } }
+  .sign { display: flex; justify-content: space-between; margin-top: 22px; padding: 0 8px; }
+  @media print {
+    body { padding: 0; font-size: 11px; }
+    .notice { max-width: none; margin: 0; padding-bottom: 4px; }
+    h1 { font-size: 18px; margin-bottom: 3px; }
+    .sub { margin-bottom: 6px; font-size: 12px; }
+    table { margin-bottom: 6px; }
+    th, td { padding: 3.5px 5px; line-height: 1.35; }
+    .foot td.note { line-height: 1.45; }
+    .sign { margin-top: 14px; }
+    @page { size: A4 landscape; margin: 8mm 10mm; }
+  }
 `
+
+/** 打印前自动微调轻微超出一页的通知单缩放比例，使整单(含收费说明与电子印章)完整落在一页内 */
+export const AUTO_FIT_PRINT_SCRIPT = `<script>
+(function () {
+  function fitNotices() {
+    var maxH = 665;
+    var maxZoomableH = 1060;
+    document.querySelectorAll('section.notice').forEach(function (el) {
+      el.style.zoom = '';
+      var h = el.scrollHeight;
+      if (h > maxH && h <= maxZoomableH) {
+        var z = Math.max(0.68, Math.floor((maxH / h) * 1000) / 1000);
+        el.style.zoom = String(z);
+      }
+    });
+  }
+  window.addEventListener('beforeprint', fitNotices);
+  window.addEventListener('load', fitNotices);
+  setTimeout(fitNotices, 80);
+})();
+</script>`
 
 export function utilityPrintTitle(period, notices) {
   const p = period?.period || ''
@@ -135,11 +170,11 @@ export function printNotices(period, notices, autoPrint = true, sealPlacement = 
   if (!win) return false
   const body = notices.map((n) => noticeHtml(period, n, sealPlacement)).join('')
   const title = utilityPrintTitle(period, notices)
-  win.document.write(`<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>${esc(title)}</title><style>${NOTICE_CSS}</style></head><body>${body}</body></html>`)
+  win.document.write(`<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>${esc(title)}</title><style>${NOTICE_CSS}</style></head><body>${body}${AUTO_FIT_PRINT_SCRIPT}</body></html>`)
   win.document.close()
   if (autoPrint) {
     win.focus()
-    setTimeout(() => win.print(), 300)
+    setTimeout(() => win.print(), 350)
   }
   return true
 }
