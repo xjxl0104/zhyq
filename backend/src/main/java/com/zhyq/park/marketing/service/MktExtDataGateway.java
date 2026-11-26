@@ -61,8 +61,9 @@ public class MktExtDataGateway {
      * SINGLE 单店人工反查：外省跳过；地区不明允许付费（人工主动发起）
      * FORCE  人工特批：不看地区，允许付费
      * INBOUND 主动留资/广告推送：从不跳过整行，只查本地缓存不付费
+     * PREVIEW 导入前预检：同 BATCH 的地区跳过规则，但只查本地缓存，绝不付费
      */
-    public enum AlignPolicy { BATCH, SINGLE, FORCE, INBOUND }
+    public enum AlignPolicy { BATCH, SINGLE, FORCE, INBOUND, PREVIEW }
 
     private enum LookupOutcome { FOUND, NOT_FOUND, SKIPPED, ERROR }
     private record Lookup(LookupOutcome outcome, CompanyProfile profile) {
@@ -159,7 +160,7 @@ public class MktExtDataGateway {
         String zone = classifyZone((regionHint == null ? "" : regionHint) + " " + companyOrShopName, null);
         boolean lockOn = isGuangdongLockEnabled();
 
-        if (lockOn && (p == AlignPolicy.BATCH || p == AlignPolicy.SINGLE) && "OUT_GD".equals(zone)) {
+        if (lockOn && (p == AlignPolicy.BATCH || p == AlignPolicy.SINGLE || p == AlignPolicy.PREVIEW) && "OUT_GD".equals(zone)) {
             return new CompanyProfile("SKIPPED_OUT_PROVINCE", companyOrShopName.trim(), null, null, null, null, null,
                     "外省", null, null, regionHint, 0, List.of());
         }
@@ -168,6 +169,7 @@ public class MktExtDataGateway {
         if (cached != null) return cached;
 
         if (p == AlignPolicy.INBOUND) return CompanyProfile.empty("UNCONFIGURED");
+        if (p == AlignPolicy.PREVIEW) return CompanyProfile.empty("PREVIEW_NOT_QUERIED");
         if (lockOn && p == AlignPolicy.BATCH && "UNKNOWN".equals(zone)) {
             return CompanyProfile.empty("SKIPPED_UNKNOWN_REGION");
         }

@@ -133,4 +133,20 @@ class MktConnectorHubServiceTest {
         assertThat(hub.verifyVatInvoice(Map.of("invoiceNo", "26442000000088990011",
                 "itemName", "*现代服务*招商推广服务费", "totalAmount", "21200.00")).get("verifyStatus")).isEqualTo("STANDBY_MANUAL");
     }
+
+    @Test
+    void waybillSamplingUsesRealOutboundTableAndPercentOfEligibleOrders() {
+        JdbcTemplate jdbc = mock(JdbcTemplate.class);
+        FieldEncryptionService crypto = new FieldEncryptionService(KEY_B64);
+        String cipher = crypto.encrypt("{\"customer\":\"C123\",\"key\":\"K456789\",\"sampleRatePct\":\"2\"}");
+        when(jdbc.queryForList(contains("connector_code = ?"), eq(1L), eq("KUAIDI100")))
+                .thenReturn(List.of(row("KUAIDI100", 1, 0, 3000, 0, cipher)));
+        when(jdbc.queryForObject(contains("source_type = 2"), eq(Integer.class), any(Object[].class))).thenReturn(300);
+        MktConnectorHubService hub = new MktConnectorHubService(jdbc, new ObjectMapper(), crypto, mock(MktAuditService.class));
+
+        Map<String, Object> res = hub.runWaybillSpotCheck(null, "2026-11", null);
+        assertThat(res.get("eligibleCount")).isEqualTo(300);
+        // 300 单 × 2% = 6 单随机抽样，取数来自 crm_referral_order 的 logistics_no
+        verify(jdbc).queryForList(contains("logistics_no AS trackingNo"), eq(1L), isNull(), isNull(), any(), any(), eq(6));
+    }
 }

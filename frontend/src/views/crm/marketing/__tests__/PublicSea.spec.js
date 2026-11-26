@@ -33,6 +33,7 @@ vi.mock('@/api/marketing', () => ({
     amapRadar: (...args) => mockAmapRadar(...args),
     firstTouch: (...args) => mockFirstTouch(...args),
     washRows: (...args) => mockWashRows(...args),
+    washBatch: vi.fn().mockResolvedValue({ batchNo: 'WASH-1', status: 'RUNNING', totalRows: 60, processedRows: 20 }),
     feedWarehouses: (...args) => mockFeed(...args),
     batchFeedWarehouses: vi.fn(),
     release: vi.fn()
@@ -230,5 +231,22 @@ describe('PublicSea.vue 广东公海双视图、四卡三层下钻与500m打卡�
     await submitBtn().trigger('click')
     await flushPromises()
     expect(mockVisitCheckin).toHaveBeenCalledWith(901, expect.objectContaining({ photoUrl: 'file:77' }))
+  })
+
+  it('大名单正式导入转后台时显示进度条，而不是直接提示完成', async () => {
+    mockWashRows.mockResolvedValue({ async: true, status: 'RUNNING', batchNo: 'WASH-1', totalRows: 60, processedRows: 0, message: '已转为后台处理' })
+    const wrapper = mount(PublicSea, { global: { plugins: [ElementPlus] } })
+    await flushPromises()
+    const openBtn = wrapper.findAll('button').find(b => b.text().includes('类目TOP500店铺榜对齐入池'))
+    await openBtn.trigger('click')
+    await flushPromises()
+    await wrapper.find('textarea[placeholder*="广州白云悦颜生物科技有限公司"]').setValue('广州甲公司,13700000001,个人洗护,100,4.5,广州市白云区')
+    const submit = wrapper.findAll('button').find(b => b.text().includes('确认洗数入池'))
+    await submit.trigger('click')
+    await flushPromises()
+    expect(mockWashRows).toHaveBeenCalledWith(expect.objectContaining({ dryRun: false }))
+    expect(wrapper.find('[data-testid="wash-progress"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('后台导入中')
+    wrapper.unmount()
   })
 })

@@ -40,7 +40,7 @@ class MktWithdrawalSettingTest {
     @Test void readingMissingArrivalPolicyShowsEditableDefaultWithoutWritingIt() {
         when(jdbc.queryForList(anyString(), eq("marketing"))).thenReturn(List.of());
         var rows = controller.all().getData();
-        assertThat(rows).hasSize(10);
+        assertThat(rows).hasSize(11);
         assertThat(rows).extracting(r -> r.get("skey")).containsSubsequence(
                 "withdraw_arrival_time", "withdraw_window_start_day", "withdraw_window_end_day",
                 "auto_withdraw_day", "sea_sla_hours", "sea_region_lock_province",
@@ -60,7 +60,7 @@ class MktWithdrawalSettingTest {
         var rows = controller.all().getData();
         assertThat(rows.stream().filter(r -> "withdraw_arrival_time".equals(r.get("skey"))).toList())
                 .containsExactly(existing);
-        assertThat(rows).hasSize(10);
+        assertThat(rows).hasSize(11);
     }
 
     @Test void legacyConnectorKeysAreHiddenAndCannotBeSavedFromRulesPage() {

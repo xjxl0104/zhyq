@@ -31,4 +31,9 @@ public class MktPublicSeaWashBatch {
     private String blockedDetailsJson;
     private String operator;
     private LocalDateTime createdAt;
+    /** RUNNING / DONE / FAILED（V134） */
+    private String status;
+    private Integer processedRows;
+    private String errorMsg;
+    private LocalDateTime finishedAt;
 }

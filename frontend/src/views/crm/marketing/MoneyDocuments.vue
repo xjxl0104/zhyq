@@ -76,13 +76,13 @@
     <el-dialog v-model="wbCheck.visible" title="📦 快递100 真实物流轨迹 2% 防空包刷佣抽检" width="min(620px, 95vw)">
       <el-form label-position="top">
         <el-form-item label="抽检账期月份"><el-date-picker v-model="wbCheck.settleMonth" type="month" value-format="YYYY-MM" class="full" /></el-form-item>
-        <el-form-item label="指定测试/重点抽检运单号（可选，留空则自动从计佣出库单随机抽 2%）">
+        <el-form-item label="指定运单号（可选；留空则从本账期已确认出库单中按比例随机抽检，默认 2%，最多 200 单）">
           <el-input v-model="wbCheck.trackingInput" placeholder="例如：JT5288901234567（留空自动按2%抽样）" clearable />
         </el-form-item>
       </el-form>
       <div v-if="wbCheck.result" class="rt">
         <el-alert :type="wbCheck.result.fakeEmptyCount > 0 ? 'error' : 'success'" :closable="false"
-                  :title="`本次核验 ${wbCheck.result.checkedCount} 单：已签收 ${wbCheck.result.realSignedCount || 0} · 运输中 ${wbCheck.result.inTransitCount || 0} · 异常空单 ${wbCheck.result.fakeEmptyCount || 0} · 待开通转人工 ${wbCheck.result.standbyManualCount || 0}`" />
+                  :title="`账期内带运单号的出库单 ${wbCheck.result.eligibleCount ?? '—'} 单，本次随机抽检 ${wbCheck.result.checkedCount} 单：已签收 ${wbCheck.result.realSignedCount || 0} · 运输中 ${wbCheck.result.inTransitCount || 0} · 异常空单 ${wbCheck.result.fakeEmptyCount || 0} · 待开通转人工 ${wbCheck.result.standbyManualCount || 0}`" />
         <el-table v-if="(wbCheck.result.records || []).length" :data="wbCheck.result.records" size="small" border style="margin-top:8px">
           <el-table-column prop="trackingNo" label="快递单号" width="165" />
           <el-table-column prop="checkStatus" label="核验结论" width="130" />

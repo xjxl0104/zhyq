@@ -38,6 +38,7 @@ public class MktPublicSeaService {
     public static final String KEY_SLA_HOURS = "sea_sla_hours";
     public static final String KEY_WH_DAILY_CAP = "sea_wh_daily_cap";
     public static final String KEY_WH_ACTIVE_CAP = "sea_wh_active_cap";
+    public static final String KEY_ADMIN_ACTIVE_CAP = "sea_admin_active_cap";
 
     private final JdbcTemplate jdbc;
     private final BizSettings bizSettings;
@@ -51,6 +52,19 @@ public class MktPublicSeaService {
     public int slaHours() { return Math.max(1, bizSettings.getInt(MODULE, KEY_SLA_HOURS, 72)); }
     public int whDailyCap() { return Math.max(1, bizSettings.getInt(MODULE, KEY_WH_DAILY_CAP, 5)); }
     public int whActiveCap() { return Math.max(1, bizSettings.getInt(MODULE, KEY_WH_ACTIVE_CAP, 10)); }
+    public int adminActiveCap() { return Math.max(1, bizSettings.getInt(MODULE, KEY_ADMIN_ACTIVE_CAP, 30)); }
+
+    /** 内部专员在跟上限：超级管理员不受限，其余人达到上限后不能再认领/打卡接手新客户。 */
+    private void assertAdminCapacity(String operator) {
+        if (hasRole("ROLE_admin")) return;
+        int cap = adminActiveCap();
+        int active = Optional.ofNullable(jdbc.queryForObject(
+                "SELECT COUNT(1) FROM crm_public_sea_meta WHERE claim_status = 'CLAIMED_ADMIN' AND claim_holder_name = ?",
+                Integer.class, operator)).orElse(0);
+        if (active >= cap) {
+            throw new BizException(429, "您在跟的公海客户已达上限 " + cap + " 户，请先推进签约或释放无意向客户后再认领");
+        }
+    }
     public int checkinMaxMeters() { return Math.max(50, bizSettings.getInt(MODULE, "sea_checkin_max_meters", 500)); }
     public int visitProtectDays() { return Math.max(1, bizSettings.getInt(MODULE, "sea_visit_protect_days", 15)); }
 
@@ -203,6 +217,7 @@ public class MktPublicSeaService {
         out.put("slaHours", slaHours());
         out.put("whDailyCap", whDailyCap());
         out.put("whActiveCap", whActiveCap());
+        out.put("adminActiveCap", adminActiveCap());
         out.put("checkinMaxMeters", checkinMaxMeters());
         out.put("visitProtectDays", visitProtectDays());
         out.put("connectors", extGateway.connectorStatus());
@@ -366,6 +381,7 @@ public class MktPublicSeaService {
     @Transactional
     public Map<String, Object> claimByAdmin(Long customerId) {
         String operator = MktAuditService.currentOperator();
+        assertAdminCapacity(operator);
         LocalDateTime now = LocalDateTime.now();
         LocalDateTime deadline = now.plusHours(slaHours());
         int updated = seaMetas.update(null, new LambdaUpdateWrapper<MktPublicSeaMeta>()
@@ -425,6 +441,7 @@ public class MktPublicSeaService {
         if (meta.getLng() == null || meta.getLat() == null) {
             throw new BizException(400, "该客户还没有落图坐标，不能做距离校验；请先补全详细地址并开通高德完成落图后再打卡");
         }
+        if (!"CLAIMED_ADMIN".equals(status)) assertAdminCapacity(operator);
         Long photoFileId = validateCheckinPhoto(photoUrl, operator);
 
         int maxMeters = checkinMaxMeters();

@@ -17,7 +17,12 @@ import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.ss.usermodel.WorkbookFactory;
+import jakarta.annotation.PreDestroy;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.security.concurrent.DelegatingSecurityContextExecutorService;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -31,6 +36,8 @@ import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /**
  * 公海池三道防撞洗数、类目 TOP500 店铺榜自动企查对齐（广东定向省钱锁+30天缓存）、高德落图与算价留资服务。
@@ -54,6 +61,15 @@ public class MktPublicSeaWashService {
     private final MktCompetitionProtectionService protectionService;
     private final MktExtDataGateway extGateway;
     private final MktAuditService audit;
+    private final PlatformTransactionManager txManager;
+    /** 超过该行数的正式导入转后台执行。 */
+    static final int ASYNC_THRESHOLD = 50;
+    private final ExecutorService importWorker = new DelegatingSecurityContextExecutorService(
+            Executors.newFixedThreadPool(2, r -> {
+                Thread t = new Thread(r, "public-sea-import");
+                t.setDaemon(true);
+                return t;
+            }));
 
     public record RawLeadRow(String name, String shopName, String platform, Integer rankNo,
                              String contact, String phone, String category, Integer estDailyOrders,
@@ -191,6 +207,9 @@ public class MktPublicSeaWashService {
         String fileName = Optional.ofNullable(file.getOriginalFilename()).orElse("shop-rank.xlsx");
         List<RawLeadRow> rows = parseFileRows(file, fileName);
         if (rows.isEmpty()) throw new BizException(400, "文件中未识别到有效店铺或企业行，请核对表头");
+        if (!dryRun && rows.size() > ASYNC_THRESHOLD) {
+            return startAsyncWash(projectId, normalizeSource(seaSource), fileName, rows, MktAuditService.currentOperator());
+        }
         return washRowsInternal(resolveProjectId(projectId), normalizeSource(seaSource), fileName,
                 rows, dryRun, null, null, MktExtDataGateway.AlignPolicy.BATCH, MktAuditService.currentOperator());
     }
@@ -217,8 +236,12 @@ public class MktPublicSeaWashService {
                 asDecimalScale(m.get("lat"), 6),
                 cleanText(firstNonNull(m, "blockNote", "remark"), 450)
         )).toList();
+        String effFileName = StringUtils.hasText(fileName) ? fileName.trim() : "类目榜单批量对齐";
+        if (!dryRun && rows.size() > ASYNC_THRESHOLD) {
+            return startAsyncWash(projectId, normalizeSource(seaSource), effFileName, rows, MktAuditService.currentOperator());
+        }
         return washRowsInternal(resolveProjectId(projectId), normalizeSource(seaSource),
-                StringUtils.hasText(fileName) ? fileName.trim() : "类目榜单批量对齐",
+                effFileName,
                 rows, dryRun, null, null, MktExtDataGateway.AlignPolicy.BATCH, MktAuditService.currentOperator());
     }
 
@@ -273,12 +296,28 @@ public class MktPublicSeaWashService {
         boolean blocked() { return type != null; }
     }
 
+    /** 单批洗数的共享上下文。 */
+    private record WashContext(Long projectId, Long tenantId, String seaSource, boolean dryRun,
+                               BigDecimal calcLow, BigDecimal calcHigh, MktExtDataGateway.AlignPolicy policy,
+                               boolean regionSkippable, boolean lockOn, Map<String, Set<String>> batchPhoneCompanies) {}
+
+    /** 通过全部检查、待写入的一行。 */
+    private record RowPlan(RawLeadRow row, MktExtDataGateway.CompanyProfile aligned, String finalName,
+                           String finalPhone, String finalAddr, String zoneCode, Customer existing) {}
+
+    /** 批次累计统计。 */
+    private static final class WashStats {
+        int inserted, blockedPrivate, blockedHmac, blockedAgency, skippedOutProv, cacheHits, apiCalls, processed, errors;
+        Long lastCustomerId;
+        final List<Map<String, Object>> details = new ArrayList<>();
+    }
+
     /**
      * 本地免费防撞闸（不产生任何接口费用）：
      * ① 同号码关联 >3 家企业 → 代账号剔除；② 命中加盟云仓保密老客 → 跳过；
-     * ③ 命中外部伙伴在锁/已签约 → 跳过；④ 命中冷宫归档 → 跳过。
+     * ③ 按名称/电话、再按统一社会信用代码查已有客户：在锁/已签约 → 跳过，冷宫 → 跳过。
      */
-    private GateResult freeGates(Long tenantId, String name, String shopName, String phone,
+    private GateResult freeGates(Long tenantId, String name, String shopName, String phone, String creditCode,
                                  Map<String, Set<String>> batchPhoneCompanies) {
         if (StringUtils.hasText(phone)) {
             int dbSamePhoneDiffName = Optional.ofNullable(jdbc.queryForObject(
@@ -299,6 +338,12 @@ public class MktPublicSeaWashService {
             existQuery.eq(Customer::getName, name);
         }
         Customer existing = customers.selectOne(existQuery.last("LIMIT 1"));
+        if (existing == null && StringUtils.hasText(creditCode)) {
+            List<Long> ids = jdbc.queryForList(
+                    "SELECT customer_id FROM crm_public_sea_meta WHERE tenant_id = ? AND credit_code = ? LIMIT 1",
+                    Long.class, tenantId, creditCode.trim());
+            if (ids != null && !ids.isEmpty() && ids.get(0) != null) existing = customers.selectById(ids.get(0));
+        }
         if (existing != null) {
             if (isPrivateProtected(existing)) {
                 return new GateResult("PRIVATE_LOCK", "客户处于外部伙伴保护期或已签约，严禁冲单", null);
@@ -311,17 +356,19 @@ public class MktPublicSeaWashService {
         return GateResult.pass(existing);
     }
 
-    private Map<String, Object> washRowsInternal(Long projectId, String seaSource, String fileName, List<RawLeadRow> rows,
-                                                 boolean dryRun, BigDecimal calcLow, BigDecimal calcHigh,
-                                                 MktExtDataGateway.AlignPolicy policy, String operator) {
-        Long tenantId = resolveTenantId(projectId);
-        boolean regionSkippable = policy == MktExtDataGateway.AlignPolicy.BATCH || policy == MktExtDataGateway.AlignPolicy.SINGLE;
-        boolean lockOn = extGateway.isGuangdongLockEnabled();
-        int inserted = 0, blockedPrivate = 0, blockedHmac = 0, blockedAgency = 0;
-        int skippedOutProv = 0, cacheHits = 0, apiCalls = 0;
-        Long lastCustomerId = null;
-        List<Map<String, Object>> details = new ArrayList<>();
+    private static void countBlocked(WashStats st, String type) {
+        switch (type) {
+            case "WH_HMAC" -> st.blockedHmac++;
+            case "PRIVATE_LOCK" -> st.blockedPrivate++;
+            default -> st.blockedAgency++;
+        }
+    }
 
+    private WashContext newContext(Long projectId, String seaSource, List<RawLeadRow> rows, boolean dryRun,
+                                   BigDecimal calcLow, BigDecimal calcHigh, MktExtDataGateway.AlignPolicy policy) {
+        MktExtDataGateway.AlignPolicy effective = dryRun ? MktExtDataGateway.AlignPolicy.PREVIEW : policy;
+        boolean regionSkippable = effective == MktExtDataGateway.AlignPolicy.BATCH
+                || effective == MktExtDataGateway.AlignPolicy.SINGLE || effective == MktExtDataGateway.AlignPolicy.PREVIEW;
         Map<String, Set<String>> batchPhoneCompanies = new HashMap<>();
         for (RawLeadRow r : rows) {
             String nm = StringUtils.hasText(r.name()) ? r.name() : r.shopName();
@@ -329,157 +376,293 @@ public class MktPublicSeaWashService {
                 batchPhoneCompanies.computeIfAbsent(r.phone(), k -> new HashSet<>()).add(nm);
             }
         }
+        return new WashContext(projectId, resolveTenantId(projectId), seaSource, dryRun, calcLow, calcHigh,
+                effective, regionSkippable, extGateway.isGuangdongLockEnabled(), batchPhoneCompanies);
+    }
 
+    /** 单行检查（不写库）：免费地区判断 → 免费防撞闸 → 付费工商对齐 → 对齐后再过一次防撞闸。被拦截返回 null。 */
+    private RowPlan planRow(WashContext ctx, RawLeadRow r, int lineNo, WashStats st) {
+        String seedName = StringUtils.hasText(r.name()) ? r.name() : r.shopName();
+        if (!StringUtils.hasText(seedName)) {
+            st.blockedAgency++;
+            addDetail(st.details, lineNo, "空行", "INVALID", "店铺名与企业名均为空，已跳过");
+            return null;
+        }
+        String regionText = (r.regionHint() == null ? "" : r.regionHint()) + " " + (r.address() == null ? "" : r.address());
+
+        if (ctx.regionSkippable() && ctx.lockOn()
+                && "OUT_GD".equals(MktExtDataGateway.classifyZone(regionText + " " + seedName, null))) {
+            st.skippedOutProv++;
+            addDetail(st.details, lineNo, maskName(seedName), "OUT_GUANGDONG", "广东定向省钱锁：识别为外省主体，跳过且不扣接口费");
+            return null;
+        }
+
+        GateResult gate = freeGates(ctx.tenantId(), seedName, r.shopName(), r.phone(), null, ctx.batchPhoneCompanies());
+        if (gate.blocked()) {
+            countBlocked(st, gate.type());
+            addDetail(st.details, lineNo, maskName(seedName), gate.type(), gate.reason());
+            return null;
+        }
+
+        MktExtDataGateway.CompanyProfile aligned = extGateway.alignCompany(ctx.tenantId(), seedName, regionText, ctx.policy());
+        if ("SKIPPED_OUT_PROVINCE".equals(aligned.status())) {
+            st.skippedOutProv++;
+            addDetail(st.details, lineNo, maskName(seedName), "OUT_GUANGDONG", "广东定向省钱锁：识别为外省主体，跳过且不扣接口费");
+            return null;
+        }
+        if ("CACHE_HIT".equals(aligned.status()) || "CACHE_NOT_FOUND".equals(aligned.status())) st.cacheHits++;
+        else if ("API_ALIGNED".equals(aligned.status()) || "NOT_FOUND".equals(aligned.status())) st.apiCalls++;
+
+        String finalName = StringUtils.hasText(aligned.companyName()) ? aligned.companyName() : seedName;
+        String finalPhone = StringUtils.hasText(r.phone()) ? r.phone() : cleanPhone(aligned.phone());
+        String finalAddr = StringUtils.hasText(r.address()) ? r.address() : aligned.address();
+        String zoneCode = MktExtDataGateway.classifyZone(
+                (finalAddr == null ? "" : finalAddr) + " " + regionText + " " + finalName, aligned.creditCode());
+        if (ctx.regionSkippable() && ctx.lockOn() && "OUT_GD".equals(zoneCode)) {
+            st.skippedOutProv++;
+            addDetail(st.details, lineNo, maskName(finalName), "OUT_GUANGDONG", "工商信用代码/地址属外省，省钱锁跳过");
+            return null;
+        }
+
+        Customer existing = gate.existing();
+        boolean needRegate = !Objects.equals(finalName, seedName) || !Objects.equals(finalPhone, r.phone())
+                || StringUtils.hasText(aligned.creditCode());
+        if (needRegate) {
+            GateResult gate2 = freeGates(ctx.tenantId(), finalName, r.shopName(), finalPhone, aligned.creditCode(), ctx.batchPhoneCompanies());
+            if (gate2.blocked()) {
+                countBlocked(st, gate2.type());
+                addDetail(st.details, lineNo, maskName(finalName), gate2.type(), gate2.reason());
+                return null;
+            }
+            if (gate2.existing() != null) existing = gate2.existing();
+        }
+
+        if (!StringUtils.hasText(finalPhone) && !"AMAP_POI".equals(ctx.seaSource()) && !StringUtils.hasText(r.shopName())) {
+            st.blockedAgency++;
+            addDetail(st.details, lineNo, maskName(finalName), "NO_PHONE", "缺少手机号且未对齐到公开年报电话");
+            return null;
+        }
+        return new RowPlan(r, aligned, finalName, finalPhone, finalAddr, zoneCode, existing);
+    }
+
+    /** 写入一行（客户主档 + 公海画像 + 店铺矩阵）。预检模式只计数不写。 */
+    private void applyRow(WashContext ctx, RowPlan p, WashStats st) {
+        RawLeadRow r = p.row();
+        if (ctx.dryRun()) { st.inserted++; return; }
+        if (p.existing() != null) {
+            upsertSeaMetaAndShop(p.existing().getId(), ctx.tenantId(), ctx.projectId(), ctx.seaSource(), r, p.aligned(),
+                    p.finalAddr(), p.zoneCode(), ctx.calcLow(), ctx.calcHigh());
+            st.lastCustomerId = p.existing().getId();
+            st.inserted++;
+            return;
+        }
+        Customer c = new Customer();
+        c.setTenantId(ctx.tenantId());
+        c.setProjectId(ctx.projectId());
+        c.setName(p.finalName());
+        c.setBrandName(r.shopName());
+        c.setContact(StringUtils.hasText(r.contact()) ? r.contact()
+                : StringUtils.hasText(p.aligned().legalPerson()) ? p.aligned().legalPerson() : "电商负责人");
+        c.setPhone(StringUtils.hasText(p.finalPhone()) ? p.finalPhone() : "");
+        c.setIndustry(StringUtils.hasText(r.category()) ? r.category() : "综合电商");
+        c.setDemandArea(r.estDailyOrders() != null ? "日估" + r.estDailyOrders() + "单" : "榜单/扫楼待核");
+        c.setIntakeRemark(r.blockNote());
+        c.setRemark(r.blockNote());
+        c.setServiceType(3);
+        c.setBizLine(2);
+        c.setStatus(1);
+        c.setReferrerId(null);
+        c.setWarehouseAssignmentStatus(0);
+        c.setOwner("内部公海待领");
+        c.setAttributionNote("内部公海入池:" + ctx.seaSource());
+        customers.insert(c);
+        upsertSeaMetaAndShop(c.getId(), ctx.tenantId(), ctx.projectId(), ctx.seaSource(), r, p.aligned(),
+                p.finalAddr(), p.zoneCode(), ctx.calcLow(), ctx.calcHigh());
+        st.lastCustomerId = c.getId();
+        st.inserted++;
+    }
+
+    private static String newBatchNo() {
+        return "WASH-" + DateTimeFormatter.ofPattern("yyyyMMddHHmmss").format(LocalDateTime.now())
+                + "-" + (100 + new Random().nextInt(900));
+    }
+
+    /** 同步洗数（小批量 / 单条 / 预检）：在调用方事务内完成。 */
+    private Map<String, Object> washRowsInternal(Long projectId, String seaSource, String fileName, List<RawLeadRow> rows,
+                                                 boolean dryRun, BigDecimal calcLow, BigDecimal calcHigh,
+                                                 MktExtDataGateway.AlignPolicy policy, String operator) {
+        WashContext ctx = newContext(projectId, seaSource, rows, dryRun, calcLow, calcHigh, policy);
+        WashStats st = new WashStats();
         int lineNo = 0;
         for (RawLeadRow r : rows) {
             lineNo++;
-            String seedName = StringUtils.hasText(r.name()) ? r.name() : r.shopName();
-            if (!StringUtils.hasText(seedName)) {
-                blockedAgency++;
-                addDetail(details, lineNo, "空行", "INVALID", "店铺名与企业名均为空，已跳过");
-                continue;
-            }
-            String regionText = (r.regionHint() == null ? "" : r.regionHint()) + " " + (r.address() == null ? "" : r.address());
-
-            // ① 免费：地区预判，外省直接跳过（不调任何付费接口）
-            if (regionSkippable && lockOn && "OUT_GD".equals(MktExtDataGateway.classifyZone(regionText + " " + seedName, null))) {
-                skippedOutProv++;
-                addDetail(details, lineNo, maskName(seedName), "OUT_GUANGDONG", "广东定向省钱锁：识别为外省主体，跳过且不扣接口费");
-                continue;
-            }
-
-            // ② 免费：先用原始名称/电话过防撞闸，注定被拦的行不花钱查工商
-            GateResult gate = freeGates(tenantId, seedName, r.shopName(), r.phone(), batchPhoneCompanies);
-            if (gate.blocked()) {
-                switch (gate.type()) {
-                    case "WH_HMAC" -> blockedHmac++;
-                    case "PRIVATE_LOCK" -> blockedPrivate++;
-                    default -> blockedAgency++;
-                }
-                addDetail(details, lineNo, maskName(seedName), gate.type(), gate.reason());
-                continue;
-            }
-
-            // ③ 付费：本地缓存 → 企查查 → 天眼查 → 百元包（查无此企业即终止，不重复付费）
-            MktExtDataGateway.CompanyProfile aligned = extGateway.alignCompany(tenantId, seedName, regionText, policy);
-            if ("SKIPPED_OUT_PROVINCE".equals(aligned.status())) {
-                skippedOutProv++;
-                addDetail(details, lineNo, maskName(seedName), "OUT_GUANGDONG", "广东定向省钱锁：识别为外省主体，跳过且不扣接口费");
-                continue;
-            }
-            if ("CACHE_HIT".equals(aligned.status()) || "CACHE_NOT_FOUND".equals(aligned.status())) cacheHits++;
-            else if ("API_ALIGNED".equals(aligned.status()) || "NOT_FOUND".equals(aligned.status())) apiCalls++;
-
-            String finalName = StringUtils.hasText(aligned.companyName()) ? aligned.companyName() : seedName;
-            String finalPhone = StringUtils.hasText(r.phone()) ? r.phone() : cleanPhone(aligned.phone());
-            String finalAddr = StringUtils.hasText(r.address()) ? r.address() : aligned.address();
-            String zoneCode = MktExtDataGateway.classifyZone(
-                    (finalAddr == null ? "" : finalAddr) + " " + regionText + " " + finalName, aligned.creditCode());
-            if (regionSkippable && lockOn && "OUT_GD".equals(zoneCode)) {
-                skippedOutProv++;
-                addDetail(details, lineNo, maskName(finalName), "OUT_GUANGDONG", "工商信用代码/地址属外省，省钱锁跳过");
-                continue;
-            }
-
-            // ④ 免费：工商对齐后名称或电话变了，再过一次防撞闸
-            Customer existing = gate.existing();
-            if (!Objects.equals(finalName, seedName) || !Objects.equals(finalPhone, r.phone())) {
-                GateResult gate2 = freeGates(tenantId, finalName, r.shopName(), finalPhone, batchPhoneCompanies);
-                if (gate2.blocked()) {
-                    switch (gate2.type()) {
-                        case "WH_HMAC" -> blockedHmac++;
-                        case "PRIVATE_LOCK" -> blockedPrivate++;
-                        default -> blockedAgency++;
-                    }
-                    addDetail(details, lineNo, maskName(finalName), gate2.type(), gate2.reason());
-                    continue;
-                }
-                existing = gate2.existing() != null ? gate2.existing() : existing;
-            }
-
-            if (!StringUtils.hasText(finalPhone) && !"AMAP_POI".equals(seaSource) && !StringUtils.hasText(r.shopName())) {
-                blockedAgency++;
-                addDetail(details, lineNo, maskName(finalName), "NO_PHONE", "缺少手机号且未对齐到公开年报电话");
-                continue;
-            }
-
-            if (existing != null) {
-                if (!dryRun) {
-                    upsertSeaMetaAndShop(existing.getId(), tenantId, projectId, seaSource, r, aligned, finalAddr, zoneCode, calcLow, calcHigh);
-                    lastCustomerId = existing.getId();
-                }
-                inserted++;
-                continue;
-            }
-
-            if (!dryRun) {
-                Customer c = new Customer();
-                c.setTenantId(tenantId);
-                c.setProjectId(projectId);
-                c.setName(finalName);
-                c.setBrandName(r.shopName());
-                c.setContact(StringUtils.hasText(r.contact()) ? r.contact()
-                        : StringUtils.hasText(aligned.legalPerson()) ? aligned.legalPerson() : "电商负责人");
-                c.setPhone(StringUtils.hasText(finalPhone) ? finalPhone : "");
-                c.setIndustry(StringUtils.hasText(r.category()) ? r.category() : "综合电商");
-                c.setDemandArea(r.estDailyOrders() != null ? "日估" + r.estDailyOrders() + "单" : "榜单/扫楼待核");
-                c.setIntakeRemark(r.blockNote());
-                c.setRemark(r.blockNote());
-                c.setServiceType(3);
-                c.setBizLine(2);
-                c.setStatus(1);
-                c.setReferrerId(null);
-                c.setWarehouseAssignmentStatus(0);
-                c.setOwner("内部公海待领");
-                c.setAttributionNote("内部公海入池:" + seaSource);
-                customers.insert(c);
-                upsertSeaMetaAndShop(c.getId(), tenantId, projectId, seaSource, r, aligned, finalAddr, zoneCode, calcLow, calcHigh);
-                lastCustomerId = c.getId();
-            }
-            inserted++;
+            RowPlan plan = planRow(ctx, r, lineNo, st);
+            if (plan != null) applyRow(ctx, plan, st);
+            st.processed++;
         }
-
-        String batchNo = "WASH-" + DateTimeFormatter.ofPattern("yyyyMMddHHmmss").format(LocalDateTime.now())
-                + "-" + (100 + new Random().nextInt(900));
+        String batchNo = newBatchNo();
         if (!dryRun) {
             MktPublicSeaWashBatch batch = new MktPublicSeaWashBatch();
-            batch.setTenantId(tenantId);
+            batch.setTenantId(ctx.tenantId());
             batch.setProjectId(projectId);
             batch.setBatchNo(batchNo);
             batch.setSeaSource(seaSource);
             batch.setFileName(fileName);
             batch.setTotalRows(rows.size());
-            batch.setInsertedRows(inserted);
-            batch.setBlockedPrivateLock(blockedPrivate);
-            batch.setBlockedWhHmac(blockedHmac);
-            batch.setBlockedDupAgency(blockedAgency);
-            batch.setSkippedOutProvince(skippedOutProv);
-            batch.setQccCacheHits(cacheHits);
-            batch.setQccApiCalls(apiCalls);
-            try { batch.setBlockedDetailsJson(json.writeValueAsString(details)); } catch (Exception ignored) {}
+            fillBatchStats(batch, st);
             batch.setOperator(operator);
+            batch.setStatus("DONE");
             batch.setCreatedAt(LocalDateTime.now());
+            batch.setFinishedAt(LocalDateTime.now());
             washBatches.insert(batch);
             audit.log("public_sea.wash_import", "public_sea", batch.getId(),
-                    "公海洗数对齐 " + batchNo + " 净入 " + inserted + " 户，外省跳过 " + skippedOutProv + " 行");
+                    "公海洗数对齐 " + batchNo + " 净入 " + st.inserted + " 户，外省跳过 " + st.skippedOutProv + " 行");
         }
+        return resultMap(batchNo, seaSource, fileName, rows.size(), dryRun, st, "DONE");
+    }
 
+    private void fillBatchStats(MktPublicSeaWashBatch batch, WashStats st) {
+        batch.setInsertedRows(st.inserted);
+        batch.setBlockedPrivateLock(st.blockedPrivate);
+        batch.setBlockedWhHmac(st.blockedHmac);
+        batch.setBlockedDupAgency(st.blockedAgency);
+        batch.setSkippedOutProvince(st.skippedOutProv);
+        batch.setQccCacheHits(st.cacheHits);
+        batch.setQccApiCalls(st.apiCalls);
+        batch.setProcessedRows(st.processed);
+        try { batch.setBlockedDetailsJson(json.writeValueAsString(st.details)); } catch (Exception ignored) {}
+    }
+
+    private static Map<String, Object> resultMap(String batchNo, String seaSource, String fileName, int total,
+                                                 boolean dryRun, WashStats st, String status) {
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("dryRun", dryRun);
+        out.put("async", false);
+        out.put("status", status);
         out.put("batchNo", batchNo);
         out.put("seaSource", seaSource);
         out.put("fileName", fileName);
-        out.put("totalRows", rows.size());
-        out.put("insertedRows", inserted);
-        out.put("blockedPrivateLock", blockedPrivate);
-        out.put("blockedWhHmac", blockedHmac);
-        out.put("blockedDupAgency", blockedAgency);
-        out.put("skippedOutProvince", skippedOutProv);
-        out.put("qccCacheHits", cacheHits);
-        out.put("qccApiCalls", apiCalls);
-        out.put("lastCustomerId", lastCustomerId);
-        out.put("blockedDetails", details);
+        out.put("totalRows", total);
+        out.put("processedRows", st.processed);
+        out.put("insertedRows", st.inserted);
+        out.put("blockedPrivateLock", st.blockedPrivate);
+        out.put("blockedWhHmac", st.blockedHmac);
+        out.put("blockedDupAgency", st.blockedAgency);
+        out.put("skippedOutProvince", st.skippedOutProv);
+        out.put("qccCacheHits", st.cacheHits);
+        out.put("qccApiCalls", st.apiCalls);
+        out.put("errorRows", st.errors);
+        out.put("lastCustomerId", st.lastCustomerId);
+        out.put("blockedDetails", st.details);
         return out;
+    }
+
+    /**
+     * 大批量导入改后台执行：先在独立事务里登记 RUNNING 批次并立即返回批次号；
+     * 后台逐行处理——外部接口调用不占数据库事务，每行写库单独一个短事务，单行失败不影响其它行；每 20 行回写一次进度。
+     */
+    Map<String, Object> startAsyncWash(Long projectId, String seaSource, String fileName, List<RawLeadRow> rows, String operator) {
+        Long effProject = resolveProjectId(projectId);
+        Long tenantId = resolveTenantId(effProject);
+        String batchNo = newBatchNo();
+        MktPublicSeaWashBatch batch = new MktPublicSeaWashBatch();
+        batch.setTenantId(tenantId);
+        batch.setProjectId(effProject);
+        batch.setBatchNo(batchNo);
+        batch.setSeaSource(seaSource);
+        batch.setFileName(fileName);
+        batch.setTotalRows(rows.size());
+        fillBatchStats(batch, new WashStats());
+        batch.setOperator(operator);
+        batch.setStatus("RUNNING");
+        batch.setCreatedAt(LocalDateTime.now());
+        TransactionTemplate requiresNew = new TransactionTemplate(txManager);
+        requiresNew.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        requiresNew.executeWithoutResult(s -> washBatches.insert(batch));
+        Long batchId = batch.getId();
+        List<RawLeadRow> snapshot = List.copyOf(rows);
+        importWorker.submit(() -> runAsyncWash(batchId, batchNo, effProject, seaSource, snapshot));
+
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("async", true);
+        out.put("status", "RUNNING");
+        out.put("batchNo", batchNo);
+        out.put("totalRows", rows.size());
+        out.put("processedRows", 0);
+        out.put("message", "共 " + rows.size() + " 行，已转为后台处理，可在本页查看进度");
+        return out;
+    }
+
+    void runAsyncWash(Long batchId, String batchNo, Long projectId, String seaSource, List<RawLeadRow> rows) {
+        WashStats st = new WashStats();
+        TransactionTemplate tx = new TransactionTemplate(txManager);
+        try {
+            WashContext ctx = newContext(projectId, seaSource, rows, false, null, null, MktExtDataGateway.AlignPolicy.BATCH);
+            int lineNo = 0;
+            for (RawLeadRow r : rows) {
+                lineNo++;
+                try {
+                    RowPlan plan = planRow(ctx, r, lineNo, st);
+                    if (plan != null) tx.executeWithoutResult(s -> applyRow(ctx, plan, st));
+                } catch (Exception rowError) {
+                    st.errors++;
+                    addDetail(st.details, lineNo, "第" + lineNo + "行", "ERROR", "处理失败已跳过：" + rowError.getMessage());
+                }
+                st.processed++;
+                if (st.processed % 20 == 0) writeProgress(batchId, st, "RUNNING", null);
+            }
+            writeProgress(batchId, st, "DONE", null);
+            audit.log("public_sea.wash_import", "public_sea", batchId,
+                    "后台洗数 " + batchNo + " 完成：净入 " + st.inserted + " 户，外省跳过 " + st.skippedOutProv + " 行，失败 " + st.errors + " 行");
+        } catch (Exception e) {
+            writeProgress(batchId, st, "FAILED", e.getMessage());
+        }
+    }
+
+    private void writeProgress(Long batchId, WashStats st, String status, String errorMsg) {
+        String detailsJson = null;
+        try { detailsJson = json.writeValueAsString(st.details); } catch (Exception ignored) {}
+        jdbc.update("""
+                UPDATE crm_public_sea_wash_batch
+                   SET processed_rows = ?, inserted_rows = ?, blocked_private_lock = ?, blocked_wh_hmac = ?,
+                       blocked_dup_agency = ?, skipped_out_province = ?, qcc_cache_hits = ?, qcc_api_calls = ?,
+                       blocked_details_json = ?, status = ?, error_msg = ?,
+                       finished_at = CASE WHEN ? = 'RUNNING' THEN NULL ELSE NOW() END
+                 WHERE id = ?
+                """, st.processed, st.inserted, st.blockedPrivate, st.blockedHmac, st.blockedAgency, st.skippedOutProv,
+                st.cacheHits, st.apiCalls, detailsJson, status,
+                errorMsg == null ? null : (errorMsg.length() > 250 ? errorMsg.substring(0, 250) : errorMsg),
+                status, batchId);
+    }
+
+    /** 查询批次进度（后台导入轮询用）。 */
+    @Transactional(readOnly = true)
+    public Map<String, Object> getWashBatch(String batchNo) {
+        List<Map<String, Object>> rows = jdbc.queryForList("""
+                SELECT batch_no AS batchNo, sea_source AS seaSource, file_name AS fileName, status,
+                       total_rows AS totalRows, processed_rows AS processedRows, inserted_rows AS insertedRows,
+                       blocked_private_lock AS blockedPrivateLock, blocked_wh_hmac AS blockedWhHmac,
+                       blocked_dup_agency AS blockedDupAgency, skipped_out_province AS skippedOutProvince,
+                       qcc_cache_hits AS qccCacheHits, qcc_api_calls AS qccApiCalls, error_msg AS errorMsg,
+                       CAST(blocked_details_json AS CHAR CHARACTER SET utf8mb4) AS blockedDetailsJson,
+                       created_at AS createdAt, finished_at AS finishedAt
+                  FROM crm_public_sea_wash_batch
+                 WHERE batch_no = ? LIMIT 1
+                """, batchNo);
+        if (rows.isEmpty()) throw new BizException(404, "洗数批次不存在");
+        Map<String, Object> out = new LinkedHashMap<>(rows.get(0));
+        Object raw = out.remove("blockedDetailsJson");
+        try {
+            out.put("blockedDetails", raw == null ? List.of() : json.readValue(String.valueOf(raw), List.class));
+        } catch (Exception e) {
+            out.put("blockedDetails", List.of());
+        }
+        return out;
+    }
+
+    @PreDestroy
+    void shutdownImportWorker() {
+        importWorker.shutdown();
     }
 
     private void upsertSeaMetaAndShop(Long customerId, Long tenantId, Long projectId, String seaSource,

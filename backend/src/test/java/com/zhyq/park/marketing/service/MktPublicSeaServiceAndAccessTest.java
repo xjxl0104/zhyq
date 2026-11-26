@@ -98,7 +98,8 @@ class MktPublicSeaServiceAndAccessTest {
 
         MktExtDataGateway gateway = new MktExtDataGateway(jdbc, bizSettings, new ObjectMapper(), hub);
         MktPublicSeaWashService wash = new MktPublicSeaWashService(
-                jdbc, new ObjectMapper(), customers, seaMetas, batches, protection, gateway, audit);
+                jdbc, new ObjectMapper(), customers, seaMetas, batches, protection, gateway, audit,
+                mock(org.springframework.transaction.PlatformTransactionManager.class));
 
         List<Map<String, Object>> input = List.of(
                 Map.of("name", "杭州四季青电商有限公司", "shopName", "四季风尚店", "region", "浙江省杭州市"),
@@ -208,6 +209,96 @@ class MktPublicSeaServiceAndAccessTest {
         assertThat(ok.get("visitProtectDays")).isEqualTo(15);
         verify(jdbc).update(contains("INSERT INTO crm_public_sea_checkin"),
                 any(), any(), any(), any(), any(), any(), any(), eq("file:77"), any(), any());
+    }
+
+    private MktPublicSeaWashService washWith(JdbcTemplate jdbc, CustomerMapper customers, MktPublicSeaMetaMapper seaMetas,
+                                             MktPublicSeaWashBatchMapper batches, MktExtDataGateway gateway) {
+        return new MktPublicSeaWashService(jdbc, new ObjectMapper(), customers, seaMetas, batches,
+                mock(MktCompetitionProtectionService.class), gateway, mock(MktAuditService.class),
+                mock(org.springframework.transaction.PlatformTransactionManager.class));
+    }
+
+    @Test
+    void dryRunPreviewNeverCallsPaidSourcesAndLargeImportsGoAsync() {
+        JdbcTemplate jdbc = mock(JdbcTemplate.class);
+        BizSettings bizSettings = mock(BizSettings.class);
+        MktConnectorHubService hub = mock(MktConnectorHubService.class);
+        MktPublicSeaWashBatchMapper batches = mock(MktPublicSeaWashBatchMapper.class);
+        when(jdbc.queryForList(contains("SELECT tenant_id"), eq(Long.class), anyLong())).thenReturn(List.of(1L));
+        when(jdbc.queryForList(contains("FROM crm_ext_company_cache"), eq(1L), anyString())).thenReturn(List.of());
+        when(jdbc.queryForObject(contains("COUNT(DISTINCT name)"), eq(Integer.class), any(), any(), any())).thenReturn(0);
+        MktExtDataGateway gateway = new MktExtDataGateway(jdbc, bizSettings, new ObjectMapper(), hub);
+        MktPublicSeaWashService wash = washWith(jdbc, mock(CustomerMapper.class), mock(MktPublicSeaMetaMapper.class), batches, gateway);
+
+        Map<String, Object> preview = wash.washJsonRows(1L, "CHANMAMA", "p.xlsx", List.of(
+                Map.of("name", "广州某美妆有限公司", "phone", "13700000001", "address", "广州市白云区")), true);
+        assertThat(preview.get("insertedRows")).isEqualTo(1);
+        verifyNoInteractions(hub);
+
+        List<Map<String, Object>> many = new java.util.ArrayList<>();
+        for (int i = 0; i < MktPublicSeaWashService.ASYNC_THRESHOLD + 1; i++) {
+            many.add(Map.of("name", "广州批量公司" + i, "phone", "1370000" + String.format("%04d", i)));
+        }
+        Map<String, Object> async = wash.washJsonRows(1L, "CHANMAMA", "big.xlsx", many, false);
+        assertThat(async.get("async")).isEqualTo(true);
+        assertThat(async.get("status")).isEqualTo("RUNNING");
+        verify(batches).insert(org.mockito.ArgumentMatchers.<com.zhyq.park.marketing.entity.MktPublicSeaWashBatch>argThat(
+                b -> "RUNNING".equals(b.getStatus()) && b.getTotalRows() == many.size()));
+    }
+
+    @Test
+    void asyncRunnerContinuesAfterRowErrorAndMarksBatchDone() {
+        JdbcTemplate jdbc = mock(JdbcTemplate.class);
+        BizSettings bizSettings = mock(BizSettings.class);
+        CustomerMapper customers = mock(CustomerMapper.class);
+        when(jdbc.queryForList(contains("SELECT tenant_id"), eq(Long.class), anyLong())).thenReturn(List.of(1L));
+        when(jdbc.queryForList(contains("FROM crm_ext_company_cache"), eq(1L), anyString())).thenReturn(List.of());
+        when(jdbc.queryForObject(contains("COUNT(DISTINCT name)"), eq(Integer.class), any(), any(), any())).thenReturn(0);
+        doThrow(new RuntimeException("写库失败")).doAnswer(inv -> { ((Customer) inv.getArgument(0)).setId(7L); return 1; })
+                .when(customers).insert(any(Customer.class));
+        MktExtDataGateway gateway = new MktExtDataGateway(jdbc, bizSettings, new ObjectMapper(), mock(MktConnectorHubService.class));
+        MktPublicSeaWashService wash = washWith(jdbc, customers, mock(MktPublicSeaMetaMapper.class), mock(MktPublicSeaWashBatchMapper.class), gateway);
+
+        wash.runAsyncWash(99L, "WASH-T", 1L, "CHANMAMA", List.of(
+                new MktPublicSeaWashService.RawLeadRow("广州甲公司", null, "抖音", null, null, "13700000011", null, null, null, null, "广州", null, null, null, null),
+                new MktPublicSeaWashService.RawLeadRow("广州乙公司", null, "抖音", null, null, "13700000012", null, null, null, null, "广州", null, null, null, null)));
+        // 第 1 行写库失败被记为错误行，第 2 行照常入库，最终批次状态 DONE
+        verify(jdbc).update(contains("UPDATE crm_public_sea_wash_batch"),
+                eq(2), eq(1), eq(0), eq(0), eq(0), eq(0), eq(0), eq(0), any(), eq("DONE"), isNull(), eq("DONE"), eq(99L));
+    }
+
+    @Test
+    void alignedCreditCodeMatchesExistingCustomerInsteadOfCreatingDuplicate() {
+        JdbcTemplate jdbc = mock(JdbcTemplate.class);
+        CustomerMapper customers = mock(CustomerMapper.class);
+        MktPublicSeaMetaMapper seaMetas = mock(MktPublicSeaMetaMapper.class);
+        MktExtDataGateway gateway = mock(MktExtDataGateway.class);
+        when(jdbc.queryForList(contains("SELECT tenant_id"), eq(Long.class), anyLong())).thenReturn(List.of(1L));
+        when(jdbc.queryForObject(contains("COUNT(DISTINCT name)"), eq(Integer.class), any(), any(), any())).thenReturn(0);
+        when(gateway.alignCompany(anyLong(), anyString(), anyString(), any())).thenReturn(new MktExtDataGateway.CompanyProfile(
+                "API_ALIGNED", "广州衣恋风尚服饰电子商务有限公司", "91440113MA5D88912X", "林晓峰", "200万", 14,
+                "13826098821", "广东省", "广州市", "番禺区", "广州市番禺区南村万博直播电商大厦802室", 0, List.of()));
+        when(jdbc.queryForList(contains("credit_code = ?"), eq(Long.class), eq(1L), eq("91440113MA5D88912X"))).thenReturn(List.of(555L));
+        Customer existing = new Customer();
+        existing.setId(555L);
+        when(customers.selectById(555L)).thenReturn(existing);
+
+        MktPublicSeaWashService wash = washWith(jdbc, customers, seaMetas, mock(MktPublicSeaWashBatchMapper.class), gateway);
+        Map<String, Object> res = wash.lookupShopAndIngest(1L, "衣恋广派女装旗舰店", "抖音", "女装服饰", false);
+        assertThat(res.get("insertedRows")).isEqualTo(1);
+        assertThat(res.get("lastCustomerId")).isEqualTo(555L);
+        verify(customers, never()).insert(any(Customer.class));
+    }
+
+    @Test
+    void specialistCannotClaimBeyondActiveCap() {
+        JdbcTemplate jdbc = mock(JdbcTemplate.class);
+        BizSettings settings = mock(BizSettings.class);
+        when(settings.getInt(eq("marketing"), anyString(), anyInt())).thenAnswer(inv -> inv.getArgument(2));
+        when(jdbc.queryForObject(contains("claim_holder_name = ?"), eq(Integer.class), eq("system"))).thenReturn(30);
+        MktPublicSeaService service = seaService(jdbc, mock(MktPublicSeaMetaMapper.class), settings);
+        assertThatThrownBy(() -> service.claimByAdmin(901L))
+                .isInstanceOf(BizException.class).hasMessageContaining("30 户");
     }
 
     @Test

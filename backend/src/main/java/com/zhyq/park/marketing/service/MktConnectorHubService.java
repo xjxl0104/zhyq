@@ -414,20 +414,27 @@ public class MktConnectorHubService {
         boolean apiReady = StringUtils.hasText(plain.get("customer")) && StringUtils.hasText(plain.get("key"));
 
         List<Map<String, Object>> samples = new ArrayList<>();
+        int eligible = -1;
         if (manualWaybills != null && !manualWaybills.isEmpty()) {
             for (Map<String, String> w : manualWaybills) {
                 if (StringUtils.hasText(w.get("trackingNo"))) {
-                    samples.add(Map.of("orderId", 0L, "trackingNo", w.get("trackingNo").trim(),
-                            "carrierCode", Optional.ofNullable(w.get("carrierCode")).orElse("yuantong")));
+                    Map<String, Object> sp = new HashMap<>();
+                    sp.put("orderId", 0L);
+                    sp.put("trackingNo", w.get("trackingNo").trim());
+                    sp.put("carrierCode", trimStr(w.get("carrierCode")));
+                    samples.add(sp);
                 }
             }
         } else {
-            int samplePct = toIntOrDefault(plain.get("sampleRatePct"), 2);
-            samples = querySampleOrdersSafe(tenantId, warehouseId, ym, Math.max(1, Math.min(25, samplePct * 5)));
+            int samplePct = Math.max(1, Math.min(100, toIntOrDefault(plain.get("sampleRatePct"), 2)));
+            eligible = countEligibleOutbound(tenantId, warehouseId, ym);
+            int n = eligible == 0 ? 0 : (int) Math.max(1, Math.min(MAX_WAYBILL_SAMPLES, Math.ceil(eligible * samplePct / 100.0)));
+            samples = n == 0 ? List.of() : querySampleOrdersSafe(tenantId, warehouseId, ym, n);
         }
         if (samples.isEmpty()) {
             return Map.of("settleMonth", ym, "apiConfigured", apiReady, "checkedCount", 0, "fakeEmptyCount", 0,
-                    "message", "所选账期暂无可抽检运单号（可手动输入运单号核验）", "records", List.of());
+                    "eligibleCount", Math.max(0, eligible),
+                    "message", "所选账期没有带运单号的已确认出库单（可手动输入运单号核验）", "records", List.of());
         }
 
         int signed = 0, inTransit = 0, fake = 0, standby = 0;
@@ -435,7 +442,8 @@ public class MktConnectorHubService {
         String operator = MktAuditService.currentOperator();
         for (Map<String, Object> sp : samples) {
             String trackingNo = String.valueOf(sp.get("trackingNo"));
-            String carrier = String.valueOf(sp.getOrDefault("carrierCode", "yuantong"));
+            String carrier = sp.get("carrierCode") == null || String.valueOf(sp.get("carrierCode")).isBlank()
+                    || "null".equals(String.valueOf(sp.get("carrierCode"))) ? null : String.valueOf(sp.get("carrierCode"));
             Long orderId = sp.get("orderId") instanceof Number n && n.longValue() > 0 ? n.longValue() : null;
             String checkStatus;
             String originCity = null;
@@ -460,12 +468,18 @@ public class MktConnectorHubService {
                       (tenant_id, warehouse_id, settle_month, order_id, tracking_no, carrier_code, check_status, origin_city, latest_trace, checked_by)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, tenantId, warehouseId, ym, orderId, trackingNo, carrier, checkStatus, originCity, latestTrace, operator);
-            results.add(Map.of("trackingNo", trackingNo, "carrierCode", carrier, "checkStatus", checkStatus, "latestTrace", latestTrace));
+            Map<String, Object> rec = new LinkedHashMap<>();
+            rec.put("trackingNo", trackingNo);
+            rec.put("carrierCode", carrier == null ? "自动识别" : carrier);
+            rec.put("checkStatus", checkStatus);
+            rec.put("latestTrace", latestTrace);
+            results.add(rec);
         }
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("settleMonth", ym);
         out.put("apiConfigured", apiReady);
         out.put("checkedCount", samples.size());
+        out.put("eligibleCount", eligible < 0 ? samples.size() : eligible);
         out.put("realSignedCount", signed);
         out.put("inTransitCount", inTransit);
         out.put("fakeEmptyCount", fake);
@@ -577,6 +591,12 @@ public class MktConnectorHubService {
 
     private Map<String, String> queryKuaidi100Live(String customer, String key, String com, String num) {
         try {
+            if (!StringUtils.hasText(com)) {
+                com = detectKuaidi100Carrier(key, num);
+                if (!StringUtils.hasText(com)) {
+                    return Map.of("status", "STANDBY_MANUAL", "origin", "", "trace", "无法识别快递公司，转人工核对底单");
+                }
+            }
             String param = "{\"com\":\"" + com + "\",\"num\":\"" + num + "\"}";
             String sign = DigestUtil.md5Hex(param + key + customer).toUpperCase(Locale.ROOT);
             String body = "customer=" + URLEncoder.encode(customer, StandardCharsets.UTF_8)
@@ -599,6 +619,18 @@ public class MktConnectorHubService {
         }
     }
 
+    /** 快递100 智能单号识别：返回可能性最高的快递公司编码。 */
+    private String detectKuaidi100Carrier(String key, String num) {
+        try {
+            String url = "https://www.kuaidi100.com/autonumber/auto?num=" + URLEncoder.encode(num, StandardCharsets.UTF_8)
+                    + "&key=" + URLEncoder.encode(key, StandardCharsets.UTF_8);
+            HttpRequest req = HttpRequest.newBuilder(URI.create(url)).timeout(Duration.ofSeconds(4)).GET().build();
+            HttpResponse<String> resp = http.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+            JsonNode arr = json.readTree(resp.body());
+            return arr.isArray() && !arr.isEmpty() ? arr.get(0).path("comCode").asText(null) : null;
+        } catch (Exception e) { return null; }
+    }
+
     private boolean sendImCard(String webhookUrl, String title, String content) {
         if (!StringUtils.hasText(webhookUrl)) return false;
         try {
@@ -613,15 +645,32 @@ public class MktConnectorHubService {
         } catch (Exception e) { return false; }
     }
 
+    private static final int MAX_WAYBILL_SAMPLES = 200;
+    private static final String OUTBOUND_WHERE = """
+             FROM crm_referral_order
+            WHERE tenant_id = ? AND source_type = 2 AND status = 2 AND deleted = 0
+              AND logistics_no IS NOT NULL AND logistics_no <> ''
+              AND (? IS NULL OR warehouse_id = ?)
+              AND event_time >= ? AND event_time < ?
+            """;
+
+    /** 账期内带运单号的已确认出库单数（crm_referral_order：source_type=2 出库单，logistics_no 为运单号）。 */
+    private int countEligibleOutbound(Long tenantId, Long warehouseId, String ym) {
+        try {
+            YearMonth m = YearMonth.parse(ym);
+            return Optional.ofNullable(jdbc.queryForObject("SELECT COUNT(1)" + OUTBOUND_WHERE, Integer.class,
+                    tenantId, warehouseId, warehouseId, m.atDay(1).atStartOfDay(), m.plusMonths(1).atDay(1).atStartOfDay())).orElse(0);
+        } catch (Exception e) { return 0; }
+    }
+
+    /** 随机抽样；快递公司编码取 ERP 推送原文里的 logistics.carrier，没有则由快递100自动识别。 */
     private List<Map<String, Object>> querySampleOrdersSafe(Long tenantId, Long warehouseId, String ym, int limit) {
         try {
-            return jdbc.queryForList("""
-                    SELECT id AS orderId, order_no AS trackingNo, 'jtexpress' AS carrierCode
-                      FROM crm_referral_order
-                     WHERE tenant_id = ? AND (? IS NULL OR warehouse_id = ?)
-                       AND DATE_FORMAT(order_time, '%Y-%m') = ? AND deleted = 0
-                     ORDER BY RAND() LIMIT ?
-                    """, tenantId, warehouseId, warehouseId, ym, limit);
+            YearMonth m = YearMonth.parse(ym);
+            return jdbc.queryForList("SELECT id AS orderId, logistics_no AS trackingNo, "
+                            + "JSON_UNQUOTE(JSON_EXTRACT(raw_payload, '$.logistics.carrier')) AS carrierCode"
+                            + OUTBOUND_WHERE + " ORDER BY RAND() LIMIT ?",
+                    tenantId, warehouseId, warehouseId, m.atDay(1).atStartOfDay(), m.plusMonths(1).atDay(1).atStartOfDay(), limit);
         } catch (Exception e) { return List.of(); }
     }
 

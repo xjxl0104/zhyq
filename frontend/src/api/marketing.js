@@ -274,6 +274,7 @@ export const mktPublicSeaApi = {
     timeout: 60000
   }),
   washRows: (data) => request.post(`${PUBLIC_SEA}/wash-rows`, data, { timeout: 60000 }),
+  washBatch: (batchNo) => request.get(`${PUBLIC_SEA}/wash-batches/${batchNo}`),
   shopLookup: (data) => request.post(`${PUBLIC_SEA}/shop-lookup`, data, { timeout: 30000 }),
   amapRadar: (data) => request.post(`${PUBLIC_SEA}/amap-radar`, data, { timeout: 30000 }),
   claim: (customerId) => request.post(`${PUBLIC_SEA}/${customerId}/claim`),

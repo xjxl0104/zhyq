@@ -180,7 +180,7 @@
     <div v-if="viewMode === 'list'" class="table-card" v-loading="loading">
       <div class="toolbar">
         <span class="hint">
-          电销认领启动 {{ summaryData.slaHours || 72 }}h 首触达倒计时；外勤到达客户现场 ≤{{ summaryData.checkinMaxMeters || 500 }}m 实拍门头打卡即解锁 {{ summaryData.visitProtectDays || 15 }} 天深度地推保护。云仓每日限领 {{ summaryData.whDailyCap || 5 }} 户 / 在途 {{ summaryData.whActiveCap || 10 }} 户。
+          电销认领启动 {{ summaryData.slaHours || 72 }}h 首触达倒计时；外勤到达客户现场 ≤{{ summaryData.checkinMaxMeters || 500 }}m 实拍门头打卡即解锁 {{ summaryData.visitProtectDays || 15 }} 天深度地推保护。云仓每日限领 {{ summaryData.whDailyCap || 5 }} 户 / 在途 {{ summaryData.whActiveCap || 10 }} 户；每位专员最多同时跟 {{ summaryData.adminActiveCap || 30 }} 户。
         </span>
       </div>
 
@@ -713,8 +713,24 @@
         </el-form-item>
       </el-form>
 
+      <div v-if="washDialog.progress" class="wash-result-box" data-testid="wash-progress">
+        <div>
+          <b>后台导入中（批次 {{ washDialog.progress.batchNo }}）</b>：已处理
+          {{ washDialog.progress.processedRows || 0 }} / {{ washDialog.progress.totalRows }} 行
+          <span v-if="washDialog.progress.status === 'FAILED'" class="warn-text">（失败：{{ washDialog.progress.errorMsg }}）</span>
+        </div>
+        <el-progress
+          :percentage="progressPct"
+          :status="washDialog.progress.status === 'FAILED' ? 'exception' : (washDialog.progress.status === 'DONE' ? 'success' : undefined)"
+          style="margin-top: 8px"
+        />
+        <div class="sub-note">可以关闭本窗口，后台会继续处理；导入大名单时工商查询较慢属正常。</div>
+      </div>
+
       <div v-if="washDialog.preview" class="wash-result-box">
-        <div><b>洗数与省钱对账结果（总计 {{ washDialog.preview.totalRows }} 行）</b>：</div>
+        <div>
+          <b>{{ washDialog.preview.dryRun ? '预检结果（未调用付费接口、未写入）' : '洗数结果' }}（总计 {{ washDialog.preview.totalRows }} 行）</b>：
+        </div>
         <div class="wash-stats-grid">
           <div>💰 外省锁自动跳过省钱：<b>{{ washDialog.preview.skippedOutProvince || 0 }}</b> 行</div>
           <div>⚡ 命中30天本地缓存：<b>{{ washDialog.preview.qccCacheHits || 0 }}</b> 次</div>
@@ -726,9 +742,9 @@
       </div>
 
       <template #footer>
-        <el-button :disabled="washDialog.busy" @click="washDialog.visible = false">取消</el-button>
+        <el-button :disabled="washDialog.busy" @click="washDialog.visible = false">{{ washDialog.progress ? '关闭' : '取消' }}</el-button>
         <el-button :loading="washDialog.busy" @click="submitWash(true)">先预检省钱与防撞结果</el-button>
-        <el-button type="primary" :loading="washDialog.busy" @click="submitWash(false)">确认洗数入池</el-button>
+        <el-button type="primary" :loading="washDialog.busy" :disabled="washDialog.progress?.status === 'RUNNING'" @click="submitWash(false)">确认洗数入池</el-button>
       </template>
     </el-dialog>
 
@@ -918,7 +934,7 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { hasPermission } from '@/utils/permission'
@@ -1352,11 +1368,40 @@ async function submitFirstTouch() {
 // 1) 类目 TOP500 店铺榜洗数对齐弹窗
 const washDialog = reactive({
   visible: false, mode: 'paste', seaSource: 'CHANMAMA',
-  file: null, pasteText: '', preview: null, busy: false
+  file: null, pasteText: '', preview: null, progress: null, busy: false
 })
-function openWashDialog() {
-  Object.assign(washDialog, { visible: true, file: null, pasteText: '', preview: null, busy: false })
+let washPollTimer = null
+function stopWashPoll() {
+  if (washPollTimer) { clearTimeout(washPollTimer); washPollTimer = null }
 }
+function openWashDialog() {
+  stopWashPoll()
+  Object.assign(washDialog, { visible: true, file: null, pasteText: '', preview: null, progress: null, busy: false })
+}
+const progressPct = computed(() => {
+  const p = washDialog.progress
+  if (!p || !p.totalRows) return 0
+  return Math.min(100, Math.round(((p.processedRows || 0) / p.totalRows) * 100))
+})
+async function pollWashBatch(batchNo) {
+  try {
+    const st = await mktPublicSeaApi.washBatch(batchNo)
+    washDialog.progress = st
+    if (st.status === 'RUNNING') {
+      washPollTimer = setTimeout(() => pollWashBatch(batchNo), 2000)
+      return
+    }
+    stopWashPoll()
+    washDialog.preview = { ...st, dryRun: false }
+    if (st.status === 'DONE') {
+      ElMessage.success(`后台导入完成：净入 ${st.insertedRows} 户，外省跳过 ${st.skippedOutProvince || 0} 行`)
+      await reloadAll()
+    }
+  } catch (_) {
+    washPollTimer = setTimeout(() => pollWashBatch(batchNo), 5000)
+  }
+}
+onBeforeUnmount(stopWashPoll)
 function onPickWashFile(ev) {
   washDialog.file = ev.target?.files?.[0] || null
   washDialog.preview = null
@@ -1407,6 +1452,14 @@ async function submitWash(dryRun) {
         dryRun,
         rows
       })
+    }
+    if (res?.async) {
+      washDialog.preview = null
+      washDialog.progress = res
+      ElMessage.info(res.message || '名单较大，已转后台处理')
+      stopWashPoll()
+      washPollTimer = setTimeout(() => pollWashBatch(res.batchNo), 1500)
+      return
     }
     washDialog.preview = res
     if (!dryRun) {

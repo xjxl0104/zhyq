@@ -76,6 +76,13 @@ public class MktPublicSeaController {
         return Result.ok(washService.washJsonRows(projectId, seaSource, fileName, rows, dryRun));
     }
 
+    @Operation(summary = "查询洗数批次进度（大批量导入后台执行时轮询）")
+    @PreAuthorize("hasAnyAuthority('crm:marketing:public-sea:query', 'crm:marketing:customer:query')")
+    @GetMapping("/wash-batches/{batchNo}")
+    public Result<Map<String, Object>> washBatch(@PathVariable String batchNo) {
+        return Result.ok(washService.getWashBatch(batchNo));
+    }
+
     @Operation(summary = "单店名称反查背后广东工商主体与地址并过防撞入公海")
     @PreAuthorize("hasAnyAuthority('crm:marketing:public-sea:edit', 'crm:marketing:customer:edit')")
     @PostMapping("/shop-lookup")

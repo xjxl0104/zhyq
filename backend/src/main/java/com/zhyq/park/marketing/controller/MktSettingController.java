@@ -41,6 +41,8 @@ public class MktSettingController {
     private static final String SEA_WH_DAILY_CAP_REMARK = "加盟云仓每日最多认领公海热单户数";
     private static final String SEA_WH_ACTIVE_CAP_KEY = "sea_wh_active_cap";
     private static final String SEA_WH_ACTIVE_CAP_REMARK = "加盟云仓在途未签约公海客户上限户数";
+    private static final String SEA_ADMIN_ACTIVE_CAP_KEY = "sea_admin_active_cap";
+    private static final String SEA_ADMIN_ACTIVE_CAP_REMARK = "内部招商专员同时在跟的公海客户上限（户），防止囤积客户";
     private static final String SEA_REGION_LOCK_KEY = "sea_region_lock_province";
     private static final String SEA_REGION_LOCK_REMARK = "公海外部付费API定向省钱锁省份（非本省主体自动跳过付费工商查询，填 ALL 不限省）";
     private static final String SEA_CHECKIN_METERS_KEY = "sea_checkin_max_meters";
@@ -61,7 +63,7 @@ public class MktSettingController {
             "old_channel_exclusive", "tax_mode", "tax_rate",
             "lock_cooldown_days", "lease_clawback_days",
             WINDOW_START_KEY, WINDOW_END_KEY, AUTO_WITHDRAW_KEY, ARRIVAL_TIME,
-            SEA_SLA_HOURS_KEY, SEA_WH_DAILY_CAP_KEY, SEA_WH_ACTIVE_CAP_KEY,
+            SEA_SLA_HOURS_KEY, SEA_WH_DAILY_CAP_KEY, SEA_WH_ACTIVE_CAP_KEY, SEA_ADMIN_ACTIVE_CAP_KEY,
             SEA_REGION_LOCK_KEY, SEA_CHECKIN_METERS_KEY, SEA_VISIT_DAYS_KEY);
 
     private final JdbcTemplate jdbc;
@@ -87,6 +89,7 @@ public class MktSettingController {
         ensureVirtualDefault(rows, SEA_SLA_HOURS_KEY, "72", SEA_SLA_HOURS_REMARK);
         ensureVirtualDefault(rows, SEA_WH_DAILY_CAP_KEY, "5", SEA_WH_DAILY_CAP_REMARK);
         ensureVirtualDefault(rows, SEA_WH_ACTIVE_CAP_KEY, "10", SEA_WH_ACTIVE_CAP_REMARK);
+        ensureVirtualDefault(rows, SEA_ADMIN_ACTIVE_CAP_KEY, "30", SEA_ADMIN_ACTIVE_CAP_REMARK);
         ensureVirtualDefault(rows, SEA_REGION_LOCK_KEY, "广东省", SEA_REGION_LOCK_REMARK);
         ensureVirtualDefault(rows, SEA_CHECKIN_METERS_KEY, "500", SEA_CHECKIN_METERS_REMARK);
         ensureVirtualDefault(rows, SEA_VISIT_DAYS_KEY, "15", SEA_VISIT_DAYS_REMARK);
@@ -154,6 +157,11 @@ public class MktSettingController {
             if (SEA_WH_ACTIVE_CAP_KEY.equals(key)) {
                 int cap = parseBoundedInt(value, 1, 200, "云仓在途公海客户上限请填写 1–200 户");
                 upsertSetting(SEA_WH_ACTIVE_CAP_KEY, String.valueOf(cap), SEA_WH_ACTIVE_CAP_REMARK, "云仓在途上限已变化，请刷新页面后重试");
+                continue;
+            }
+            if (SEA_ADMIN_ACTIVE_CAP_KEY.equals(key)) {
+                int cap = parseBoundedInt(value, 1, 500, "专员在跟公海客户上限请填写 1–500 户");
+                upsertSetting(SEA_ADMIN_ACTIVE_CAP_KEY, String.valueOf(cap), SEA_ADMIN_ACTIVE_CAP_REMARK, "专员在跟上限已变化，请刷新页面后重试");
                 continue;
             }
             if (SEA_CHECKIN_METERS_KEY.equals(key)) {
