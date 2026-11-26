@@ -15,8 +15,9 @@
         <view class="row"><text class="muted">承接状态</text><text>{{ ASSIGN[c.warehouseAssignmentStatus || 0] }}</text></view>
         <view class="row"><text class="muted">推荐时间</text><text>{{ c.createTime?.slice(0, 16) }}</text></view>
       </view>
-      <view class="card"><view class="title">报价需求</view><button class="btn secondary" @click="navigateTo('/pages/customer-quote/index?id=' + c.id)">客户意向与填写码</button></view>
       <CustomerRequirements :requirements="c.requirements || c.fulfillmentRequirements" :demand="c.demand || c.demandArea" :remark="c.remark || c.intakeRemark" />
+      <CustomerQuoteDemand v-if="c.quoteIntake?.submittedAt" :intake="c.quoteIntake" show-assessment />
+      <view v-else class="card"><view class="title">报价需求</view><button class="btn secondary" @click="navigateTo('/pages/customer-quote/index?id=' + c.id)">客户意向与填写码</button></view>
       <view v-if="Number(me.status) === 1" class="card">
         <view class="title">客户分佣</view>
         <view class="muted" style="margin-top:16rpx">{{ me.positionCode === 'P4' ? '按签约合同查看并设置每单分佣金额。' : '查看该客户合同分配给您的每单佣金。' }}</view>
@@ -41,6 +42,7 @@ import { bizApi, meApi } from '@/api'
 import { navigateTo, switchTab } from '@/utils/nav.mjs'
 import DeleteCustomerButton from '@/components/DeleteCustomerButton.vue'
 import CustomerRequirements from '@/components/CustomerRequirements.vue'
+import CustomerQuoteDemand from '@/components/CustomerQuoteDemand.vue'
 import CustomerProgress from '@/components/CustomerProgress.vue'
 const STATUS = {1:'跟进中',2:'已签约',3:'已流失'}
 const ASSIGN = {0:'待分派',1:'待商家确认',2:'已承接',3:'商家已拒绝，等待重新分派'}

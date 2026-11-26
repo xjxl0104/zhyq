@@ -163,4 +163,4 @@ FROM (
          'P4 事业部对公提现上传专票时，自动核验购方园区税号、现代服务品目、6%税率、价税合计及是否红冲作废。',
          0, 0, 500, '["appCode","endpoint","buyerTaxNo"]', 'https://market.aliyun.com', '阿里云云市场搜索「增值税发票查验」购买百元按次包 → 复制 AppCode、请求 URL 并填本园区纳税人识别号', 70
 ) t
-WHERE NOT EXISTS (SELECT 1 FROM crm_ext_connector_config c WHERE c.tenant_id = 1 AND c.connector_code = t.code);
+WHERE NOT EXISTS (SELECT 1 FROM crm_ext_connector_config c WHERE c.tenant_id = 1 AND c.connector_code COLLATE utf8mb4_general_ci = t.code COLLATE utf8mb4_general_ci);

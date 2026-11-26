@@ -183,6 +183,7 @@ public class FeePeriodController {
     }
 
     public record PaymentRequest(Object paymentStatus) {}
+    public record InvoiceRequest(Object invoiceStatus) {}
 
     @Operation(summary = "记录通知单缴费状态，不修改账单或已付金额")
     @OperationLog(module = "缴费账期", action = "记录缴费状态")
@@ -191,6 +192,15 @@ public class FeePeriodController {
         if (request == null || !(request.paymentStatus() instanceof Integer status))
             throw new BizException(400, "缴费状态只能选择未缴或已缴");
         return Result.ok(payments.updateStatus(id, status));
+    }
+
+    @Operation(summary = "记录通知单开票状态，不修改账单金额")
+    @OperationLog(module = "缴费账期", action = "记录开票状态")
+    @PutMapping("/notice/{id}/invoice")
+    public Result<FeeNotice> invoice(@PathVariable Long id, @RequestBody InvoiceRequest request) {
+        if (request == null || !(request.invoiceStatus() instanceof Integer status))
+            throw new BizException(400, "开票状态只能选择未开票或已开票");
+        return Result.ok(payments.updateInvoiceStatus(id, status));
     }
 
     @Operation(summary = "修改通知单的手工项(已付/前期欠费/其他费用/名称/备注)")

@@ -83,11 +83,11 @@ public class LadderResolver {
         return chain;
     }
 
-    /** 2 级模式:P1 → 顶格;中间岗位按顶格算(视为合伙人)。 */
+    /** 2 级模式:P0(云仓业务员)不参与级差(0%);P1 → 顶格;中间岗位按顶格算(视为合伙人)。 */
     private static Map<String, Integer> twoLevel(Map<String, Integer> full) {
         Map<String, Integer> two = new LinkedHashMap<>();
         for (String code : full.keySet()) {
-            two.put(code, "P1".equals(code) ? TWO_LEVEL_P1_SHARE : 100);
+            two.put(code, "P0".equals(code) ? 0 : "P1".equals(code) ? TWO_LEVEL_P1_SHARE : 100);
         }
         return two;
     }

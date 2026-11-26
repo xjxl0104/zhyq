@@ -103,6 +103,53 @@ class MktCustomerAssignmentServiceTest {
         verify(customers, never()).update(isNull(), any(Wrapper.class));
     }
 
+    @Test void firstDispatchOfReferredCustomerRequiresSubmittedDemandInTheSameProject(){
+        customer.setAssignedWarehouseId(null);
+        customer.setWarehouseAssignmentStatus(0);
+        assertThatThrownBy(()->service.assign(11L,20L,"首派")).isInstanceOf(BizException.class).hasMessageContaining("详细报价需求");
+        verify(customers,never()).update(isNull(),any(Wrapper.class));
+        when(customers.initialQuoteState(11L)).thenReturn("pending");
+        assertThatThrownBy(()->service.assign(11L,20L,"急需分配",true)).isInstanceOf(BizException.class).hasMessageContaining("正在进行");
+        when(customers.initialQuoteState(11L)).thenReturn("failed");
+        assertThatThrownBy(()->service.assign(11L,20L,"首派")).isInstanceOf(BizException.class).hasMessageContaining("确认人工分配");
+        when(customers.initialQuoteState(11L)).thenReturn("ready");
+        when(customers.update(isNull(),any(Wrapper.class))).thenReturn(1);
+        service.assign(11L,20L,"已查阅比价报告");
+        verify(progress).transition(eq(11L),eq(30),contains("已分派云仓，等待商家确认承接"),eq("assigned"));
+    }
+
+    @Test void assignmentRequiresRebatePolicyAndAcceptanceLocksRebateConfirmation() {
+        customer.setAssignedWarehouseId(null);
+        customer.setWarehouseAssignmentStatus(0);
+        when(customers.initialQuoteState(11L)).thenReturn("ready");
+        // 未选返点政策拒绝
+        assertThatThrownBy(() -> service.assign(11L, 20L, "首派", false, null, null))
+                .isInstanceOf(BizException.class).hasMessageContaining("返点");
+        // 战略客户返点低于覆盖 10% + 0.02 业务员佣金的最低门槛 0.023 拒绝
+        assertThatThrownBy(() -> service.assign(11L, 20L, "首派", false, "STRATEGIC", new java.math.BigDecimal("0.020")))
+                .isInstanceOf(BizException.class).hasMessageContaining("0.023");
+        // 大批量订单固定 0.100 元/单
+        when(customers.update(isNull(), any(Wrapper.class))).thenReturn(1);
+        service.assign(11L, 20L, "日均超5000单", false, "BULK_5000", null);
+        verify(audit).log(eq("customer.warehouse.assign"), eq("customer"), eq(11L), contains("0.100 元/单"), isNull(), eq(20L));
+        // 商家确认承接时写入 rebateConfirmedAt 并审计确认单价
+        customer.setAssignedWarehouseId(20L);
+        customer.setWarehouseAssignmentStatus(1);
+        customer.setRebatePolicyType("BULK_5000");
+        customer.setRebateUnitPrice(new java.math.BigDecimal("0.100"));
+        service.accept(11L, 20L);
+        verify(audit).log(eq("customer.warehouse.accept"), eq("customer"), eq(11L), contains("0.100 元/单"));
+    }
+
+    @Test void missingPricesAllowAnExplicitAuditedManualDispatch(){
+        customer.setAssignedWarehouseId(null);
+        customer.setWarehouseAssignmentStatus(0);
+        when(customers.initialQuoteState(11L)).thenReturn("waiting");
+        when(customers.update(isNull(),any(Wrapper.class))).thenReturn(1);
+        service.assign(11L,20L,"已取得书面报价",true);
+        verify(audit).log(eq("customer.warehouse.assign"),eq("customer"),eq(11L),contains("人工分配（缺少可比报价）：已取得书面报价"),isNull(),eq(20L));
+    }
+
     @Test
     void crossProjectAndOfflineUnavailableWarehouseAreRejected() {
         warehouse.setProjectId(2L);

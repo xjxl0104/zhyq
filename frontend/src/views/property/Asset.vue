@@ -3,7 +3,7 @@
     <!-- 统计卡片 -->
     <div class="stat-row">
       <div class="stat-card">
-        <div class="stat-label">总资产（项）</div>
+        <div class="stat-label">总物资（项）</div>
         <div class="stat-value">{{ stats.total || 0 }}</div>
       </div>
       <div class="stat-card">
@@ -23,7 +23,7 @@
         <div class="stat-value danger">{{ stats.scrapped || 0 }}</div>
       </div>
       <div class="stat-card">
-        <div class="stat-label">资产总值</div>
+        <div class="stat-label">物资总值</div>
         <div class="stat-value primary">¥{{ Number(stats.totalValue || 0).toLocaleString() }}</div>
       </div>
     </div>
@@ -32,10 +32,10 @@
     <div class="search-bar">
       <el-form :inline="true" :model="query">
         <el-form-item label="编码">
-          <el-input v-model="query.code" placeholder="请输入资产编码" clearable style="width: 160px" />
+          <el-input v-model="query.code" placeholder="请输入物资编码" clearable style="width: 160px" />
         </el-form-item>
         <el-form-item label="名称">
-          <el-input v-model="query.name" placeholder="请输入资产名称" clearable style="width: 160px" />
+          <el-input v-model="query.name" placeholder="请输入物资名称" clearable style="width: 160px" />
         </el-form-item>
         <el-form-item label="分类">
           <el-select v-model="query.category" placeholder="全部" clearable style="width: 130px">
@@ -57,7 +57,7 @@
     <!-- 表格区 -->
     <div class="table-card">
       <div class="toolbar">
-        <el-button type="primary" @click="openDialog()"><el-icon><Plus /></el-icon>新增资产</el-button>
+        <el-button type="primary" @click="openDialog()"><el-icon><Plus /></el-icon>新增物资</el-button>
       </div>
       <el-table :data="list" v-loading="loading" border stripe>
         <el-table-column type="index" label="序号" width="70" />
@@ -85,7 +85,7 @@
         <el-table-column label="操作" width="180" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click="openDialog(row)">编辑</el-button>
-            <el-popconfirm v-if="row.status !== 4" title="确认报废该资产?" @confirm="scrap(row.id)">
+            <el-popconfirm v-if="row.status !== 4" title="确认报废该物资?" @confirm="scrap(row.id)">
               <template #reference><el-button link type="warning">报废</el-button></template>
             </el-popconfirm>
             <el-popconfirm title="确认删除?" @confirm="remove(row.id)">
@@ -102,10 +102,10 @@
     <!-- 表单弹窗 -->
     <el-dialog v-model="dialog.visible" :title="dialog.title" width="560px">
       <el-form :model="form" label-width="90px" ref="formRef" :rules="rules">
-        <el-form-item label="资产编码">
+        <el-form-item label="物资编码">
           <el-input v-model="form.code" placeholder="留空自动生成" :disabled="!!form.id" />
         </el-form-item>
-        <el-form-item label="资产名称" prop="name"><el-input v-model="form.name" /></el-form-item>
+        <el-form-item label="物资名称" prop="name"><el-input v-model="form.name" /></el-form-item>
         <el-form-item label="分类">
           <el-select v-model="form.category" style="width: 100%">
             <el-option v-for="c in categories" :key="c" :label="c" :value="c" />
@@ -193,12 +193,12 @@ const defaultForm = () => ({ id: null, code: '', name: '', category: '办公设�
 const form = reactive(defaultForm())
 const attachFiles = ref([])
 const rules = {
-  name: [{ required: true, message: '请输入资产名称', trigger: 'blur' }]
+  name: [{ required: true, message: '请输入物资名称', trigger: 'blur' }]
 }
 
 async function openDialog(row) {
   dialog.visible = true
-  dialog.title = row ? '编辑资产' : '新增资产'
+  dialog.title = row ? '编辑物资' : '新增物资'
   attachFiles.value = []
   if (row) {
     Object.assign(form, defaultForm(), row)

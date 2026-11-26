@@ -9,12 +9,12 @@
  */
 export const MODULE_LABELS = Object.freeze({
   acc: '便捷通行',
-  am: '资产管理',
+  am: '物资管理',
   budget: '预算采购',
-  building: '空间与资产',
+  building: '项目概况',
   contract: '合同',
   crm: '招商',
-  energy: '能耗',
+  energy: '缴费管理',
   finance: '财务',
   iot: '智慧物联',
   oa: '办公 OA',

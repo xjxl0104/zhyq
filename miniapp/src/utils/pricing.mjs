@@ -19,6 +19,10 @@ export function formatPerOrder(value) {
   return mills === null ? '—' : millsToAmount(mills)
 }
 
+// 云仓业务员（P0）固定每单佣金：0.020 元/单 = 20 毫元
+export const SALESPERSON_FEE_MILLS = 20
+export const SALESPERSON_FEE_TEXT = '0.020'
+
 // 服务费以万分之一元计算：3 位总价 × 10% 必须保留 4 位，不能四舍五入挤占个人金额。
 export function unitsToAmount(value) {
   if (!Number.isSafeInteger(value)) return '—'
@@ -30,7 +34,7 @@ export function platformFee(total) {
   const mills = amountToMills(total)
   return mills === null ? '—' : unitsToAmount(mills)
 }
-export function pricingRemainder(total, owner, beneficiaries = []) {
+export function pricingRemainder(total, owner, beneficiaries = [], salespersonMills = SALESPERSON_FEE_MILLS) {
   const mills = amountToMills(total)
   if (mills === null) return null
   let allocated = 0
@@ -39,10 +43,10 @@ export function pricingRemainder(total, owner, beneficiaries = []) {
     if (amount === null) return null
     allocated += amount
   }
-  const remaining = mills * 9 - allocated * 10
+  const remaining = mills * 9 - salespersonMills * 10 - allocated * 10
   return Number.isSafeInteger(remaining) ? remaining : null
 }
-export function validatePricing(total, owner, beneficiaries, maxBeneficiaries = 2) {
+export function validatePricing(total, owner, beneficiaries, maxBeneficiaries = 2, salespersonMills = SALESPERSON_FEE_MILLS) {
   const totalMills = amountToMills(total)
   const ownerMills = amountToMills(owner)
   if (totalMills === null) return '请填写总佣金单价，最多 3 位小数'
@@ -60,6 +64,10 @@ export function validatePricing(total, owner, beneficiaries, maxBeneficiaries = 
     if (amount === null) return `请填写第 ${i + 1} 位受益人的单价，最多 3 位小数`
     allocated += amount
   }
-  if (!Number.isSafeInteger(allocated) || allocated * 10 > totalMills * 9) return `平台服务费为总佣金的 10%，本人和其他受益人合计最多可分配 ${millsToAmount(Math.floor(totalMills * 9 / 10))} 元/单`
+  const maxUnits = totalMills * 9 - salespersonMills * 10
+  if (maxUnits < 0) return `总佣金单价不足以覆盖 10% 平台服务费和 ${millsToAmount(salespersonMills)} 元/单业务员佣金，最低须为 0.023 元/单`
+  if (!Number.isSafeInteger(allocated) || allocated * 10 > maxUnits) {
+    return `平台服务费为总佣金的 10%，业务员（P0）固定佣金 ${millsToAmount(salespersonMills)} 元/单，本人和其他受益人合计最多可分配 ${millsToAmount(Math.floor(maxUnits / 10))} 元/单`
+  }
   return ''
 }

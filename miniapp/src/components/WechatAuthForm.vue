@@ -1,7 +1,7 @@
 <template>
   <view>
     <view class="title">一键登录</view>
-    <view class="quick-note">填写姓名后，点击手机号一键登录并授权微信手机号。{{ warehouse ? '首次登录自动创建云仓申请。' : '首次注册还需填写上级邀请码。' }}</view>
+    <view class="quick-note">填写姓名后，点击手机号一键登录并授权微信手机号。{{ memberOnly ? '请授权云仓主账号为您登记的手机号。' : warehouse ? '已登记的手机号进入对应云仓，首次加盟可创建申请。' : '首次注册还需填写上级邀请码。' }}</view>
     <view class="field-label">姓名（必填）</view>
     <input class="input" v-model="fullName" maxlength="50" :disabled="busy" placeholder="请输入您的姓名" aria-label="姓名" aria-required="true" />
     <view v-if="!warehouse" class="invite-field">
@@ -37,7 +37,7 @@ import { warehouseAuthApi } from '@/api/warehouse'
 import { partnerMock, warehouseMock, getWechatLogin } from '@/utils/wechat'
 import { openAgreement, openPrivacy } from '@/utils/agreement'
 
-const props = defineProps({ warehouse: Boolean, inviteCode: { type: String, default: '' } })
+const props = defineProps({ warehouse: Boolean, memberOnly: Boolean, inviteCode: { type: String, default: '' } })
 const emit = defineEmits(['authenticated', 'busy'])
 const mock = computed(() => props.warehouse ? warehouseMock : partnerMock)
 const agreed = ref(false), busy = ref(false), usingPhone = ref(false), error = ref('')
@@ -61,6 +61,7 @@ async function login(phoneAuthorization = {}) {
     const { code, appId } = await getWechatLogin(mock.value, testCode.value)
     const api = props.warehouse ? warehouseAuthApi : authApi
     const data = { jsCode: code, appId, agreed: true, name, ...phoneAuthorization }
+    if (props.warehouse && props.memberOnly) data.memberOnly = true
     if (!props.warehouse && invite.value.trim()) data.inviteCode = invite.value.trim().toUpperCase()
     const result = await api.quickLogin(data)
     if (!result?.token) throw new Error('登录未完成，请重新点击登录')

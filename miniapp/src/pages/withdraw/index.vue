@@ -30,8 +30,8 @@
         </view>
         <view v-if="closed" class="account-notice">当前不在提现开放期。{{ b.withdrawalRules?.applicationTime || '' }}。{{ b.withdrawalRules?.autoWithdraw || '' }}</view>
         <view class="field-label">提现金额（元）</view>
-        <input class="input" v-model="amount" type="digit" :disabled="loading || Number(b.idVerified) !== 1 || !cashAvailable?.cents" placeholder="输入金额，最多两位小数" aria-label="提现金额，单位元，最多两位小数" />
-        <button class="all-amount" :disabled="loading || Number(b.idVerified) !== 1 || !cashAvailable?.cents" @click="fillAll">全部可提现金额</button>
+        <input class="input" v-model="amount" type="digit" :disabled="closed || loading || Number(b.idVerified) !== 1 || !cashAvailable?.cents" placeholder="输入金额，最多两位小数" aria-label="提现金额，单位元，最多两位小数" />
+        <button class="all-amount" :disabled="closed || loading || Number(b.idVerified) !== 1 || !cashAvailable?.cents" @click="fillAll">全部可提现金额</button>
         <view v-if="inputHint" class="muted input-hint">{{ inputHint }}</view>
         <view class="row" v-if="validAmount"><text class="muted">预估代扣 / 到账（元）</text><text>{{ tax }} / {{ net }}</text></view>
         <button class="btn" :loading="loading" :disabled="loading || !validAmount" @click="submit">提交提现申请</button>
@@ -87,7 +87,7 @@ function openWithdrawal(id) { if (/^\d+$/.test(String(id))) uni.navigateTo({ url
 function formatTime(value) { return typeof value === 'string' ? value.replace('T', ' ').slice(0, 16) : '—' }
 const closed = computed(() => b.value?.withdrawalRules?.applicationOpen === false)
 const validAmount = computed(() => !closed.value && !!b.value && Number(b.value.idVerified) === 1 && !!cashAvailable.value && isValidWithdrawal(amount.value, cashAvailable.value.amount, b.value.minWithdraw ?? 0))
-function fillAll() { if (!loading.value && cashAvailable.value?.cents) amount.value = cashAvailable.value.amount }
+function fillAll() { if (!closed.value && !loading.value && cashAvailable.value?.cents) amount.value = cashAvailable.value.amount }
 function hasInvalidMinimum(balance) { return balance?.minWithdraw == null || !Number.isFinite(Number(balance.minWithdraw)) || Number(balance.minWithdraw) < 0 }
 let balanceRequest=0
 async function load() { const request=++balanceRequest;b.value=null;error.value='';const records=pager.load();try{const balance=await bizApi.balance();if(request===balanceRequest){if(!withdrawalBalanceView(balance)||hasInvalidMinimum(balance))throw new Error('余额数据暂不可用，请重新加载');b.value=balance}}catch(e){if(request===balanceRequest)error.value=e.message||'余额加载失败，请重试'}await records }

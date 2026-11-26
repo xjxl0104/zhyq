@@ -23,6 +23,8 @@ public class Contract extends BaseEntity {
     /** 租客 */
     private Long tenantRefId;
     private Long projectId;
+    /** 租赁区域/范围(手工填写优先;为空时列表按关联房源/应收登记表/租金合同台账自动汇总展示) */
+    private String leaseScope;
     /** 合同类型 */
     private Integer contractType;
     /** 合同状态 */
@@ -52,7 +54,10 @@ public class Contract extends BaseEntity {
     /** 退租时间 */
     private LocalDate terminateDate;
     private String remark;
-    /** 列表展示字段:租客名。合同列表与合同归档共用,免得页面上只有一个裸 tenant_ref_id */
+    /** 列表展示字段:租客名。正式合同列表共用,免得页面上只有一个裸 tenant_ref_id */
     @com.baomidou.mybatisplus.annotation.TableField(exist = false)
     private String tenantName;
+    /** 列表展示字段:已上传合同附件数 */
+    @com.baomidou.mybatisplus.annotation.TableField(exist = false)
+    private Integer attachmentCount;
 }

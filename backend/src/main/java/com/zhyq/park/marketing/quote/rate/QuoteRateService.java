@@ -69,6 +69,9 @@ public class QuoteRateService {
         QuoteCard card=QuoteCard.parse(update.card());
         var prev=current(w);
         if(prev.version()!=update.version())throw stale();
+        // Older clients send only the four legacy fields. Keep tariffs created in either current editor.
+        if (!update.card().has("tariff") && !prev.card().tariff().isEmpty())
+            card = new QuoteCard(card.scopeNote(),card.fields(),card.carriers(),card.services(),prev.card().tariff());
         long version=prev.version()+1;
         String data;
         try{data=json.writeValueAsString(card);}catch(JsonProcessingException e){throw QuoteCard.bad("价格内容格式错误");}
@@ -120,8 +123,9 @@ public class QuoteRateService {
                 String raw=rs.getString(4);
                 QuoteCard card=raw==null?QuoteCard.empty():parseStored(raw);
                 return Map.of("warehouseId",rs.getLong(1),"warehouseName",rs.getString(2),"version",rs.getLong(3),
-                        "offers",QuoteCalculator.offers(card,requirements,rs.getObject("daily_capacity",Integer.class)));
+                        "stageRates",QuoteCalculator.stageRates(card,requirements),"offers",QuoteCalculator.offers(card,requirements,rs.getObject("daily_capacity",Integer.class)));
             },tenantId,projectId,MktWarehouseOnboardingService.JS_ONLINE);
-        return Map.of("customerId",customerId,"submittedAt",submission.get("submittedAt"),"warehouses",rows);
+        return Map.of("customerId",customerId,"submittedAt",submission.get("submittedAt"),"warehouses",rows,
+                "demandProfile",com.zhyq.park.marketing.quote.QuoteRequirements.assessmentProfile(requirements));
     }
 }

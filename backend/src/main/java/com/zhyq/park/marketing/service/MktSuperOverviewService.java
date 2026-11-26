@@ -22,6 +22,7 @@ public class MktSuperOverviewService {
     private final MktAccountControl access;
     private final MktPromoterMapper promoters;
     private final NamedParameterJdbcTemplate jdbc;
+    private final com.zhyq.park.marketing.quote.QuoteIntakeService quoteIntake;
     private static final ZoneId BUSINESS_ZONE = ZoneId.of("Asia/Shanghai");
     // Reuse the physical-shipment CTE: daily ERP snapshots take precedence over manual orders.
     static final String VOLUME_SQL = MktPartnerShipmentService.FACT_SQL.substring(0,
@@ -39,12 +40,13 @@ public class MktSuperOverviewService {
         if (page < 1 || size < 1 || size > 50 || page > 100000) throw new BizException(400, "分页参数无效");
         if (keyword != null && keyword.length() > 100) throw new BizException(400, "搜索内容过长");
         Range range = range(startDate, endDate);
-        Data data = load(tenant, range);
+        boolean operational = view.equals("warehouses");
+        Data data = load(tenant, range, operational);
         Scope scope = data.scope(view, selectionId);
         List<Map<String, Object>> rows;
         String kind;
         if (selectionId != null) {
-            rows = data.customerRows(scope);
+            rows = data.customerRows(scope, operational);
             kind = "customers";
         } else if (view.equals("partners")) {
             rows = new ArrayList<>();
@@ -60,7 +62,7 @@ public class MktSuperOverviewService {
             rows = new ArrayList<>();
             for (Map<String, Object> w : data.warehouses) rows.add(map("id", id(w), "name", w.get("name"),
                     "contact", w.get("contact"), "phone", mask(w.get("phone")), "joinStatus", w.get("joinStatus"),
-                    "summary", data.summary(data.scope("warehouses", id(w))), "searchPhone", w.get("phone")));
+                    "summary", data.operations(data.scope("warehouses", id(w))), "searchPhone", w.get("phone")));
             kind = "warehouses";
         }
         String search = keyword == null ? "" : keyword.trim().toLowerCase(Locale.ROOT);
@@ -73,20 +75,22 @@ public class MktSuperOverviewService {
         List<Map<String, Object>> records = new ArrayList<>(rows.subList(from, Math.min(total, from + size)));
         records.forEach(row -> row.remove("searchPhone"));
         return map("view", view, "selectionId", selectionId, "selectionName", scope.name,
-                "summary", data.summary(scope), "kind", kind, "records", records, "total", total,
+                "summary", operational ? data.operations(scope) : data.summary(scope), "kind", kind, "records", records, "total", total,
                 "page", page, "size", size, "startDate", range.start.toString(), "endDate", range.end.toString());
     }
 
     @Transactional(readOnly = true)
-    public Map<String, Object> customer(Long customerId, String startDate, String endDate) {
+    public Map<String, Object> customer(Long customerId, String startDate, String endDate, Long warehouseId) {
         long tenant = requireTenant();
         if (customerId == null || customerId <= 0) throw new BizException(400, "客户参数无效");
         Range range = range(startDate, endDate);
-        Data data = load(tenant, range);
+        boolean operational = warehouseId != null;
+        Data data = load(tenant, range, operational);
+        if (operational && !data.scope("warehouses",warehouseId).customers.contains(customerId)) throw new BizException(404,"该云仓未关联此客户");
         Map<String, Object> customer = data.customerById.get(customerId);
         if (customer == null) throw new BizException(404, "客户不存在");
         List<Map<String, Object>> details = jdbc.queryForList("""
-            SELECT id,name,brand_name AS brandName,contact,phone,status,demand_area AS demandArea,
+            SELECT id,name,brand_name AS brandName,contact,phone,status,project_id AS projectId,demand_area AS demandArea,
                    fulfillment_requirements AS requirements,intake_remark AS intakeRemark,
                    public_progress AS publicProgress,progress_percentage AS progressPercentage,
                    progress_updated_at AS progressUpdatedAt
@@ -95,14 +99,20 @@ public class MktSuperOverviewService {
         if (details.isEmpty()) throw new BizException(404, "客户不存在");
         Map<String, Object> detail = new LinkedHashMap<>(details.get(0));
         detail.put("requirements", MktReferralRequirements.parse((String) detail.get("requirements")));
-        Scope scope = data.customerScope(Set.of(customerId), null, String.valueOf(customer.get("name")));
-        List<Map<String, Object>> contracts = new ArrayList<>();
-        for (Map<String, Object> c : data.contracts) if (Objects.equals(number(c.get("customerId")), customerId)) {
-            Scope contractScope = new Scope(scope.members, scope.customers, Set.of(id(c)), null, false, true, "");
-            contracts.add(map("id", id(c), "contractNo", c.get("contractNo"), "status", c.get("status"),
-                    "warehouseName", data.warehouseName(number(c.get("warehouseId"))), "summary", data.summary(contractScope)));
+        detail.put("quoteIntake",quoteIntake.submittedDetails(customerId,tenant,number(detail.get("projectId"))));
+        if (operational && !Objects.equals(warehouseId,number(customer.get("assignedWarehouseId")))) {
+            detail.remove("publicProgress"); detail.remove("progressUpdatedAt"); detail.remove("progressPercentage");
         }
-        return map("customer", detail, "summary", data.summary(scope), "contracts", contracts,
+        Scope scope = data.customerScope(Set.of(customerId), warehouseId, String.valueOf(customer.get("name")));
+        List<Map<String, Object>> contracts = new ArrayList<>();
+        for (Map<String, Object> c : data.contracts) if (scope.contracts.contains(id(c))) {
+            Scope contractScope = new Scope(scope.members, scope.customers, Set.of(id(c)), null, false, true, "");
+            var contract = map("id", id(c), "contractNo", c.get("contractNo"), "status", c.get("status"),
+                    "warehouseName", data.warehouseName(number(c.get("warehouseId"))));
+            if (!operational) contract.put("summary", data.summary(contractScope));
+            contracts.add(contract);
+        }
+        return map("customer", detail, "summary", operational ? data.operations(scope) : data.summary(scope), "contracts", contracts,
                 "startDate", range.start.toString(), "endDate", range.end.toString());
     }
 
@@ -113,13 +123,14 @@ public class MktSuperOverviewService {
         return actor.getTenantId() == null ? MyMetaObjectHandler.DEFAULT_TENANT_ID : actor.getTenantId();
     }
 
-    private Data load(long tenant, Range range) {
+    private Data load(long tenant, Range range, boolean operational) {
         Map<String, Object> params = Map.of("tenantId", tenant, "startDate", range.start.toString(), "endExclusive", range.end.plusDays(1).toString());
-        List<Map<String, Object>> partners = jdbc.queryForList("SELECT id,name,phone,parent_id AS parentId,position_code AS positionCode,status FROM crm_promoter WHERE tenant_id=:tenantId AND deleted=0", params);
-        List<Map<String, Object>> customers = jdbc.queryForList("SELECT id,name,brand_name AS brandName,referrer_id AS referrerId,assigned_warehouse_id AS assignedWarehouseId,status FROM crm_customer WHERE tenant_id=:tenantId AND deleted=0", params);
+        List<Map<String, Object>> partners = operational ? List.of() : jdbc.queryForList("SELECT id,name,phone,parent_id AS parentId,position_code AS positionCode,status FROM crm_promoter WHERE tenant_id=:tenantId AND deleted=0", params);
+        List<Map<String, Object>> customers = jdbc.queryForList("SELECT id,name,brand_name AS brandName,referrer_id AS referrerId,assigned_warehouse_id AS assignedWarehouseId,warehouse_assignment_status AS assignmentStatus,warehouse_sales_stage AS salesStage,status FROM crm_customer WHERE tenant_id=:tenantId AND deleted=0", params);
         List<Map<String, Object>> contracts = jdbc.queryForList("SELECT id,contract_no AS contractNo,customer_id AS customerId,warehouse_id AS warehouseId,partner_id AS partnerId,status FROM crm_service_contract WHERE tenant_id=:tenantId AND deleted=0", params);
         List<Map<String, Object>> warehouses = jdbc.queryForList("SELECT id,name,contact,phone,join_status AS joinStatus FROM crm_warehouse WHERE tenant_id=:tenantId AND deleted=0", params);
-        List<Map<String, Object>> volume = jdbc.queryForList(VOLUME_SQL, params);
+        List<Map<String, Object>> volume = jdbc.queryForList(operational ? WarehouseShipmentFacts.overviewSql() : VOLUME_SQL, params);
+        if (operational) return new Data(partners,customers,contracts,warehouses,volume,List.of(),List.of());
         List<Map<String, Object>> orders = jdbc.queryForList("""
             SELECT customer_id AS customerId,CASE WHEN source_type=2 THEN source_id ELSE NULL END AS contractId,
                    warehouse_id AS warehouseId,promoter_id AS promoterId,
@@ -165,6 +176,16 @@ public class MktSuperOverviewService {
             partnerById=index(p); customerById=index(c); contractById=index(ct); warehouseById=index(w);
         }
         Scope scope(String view, Long selected) {
+            if (selected == null && view.equals("warehouses")) {
+                Set<Long> ids = new LinkedHashSet<>(), contractIds = new LinkedHashSet<>();
+                for (var c : customers) if (warehouseById.containsKey(number(c.get("assignedWarehouseId")))) ids.add(id(c));
+                for (var c : contracts) if (warehouseById.containsKey(number(c.get("warehouseId")))) {
+                    ids.add(number(c.get("customerId"))); contractIds.add(id(c));
+                }
+                for (var r : volume) if (warehouseById.containsKey(number(r.get("warehouseId")))) ids.add(number(r.get("customer_id")));
+                ids.retainAll(customerById.keySet());
+                return new Scope(Set.of(),ids,contractIds,null,true,false,"全部云仓");
+            }
             if (selected == null) return new Scope(partnerById.keySet(), customerById.keySet(), contractById.keySet(), null, true, false, "全部");
             if (selected <= 0) throw new BizException(400, "总览对象无效");
             if (view.equals("partners")) {
@@ -184,6 +205,7 @@ public class MktSuperOverviewService {
             for (Map<String, Object> c : customers) if (Objects.equals(number(c.get("assignedWarehouseId")), selected)) ids.add(id(c));
             for (Map<String, Object> c : contracts) if (Objects.equals(number(c.get("warehouseId")), selected)) ids.add(number(c.get("customerId")));
             ids.retainAll(customerById.keySet());
+            for (var r : volume) if (Objects.equals(number(r.get("warehouseId")),selected) && customerById.containsKey(number(r.get("customer_id")))) ids.add(number(r.get("customer_id")));
             return customerScope(ids, selected, String.valueOf(w.get("name")));
         }
         Scope customerScope(Set<Long> ids, Long warehouse, String name) {
@@ -229,13 +251,45 @@ public class MktSuperOverviewService {
                     "shipmentVolume",shipments.toPlainString(),"commissionTotal",total.toPlainString(),"partnerCommission",commission.toPlainString(),
                     "pendingCommission",pending.toPlainString(),"settledCommission",settled.toPlainString(),"withdrawnAmount",withdrawn.toPlainString());
         }
-        List<Map<String,Object>> customerRows(Scope scope) {
+        Map<String,Object> operations(Scope scope) {
+            Set<Long> signedCustomers = new HashSet<>();
+            long signedContracts = 0, accepted = 0, pending = 0, stored = 0;
+            for (Long contractId : scope.contracts) {
+                var c = contractById.get(contractId);
+                if (signed(c.get("status"))) { signedCustomers.add(number(c.get("customerId"))); signedContracts++; }
+            }
+            for (Long customerId : scope.customers) {
+                var c = customerById.get(customerId);
+                Long assigned = number(c.get("assignedWarehouseId"));
+                if (!warehouseById.containsKey(assigned) || (scope.warehouse != null && !scope.warehouse.equals(assigned))) continue;
+                if (Objects.equals(number(c.get("assignmentStatus")),1L)) pending++;
+                if (!Objects.equals(number(c.get("assignmentStatus")),2L)) continue;
+                accepted++;
+                Long stage = number(c.get("salesStage"));
+                if (stage != null && stage >= 3) signedCustomers.add(customerId);
+                if (stage != null && stage >= 4) stored++;
+            }
+            BigDecimal tickets = BigDecimal.ZERO;
+            Set<Long> shippers = new HashSet<>();
+            for (var r : volume) {
+                Long id = number(r.get("customer_id"));
+                if (!scope.customers.contains(id) || (scope.warehouse != null && !scope.warehouse.equals(number(r.get("warehouseId"))))) continue;
+                BigDecimal value = decimal(r.get("volume"));
+                tickets = tickets.add(value);
+                if (value.signum() > 0) shippers.add(id);
+            }
+            return map("warehouseCount",scope.warehouse == null ? warehouses.size() : 1,
+                    "customerCount",scope.customers.size(),"contractCount",signedContracts,"signedCustomerCount",signedCustomers.size(),
+                    "acceptedCustomerCount",accepted,"pendingCustomerCount",pending,"storedCustomerCount",stored,
+                    "shippingCustomerCount",shippers.size(),"shipmentVolume",tickets.toPlainString());
+        }
+        List<Map<String,Object>> customerRows(Scope scope, boolean operational) {
             List<Map<String,Object>> out=new ArrayList<>();
             for(Long id:scope.customers) {
                 Map<String,Object> c=customerById.get(id); if(c==null)continue;
                 Scope one=customerScope(Set.of(id),scope.warehouse,String.valueOf(c.get("name")));
                 out.add(map("id",id,"name",c.get("name"),"brandName",c.get("brandName"),"status",c.get("status"),
-                        "referrerName",name(partnerById.get(number(c.get("referrerId")))),"summary",summary(one)));
+                        "referrerName",name(partnerById.get(number(c.get("referrerId")))),"summary",operational ? operations(one) : summary(one)));
             }
             return out;
         }

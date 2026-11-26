@@ -44,3 +44,14 @@ test('体验页的提现、结算、加盟等流程都能完整走通，不再�
   for (const fn of ['submitWithdraw', 'advanceCustomer', 'createErpKey', 'confirmSettlement', 'advanceOnboarding']) assert.ok(demo.includes(`function ${fn}(`), fn)
   assert.match(demo, /模拟申请提现/)
 })
+
+test('云仓登录与演示入口复用完整运营工作台，演示入口保留云仓身份', () => {
+  const merchant = read('src/pages/warehouse-dashboard/index.vue')
+  const shared = read('src/components/WarehouseDashboard.vue')
+  assert.match(merchant, /<WarehouseDashboard /)
+  assert.match(demo, /<WarehouseDashboard /)
+  assert.match(read('src/pages/warehouse-login/index.vue'), /demo\/index\?role=warehouse/)
+  assert.match(demo, /options\?\.role === 'warehouse'/)
+  assert.doesNotMatch(shared, /@\/api|uni\.request|navigateTo|setStorageSync/)
+  assert.doesNotMatch(demo, /uni\.navigateTo/)
+})

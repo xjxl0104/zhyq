@@ -63,8 +63,9 @@ class MktCustomerPricingServiceTest {
         verify(pricingMapper).insert(any(MktCustomerPricing.class));
     }
     @Test void noBeneficiariesAndZeroOwnerAreExplicitlyAllowed() {
-        var view = service.save(4L,10L,new PricingInput(bd("0.001"), BigDecimal.ZERO, List.of()));
-        assertThat(view.companyPerOrder()).isEqualByComparingTo("0.001");
+        var view = service.save(4L,10L,new PricingInput(bd("0.100"), BigDecimal.ZERO, List.of()));
+        assertThat(view.companyPerOrder()).isEqualByComparingTo("0.100");
+        assertThat(view.salespersonCommissionPerOrder()).isEqualByComparingTo("0.020");
         assertThat(view.beneficiaries()).isEmpty();
     }
     @Test void lowerRolesFrozenP4AndUnrelatedP4CannotSetPrices() {
@@ -147,24 +148,44 @@ class MktCustomerPricingServiceTest {
         verify(pricingMapper,times(2)).insert(any(MktCustomerPricing.class));
         verify(pricingMapper,never()).updateById(any(MktCustomerPricing.class));
     }
-    @Test void platformServiceFeeIsExactlyTenPercentOfEveryOrderCommission() {
-        var ok = service.save(4L,10L,new PricingInput(bd("0.300"), bd("0.270"), List.of()));
+    @Test void platformServiceFeeIsExactlyTenPercentPlusFixedSalespersonCommission() {
+        // 0.300 - 0.0300(10%) - 0.0200(P0) = 0.2500
+        var ok = service.save(4L,10L,new PricingInput(bd("0.300"), bd("0.250"), List.of()));
         assertThat(ok.platformServiceFeePerOrder()).isEqualByComparingTo("0.0300");
+        assertThat(ok.salespersonCommissionPerOrder()).isEqualByComparingTo("0.020");
         assertThat(ok.unallocatedPerOrder()).isZero();
-        assertThatThrownBy(() -> service.save(4L,10L,new PricingInput(bd("0.300"), bd("0.271"), List.of())))
-                .hasMessageContaining("10%").hasMessageContaining("0.270");
-        assertThatThrownBy(() -> service.save(4L,10L,new PricingInput(bd("1"), bd("0.9"), List.of(new BeneficiaryInput(1L,bd("0.051"))))))
+        assertThatThrownBy(() -> service.save(4L,10L,new PricingInput(bd("0.300"), bd("0.251"), List.of())))
+                .hasMessageContaining("10%").hasMessageContaining("0.250");
+        assertThatThrownBy(() -> service.save(4L,10L,new PricingInput(bd("1"), bd("0.85"), List.of(new BeneficiaryInput(1L,bd("0.031"))))))
                 .hasMessageContaining("10%");
         verify(pricingMapper, times(1)).insert(any(MktCustomerPricing.class));
     }
     @Test void feeKeepsFourthDecimalAndSeparatesUnallocatedRemainder() throws Exception {
-        var view = service.save(4L, 10L, new PricingInput(bd("0.005"), bd("0.004"), List.of()));
-        assertThat(view.platformServiceFeePerOrder()).isEqualByComparingTo("0.0005");
-        assertThat(view.allocatablePerOrder()).isEqualByComparingTo("0.0045");
+        // 0.025 - 0.0025(10%) - 0.0200(P0) - 0.0020(owner) = 0.0005
+        var view = service.save(4L, 10L, new PricingInput(bd("0.025"), bd("0.002"), List.of()));
+        assertThat(view.platformServiceFeePerOrder()).isEqualByComparingTo("0.0025");
+        assertThat(view.allocatablePerOrder()).isEqualByComparingTo("0.0025");
         assertThat(view.unallocatedPerOrder()).isEqualByComparingTo("0.0005");
-        assertThat(new ObjectMapper().writeValueAsString(view)).contains("\"platformServiceFeePerOrder\":0.0005");
-        assertThatThrownBy(() -> service.save(4L,10L,new PricingInput(bd("0.005"),bd("0.005"),List.of())))
+        assertThat(new ObjectMapper().writeValueAsString(view)).contains("\"platformServiceFeePerOrder\":0.0025");
+        assertThatThrownBy(() -> service.save(4L,10L,new PricingInput(bd("0.025"),bd("0.003"),List.of())))
                 .hasMessageContaining("10%");
+    }
+    @Test void lockedRebateFromAcceptedWarehouseCannotBeManuallyAdjusted() {
+        Customer c = customerMapper.selectById(10L);
+        c.setWarehouseAssignmentStatus(MktCustomerAssignmentService.ACCEPTED);
+        c.setRebatePolicyType(MktCustomerAssignmentService.REBATE_STANDARD);
+        c.setRebateUnitPrice(bd("0.150"));
+        c.setRebateConfirmedAt(java.time.LocalDateTime.now());
+        var view = service.getForP4(4L, 10L);
+        assertThat(view.totalPerOrderLocked()).isTrue();
+        assertThat(view.totalPerOrder()).isEqualByComparingTo("0.150");
+        // 修改总单价被服务端拦截
+        assertThatThrownBy(() -> service.save(4L, 10L, new PricingInput(bd("0.200"), bd("0.100"), List.of())))
+                .isInstanceOf(BizException.class).hasMessageContaining("锁定");
+        // 按锁定单价 0.150 保存成功（可分配上限 0.150 - 0.015 - 0.020 = 0.115）
+        var saved = service.save(4L, 10L, new PricingInput(bd("0.150"), bd("0.115"), List.of()));
+        assertThat(saved.totalPerOrder()).isEqualByComparingTo("0.150");
+        assertThat(saved.unallocatedPerOrder()).isZero();
     }
     @Test void lowerRolesSeeOnlyOwnGrantedContractAmountAndCannotReadFullConfiguration() throws Exception {
         var contract = new MktServiceContract(); contract.setId(100L); contract.setContractNo("CS-X");

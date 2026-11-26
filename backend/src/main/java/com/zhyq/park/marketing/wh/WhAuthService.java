@@ -40,6 +40,7 @@ public class WhAuthService {
     @org.springframework.beans.factory.annotation.Autowired
     public void setIdentityService(WhIdentityService value) { this.identityService = value; }
     public java.util.Map<String, Object> quickLoginIdentity(String openid, String phone, String name) { return identityService.quickLoginIdentity(openid, phone, name); }
+    public java.util.Map<String,Object> memberLogin(String openid, String phone, String name) { return identityService.memberLogin(openid, phone, name); }
     public String issueOwnerToken(Long warehouseId) { return identityService.issueOwnerToken(warehouseId); }
     public boolean ownerPasswordResetRequired(Long warehouseId) { return identityService.ownerPasswordResetRequired(warehouseId); }
     public boolean beginOwnerPasswordSetup(Long warehouseId) { return identityService.beginOwnerPasswordSetup(warehouseId); }

@@ -85,9 +85,10 @@ export const siteApi = {
   cancel: (id) => request.post(`/service/site/${id}/cancel`)
 }
 
-// 装修申请
+// 装修及动火申请
 export const decorationApi = {
   page: (params) => request.get('/service/decoration/page', { params }),
+  nextNo: (applyType = 'DECORATION', applyDate) => request.get('/service/decoration/next-no', { params: { applyType, applyDate } }),
   get: (id) => request.get(`/service/decoration/${id}`),
   add: (data) => request.post('/service/decoration', data),
   update: (data) => request.put('/service/decoration', data),

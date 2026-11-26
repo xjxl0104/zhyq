@@ -20,7 +20,7 @@
       <view class="role-mark warehouse">W</view>
       <view class="role-main">
         <view class="role-title">云仓商家</view>
-        <view class="role-desc">加盟进度、ERP 接入、订单与结算</view>
+        <view class="role-desc">主账号管理云仓，业务员跟进客户</view>
       </view>
       <view class="role-arrow">›</view>
     </view>

@@ -4,11 +4,13 @@ import { feePeriodApi } from '@/api/energy'
 export const money = (v) => Number(v || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 export const num = (v, digits = 2) => (v == null || v === '' ? '-' : Number(v).toLocaleString('zh-CN', { maximumFractionDigits: digits }))
 
-/** 供应商账单(单据留存)的三种类型,与后端 sys_file.biz_type = energy_fee_{key} 对应 */
+/** 供应商账单与租金/物业管理费留存单据类型,与后端 sys_file.biz_type = energy_fee_{key} 对应 */
 export const BILL_KINDS = {
   electric: { key: 'electric', label: '南网电费账单' },
   water: { key: 'water', label: '自来水公司账单' },
-  garbage: { key: 'garbage', label: '垃圾清理供应商账单' }
+  garbage: { key: 'garbage', label: '垃圾清理供应商账单' },
+  rent: { key: 'rent', label: '租金核对/单据附件' },
+  property: { key: 'property', label: '物业管理费核对/单据附件' }
 }
 
 export function periodRange(p) {
@@ -61,12 +63,18 @@ export function useFeePeriod(onOpened) {
 }
 
 export function downloadBlob(response, filename) {
-  const url = URL.createObjectURL(response.data)
+  const blob = response instanceof Blob ? response : response?.data
+  if (!(blob instanceof Blob)) {
+    throw new Error('下载内容为空，无法生成文件')
+  }
+  const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
   link.href = url
   link.download = filename
+  document.body.appendChild(link)
   link.click()
-  URL.revokeObjectURL(url)
+  link.remove()
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 
 /** 「2层A区」→「2层」,「室外」→「室外」;用来给每层上深浅色 */

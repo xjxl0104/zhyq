@@ -49,6 +49,18 @@ test('selecting a team drills into customers and client links retain the date ra
   h.run('back()'); await flush()
   assert.equal(Object.hasOwn(calls.at(-1), 'selectionId'), false)
 })
+test('warehouse charts expose operations only and customer links preserve warehouse scope', async () => {
+  const h = overviewHarness(async query => {
+    const metrics = {shipmentVolume:'24',signedCustomerCount:2,storedCustomerCount:1,acceptedCustomerCount:4,pendingCustomerCount:0,shippingCustomerCount:1}
+    return {records:[{id:query.selectionId ? 101 : 20,name:'示例',summary:metrics}], total:1,summary:metrics,kind:query.selectionId ? 'customers' : 'warehouses'}
+  })
+  h.props.view = 'warehouses'; h.watches[0](); await flush()
+  assert.deepEqual(Array.from(h.run('distribution.value.map(item => item.width)')), ['0%','100%','50%','25%','25%'])
+  assert.equal(h.run('ranking.value[0].display'), '24 票')
+  h.run('select(records.value[0])'); await flush()
+  h.run('select(records.value[0])')
+  assert.match(h.urls[0], /warehouseId=20$/)
+})
 test('failed or unmounted request clears private previous data and cannot restore it late', async () => {
   let resolve
   const h = overviewHarness(() => new Promise(r => { resolve = r }))

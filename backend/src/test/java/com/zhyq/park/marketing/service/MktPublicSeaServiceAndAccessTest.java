@@ -305,7 +305,7 @@ class MktPublicSeaServiceAndAccessTest {
     @Test
     void round2P0AndP1GuardsCoverAntiHijackContractSignWgs84OwnershipMultiWarehouseAndCsv() throws Exception {
         // 1) V135 契约安全：零 ALTER crm_customer + 新表与索引齐全
-        try (var in = getClass().getResourceAsStream("/db/migration/V135__public_sea_round2_hardening.sql")) {
+        try (var in = getClass().getResourceAsStream("/db/migration/V151__public_sea_round2_hardening.sql")) {
             assertThat(in).isNotNull();
             String sql = new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
             assertThat(sql.toLowerCase()).doesNotContain("alter table crm_customer");

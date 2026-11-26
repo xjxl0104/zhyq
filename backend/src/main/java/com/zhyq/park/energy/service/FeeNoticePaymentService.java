@@ -30,6 +30,8 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class FeeNoticePaymentService {
     public static final String BIZ_TYPE = "fee_notice_payment";
+    public static final String INVOICE_BIZ_TYPE = "fee_notice_invoice";
+    private static final List<String> NOTICE_FILE_TYPES = List.of(BIZ_TYPE, INVOICE_BIZ_TYPE);
     private final JdbcTemplate jdbc;
     private final FeeNoticeMapper notices;
     private final FeeNoticeItemMapper items;
@@ -68,7 +70,28 @@ public class FeeNoticePaymentService {
     }
 
     @Transactional(rollbackFor = Exception.class)
+    public FeeNotice updateInvoiceStatus(Long noticeId, Integer status) {
+        if (status == null || (status != 0 && status != 1)) throw new BizException(400, "开票状态只能选择未开票或已开票");
+        FeeNotice current = lockNotice(noticeId);
+        notices.update(null, new LambdaUpdateWrapper<FeeNotice>().eq(FeeNotice::getId, noticeId)
+                .set(FeeNotice::getInvoiceStatus, status));
+        current.setInvoiceStatus(status);
+        current.setItems(items.selectList(new LambdaQueryWrapper<FeeNoticeItem>()
+                .eq(FeeNoticeItem::getNoticeId, noticeId).orderByAsc(FeeNoticeItem::getSort)));
+        return current;
+    }
+
+    @Transactional(rollbackFor = Exception.class)
     public SysFile upload(MultipartFile file, Long noticeId) {
+        return uploadForType(file, noticeId, BIZ_TYPE);
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public SysFile uploadInvoice(MultipartFile file, Long noticeId) {
+        return uploadForType(file, noticeId, INVOICE_BIZ_TYPE);
+    }
+
+    private SysFile uploadForType(MultipartFile file, Long noticeId, String bizType) {
         FeeNotice current = lockNotice(noticeId);
         FileStorageService.StoredResult stored = storage.store(file);
         boolean synchronizedTransaction = TransactionSynchronizationManager.isSynchronizationActive();
@@ -80,7 +103,7 @@ public class FeeNoticePaymentService {
             });
         }
         SysFile result = new SysFile();
-        result.setBizType(BIZ_TYPE); result.setBizId(current.getId());
+        result.setBizType(bizType); result.setBizId(current.getId());
         result.setTenantId(current.getTenantId());
         result.setOriginalName(stored.originalName()); result.setStorePath(stored.storePath());
         result.setUrl(stored.url()); result.setFileSize(stored.size());
@@ -100,8 +123,10 @@ public class FeeNoticePaymentService {
         Map<String, List<Long>> sources = new LinkedHashMap<>();
         for (FeeNotice old : oldNotices) {
             String key = FeeNoticeCalculator.noticeKey(old);
-            if (!newKeys.contains(key) && (Integer.valueOf(1).equals(old.getPaymentStatus()) || evidenceIds.contains(old.getId())))
-                throw new BizException(409, "租户“" + old.getTenantName() + "”已有缴费记录或附件，本次生成将移除该租户；请恢复该租户，或先核对并处理缴费标记和附件");
+            if (!newKeys.contains(key) && (Integer.valueOf(1).equals(old.getPaymentStatus())
+                    || Integer.valueOf(1).equals(old.getInvoiceStatus())
+                    || evidenceIds.contains(old.getId())))
+                throw new BizException(409, "租户“" + old.getTenantName() + "”已有缴费/开票记录或附件，本次生成将移除该租户；请恢复该租户，或先核对并处理标记和附件");
             if (old.getId() != null) sources.computeIfAbsent(key, ignored -> new java.util.ArrayList<>()).add(old.getId());
         }
         return sources;
@@ -110,23 +135,25 @@ public class FeeNoticePaymentService {
     public void moveAttachments(Map<String, List<Long>> sources, FeeNotice replacement) {
         List<Long> oldIds = sources.get(FeeNoticeCalculator.noticeKey(replacement));
         if (oldIds == null || oldIds.isEmpty()) return;
-        files.update(null, new LambdaUpdateWrapper<SysFile>().eq(SysFile::getBizType, BIZ_TYPE)
+        files.update(null, new LambdaUpdateWrapper<SysFile>().in(SysFile::getBizType, NOTICE_FILE_TYPES)
                 .in(SysFile::getBizId, oldIds).set(SysFile::getBizId, replacement.getId()));
     }
 
     public void assertCanDelete(List<FeeNotice> targets) {
-        if (targets.stream().anyMatch(n -> Integer.valueOf(1).equals(n.getPaymentStatus())) || !paymentFiles(targets).isEmpty())
-            throw new BizException(409, "通知单已有缴费标记或缴费附件，请先核对，将标记改为未缴并处理附件后再删除");
+        if (targets.stream().anyMatch(n -> Integer.valueOf(1).equals(n.getPaymentStatus())
+                || Integer.valueOf(1).equals(n.getInvoiceStatus())) || !paymentFiles(targets).isEmpty())
+            throw new BizException(409, "通知单已有缴费/开票标记或附件，请先核对，将标记改为未缴/未开票并处理附件后再删除");
     }
 
     private List<SysFile> paymentFiles(List<FeeNotice> noticeList) {
         List<Long> ids = noticeList.stream().map(FeeNotice::getId).filter(Objects::nonNull).toList();
         if (ids.isEmpty()) return List.of();
-        return files.selectList(new LambdaQueryWrapper<SysFile>().eq(SysFile::getBizType, BIZ_TYPE).in(SysFile::getBizId, ids));
+        return files.selectList(new LambdaQueryWrapper<SysFile>().in(SysFile::getBizType, NOTICE_FILE_TYPES).in(SysFile::getBizId, ids));
     }
 
     static FeeNotice normalizeStatus(FeeNotice notice) {
         if (notice.getPaymentStatus() == null) notice.setPaymentStatus(0);
+        if (notice.getInvoiceStatus() == null) notice.setInvoiceStatus(0);
         return notice;
     }
 }

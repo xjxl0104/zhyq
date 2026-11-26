@@ -13,7 +13,7 @@ import static org.junit.jupiter.api.Assertions.*;
  */
 class V131MigrationContractTest {
 
-    private static final String V131 = "/db/migration/V131__marketing_public_sea_and_quote_calc.sql";
+    private static final String V131 = "/db/migration/V147__marketing_public_sea_and_quote_calc.sql";
 
     @Test
     void v131CreatesIndependentSeaTablesWithoutAlteringCustomerTable() throws Exception {
@@ -21,7 +21,7 @@ class V131MigrationContractTest {
         assertTrue(sql.contains("CREATE TABLE IF NOT EXISTS crm_public_sea_meta"), "缺少公海扩展表 crm_public_sea_meta");
         assertTrue(sql.contains("CREATE TABLE IF NOT EXISTS crm_public_sea_wash_batch"), "缺少洗数审计表 crm_public_sea_wash_batch");
         assertFalse(sql.toUpperCase().contains("ALTER TABLE CRM_CUSTOMER"), "禁止直接 ALTER 存量大表 crm_customer 制造锁表风险");
-        assertTrue(sql.contains("COLLATE=utf8mb4_unicode_ci"), "字符集排序规则必须对齐现有营销表 utf8mb4_unicode_ci");
+        assertTrue(sql.contains("COLLATE=utf8mb4_general_ci"), "字符集排序规则必须对齐现有营销表 utf8mb4_general_ci");
     }
 
     @Test

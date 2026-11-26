@@ -84,3 +84,23 @@ export const flowApi = {
   remove: (id) => request.delete(`/oa/flow/${id}`),
   toggle: (id) => request.post(`/oa/flow/${id}/toggle`)
 }
+
+// 电子印章管理与模板印章排版
+export const sealApi = {
+  list: (params) => request.get('/oa/seal/list', { params }),
+  add: (data) => request.post('/oa/seal', data),
+  update: (data) => request.put('/oa/seal', data),
+  setDefault: (id) => request.put(`/oa/seal/${id}/default`),
+  remove: (id) => request.delete(`/oa/seal/${id}`),
+  getPlacement: (templateKey) => request.get(`/oa/seal/placement/${encodeURIComponent(templateKey)}`),
+  savePlacement: (templateKey, data) => request.put(`/oa/seal/placement/${encodeURIComponent(templateKey)}`, data)
+}
+
+// 周期任务可视化年月表
+export const periodicTaskApi = {
+  board: (params) => request.get('/oa/periodic-task/board', { params }),
+  add: (data) => request.post('/oa/periodic-task', data),
+  update: (data) => request.put('/oa/periodic-task', data),
+  remove: (id) => request.delete(`/oa/periodic-task/${id}`),
+  upsertLog: (data) => request.put('/oa/periodic-task/log', data)
+}

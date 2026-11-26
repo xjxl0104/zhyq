@@ -138,7 +138,7 @@ class FeeNoticePaymentServiceTest {
         verify(files).update(isNull(), update.capture());
         update.getValue().getSqlSegment();
         assertThat(update.getValue().getParamNameValuePairs().values())
-                .containsExactlyInAnyOrder(FeeNoticePaymentService.BIZ_TYPE, 11L, 12L, 21L);
+                .containsExactlyInAnyOrder(FeeNoticePaymentService.BIZ_TYPE, FeeNoticePaymentService.INVOICE_BIZ_TYPE, 11L, 12L, 21L);
     }
 
     @Test void cannotRegenerateAwayPaidHouseholdsOrEvidenceButOrdinaryRemovedHouseholdsAreAllowed() {

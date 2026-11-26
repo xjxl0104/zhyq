@@ -269,6 +269,7 @@ public final class FeeNoticeCalculator {
             FeeNotice prev = previous == null ? null : previous.get(noticeKey(n));
             n.setPaidAmount(prev == null ? BigDecimal.ZERO : nz(prev.getPaidAmount()));
             n.setPaymentStatus(prev != null && Integer.valueOf(1).equals(prev.getPaymentStatus()) ? 1 : 0);
+            n.setInvoiceStatus(prev != null && Integer.valueOf(1).equals(prev.getInvoiceStatus()) ? 1 : 0);
             n.setPriorArrears(prev == null ? BigDecimal.ZERO : nz(prev.getPriorArrears()));
             n.setRemark(prev == null ? null : prev.getRemark());
             keepRemarkEdits(items, prev);
@@ -326,6 +327,7 @@ public final class FeeNoticeCalculator {
                 head.setTenantName(old.getTenantName());
                 head.setPaidAmount(nz(old.getPaidAmount()));
                 head.setPaymentStatus(Integer.valueOf(1).equals(old.getPaymentStatus()) ? 1 : 0);
+                head.setInvoiceStatus(Integer.valueOf(1).equals(old.getInvoiceStatus()) ? 1 : 0);
                 head.setPriorArrears(nz(old.getPriorArrears()));
                 head.setOtherFee(nz(old.getOtherFee()));
                 head.setOtherFeeNote(old.getOtherFeeNote());
@@ -337,6 +339,8 @@ public final class FeeNoticeCalculator {
             head.setPaidAmount(nz(head.getPaidAmount()).add(nz(old.getPaidAmount())));
             head.setPaymentStatus(Integer.valueOf(1).equals(head.getPaymentStatus())
                     && Integer.valueOf(1).equals(old.getPaymentStatus()) ? 1 : 0);
+            head.setInvoiceStatus(Integer.valueOf(1).equals(head.getInvoiceStatus())
+                    && Integer.valueOf(1).equals(old.getInvoiceStatus()) ? 1 : 0);
             head.setPriorArrears(nz(head.getPriorArrears()).add(nz(old.getPriorArrears())));
             head.setOtherFee(nz(head.getOtherFee()).add(nz(old.getOtherFee())));
             if (head.getRemark() == null || head.getRemark().isBlank()) {

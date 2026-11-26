@@ -17,7 +17,8 @@ import java.util.Map;
 public class MktDocumentAccessService {
     private final FileBusinessAccessMapper businessAccess;
     private static final Map<String, String> RESOURCES = Map.ofEntries(
-            Map.entry("contract", "contract"), Map.entry("customer", "crm:customer"),
+            Map.entry("contract", "contract"), Map.entry("simple_contract", "contract"),
+            Map.entry("contract_template", "contract"), Map.entry("customer", "crm:customer"),
             Map.entry("crm_lead", "crm:lead"), Map.entry("budget", "budget"),
             Map.entry("pur_request", "pur:request"), Map.entry("supplier", "pur:supplier"),
             Map.entry("supplier_contract", "pur:supplierContract"), Map.entry("invoice", "finance:invoice"),
@@ -33,11 +34,18 @@ public class MktDocumentAccessService {
             Map.entry("activity", "property:activity"), Map.entry("pm_check", "property:check"),
             Map.entry("oa_notice", "oa:notice"), Map.entry("article", "oa:article"),
             Map.entry("recruit", "oa:recruit"), Map.entry("oa_task", "oa:task"),
+            Map.entry("oa_task_node", "oa:task"),
             Map.entry("oa_document", "oa:document"), Map.entry("energy_reading", "energy:reading"),
-            // 缴费账期的三种供应商账单(南网/自来水公司/垃圾清理供应商),单据留存
+            // 缴费账期的供应商账单与租金/物业管理费留存单据
             Map.entry("energy_fee_electric", "energy:feebill"), Map.entry("energy_fee_water", "energy:feebill"),
             Map.entry("energy_fee_garbage", "energy:feebill"),
+            Map.entry("energy_fee_rent", "energy:feebill"), Map.entry("energy_fee_property", "energy:feebill"),
             Map.entry("fee_notice_payment", "energy:feebill"),
+            Map.entry("fee_notice_invoice", "energy:feebill"),
+            Map.entry("lease_fee_notice_payment", "energy:feebill"),
+            Map.entry("lease_fee_notice_invoice", "energy:feebill"),
+            Map.entry("lease_deposit_rent_receipt", "energy:feebill"),
+            Map.entry("lease_deposit_property_receipt", "energy:feebill"),
             // 资料管理:资料库里的归档文件
             Map.entry("archive_doc", "archive:doc"));
 

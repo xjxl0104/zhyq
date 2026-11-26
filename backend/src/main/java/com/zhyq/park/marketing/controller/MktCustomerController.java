@@ -54,6 +54,8 @@ public class MktCustomerController {
     private final MktAuditService auditService;
     private final MktCustomerAssignmentService assignmentService;
     private final MktCustomerDeletionService deletionService;
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.zhyq.park.marketing.quote.QuoteIntakeService quoteIntakeService;
 
     @Operation(summary = "分页(附推荐人姓名与锁定状态)")
     @PreAuthorize("hasAuthority('crm:marketing:customer:query')")
@@ -64,7 +66,8 @@ public class MktCustomerController {
                                                         @RequestParam(required = false) String grade,
                                                         @RequestParam(required = false) Integer referredOnly,
                                                         @RequestParam(required = false) Long projectId,
-                                                        @RequestParam(required = false) Integer warehouseAssignmentStatus) {
+                                                        @RequestParam(required = false) Integer warehouseAssignmentStatus,
+                                                        @RequestParam(defaultValue = "false") boolean awaitingQuoteDispatch) {
         LambdaQueryWrapper<Customer> qw = new LambdaQueryWrapper<Customer>()
                 .and(StringUtils.hasText(keyword), w -> w.like(Customer::getName, keyword).or().like(Customer::getPhone, keyword))
                 .eq(StringUtils.hasText(grade), Customer::getGrade, grade)
@@ -72,6 +75,11 @@ public class MktCustomerController {
                 .and(projectId != null, q -> q.eq(Customer::getProjectId, projectId).or().isNull(Customer::getProjectId))
                 .eq(warehouseAssignmentStatus != null, Customer::getWarehouseAssignmentStatus, warehouseAssignmentStatus)
                 .orderByDesc(Customer::getId);
+        if(awaitingQuoteDispatch) {
+            qw.and(q->q.isNull(Customer::getWarehouseAssignmentStatus).or().in(Customer::getWarehouseAssignmentStatus,0,3))
+                .eq(Customer::getStatus,1)
+                .apply("EXISTS (SELECT 1 FROM crm_quote_intake qi WHERE qi.customer_id=crm_customer.id AND qi.tenant_id=crm_customer.tenant_id AND qi.project_id <=> crm_customer.project_id AND qi.submitted_at IS NOT NULL)");
+        }
         IPage<Customer> p = customerMapper.selectPage(new Page<>(pageNo, pageSize), qw);
         List<Map<String, Object>> rows = p.getRecords().stream().map(this::enrich).collect(Collectors.toList());
         return Result.ok(PageResult.of(p.getTotal(), rows));
@@ -81,7 +89,17 @@ public class MktCustomerController {
     @PreAuthorize("hasAuthority('crm:marketing:customer:query')")
     @GetMapping("/{id}")
     public Result<Map<String, Object>> get(@PathVariable Long id) {
-        return Result.ok(enrich(require(id)));
+        Customer c = require(id);
+        Map<String, Object> out = enrich(c);
+        if (quoteIntakeService != null) {
+            long tenantId = c.getTenantId() == null
+                    ? com.zhyq.park.common.config.MyMetaObjectHandler.DEFAULT_TENANT_ID : c.getTenantId();
+            Map<String, Object> quoteIntake = quoteIntakeService.submittedDetails(c.getId(), tenantId, c.getProjectId());
+            if (quoteIntake != null && !quoteIntake.isEmpty()) {
+                out.put("quoteIntake", quoteIntake);
+            }
+        }
+        return Result.ok(out);
     }
 
     @Operation(summary = "管理员删除客户（保留业务历史，有合同或订单不可删除）")
@@ -160,13 +178,16 @@ public class MktCustomerController {
         return Result.ok();
     }
 
-    public record WarehouseAssignmentRequest(Long warehouseId, String reason) {}
+    public record WarehouseAssignmentRequest(Long warehouseId, String reason, Boolean manualQuoteOverride,
+                                             String rebatePolicyType, BigDecimal rebateUnitPrice) {}
 
-    @Operation(summary = "分派或调整承接云仓，等待商家确认")
+    @Operation(summary = "分派或调整承接云仓，并确认平台服务费（返点）政策，等待商家确认")
     @PreAuthorize("hasAuthority('crm:marketing:customer:edit')")
     @PostMapping("/{id}/assign-warehouse")
     public Result<Void> assignWarehouse(@PathVariable Long id, @RequestBody WarehouseAssignmentRequest request) {
-        assignmentService.assign(id, request.warehouseId(), request.reason());
+        assignmentService.assign(id, request.warehouseId(), request.reason(),
+                Boolean.TRUE.equals(request.manualQuoteOverride()),
+                request.rebatePolicyType(), request.rebateUnitPrice());
         return Result.ok();
     }
 

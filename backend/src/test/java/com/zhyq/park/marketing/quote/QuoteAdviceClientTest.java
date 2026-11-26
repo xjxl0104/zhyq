@@ -36,7 +36,7 @@ class QuoteAdviceClientTest {
                     .hasMessageContaining("输出上限");
         }
         assertThat(client.readResponse(candidates,response("stop",valid))).containsExactly(
-                "建议核价：测试仓，预估 2–3 元/票。","核实偏远附加费、适用范围和有效期");
+                "唯一报价仓的可选方案：测试仓，预估票价 2–3 元/票。","核实偏远附加费、适用范围和有效期");
         assertThatThrownBy(()->client.readResponse(candidates,response("stop",""))).isInstanceOf(java.io.IOException.class)
                 .hasMessageContaining("未返回建议内容");
     }
@@ -59,10 +59,41 @@ class QuoteAdviceClientTest {
             Map.of("carrier","缺价快递","status","partial")))));
         var candidates=client.candidates(comparison);
         assertThat(candidates).hasSize(1);
-        assertThat(candidates.get(0).numbers()).containsOnlyKeys("id","perParcelMin","perParcelMax","incomplete");
+        assertThat(candidates.get(0).numbers()).containsOnlyKeys("id","warehouse","perParcelMin","perParcelMax","incomplete");
         var result=QuoteAdviceClient.suggestions(candidates,json.readTree("{\"shortlist\":[888,1],\"checks\":[\"materials\",\"自拟价格\"]}"));
-        assertThat(result).containsExactly("建议核价：示例云仓 · 快递甲，预估 2–3 元/票。","核实仓供包材规格与单价");
+        assertThat(result).containsExactly("唯一报价仓的可选方案：示例云仓 · 快递甲，预估票价 2–3 元/票。","核实仓供包材规格与单价");
         assertThatThrownBy(()->QuoteAdviceClient.suggestions(candidates,json.readTree("{\"shortlist\":[888],\"checks\":[]}")))
             .isInstanceOf(java.io.IOException.class);
+    }
+    @Test void incompleteFreightCanBeComparedWithoutRecommendingAMissingOrUnpricedWarehouse() throws Exception {
+        var client=new QuoteAdviceClient(json,"","","",false);
+        var partial=Map.of("carrier","圆通","status","partial","unitPrices",Map.of("freightMin",2,"freightMax",4),"capacityFit","uncertain");
+        var comparison=Map.<String,Object>of("warehouses",List.of(
+            Map.of("warehouseName","无价仓","version",0,"offers",List.of(partial)),
+            Map.of("warehouseName","部分报价仓","version",1,"offers",List.of(partial,Map.of("carrier","不可用","status","missing","storageMonthlyMin",0)))));
+        var offers=client.candidates(comparison);
+        assertThat(offers).hasSize(1);
+        assertThat(offers.get(0).numbers()).doesNotContainKeys("perParcelMin","perParcelMax");
+        assertThat(QuoteAdviceClient.suggestions(offers,json.readTree("{\"shortlist\":[1],\"checks\":[]}")).get(0))
+            .contains("待补价候选","运费 2–4 元/票","单票总价待补齐","高峰产能需确认");
+    }
+
+    @Test void sendsNormalizedCustomerNeedsOnceWithoutPrivateText() throws Exception {
+        var client=new QuoteAdviceClient(json,"","","",false);
+        var comparison=Map.<String,Object>of("demandProfile",Map.of("dailyOrders","0-200","palletCount",7,
+            "productCategories",List.of("日化清洁","其他","客户私有字样"),"productCategoryOther","私人品牌","packingNote","私人备注"),
+            "warehouses",List.of(Map.of("warehouseName","内部仓名","version",2,"offers",List.of(
+                Map.of("carrier","圆通","status","estimate","perParcelMin",3,"perParcelMax",3)))));
+        var request=json.readTree(client.requestBody(client.candidates(comparison)));
+        var user=request.path("messages").get(1).path("content").asText();
+        assertThat(user).contains("日化清洁","0-200","palletCount").doesNotContain("私人","客户私有","内部仓名");
+    }
+
+    @Test void twoCarriersForOneWarehouseDoNotAppearAsTwoCompetingWarehouses() throws Exception {
+        var options=List.of(new QuoteAdviceClient.Candidate("甲仓 · 圆通",Map.of("id",1,"warehouse",7,"perParcelMin",2,"perParcelMax",3)),
+                new QuoteAdviceClient.Candidate("甲仓 · 顺丰",Map.of("id",2,"warehouse",7,"perParcelMin",5,"perParcelMax",7)));
+        var lines=QuoteAdviceClient.suggestions(options,json.readTree("{\"shortlist\":[1,2],\"checks\":[]}"));
+        assertThat(lines.get(0)).contains("唯一报价仓");
+        assertThat(lines.get(1)).contains("同仓承运备选").doesNotContain("备选云仓");
     }
 }

@@ -77,7 +77,7 @@ FROM (
     UNION ALL SELECT 'sea_wh_daily_cap',  '5',  '加盟云仓每日最多认领公海热单户数'
     UNION ALL SELECT 'sea_wh_active_cap', '10', '加盟云仓在途未签约公海客户上限户数'
 ) t
-WHERE NOT EXISTS (SELECT 1 FROM biz_setting b WHERE b.module = 'marketing' AND b.skey = t.k AND b.deleted = 0);
+WHERE NOT EXISTS (SELECT 1 FROM biz_setting b WHERE b.module = 'marketing' AND b.skey COLLATE utf8mb4_general_ci = t.k COLLATE utf8mb4_general_ci AND b.deleted = 0);
 
 -- 注册后台菜单「公海线索池」与细粒度权限点（挂在全民营销/招商目录下，授权 admin / mkt_sales / mkt_ops）
 INSERT INTO sys_menu (parent_id, name, type, path, component, sort, visible, status, tenant_id, create_by, create_time, version, deleted)
@@ -91,7 +91,7 @@ FROM (
     SELECT 'crm:marketing:public-sea:query' AS p, '全民营销-内部公海池-查询与下钻' AS nm
     UNION ALL SELECT 'crm:marketing:public-sea:edit', '全民营销-内部公海池-洗数导入/认领/投喂云仓'
 ) t
-WHERE NOT EXISTS (SELECT 1 FROM sys_menu m WHERE m.perm = t.p AND m.deleted = 0);
+WHERE NOT EXISTS (SELECT 1 FROM sys_menu m WHERE m.perm COLLATE utf8mb4_general_ci = t.p COLLATE utf8mb4_general_ci AND m.deleted = 0);
 
 INSERT INTO sys_role_menu (role_id, menu_id)
 SELECT r.id, m.id

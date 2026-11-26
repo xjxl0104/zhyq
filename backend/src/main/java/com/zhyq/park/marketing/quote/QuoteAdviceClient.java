@@ -11,7 +11,7 @@ import java.net.http.*;
 import java.time.Duration;
 import java.util.*;
 
-/** Sends only anonymous numeric offers. Provider output can select existing offers and checklist items. */
+/** Sends anonymous operational choices and numeric offers. Returned choices must refer to actual offers. */
 @Component
 public class QuoteAdviceClient {
     private final ObjectMapper json;
@@ -43,19 +43,63 @@ public class QuoteAdviceClient {
                 && target.getUserInfo()==null && target.getQuery()==null && target.getFragment()==null;
         } catch (IllegalArgumentException invalid) { return false; }
     }
-    record Candidate(String label, Map<String,Object> numbers) {}
+    record Candidate(String label, Map<String,Object> numbers, Map<String,Object> demand) {
+        Candidate(String label,Map<String,Object> numbers){this(label,numbers,Map.of());}
+    }
     List<Candidate> candidates(Map<String,Object> comparison) {
         var list=new ArrayList<Candidate>();
-        for (JsonNode warehouse : json.valueToTree(comparison).path("warehouses")) {
+        // Reapply the allow-list at the provider boundary, including when comparing historical records.
+        var profile=QuoteRequirements.assessmentProfile(json.valueToTree(comparison.get("demandProfile")));
+        JsonNode warehouses=json.valueToTree(comparison.get("warehouses"));
+        int warehouseIndex=0;
+        for (JsonNode warehouse : warehouses) {
+            warehouseIndex++;
+            if (warehouse.has("version") && warehouse.path("version").asLong()==0) continue;
             for (JsonNode offer : warehouse.path("offers")) {
-                if (!offer.path("perParcelMin").isNumber() || !offer.path("perParcelMax").isNumber()) continue;
+                if ("missing".equals(offer.path("status").asText())) continue;
                 var numbers=new LinkedHashMap<String,Object>();
                 numbers.put("id",list.size()+1);
-                for(String field:List.of("perParcelMin","perParcelMax","storageMonthlyMin","storageMonthlyMax","extrasMonthly")) {
+                numbers.put("warehouse",warehouseIndex);
+                for(String field:List.of("perParcelMin","perParcelMax","storageMonthlyMin","storageMonthlyMax")) {
                     if (offer.path(field).isNumber()) numbers.put(field,offer.path(field).decimalValue());
                 }
+                for(String part:List.of("handling","materials","freight")) {
+                    for(String suffix:List.of("Min","Max")) {
+                        String field=part+suffix;
+                        JsonNode amount=offer.path("unitPrices").path(field);
+                        if(amount.isNumber()) numbers.put(field,amount.decimalValue());
+                    }
+                }
+                int availableServices=0;
+                for(JsonNode service:offer.path("selectedServiceRates")) if(service.path("rate").isNumber()) availableServices++;
+                if(availableServices>0) numbers.put("pricedServiceCount",availableServices);
+                // Totals or actual operational unit rates qualify. Free customer-supplied
+                // materials and the default zero extras alone provide no warehouse quote.
+                if(numbers.keySet().stream().noneMatch(k->List.of("perParcelMin","freightMin","handlingMin","storageMonthlyMin","pricedServiceCount").contains(k))) continue;
+                if(offer.path("extrasMonthly").isNumber()) numbers.put("extrasMonthly",offer.path("extrasMonthly").decimalValue());
+                if(offer.path("dailyCapacity").isNumber()) numbers.put("dailyCapacity",offer.path("dailyCapacity").intValue());
+                String capacity=offer.path("capacityFit").asText("");
+                if(Set.of("fits","exceeded","uncertain","unknown").contains(capacity)) numbers.put("capacityFit",capacity);
+                if(offer.path("regionalCoveragePartial").asBoolean(false)) numbers.put("limitedRegion",true);
+                if(offer.path("missing").isArray()) numbers.put("missingCount",offer.path("missing").size());
                 numbers.put("incomplete",!"estimate".equals(offer.path("status").asText()));
-                list.add(new Candidate(warehouse.path("warehouseName").asText()+" · "+offer.path("carrier").asText(),numbers));
+                list.add(new Candidate(warehouse.path("warehouseName").asText()+" · "+offer.path("carrier").asText(),numbers,profile));
+            }
+            // A warehouse-level bundle is a conditional alternative to itemized fees.
+            // Keep ticket and kg prices separate and never attach this plan to a specific courier.
+            var bundle=new LinkedHashMap<String,Object>();
+            for (String unit:List.of("元/票","元/kg")) {
+                var amounts=new ArrayList<java.math.BigDecimal>();
+                for(JsonNode rate:warehouse.path("stageRates"))
+                    if(unit.equals(rate.path("unit").asText()) && rate.path("rate").isNumber()) amounts.add(rate.get("rate").decimalValue());
+                if(!amounts.isEmpty()){
+                    String prefix="元/票".equals(unit)?"bundleTicket":"bundleKg";
+                    bundle.put(prefix+"Min",Collections.min(amounts)); bundle.put(prefix+"Max",Collections.max(amounts));
+                }
+            }
+            if(!bundle.isEmpty()){
+                bundle.put("id",list.size()+1); bundle.put("warehouse",warehouseIndex); bundle.put("incomplete",true);
+                list.add(new Candidate(warehouse.path("warehouseName").asText()+" · 通达配条件套餐",bundle,profile));
             }
         }
         return list;
@@ -72,8 +116,10 @@ public class QuoteAdviceClient {
     }
 
     String requestBody(List<Candidate> candidates) throws IOException {
-        String prompt="根据匿名云仓报价，给运营选出最多三项值得进一步核价的方案。票价、月仓租、月增值费用单位不同，不可直接相加。缺失数字不能按零处理，优先选数据完整且价格有竞争力的方案。只返回JSON对象，shortlist为方案id的整数数组，checks从weights,materials,scope,volume,storage,extras,tax选择最多三项。";
-        String data=json.writeValueAsString(candidates.stream().map(Candidate::numbers).toList());
+        String prompt="根据每个仓为本客户匹配的匿名报价、费用完整度和产能匹配结果，给运营选择首选分配方案与备选，按推荐顺序最多三项。优先满足客户产能，capacityFit=exceeded表示登记产能不足。只有分项的方案仅可建议先补报价。对比同口径票价、仓租、已报价增值项和缺项数。票价、月仓租、月增值费用单位不同，不可直接相加，缺价不得按零估算。只返回 JSON 对象，shortlist 为按推荐排序的方案 id 整数数组，checks 从 weights,materials,scope,volume,storage,extras,tax 选最多三项。";
+        var offers=candidates.stream().map(Candidate::numbers).toList();
+        var profile=candidates.get(0).demand();
+        String data=json.writeValueAsString(profile.isEmpty()?offers:Map.of("demand",profile,"offers",offers));
         if(data.length()>60000) throw new IOException("候选方案超出单次评估容量");
         var body=json.createObjectNode();
         body.put("model",model);
@@ -101,12 +147,43 @@ public class QuoteAdviceClient {
     static List<String> suggestions(List<Candidate> candidates,JsonNode answer) throws IOException {
         if (answer==null || !answer.path("shortlist").isArray() || !answer.path("checks").isArray()) throw new IOException("模型返回格式不正确");
         var result=new LinkedHashSet<String>();
+        var chosenIds=new HashSet<Integer>();
+        var chosenWarehouses=new HashSet<Object>();
+        var warehouseCount=candidates.stream().map(c->c.numbers().getOrDefault("warehouse",c.label())).distinct().count();
         for (JsonNode item : answer.path("shortlist")) {
             if (!item.isIntegralNumber() || !item.canConvertToInt() || item.intValue()<1 || item.intValue()>candidates.size() || result.size()>=3) continue;
+            if(!chosenIds.add(item.intValue())) continue;
             var choice=candidates.get(item.intValue()-1);
             var n=choice.numbers();
-            result.add("建议核价："+choice.label()+"，预估 "+n.get("perParcelMin")+"–"+n.get("perParcelMax")+" 元/票"
-                +(Boolean.TRUE.equals(n.get("incomplete"))?"，部分费用待确认。":"。"));
+            Object warehouse=n.getOrDefault("warehouse",choice.label());
+            boolean sameWarehouse=chosenWarehouses.contains(warehouse);
+            var facts=new ArrayList<String>();
+            boolean fullTicket=n.containsKey("perParcelMax");
+            boolean insufficient="exceeded".equals(n.get("capacityFit"));
+            boolean limitedRegion=Boolean.TRUE.equals(n.get("limitedRegion"));
+            boolean incomplete=Boolean.TRUE.equals(n.get("incomplete"));
+            String heading;
+            if(insufficient) heading="产能不足，需另核";
+            else if(!fullTicket || limitedRegion || incomplete) heading=sameWarehouse?"同仓待补价方案":"待补价候选";
+            else if(sameWarehouse) heading="同仓承运备选";
+            else if(warehouseCount==1) heading="唯一报价仓的可选方案";
+            else heading=result.isEmpty()?"建议优先分配":"备选云仓";
+            if(fullTicket) facts.add("预估票价 "+range(n,"perParcel")+" 元/票");
+            else {
+                if(n.containsKey("freightMax")) facts.add("运费 "+range(n,"freight")+" 元/票");
+                if(n.containsKey("handlingMax")) facts.add("操作费 "+range(n,"handling")+" 元/票");
+                if(n.containsKey("bundleTicketMax")) facts.add("条件套餐 "+range(n,"bundleTicket")+" 元/票");
+                if(n.containsKey("bundleKgMax")) facts.add("重货条件套餐 "+range(n,"bundleKg")+" 元/kg");
+                facts.add("单票总价待补齐");
+            }
+            if(n.containsKey("storageMonthlyMax")) facts.add("30 天仓租 "+range(n,"storageMonthly")+" 元");
+            if(n.containsKey("pricedServiceCount")) facts.add("已报 "+n.get("pricedServiceCount")+" 项增值服务");
+            if("fits".equals(n.get("capacityFit"))) facts.add("登记产能覆盖需求上限");
+            if("uncertain".equals(n.get("capacityFit"))) facts.add("高峰产能需确认");
+            if(limitedRegion) facts.add("报价仅覆盖部分地区或单量档");
+            if(Boolean.TRUE.equals(n.get("incomplete"))) facts.add("部分费用待确认");
+            result.add(heading+"："+choice.label()+"，"+String.join("，",facts)+"。");
+            chosenWarehouses.add(warehouse);
         }
         if(result.isEmpty()) throw new IOException("模型未选出有效方案");
         var checks=new LinkedHashSet<String>();
@@ -116,5 +193,16 @@ public class QuoteAdviceClient {
         }
         result.addAll(checks);
         return List.copyOf(result);
+    }
+
+    static boolean hasAssignableOffer(List<Candidate> candidates){
+        return candidates.stream().map(Candidate::numbers).anyMatch(n->n.containsKey("perParcelMax")
+            && !Boolean.TRUE.equals(n.get("incomplete")) && !Boolean.TRUE.equals(n.get("limitedRegion"))
+            && !"exceeded".equals(n.get("capacityFit")));
+    }
+
+    private static String range(Map<String,Object> values,String field) {
+        Object low=values.get(field+"Min"),high=values.get(field+"Max");
+        return Objects.equals(low,high)?String.valueOf(low):low+"–"+high;
     }
 }

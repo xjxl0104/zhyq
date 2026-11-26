@@ -17,6 +17,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.Map;
@@ -30,6 +31,12 @@ public class MktCustomerAssignmentService {
     public static final int PENDING = 1;
     public static final int ACCEPTED = 2;
     public static final int REJECTED = 3;
+    public static final String REBATE_BULK_5000 = "BULK_5000";
+    public static final String REBATE_STANDARD = "STANDARD";
+    public static final String REBATE_STRATEGIC = "STRATEGIC";
+    public static final BigDecimal REBATE_PRICE_BULK_5000 = new BigDecimal("0.100");
+    public static final BigDecimal REBATE_PRICE_STANDARD = new BigDecimal("0.150");
+    private static final BigDecimal MAX_REBATE_AMOUNT = new BigDecimal("99999999999.999");
     private final CustomerMapper customers;
     private final MktWarehouseMapper warehouses;
     private final MktServiceContractMapper contracts;
@@ -61,26 +68,67 @@ public class MktCustomerAssignmentService {
 
     @Transactional
     public void assign(Long customerId, Long warehouseId, String reason) {
+        assign(customerId, warehouseId, reason, false, warehouseId == null ? null : REBATE_STANDARD, null);
+    }
+
+    @Transactional
+    public void assign(Long customerId, Long warehouseId, String reason, boolean manualQuoteOverride) {
+        assign(customerId, warehouseId, reason, manualQuoteOverride, warehouseId == null ? null : REBATE_STANDARD, null);
+    }
+
+    @Transactional
+    public void assign(Long customerId, Long warehouseId, String reason, boolean manualQuoteOverride,
+                       String rebatePolicyType, BigDecimal rebateUnitPrice) {
         reason = text(reason, "请填写分派或调整原因");
         Customer customer = requireLocked(customerId);
         if (Integer.valueOf(4).equals(customer.getServiceType())) throw new BizException("园区入驻客户不分派云仓");
         if (Integer.valueOf(3).equals(customer.getStatus())) throw new BizException("已流失客户须先恢复跟进后再分派");
-        if (Objects.equals(warehouseId, customer.getAssignedWarehouseId())
+        String resolvedPolicy = null;
+        BigDecimal resolvedPrice = null;
+        if (warehouseId != null) {
+            ResolvedRebate rebate = resolveRebate(rebatePolicyType, rebateUnitPrice);
+            resolvedPolicy = rebate.policyType();
+            resolvedPrice = rebate.unitPrice();
+        }
+        boolean sameRebate = Objects.equals(resolvedPolicy, customer.getRebatePolicyType())
+                && sameDecimal(resolvedPrice, customer.getRebateUnitPrice());
+        if (Objects.equals(warehouseId, customer.getAssignedWarehouseId()) && sameRebate
                 && (warehouseId == null || Integer.valueOf(PENDING).equals(customer.getWarehouseAssignmentStatus())
                 || Integer.valueOf(ACCEPTED).equals(customer.getWarehouseAssignmentStatus()))) return;
         assertNoActiveContracts(customerId);
         MktWarehouse warehouse = warehouseId == null ? null : requireAvailableWarehouse(warehouseId, customer.getProjectId());
+        if(warehouse!=null && !Objects.equals(warehouse.getTenantId(),customer.getTenantId()))
+            throw new BizException(403,"不能跨运营主体分派客户");
+        if(warehouse!=null && customer.getReferrerId()!=null && customer.getAssignedWarehouseId()==null) {
+            String state=customers.initialQuoteState(customerId);
+            if(state==null || "no_demand".equals(state))
+                throw new BizException(409,"推荐客户请先完成详细报价需求并确认归属园区，再分配云仓");
+            if("waiting".equals(state) || "failed".equals(state) || "partial".equals(state)) {
+                if(!manualQuoteOverride) throw new BizException(409,"报价依据不足或 AI 评估失败，请确认人工分配并填写原因");
+                String issue=switch(state){case "waiting"->"缺少可比报价"; case "partial"->"报价或产能待核实"; default->"AI 评估未完成";};
+                reason="人工分配（"+issue+"）："+reason;
+                if(reason.length()>500) throw new BizException(400,"请缩短人工分配原因");
+            } else if(!"ready".equals(state)) {
+                throw new BizException(409,"客户报价评估正在进行，请查看报告后再分配云仓");
+            }
+        }
         LambdaUpdateWrapper<Customer> update = versionGuard(customer)
                 .set(Customer::getAssignedWarehouseId, warehouseId)
                 .set(Customer::getWarehouseSalespersonId, null).set(Customer::getWarehouseSalesStage,0)
-                .set(Customer::getWarehouseAssignmentStatus, warehouseId == null ? UNASSIGNED : PENDING);
+                .set(Customer::getWarehouseAssignmentStatus, warehouseId == null ? UNASSIGNED : PENDING)
+                .set(Customer::getRebatePolicyType, resolvedPolicy)
+                .set(Customer::getRebateUnitPrice, resolvedPrice)
+                .set(Customer::getRebateConfirmedAt, null);
         if (customer.getProjectId() == null && warehouse != null && warehouse.getProjectId() != null) {
             update.set(Customer::getProjectId, warehouse.getProjectId());
         }
         requireUpdated(customers.update(null, update));
-        progress.transition(customerId, warehouseId == null ? 0 : 30,
-                warehouseId == null ? "已取消云仓分派，等待重新对接" : "已分派云仓，等待商家确认承接", "assigned");
-        audit.log("customer.warehouse.assign", "customer", customerId, reason, customer.getAssignedWarehouseId(), warehouseId);
+        String assignProgress = warehouseId == null ? "已取消云仓分派，等待重新对接"
+                : "已分派云仓，等待商家确认承接（返点：" + resolvedPrice.toPlainString() + " 元/单）";
+        progress.transition(customerId, warehouseId == null ? 0 : 30, assignProgress, "assigned");
+        String auditReason = warehouseId == null ? reason
+                : reason + "；平台服务费（返点）：" + rebatePolicyLabel(resolvedPolicy) + " " + resolvedPrice.toPlainString() + " 元/单";
+        audit.log("customer.warehouse.assign", "customer", customerId, auditReason, customer.getAssignedWarehouseId(), warehouseId);
     }
 
     @Transactional
@@ -90,11 +138,15 @@ public class MktCustomerAssignmentService {
         requireAvailableWarehouse(warehouseId, customer.getProjectId());
         if (Integer.valueOf(ACCEPTED).equals(customer.getWarehouseAssignmentStatus())) return;
         if (!Integer.valueOf(PENDING).equals(customer.getWarehouseAssignmentStatus())) throw new BizException("当前客户不在待承接状态");
+        LocalDateTime confirmedAt = customer.getRebateUnitPrice() == null ? null : LocalDateTime.now();
         requireUpdated(customers.update(null, versionGuard(customer)
                 .eq(Customer::getAssignedWarehouseId, warehouseId).eq(Customer::getWarehouseAssignmentStatus, PENDING)
-                .set(Customer::getWarehouseAssignmentStatus, ACCEPTED)));
+                .set(Customer::getWarehouseAssignmentStatus, ACCEPTED)
+                .set(Customer::getRebateConfirmedAt, confirmedAt)));
         progress.transition(customerId, 60, "云仓已确认承接，正在对接服务需求", "accepted");
-        audit.log("customer.warehouse.accept", "customer", customerId, "云仓确认承接");
+        String auditNote = customer.getRebateUnitPrice() == null ? "云仓确认承接"
+                : "云仓确认承接，已确认返点 " + customer.getRebateUnitPrice().toPlainString() + " 元/单（" + rebatePolicyLabel(customer.getRebatePolicyType()) + "）";
+        audit.log("customer.warehouse.accept", "customer", customerId, auditNote);
     }
 
     @Transactional
@@ -106,7 +158,8 @@ public class MktCustomerAssignmentService {
         assertNoActiveContracts(customerId);
         requireUpdated(customers.update(null, versionGuard(customer)
                 .eq(Customer::getAssignedWarehouseId, warehouseId).eq(Customer::getWarehouseAssignmentStatus, PENDING)
-                .set(Customer::getWarehouseAssignmentStatus, REJECTED)));
+                .set(Customer::getWarehouseAssignmentStatus, REJECTED)
+                .set(Customer::getRebateConfirmedAt, null)));
         progress.transition(customerId, 0, "云仓未承接，等待重新分派", "rejected");
         audit.log("customer.warehouse.reject", "customer", customerId, reason);
     }
@@ -224,6 +277,10 @@ public class MktCustomerAssignmentService {
         out.put("assignedWarehouseId", customer.getAssignedWarehouseId());
         out.put("assignedWarehouseName", warehouseName(customer.getAssignedWarehouseId()));
         out.put("warehouseAssignmentStatus", customer.getWarehouseAssignmentStatus() == null ? UNASSIGNED : customer.getWarehouseAssignmentStatus());
+        out.put("rebatePolicyType", customer.getRebatePolicyType());
+        out.put("rebatePolicyLabel", rebatePolicyLabel(customer.getRebatePolicyType()));
+        out.put("rebateUnitPrice", customer.getRebateUnitPrice());
+        out.put("rebateConfirmedAt", customer.getRebateConfirmedAt());
         out.put("publicProgress", customer.getPublicProgress());
         out.put("progressUpdatedAt", customer.getProgressUpdatedAt());
         out.putAll(progress.view(customer));
@@ -235,6 +292,10 @@ public class MktCustomerAssignmentService {
         out.put("id", customer.getId()); out.put("name", customer.getName()); out.put("industry", customer.getIndustry());
         out.put("serviceType", customer.getServiceType()); out.put("status", customer.getStatus()); out.put("grade", customer.getGrade());
         out.put("warehouseAssignmentStatus", customer.getWarehouseAssignmentStatus());
+        out.put("rebatePolicyType", customer.getRebatePolicyType());
+        out.put("rebatePolicyLabel", rebatePolicyLabel(customer.getRebatePolicyType()));
+        out.put("rebateUnitPrice", customer.getRebateUnitPrice());
+        out.put("rebateConfirmedAt", customer.getRebateConfirmedAt());
         out.put("publicProgress", customer.getPublicProgress()); out.put("progressUpdatedAt", customer.getProgressUpdatedAt());
         out.putAll(progress.view(customer));
         if (Integer.valueOf(PENDING).equals(customer.getWarehouseAssignmentStatus()) || Integer.valueOf(ACCEPTED).equals(customer.getWarehouseAssignmentStatus())) {
@@ -246,6 +307,43 @@ public class MktCustomerAssignmentService {
             out.put("phone", phone == null || phone.length() < 7 ? null : phone.substring(0, 3) + "****" + phone.substring(phone.length() - 4));
         }
         return out;
+    }
+
+    public record ResolvedRebate(String policyType, BigDecimal unitPrice) {}
+
+    public static ResolvedRebate resolveRebate(String policyType, BigDecimal customPrice) {
+        if (!StringUtils.hasText(policyType)) throw new BizException(400, "请选择平台服务费（返点）政策");
+        String normalized = policyType.trim().toUpperCase(java.util.Locale.ROOT);
+        return switch (normalized) {
+            case REBATE_BULK_5000 -> new ResolvedRebate(REBATE_BULK_5000, REBATE_PRICE_BULK_5000);
+            case REBATE_STANDARD -> new ResolvedRebate(REBATE_STANDARD, REBATE_PRICE_STANDARD);
+            case REBATE_STRATEGIC -> {
+                if (customPrice == null || customPrice.signum() <= 0 || customPrice.compareTo(MAX_REBATE_AMOUNT) > 0
+                        || customPrice.stripTrailingZeros().scale() > 3) {
+                    throw new BizException(400, "战略客户请填写大于 0 且最多 3 位小数的返点单价（元/单）");
+                }
+                BigDecimal afterPlatform = customPrice.subtract(MktCustomerPricingService.serviceFee(customPrice));
+                if (afterPlatform.compareTo(MktCustomerPricingService.SALESPERSON_FIXED_FEE) < 0) {
+                    throw new BizException(400, "战略客户返点单价须足以覆盖 10% 平台服务费和 0.020 元/单业务员佣金（最低 0.023 元/单）");
+                }
+                yield new ResolvedRebate(REBATE_STRATEGIC, customPrice.setScale(3, java.math.RoundingMode.UNNECESSARY));
+            }
+            default -> throw new BizException(400, "不支持的平台服务费（返点）政策：" + policyType);
+        };
+    }
+
+    public static String rebatePolicyLabel(String policyType) {
+        if (policyType == null) return null;
+        return switch (policyType) {
+            case REBATE_BULK_5000 -> "日均 5000 单及以上（大批量订单）";
+            case REBATE_STANDARD -> "日均 5000 单以下（非批量订单）";
+            case REBATE_STRATEGIC -> "战略客户（一客一议）";
+            default -> policyType;
+        };
+    }
+
+    private static boolean sameDecimal(BigDecimal left, BigDecimal right) {
+        return left == null ? right == null : right != null && left.compareTo(right) == 0;
     }
 
     private Customer requireAssigned(Long customerId, Long warehouseId) {

@@ -13,7 +13,7 @@ import static org.junit.jupiter.api.Assertions.*;
  */
 class V132MigrationContractTest {
 
-    private static final String V132 = "/db/migration/V132__public_sea_gd_amap_qcc_feiyu.sql";
+    private static final String V132 = "/db/migration/V148__public_sea_gd_amap_qcc_feiyu.sql";
 
     @Test
     void v132CreatesGdAmapQccTablesWithoutAlteringCustomerTable() throws Exception {
@@ -28,7 +28,7 @@ class V132MigrationContractTest {
                 "CREATE TABLE IF NOT EXISTS crm_ext_ad_lead_inbox")) {
             assertTrue(sql.contains(table), "V132 缺少表变更声明: " + table);
         }
-        assertTrue(sql.contains("COLLATE=utf8mb4_unicode_ci"), "字符集排序规则须统一使用 utf8mb4_unicode_ci");
+        assertTrue(sql.contains("COLLATE=utf8mb4_general_ci"), "字符集排序规则须统一使用 utf8mb4_general_ci");
     }
 
     @Test

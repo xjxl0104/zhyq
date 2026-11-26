@@ -8,7 +8,7 @@
       <button class="demo-exit" @click="exit">返回登录</button>
     </view>
 
-    <view class="demo-hero">
+    <view v-if="role === 'partner'" class="demo-hero">
       <view class="demo-hero-glow" />
       <view class="demo-eyebrow">DIPARK / PRODUCT TOUR</view>
       <view class="demo-title">业务流程演示预览</view>
@@ -77,13 +77,12 @@
     </template>
 
     <template v-else>
-      <view v-if="section === 'home'">
-        <view class="demo-section-heading"><view><view class="demo-section-label">WAREHOUSE WORKSPACE</view><view class="demo-section-title">云仓商家看板</view></view><text class="demo-date">本月演示</text></view>
-        <view class="warehouse-demo-hero"><view class="warehouse-status">● 运营中</view><view class="warehouse-demo-title">星河智能仓</view><view class="warehouse-demo-subtitle">加盟进度、订单与结算，一站掌握</view><view class="warehouse-progress"><view class="progress-fill" /><view class="progress-label"><text>入驻进度</text><text>72%</text></view></view></view>
-        <view class="demo-stat-grid"><view v-for="item in warehouseStats" :key="item.label" class="demo-stat"><view class="stat-icon" :class="item.tone">{{ item.icon }}</view><view class="stat-value">{{ item.value }}</view><view class="stat-label">{{ item.label }}</view></view></view>
-        <view class="demo-section-heading compact"><view class="demo-section-title">业务入口</view><text class="demo-section-link">演示可浏览</text></view>
-        <view class="demo-action-grid"><view v-for="item in warehouseActions" :key="item.key" class="demo-action" @click="setSection(item.key)"><view class="action-icon" :class="item.tone">{{ item.icon }}</view><view class="action-name">{{ item.label }}</view><view class="action-desc">{{ item.desc }}</view><text class="action-arrow">›</text></view></view>
-        <view class="demo-card"><view class="card-title-row"><view class="demo-card-title">订单动态</view><text class="demo-muted">最近更新</text></view><view v-for="item in warehouseActivity" :key="item.title" class="activity-row"><view class="activity-mark warehouse-mark">{{ item.icon }}</view><view class="activity-main"><view class="activity-title">{{ item.title }}</view><view class="activity-time">{{ item.time }}</view></view><view class="activity-amount">{{ item.status }}</view></view></view>
+      <WarehouseDashboard v-if="section === 'home'" :profile="warehouseProfile" :stats="warehouseMetrics" @open="openWarehousePreview" />
+      <view v-else-if="section === 'warehouse-feature'" class="demo-card">
+        <view class="demo-card-title">{{ previewFeature.title }}</view>
+        <view class="demo-muted">示例资料</view>
+        <view class="detail-line" v-for="field in previewFeature.fields" :key="field[0]"><text>{{ field[0] }}</text><text>{{ field[1] }}</text></view>
+        <button class="demo-primary-button inline" @click="setSection('home')">返回云仓看板</button>
       </view>
 
       <view v-else-if="section === 'orders'">
@@ -136,6 +135,8 @@ export default { mixins: [appShareMixin] }
 
 <script setup>
 import { computed, reactive, ref } from 'vue'
+import { onLoad } from '@dcloudio/uni-app'
+import WarehouseDashboard from '@/components/WarehouseDashboard.vue'
 
 const role = ref('partner')
 const section = ref('home')
@@ -169,17 +170,27 @@ const partnerStats = [
   { icon: '客', label: '有效客户', value: '28', tone: 'blue' }, { icon: '锁', label: '锁定客户', value: '6', tone: 'cyan' },
   { icon: '佣', label: '待结佣金', value: '¥3.2k', tone: 'gold' }, { icon: '团', label: '团队人数', value: '12', tone: 'purple' },
 ]
-const warehouseStats = [
-  { icon: '客', label: '已承接客户', value: '8', tone: 'blue' }, { icon: '待', label: '待确认客户', value: '2', tone: 'cyan' },
-  { icon: '单', label: '今日出库', value: '126', tone: 'gold' }, { icon: '结', label: '待确认账单', value: '2', tone: 'purple' },
-]
+const warehouseProfile = { warehouseName: '星河智能仓（示例）', warehouseRole: 'owner', isOwner: true, profileComplete: true }
+const warehouseMetrics = { joinStatus: 5, orderMode: 'yunshan', customerCount: 8, pendingCustomers: 2, todayOrders: 126, monthOrders: 2680 }
+const previewFeature = ref(null)
+const previews = {
+  'warehouse-profile': { title:'云仓信息', fields:[['云仓','星河智能仓'],['对接人','周经理']] },
+  'warehouse-customers': { title:'客户承接', fields:[['远山生活','已承接 · 价格谈判'],['拾光家居','待确认']] },
+  'warehouse-rate-card': { title:'报价体系', fields:[['快递承运商','中通快递'],['首档重量','0–0.3 kg'],['仓内服务','入库、拣货、打包']] },
+  'warehouse-staff': { title:'业务员管理', fields:[['周宁','服务中 · 5 家客户'],['林晓','服务中 · 3 家客户']] },
+  'warehouse-protection': { title:'保护白名单', fields:[['品牌','远山生活'],['归属','星河智能仓']] },
+  'warehouse-contracts': { title:'合同与协议', fields:[['远山生活仓配协议','履约中'],['拾光家居仓配协议','待签署']] },
+  'account-security': { title:'账号与密码', fields:[['身份','演示主账号'],['登录手机','138****0000']] }
+}
+function openWarehousePreview(page) {
+  const sections = { 'warehouse-orders':'orders','warehouse-erp':'erp','warehouse-settlement':'settlement','warehouse-onboarding':'onboarding','warehouse-apply':'onboarding','warehouse-notice':'notices' }
+  if (sections[page]) return setSection(sections[page])
+  if (previews[page]) { previewFeature.value = previews[page]; setSection('warehouse-feature') }
+}
+onLoad(options => { if (options?.role === 'warehouse') setRole('warehouse') })
 const partnerActions = [
   { key: 'customers', label: '推荐客户', desc: '新增业务线索', icon: '荐', tone: 'blue' }, { key: 'income', label: '收益明细', desc: '双轨计佣明细', icon: '收', tone: 'cyan' },
   { key: 'team', label: '我的团队', desc: '成员与称号', icon: '团', tone: 'gold' }, { key: 'notices', label: '消息通知', desc: '查看重要提醒', icon: '信', tone: 'purple' },
-]
-const warehouseActions = [
-  { key: 'orders', label: '出库单', desc: '同步订单与单号', icon: '单', tone: 'blue' }, { key: 'erp', label: 'ERP 接入', desc: '双轨同步与凭证', icon: '接', tone: 'cyan' },
-  { key: 'settlement', label: '账单与结算', desc: '核对与确认账单', icon: '结', tone: 'gold' }, { key: 'onboarding', label: '加盟进度', desc: '入驻与协议上传', icon: '进', tone: 'purple' },
 ]
 const partnerActivity = [
   { icon: '✓', title: '客户「远山生活」进入跟进阶段', time: '今天 10:24', amount: '跟进更新' }, { icon: '↗', title: '园区签客户按单计佣入账（示例）', time: '昨天 16:08', amount: '+ ¥ 1,280.00' }, { icon: '•', title: '云仓直签实收平台费计佣入账（示例）', time: '9 月 26 日', amount: '+ ¥ 860.00' },
@@ -192,9 +203,6 @@ const partnerTeam = [
 ]
 const partnerNotices = [
   { title: '客户「远山生活」跟进状态更新', time: '今天 10:24', copy: '客户已完成初次沟通，进入方案确认阶段。', tone: 'blue' }, { title: '双轨佣金核算说明（示例）', time: '昨天 09:00', copy: '园区签按单计佣 / 云仓直签按实收平台费计佣，月底统一对账结算。', tone: 'gold' }, { title: '团队新成员加入', time: '9 月 26 日', copy: '林晓已通过邀请码加入团队。', tone: 'cyan' },
-]
-const warehouseActivity = [
-  { icon: '单', title: '云山发货量同步已完成日结导入', time: '今天 14:20', status: '已同步' }, { icon: '↗', title: '通用 ERP Webhook 订单事件已接收', time: '今天 13:46', status: '已入账' }, { icon: '结', title: '9 月平台服务费与结算单已生成', time: '昨天 18:00', status: '待确认' },
 ]
 const warehouseOrders = [
   { id: 'YS20260928018', customer: '远山生活', count: 86, time: '14:20', status: '已同步', tone: 'ok', source: '云山发货量同步', waybill: '按日汇总票数', rule: '园区签按单计佣' },

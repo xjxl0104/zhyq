@@ -64,6 +64,8 @@ public class FeeNoticeService {
     private final FeeSnapshotMapper snapshotMapper;
     private final ObjectMapper objectMapper;
     private final FeeNoticePaymentService payments;
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private NoticeHeaderProfileService headerProfiles;
 
     /** 一种能源的工作表:行 + 汇总,给 电费 / 水费 页面 */
     public record Sheet(FeePeriod period, String energyType, BigDecimal total, String totalSource,
@@ -551,7 +553,16 @@ public class FeeNoticeService {
         itemMapper.delete(new LambdaQueryWrapper<FeeNoticeItem>().eq(FeeNoticeItem::getFeePeriodId, periodId));
         noticeMapper.delete(new LambdaQueryWrapper<FeeNotice>().eq(FeeNotice::getFeePeriodId, periodId));
         BigDecimal totalAmount = BigDecimal.ZERO;
+        Map<String, com.zhyq.park.energy.entity.NoticeHeaderProfile> customHeaders = headerProfiles != null
+                ? headerProfiles.mapByScope(NoticeHeaderProfileService.SCOPE_UTILITY)
+                : Map.of();
         for (FeeNotice n : batch.notices()) {
+            if (headerProfiles != null && StringUtils.hasText(n.getTenantName())) {
+                com.zhyq.park.energy.entity.NoticeHeaderProfile prof = customHeaders.get(n.getTenantName().trim());
+                if (prof != null) {
+                    headerProfiles.applyToUtilityNotice(p, n, prof);
+                }
+            }
             noticeMapper.insert(n);
             payments.moveAttachments(paymentSources, n);
             for (FeeNoticeItem it : n.getItems()) {
@@ -617,12 +628,18 @@ public class FeeNoticeService {
                                   BigDecimal amount, String remark) {}
 
     /**
-     * 通知单整单调整:基本信息、各行备注、手工收费行一次保存。
+     * 通知单整单调整:基本信息、抬头覆盖、各行备注、手工收费行一次保存。
      * itemRemarks = 自动行(水费/电费/垃圾费…)id → 新备注;manualItems = 手工收费行的完整清单(整体替换)。
      */
-    public record NoticeEdit(Long id, String tenantName, String unitName, BigDecimal paidAmount,
-                             BigDecimal priorArrears, String remark, Map<Long, String> itemRemarks,
-                             List<ManualItemInput> manualItems) {}
+    public record NoticeEdit(Long id, String noticeNo, String tenantName, String unitName, BigDecimal paidAmount,
+                             BigDecimal priorArrears, String remark, String headerOverrideJson,
+                             Map<Long, String> itemRemarks, List<ManualItemInput> manualItems) {
+        public NoticeEdit(Long id, String tenantName, String unitName, BigDecimal paidAmount,
+                          BigDecimal priorArrears, String remark, Map<Long, String> itemRemarks,
+                          List<ManualItemInput> manualItems) {
+            this(id, null, tenantName, unitName, paidAmount, priorArrears, remark, null, itemRemarks, manualItems);
+        }
+    }
 
     private static final int MAX_MANUAL_ITEMS = 30;
 
@@ -633,6 +650,9 @@ public class FeeNoticeService {
             throw new BizException("通知单不存在: " + in.id());
         }
         requireDraft(n.getFeePeriodId());
+        if (StringUtils.hasText(in.noticeNo())) {
+            n.setNoticeNo(in.noticeNo().trim());
+        }
         if (StringUtils.hasText(in.tenantName())) {
             n.setTenantName(in.tenantName().trim());
         }
@@ -647,6 +667,9 @@ public class FeeNoticeService {
         }
         if (in.remark() != null) {
             n.setRemark(in.remark());
+        }
+        if (in.headerOverrideJson() != null) {
+            n.setHeaderOverrideJson(StringUtils.hasText(in.headerOverrideJson()) ? in.headerOverrideJson() : null);
         }
 
         List<FeeNoticeItem> current = itemMapper.selectList(new LambdaQueryWrapper<FeeNoticeItem>()

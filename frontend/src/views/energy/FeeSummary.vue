@@ -1,11 +1,18 @@
 <template>
   <div class="page-container">
-    <FeeMonthPicker v-if="!month" ref="picker" kind="summary" @select="(m) => (month = m)" />
+    <template v-if="!month && !leaseMonth">
+      <FeeMonthPicker ref="picker" kind="summary" @select="(m) => (month = m)" />
+      <div class="lease-picker-section">
+        <LeaseMonthPicker ref="leasePicker" kind="summary" @select="(m) => (leaseMonth = m)" />
+      </div>
+    </template>
+
+    <LeaseFeeSummaryDetail v-else-if="leaseMonth" :month="leaseMonth" @back="leaseMonth = null" />
 
     <template v-else>
       <div class="detail-head">
         <el-button @click="back"><el-icon><ArrowLeft /></el-icon>返回年月表</el-button>
-        <h3>{{ monthLabel }} · 缴费汇总</h3>
+        <h3>{{ monthLabel }} · 水电费、垃圾处理费缴费汇总</h3>
         <el-tag v-if="period" :type="locked ? 'success' : 'info'">{{ locked ? '已确认出账' : '草稿' }}</el-tag>
         <span v-if="period?.generatedTime" class="gen-time">通知单生成于 {{ period.generatedTime }}</span>
       </div>
@@ -16,6 +23,7 @@
       </el-alert>
 
       <FeeBillFiles v-if="period" :period-id="period.id" :kinds="[BILL_KINDS.electric, BILL_KINDS.water, BILL_KINDS.garbage]" />
+      <NoticeBatchAiUpload v-if="period" :period-id="period.id" mode="utility" @matched="loadNotices" />
 
       <div v-if="period" class="summary-grid">
         <div class="summary-item"><span>电:南网 + 光伏</span><strong>{{ num(Number(period.electricGridUsage || 0) + Number(period.electricSolarUsage || 0)) }} 度</strong></div>
@@ -33,8 +41,32 @@
             {{ notices.length ? '重新生成通知单' : '生成通知单' }}
           </el-button>
           <el-button @click="openHeader">通知单抬头</el-button>
+          <el-dropdown trigger="click" @command="onSealCommand">
+            <el-button :type="sealPlacement?.enabled === 1 ? 'danger' : ''" plain>
+              <span v-if="sealPlacement?.enabled === 1" class="seal-dot" />
+              电子印章{{ sealPlacement?.enabled === 1 && sealPlacement.sealName ? `（${shortSealName(sealPlacement.sealName)}）` : '' }}
+              <el-icon class="el-icon--right"><ArrowDown /></el-icon>
+            </el-button>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item v-for="s in seals" :key="s.id" :command="`seal:${s.id}`">
+                  <div class="seal-drop-item">
+                    <img v-if="s.imageData" :src="s.imageData" class="seal-drop-img" alt="" />
+                    <span>{{ s.name }}</span>
+                    <el-tag v-if="sealPlacement?.enabled === 1 && String(sealPlacement.sealId) === String(s.id)" size="small" type="danger" effect="plain">已应用</el-tag>
+                  </div>
+                </el-dropdown-item>
+                <el-dropdown-item v-if="!seals.length" disabled>暂未上传印章，请先到「印章管理」上传</el-dropdown-item>
+                <el-dropdown-item divided command="design">打开通知单模板排版（拖动位置/缩放）</el-dropdown-item>
+                <el-dropdown-item v-if="sealPlacement?.enabled === 1" command="disable">取消通知单电子印章</el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
           <el-button :disabled="!notices.length" @click="exportExcel"><el-icon><Download /></el-icon>导出 Excel</el-button>
           <el-button :disabled="!notices.length" @click="printAll"><el-icon><Printer /></el-icon>{{ filterActive ? "打印检索结果" : "打印全部" }}</el-button>
+          <el-button type="primary" plain :disabled="!viewNotices.length || downloadingPdf" :loading="downloadingPdf" @click="downloadAllPdfs">
+            <el-icon><Download /></el-icon>{{ downloadingPdf ? downloadProgressText : (filterActive ? '下载检索通知单' : '下载全部通知单') }}
+          </el-button>
           <el-button :disabled="!selected.length" @click="printSelected">打印选中</el-button>
           <el-button type="danger" plain :disabled="!selected.length" @click="deleteSelected">
             <el-icon><Delete /></el-icon>删除选中<span v-if="selected.length">（{{ selected.length }}）</span>
@@ -98,12 +130,19 @@
           <el-table-column label="账单" width="80" align="center">
             <template #default="{ row }"><el-tag v-if="row.billId" size="small" type="success" effect="plain">已出账</el-tag><span v-else>-</span></template>
           </el-table-column>
-          <el-table-column label="缴费状态" width="90" align="center">
+          <el-table-column label="缴费状态" width="88" align="center">
             <template #default="{ row }"><el-tag :type="Number(row.paymentStatus) === 1 ? 'success' : 'info'" size="small">{{ Number(row.paymentStatus) === 1 ? '已缴费' : '未缴费' }}</el-tag></template>
           </el-table-column>
-          <el-table-column label="操作" width="290" fixed="right">
+          <el-table-column label="开票状态" width="94" align="center">
+            <template #default="{ row }">
+              <span v-if="Number(row.invoiceStatus) === 1" class="rainbow-badge">已开票</span>
+              <el-tag v-else type="info" size="small">未开票</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" width="335" fixed="right">
             <template #default="{ row }">
               <el-button link type="success" @click="openPayment(row)">缴费</el-button>
+              <el-button link class="invoice-btn" @click="openInvoice(row)">发票</el-button>
               <el-button link type="primary" @click="preview(row)">预览</el-button>
               <el-button link type="primary" @click="printOne(row)">打印</el-button>
               <el-button link type="primary" :disabled="locked" @click="edit(row)">调整</el-button>
@@ -115,8 +154,35 @@
     </template>
 
     <!-- 通知单抬头 -->
-    <el-dialog v-model="headerDialog.visible" title="通知单抬头与计费期间" width="620px">
+    <el-dialog v-model="headerDialog.visible" title="通知单抬头与计费期间" width="660px">
       <el-form :model="headerForm" label-width="120px">
+        <el-form-item label="缴费单位">
+          <el-select v-model="headerTarget" filterable style="width: 100%" @change="onHeaderTargetChange">
+            <el-option value="" label="全部缴费单位（通用抬头）">
+              <div class="header-opt-row">
+                <span><strong>全部缴费单位（通用抬头）</strong></span>
+                <el-tag size="small" type="info" effect="plain">通用</el-tag>
+              </div>
+            </el-option>
+            <el-option v-for="t in headerTenantChoices" :key="t" :value="t" :label="`${t}（${headerProfilesMap[t] ? '定制' : '通用'}）`">
+              <div class="header-opt-row">
+                <span>{{ t }}</span>
+                <el-tag size="small" :type="headerProfilesMap[t] ? 'warning' : 'info'" effect="plain">
+                  {{ headerProfilesMap[t] ? '定制' : '通用' }}
+                </el-tag>
+              </div>
+            </el-option>
+          </el-select>
+          <div class="header-scope-tip">
+            <template v-if="headerTarget">
+              当前为 <strong>{{ headerTarget }}</strong> 的{{ headerProfilesMap[headerTarget] ? '定制' : '独立' }}抬头；保存后标记为「定制」，以后每月生成水电/垃圾费通知单均自动沿用（如独立缴费截止日）。
+            </template>
+            <template v-else>
+              当前为全体未定制单位共用的「通用抬头」；如需给某家单位单独设置缴费截止日或收款信息，请从上方下拉选择具体缴费单位。
+            </template>
+          </div>
+        </el-form-item>
+        <el-divider />
         <el-form-item label="园区名称"><el-input v-model="headerForm.parkName" /></el-form-item>
         <el-form-item label="单据编号前缀"><el-input v-model="headerForm.noticePrefix" placeholder="如 DIPARK" style="width: 200px" /></el-form-item>
         <el-form-item label="计费期间">
@@ -131,19 +197,39 @@
         <el-form-item label="收款账户/方式"><el-input v-model="headerForm.paymentAccount" type="textarea" :rows="3" /></el-form-item>
       </el-form>
       <template #footer>
+        <el-button v-if="headerTarget && headerProfilesMap[headerTarget]" type="warning" plain :disabled="locked" :loading="headerSaving" @click="resetHeaderToGeneral">恢复通用</el-button>
         <el-button @click="headerDialog.visible = false">取消</el-button>
-        <el-button type="primary" :disabled="locked" :loading="state.saving" @click="saveHeader">保存</el-button>
+        <el-button type="primary" :disabled="locked" :loading="state.saving || headerSaving" @click="saveHeader">
+          {{ headerTarget ? '保存为该单位定制抬头' : '保存通用抬头' }}
+        </el-button>
       </template>
     </el-dialog>
 
-    <!-- 调整通知单:基本信息 + 各行备注 + 新增收费项,一个弹窗改完 -->
+    <!-- 调整通知单:通知单抬头 + 基本信息 + 各行备注 + 新增收费项,一个弹窗改完 -->
     <el-dialog v-model="editDialog.visible" :title="`调整通知单 - ${editForm.unitName || ''}`" width="1040px" top="4vh" destroy-on-close>
-      <el-form :model="editForm" label-width="110px" class="edit-form">
-        <el-row :gutter="16">
+      <el-form :model="editForm" label-width="110px" size="small" class="edit-form">
+        <el-divider content-position="left">通知单抬头与基本信息（仅对本张通知单生效）</el-divider>
+        <el-row :gutter="14">
+          <el-col :span="12"><el-form-item label="园区名称"><el-input v-model="editForm.parkName" /></el-form-item></el-col>
+          <el-col :span="12"><el-form-item label="单据编号"><el-input v-model="editForm.noticeNo" /></el-form-item></el-col>
           <el-col :span="12"><el-form-item label="租户/公司名称"><el-input v-model="editForm.tenantName" /></el-form-item></el-col>
           <el-col :span="12"><el-form-item label="厂房/单元"><el-input v-model="editForm.unitName" /></el-form-item></el-col>
-          <el-col :span="12"><el-form-item label="已付金额"><el-input-number v-model="editForm.paidAmount" :min="0" :precision="2" :controls="false" /></el-form-item></el-col>
-          <el-col :span="12"><el-form-item label="前期欠费"><el-input-number v-model="editForm.priorArrears" :min="0" :precision="2" :controls="false" /></el-form-item></el-col>
+          <el-col :span="12">
+            <el-form-item label="收费期间">
+              <div style="display:flex;align-items:center;gap:6px;width:100%">
+                <el-date-picker v-model="editForm.periodStart" type="date" value-format="YYYY-MM-DD" style="flex:1" />
+                <span>~</span>
+                <el-date-picker v-model="editForm.periodEnd" type="date" value-format="YYYY-MM-DD" style="flex:1" />
+              </div>
+            </el-form-item>
+          </el-col>
+          <el-col :span="6"><el-form-item label="开具日期" label-width="76px"><el-date-picker v-model="editForm.issueDate" type="date" value-format="YYYY-MM-DD" style="width: 100%" /></el-form-item></el-col>
+          <el-col :span="6"><el-form-item label="缴费截止日" label-width="84px"><el-date-picker v-model="editForm.dueDate" type="date" value-format="YYYY-MM-DD" style="width: 100%" /></el-form-item></el-col>
+          <el-col :span="12"><el-form-item label="联系人"><el-input v-model="editForm.contactName" /></el-form-item></el-col>
+          <el-col :span="12"><el-form-item label="联系电话"><el-input v-model="editForm.contactPhone" /></el-form-item></el-col>
+          <el-col :span="24"><el-form-item label="收款账户/方式"><el-input v-model="editForm.paymentAccount" type="textarea" :rows="2" /></el-form-item></el-col>
+          <el-col :span="12"><el-form-item label="已付金额"><el-input-number v-model="editForm.paidAmount" :min="0" :precision="2" :controls="false" style="width: 100%" /></el-form-item></el-col>
+          <el-col :span="12"><el-form-item label="前期欠费"><el-input-number v-model="editForm.priorArrears" :min="0" :precision="2" :controls="false" style="width: 100%" /></el-form-item></el-col>
           <el-col :span="24"><el-form-item label="备注"><el-input v-model="editForm.remark" type="textarea" :rows="2" placeholder="印在通知单表头「备注」一栏" /></el-form-item></el-col>
         </el-row>
       </el-form>
@@ -222,20 +308,42 @@
       </template>
     </el-dialog>
     <FeeNoticePayment v-model="paymentDialog.visible" :notice="paymentDialog.notice" @saved="paymentSaved" />
+    <NoticeInvoiceDialog v-model="invoiceDialog.visible" :notice="invoiceDialog.notice" mode="utility" @saved="invoiceSaved" />
+    <NoticeSealDesigner
+      v-model="sealDesigner.visible"
+      template-key="UTILITY_NOTICE"
+      title="水电/垃圾费缴费通知单 · 电子印章模板排版"
+      :notice-markup="sealSampleMarkup"
+      :seals="seals"
+      :placement="sealPlacement"
+      :initial-seal-id="sealDesigner.initialSealId"
+      @saved="(p) => (sealPlacement = p)"
+    />
   </div>
 </template>
 
 <script setup>
 import { computed, onActivated, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowLeft, Delete, Download, Plus, Printer } from '@element-plus/icons-vue'
-import { feePeriodApi } from '@/api/energy'
+import { ArrowDown, ArrowLeft, Delete, Download, Plus, Printer } from '@element-plus/icons-vue'
+import { feePeriodApi, leaseFeeApi, noticeHeaderProfileApi } from '@/api/energy'
+import { buildTenantChoices, resolveProfileDateForMonth } from './noticeHeaderHelper'
+import { sealApi } from '@/api/oa'
 import { useFeePeriod, money, num, downloadBlob, BILL_KINDS, applyFilter, filterOptions, floorBandClass, shortName } from './feePeriod'
 import FeeFilterBar from './components/FeeFilterBar.vue'
-import { noticeHtml, NOTICE_CSS, printNotices } from './noticePrint'
+import { noticeHtml, NOTICE_CSS, parseHeaderOverride, printNotices } from './noticePrint'
+import { downloadNoticesAsSeparatePdfsZip } from './noticePdfBatchDownload'
 import FeeMonthPicker from './components/FeeMonthPicker.vue'
 import FeeBillFiles from './components/FeeBillFiles.vue'
+import NoticeBatchAiUpload from './components/NoticeBatchAiUpload.vue'
 import FeeNoticePayment from './components/FeeNoticePayment.vue'
+import NoticeInvoiceDialog from './components/NoticeInvoiceDialog.vue'
+import NoticeSealDesigner from './components/NoticeSealDesigner.vue'
+import LeaseMonthPicker from './components/LeaseMonthPicker.vue'
+import LeaseFeeSummaryDetail from './components/LeaseFeeSummaryDetail.vue'
+
+const leaseMonth = ref(null)
+const leasePicker = ref(null)
 
 const notices = ref([])
 const selected = ref([])
@@ -244,9 +352,25 @@ const listLoading = ref(false)
 const generating = ref(false)
 const picker = ref(null)
 const noticeTable = ref(null)
+const seals = ref([])
+const sealPlacement = ref(null)
+const sealDesigner = reactive({ visible: false, initialSealId: null })
 const { month, period, loading, state, save, reload, back } = useFeePeriod(loadNotices)
 const locked = computed(() => period.value?.status === 'CONFIRMED')
 const monthLabel = computed(() => (month.value ? `${month.value.slice(0, 4)}年${Number(month.value.slice(5))}月` : ''))
+
+async function loadSealData() {
+  try {
+    const [list, placement] = await Promise.all([
+      sealApi.list({ onlyEnabled: true }),
+      sealApi.getPlacement('UTILITY_NOTICE')
+    ])
+    seals.value = list || []
+    sealPlacement.value = placement || null
+  } catch {
+    // 无印章数据或测试环境忽略
+  }
+}
 
 async function loadNotices() {
   if (!period.value) return
@@ -254,6 +378,7 @@ async function loadNotices() {
   try {
     notices.value = await feePeriodApi.notices(period.value.id) || []
     selected.value = []
+    await loadSealData()
   } finally {
     listLoading.value = false
   }
@@ -263,8 +388,8 @@ watch(month, (v) => { filter.company = ''; filter.floor = ''; if (!v) { notices.
 let firstActivation = true
 onActivated(async () => {
   if (firstActivation) { firstActivation = false; return }
-  if (!month.value) picker.value?.refresh()
-  else { await reload(); await loadNotices() }
+  if (!month.value && !leaseMonth.value) { picker.value?.refresh(); leasePicker.value?.refresh() }
+  else if (month.value) { await reload(); await loadNotices() }
 })
 
 const MATRIX_ROWS = [
@@ -289,7 +414,9 @@ const filterActive = computed(() => !!(filter.company || filter.floor))
 const viewNotices = computed(() => applyFilter(notices.value, filter, companyOf, unitOf))
 const bandClass = computed(() => floorBandClass(notices.value, (n) => n.noticeNo))
 const paymentDialog = reactive({ visible: false, notice: null })
+const invoiceDialog = reactive({ visible: false, notice: null })
 function noticeRowClass(row) {
+  if (Number(row.invoiceStatus) === 1) return 'notice-invoice-issued'
   return Number(row.paymentStatus) === 1 ? 'notice-payment-paid' : bandClass.value(row)
 }
 function openPayment(row) {
@@ -299,6 +426,14 @@ function openPayment(row) {
 function paymentSaved({ id, paymentStatus }) {
   const row = notices.value.find(item => String(item.id) === String(id))
   if (row) row.paymentStatus = paymentStatus
+}
+function openInvoice(row) {
+  invoiceDialog.notice = row
+  invoiceDialog.visible = true
+}
+function invoiceSaved({ id, invoiceStatus }) {
+  const row = notices.value.find(item => String(item.id) === String(id))
+  if (row) row.invoiceStatus = invoiceStatus
 }
 const matrix = computed(() => (viewNotices.value.length ? MATRIX_ROWS : []))
 // 合计列 = 各户金额逐个相加(分为单位取整,避免浮点尾数),与通知单列表、导出 Excel 同源
@@ -340,19 +475,108 @@ async function generate() {
 
 const headerDialog = reactive({ visible: false })
 const headerForm = reactive({})
-function openHeader() {
-  const p = period.value
+const headerTarget = ref('')
+const headerSaving = ref(false)
+const headerProfiles = ref([])
+const headerLedgerContracts = ref([])
+const headerProfilesMap = computed(() => {
+  const m = {}
+  for (const p of headerProfiles.value) {
+    if (p?.tenantName) m[p.tenantName.trim()] = p
+  }
+  return m
+})
+const headerTenantChoices = computed(() =>
+  buildTenantChoices(headerLedgerContracts.value, notices.value, headerProfiles.value)
+)
+
+function fillHeaderFormFor(target) {
+  const p = period.value || {}
+  if (!target) {
+    Object.assign(headerForm, {
+      parkName: p.parkName, noticePrefix: p.noticePrefix, periodStart: p.periodStart, periodEnd: p.periodEnd,
+      issueDate: p.issueDate, dueDate: p.dueDate, contactName: p.contactName, contactPhone: p.contactPhone,
+      paymentAccount: p.paymentAccount
+    })
+    return
+  }
+  const prof = headerProfilesMap.value[target]
+  const ym = p.period
   Object.assign(headerForm, {
-    parkName: p.parkName, noticePrefix: p.noticePrefix, periodStart: p.periodStart, periodEnd: p.periodEnd,
-    issueDate: p.issueDate, dueDate: p.dueDate, contactName: p.contactName, contactPhone: p.contactPhone,
-    paymentAccount: p.paymentAccount
+    parkName: prof?.parkName || p.parkName || '',
+    noticePrefix: prof?.noticePrefix || p.noticePrefix || '',
+    periodStart: (prof?.periodStart && ym && String(prof.periodStart).startsWith(ym)) ? prof.periodStart : p.periodStart,
+    periodEnd: (prof?.periodEnd && ym && String(prof.periodEnd).startsWith(ym)) ? prof.periodEnd : p.periodEnd,
+    issueDate: resolveProfileDateForMonth(prof?.issueDate, prof?.issueMonthOffset, prof?.issueDay, ym) || p.issueDate,
+    dueDate: resolveProfileDateForMonth(prof?.dueDate, prof?.dueMonthOffset, prof?.dueDay, ym) || p.dueDate,
+    contactName: prof?.contactName || p.contactName || '',
+    contactPhone: prof?.contactPhone || p.contactPhone || '',
+    paymentAccount: prof?.paymentAccount || p.paymentAccount || ''
   })
-  headerDialog.visible = true
 }
+
+function onHeaderTargetChange(val) {
+  fillHeaderFormFor(val)
+}
+
+async function openHeader() {
+  headerTarget.value = ''
+  fillHeaderFormFor('')
+  headerDialog.visible = true
+  try {
+    const [profs, contracts] = await Promise.all([
+      noticeHeaderProfileApi.list('UTILITY'),
+      leaseFeeApi.contracts(false)
+    ])
+    headerProfiles.value = profs || []
+    headerLedgerContracts.value = contracts || []
+  } catch { /* ignore */ }
+}
+
 async function saveHeader() {
-  await save({ ...headerForm })
-  headerDialog.visible = false
-  ElMessage.success(notices.value.length ? '已保存；单据编号前缀与计费期间要点「重新生成通知单」才会更新到各户' : '已保存')
+  if (!headerTarget.value) {
+    await save({ ...headerForm })
+    headerDialog.visible = false
+    ElMessage.success(notices.value.length ? '通用抬头已保存；单据编号前缀与计费期间要点「重新生成通知单」才会更新到各户' : '通用抬头已保存')
+    return
+  }
+  headerSaving.value = true
+  try {
+    await noticeHeaderProfileApi.save({
+      scopeType: 'UTILITY',
+      tenantName: headerTarget.value,
+      referencePeriod: period.value?.period,
+      periodId: period.value?.id,
+      parkName: headerForm.parkName,
+      noticePrefix: headerForm.noticePrefix,
+      periodStart: headerForm.periodStart,
+      periodEnd: headerForm.periodEnd,
+      issueDate: headerForm.issueDate,
+      dueDate: headerForm.dueDate,
+      contactName: headerForm.contactName,
+      contactPhone: headerForm.contactPhone,
+      paymentAccount: headerForm.paymentAccount
+    })
+    headerProfiles.value = (await noticeHeaderProfileApi.list('UTILITY')) || []
+    await loadNotices()
+    ElMessage.success(`已保存「${headerTarget.value}」的定制抬头，后续生成通知单将自动沿用`)
+  } finally {
+    headerSaving.value = false
+  }
+}
+
+async function resetHeaderToGeneral() {
+  if (!headerTarget.value) return
+  headerSaving.value = true
+  try {
+    await noticeHeaderProfileApi.remove('UTILITY', headerTarget.value, period.value?.id)
+    headerProfiles.value = (await noticeHeaderProfileApi.list('UTILITY')) || []
+    fillHeaderFormFor(headerTarget.value)
+    await loadNotices()
+    ElMessage.success(`「${headerTarget.value}」已恢复为通用抬头`)
+  } finally {
+    headerSaving.value = false
+  }
 }
 
 const editDialog = reactive({ visible: false, saving: false })
@@ -361,8 +585,19 @@ const editForm = reactive({})
 const editItems = ref([])
 let originalRemarks = {}
 function edit(row) {
+  const p = period.value || {}
+  const ov = parseHeaderOverride(row.headerOverrideJson)
   Object.assign(editForm, {
-    id: row.id, tenantName: row.tenantName, unitName: row.unitName, paidAmount: Number(row.paidAmount || 0),
+    id: row.id, noticeNo: row.noticeNo || '', tenantName: row.tenantName, unitName: row.unitName,
+    parkName: ov.parkName || p.parkName || '',
+    periodStart: ov.periodStart || p.periodStart || null,
+    periodEnd: ov.periodEnd || p.periodEnd || null,
+    issueDate: ov.issueDate || p.issueDate || null,
+    dueDate: ov.dueDate || p.dueDate || null,
+    contactName: ov.contactName ?? p.contactName ?? '',
+    contactPhone: ov.contactPhone ?? p.contactPhone ?? '',
+    paymentAccount: ov.paymentAccount || p.paymentAccount || '',
+    paidAmount: Number(row.paidAmount || 0),
     priorArrears: Number(row.priorArrears || 0), remark: row.remark || ''
   })
   originalRemarks = {}
@@ -402,9 +637,20 @@ async function saveEdit() {
   editItems.value.filter((r) => r.auto && !r.detail && (r.remark || '') !== originalRemarks[r.id]).forEach((r) => { itemRemarks[r.id] = r.remark || '' })
   editDialog.saving = true
   try {
+    const headerOverrideJson = JSON.stringify({
+      parkName: editForm.parkName || '',
+      periodStart: editForm.periodStart || null,
+      periodEnd: editForm.periodEnd || null,
+      issueDate: editForm.issueDate || null,
+      dueDate: editForm.dueDate || null,
+      contactName: editForm.contactName || '',
+      contactPhone: editForm.contactPhone || '',
+      paymentAccount: editForm.paymentAccount || ''
+    })
     await feePeriodApi.editNotice({
-      id: editForm.id, tenantName: editForm.tenantName, unitName: editForm.unitName, paidAmount: editForm.paidAmount,
-      priorArrears: editForm.priorArrears, remark: editForm.remark, itemRemarks,
+      id: editForm.id, noticeNo: editForm.noticeNo, tenantName: editForm.tenantName, unitName: editForm.unitName,
+      paidAmount: editForm.paidAmount, priorArrears: editForm.priorArrears, remark: editForm.remark,
+      headerOverrideJson, itemRemarks,
       manualItems: manual.map((r) => ({ feeItem: r.feeItem, unit: r.unit, quantity: r.quantity, unitPrice: r.unitPrice, amount: r.amount, remark: r.remark }))
     })
     editDialog.visible = false
@@ -416,19 +662,85 @@ async function saveEdit() {
   }
 }
 
+const shortSealName = (name) => (name && name.length > 8 ? `${name.slice(0, 8)}…` : name || '')
+
+const sealSampleMarkup = computed(() => {
+  const p = period.value || { parkName: 'DIPARK数智云仓产业园', period: month.value || '2026-11' }
+  const sample = notices.value[0] || {
+    noticeNo: `${p.noticePrefix || 'DIPARK'}-202611-001`,
+    tenantName: '示例租户有限公司',
+    unitName: '1层 A区',
+    subtotal: 12580,
+    paidAmount: 0,
+    priorArrears: 0,
+    totalDue: 12580,
+    items: [
+      { seq: '1', feeItem: '水费', prevReading: 1200, currReading: 1320, quantity: 120, unit: '吨', unitPrice: 4.5, amount: 540, remark: '' },
+      { seq: '2', feeItem: '电费', prevReading: 25600, currReading: 37600, quantity: 12000, unit: '度', unitPrice: 0.92, amount: 11040, remark: '' },
+      { seq: '3', feeItem: '生活垃圾清运费', quantity: 1, unit: '月', unitPrice: 1000, amount: 1000, remark: '' }
+    ]
+  }
+  return noticeHtml(p, sample, null)
+})
+
+async function onSealCommand(cmd) {
+  if (cmd === 'disable') {
+    const saved = await sealApi.savePlacement('UTILITY_NOTICE', {
+      ...(sealPlacement.value || {}),
+      enabled: 0
+    })
+    sealPlacement.value = saved
+    ElMessage.success('已取消水电/垃圾费通知单电子印章')
+    return
+  }
+  await loadSealData()
+  if (cmd.startsWith('seal:')) {
+    sealDesigner.initialSealId = Number(cmd.slice(5))
+  } else {
+    sealDesigner.initialSealId = sealPlacement.value?.sealId || seals.value[0]?.id || null
+  }
+  sealDesigner.visible = true
+}
+
 const previewDialog = reactive({ visible: false, title: '', html: '', notice: null })
 function preview(row) {
   previewDialog.notice = row
   previewDialog.title = `${row.noticeNo}  ${row.tenantName}（${row.unitName}）`
-  previewDialog.html = `<!doctype html><html><head><meta charset="utf-8"><style>${NOTICE_CSS}</style></head><body>${noticeHtml(period.value, row)}</body></html>`
+  previewDialog.html = `<!doctype html><html><head><meta charset="utf-8"><style>${NOTICE_CSS}</style></head><body>${noticeHtml(period.value, row, sealPlacement.value)}</body></html>`
   previewDialog.visible = true
 }
 function doPrint(list) {
-  if (!printNotices(period.value, list)) ElMessage.warning('浏览器拦截了打印窗口，请允许弹出窗口后重试')
+  if (!printNotices(period.value, list, true, sealPlacement.value)) ElMessage.warning('浏览器拦截了打印窗口，请允许弹出窗口后重试')
 }
 const printOne = (row) => doPrint([row])
 const printAll = () => doPrint(viewNotices.value)
 const printSelected = () => doPrint(selected.value)
+
+const downloadingPdf = ref(false)
+const downloadProgressText = ref('打包中...')
+async function downloadAllPdfs() {
+  const list = viewNotices.value
+  if (!list.length || !period.value) return ElMessage.warning('当前没有可下载的通知单')
+  downloadingPdf.value = true
+  downloadProgressText.value = `生成中 (0/${list.length})`
+  try {
+    const items = list.map((n) => ({
+      fileName: `${monthLabel.value}_${n.tenantName || n.noticeNo}_水电垃圾费缴费通知单`,
+      html: noticeHtml(period.value, n, sealPlacement.value)
+    }))
+    await downloadNoticesAsSeparatePdfsZip({
+      items,
+      css: NOTICE_CSS,
+      zipName: `${monthLabel.value}_全部水电垃圾费缴费通知单_${list.length}份`,
+      onProgress: (done, total) => { downloadProgressText.value = `生成中 (${done}/${total})` }
+    })
+    ElMessage.success(`已打包下载 ${list.length} 份独立水电/垃圾费通知单 PDF`)
+  } catch (e) {
+    ElMessage.error(e?.message || '打包下载失败，请重试')
+  } finally {
+    downloadingPdf.value = false
+  }
+}
 async function exportExcel() {
   const res = await feePeriodApi.export(period.value.id)
   downloadBlob(res, `${period.value.period}应收收费明细表.xlsx`)
@@ -481,6 +793,7 @@ async function revoke() {
 </script>
 
 <style scoped>
+.lease-picker-section { margin-top: 26px; padding-top: 22px; border-top: 1px solid var(--el-border-color-lighter); }
 .detail-head { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
 .detail-head h3 { margin: 0; font-size: 16px; }
 .toolbar { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
@@ -511,4 +824,41 @@ async function revoke() {
 .notice-table :deep(.el-table__body tr.notice-payment-paid > td.el-table__cell) { background-color: var(--el-color-success-light-9) !important; }
 .notice-table :deep(.el-table__body tr.notice-payment-paid.hover-row > td.el-table__cell),
 .notice-table :deep(.el-table__body tr.notice-payment-paid:hover > td.el-table__cell) { background-color: var(--el-color-success-light-8) !important; }
+@keyframes rainbow-flow {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+.notice-table :deep(.el-table__body tr.notice-invoice-issued) {
+  background: linear-gradient(115deg, #ffd1e8 0%, #ffe0b5 14%, #fff6a8 28%, #baf7d0 42%, #b5e4ff 56%, #d9c2ff 70%, #ffc2e2 84%, #ffd1e8 100%) !important;
+  background-size: 320% 100% !important;
+  animation: rainbow-flow 4.5s linear infinite !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8), inset 0 -1px 0 rgba(168, 85, 247, 0.28);
+}
+.notice-table :deep(.el-table__body tr.notice-invoice-issued > td.el-table__cell),
+.notice-table :deep(.el-table__body tr.notice-invoice-issued.hover-row > td.el-table__cell),
+.notice-table :deep(.el-table__body tr.notice-invoice-issued:hover > td.el-table__cell) {
+  background: transparent !important;
+  color: #111827;
+}
+.notice-table :deep(.el-table__body tr.notice-invoice-issued > td.el-table-fixed-column--right) {
+  background: linear-gradient(115deg, rgba(255, 209, 232, 0.96) 0%, rgba(255, 246, 168, 0.96) 25%, rgba(186, 247, 208, 0.96) 50%, rgba(181, 228, 255, 0.96) 75%, rgba(217, 194, 255, 0.96) 100%) !important;
+  background-size: 320% 100% !important;
+  animation: rainbow-flow 4.5s linear infinite !important;
+}
+.rainbow-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 2px 9px; border-radius: 999px; font-size: 12px; font-weight: 700; color: #fff;
+  background: linear-gradient(115deg, #ff4d8d, #ff9900, #10b981, #3b82f6, #8b5cf6, #ec4899);
+  background-size: 260% 100%;
+  animation: rainbow-flow 3.6s linear infinite;
+  box-shadow: 0 2px 8px rgba(139, 92, 246, 0.35);
+}
+.invoice-btn { color: #9333ea !important; font-weight: 600; }
+.invoice-btn:hover { color: #db2777 !important; }
+.seal-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #dc2626; margin-right: 6px; }
+.seal-drop-item { display: flex; align-items: center; gap: 8px; }
+.seal-drop-img { width: 22px; height: 18px; object-fit: contain; }
+.header-opt-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; width: 100%; }
+.header-scope-tip { margin-top: 4px; font-size: 12px; line-height: 1.5; color: var(--el-text-color-secondary); }
 </style>

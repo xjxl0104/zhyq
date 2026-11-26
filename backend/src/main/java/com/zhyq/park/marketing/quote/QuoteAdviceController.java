@@ -16,4 +16,10 @@ public class QuoteAdviceController {
     public Result<Map<String,Object>> view(@PathVariable long id,@RequestParam Long projectId) {
         return Result.ok(advice.view(id,projectId));
     }
+
+    @PostMapping("/crm/marketing/quote/customers/{id}/advice/retry")
+    @PreAuthorize("hasAuthority('crm:marketing:customer:edit')")
+    public Result<Map<String,Object>> retry(@PathVariable long id,@RequestParam Long projectId) {
+        return Result.ok(advice.retry(id,projectId));
+    }
 }

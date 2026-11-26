@@ -85,9 +85,9 @@ public class MktSettingController {
         rows.removeIf(row -> row != null && String.valueOf(row.get("skey")).startsWith(LEGACY_CONNECTOR_KEY_PREFIX));
         // The defaults are visible without writing during GET; saving them creates any missing setting.
         ensureVirtualDefault(rows, ARRIVAL_TIME, MktWithdrawalService.DEFAULT_ARRIVAL_TIME, ARRIVAL_REMARK);
-        ensureVirtualDefault(rows, WINDOW_START_KEY, "0", WINDOW_START_REMARK);
-        ensureVirtualDefault(rows, WINDOW_END_KEY, "31", WINDOW_END_REMARK);
-        ensureVirtualDefault(rows, AUTO_WITHDRAW_KEY, "10", AUTO_WITHDRAW_REMARK);
+        ensureVirtualDefault(rows, WINDOW_START_KEY, String.valueOf(MktWithdrawalService.DEFAULT_WINDOW_START_DAY), WINDOW_START_REMARK);
+        ensureVirtualDefault(rows, WINDOW_END_KEY, String.valueOf(MktWithdrawalService.DEFAULT_WINDOW_END_DAY), WINDOW_END_REMARK);
+        ensureVirtualDefault(rows, AUTO_WITHDRAW_KEY, String.valueOf(MktWithdrawalService.DEFAULT_AUTO_WITHDRAW_DAY), AUTO_WITHDRAW_REMARK);
         ensureVirtualDefault(rows, SEA_SLA_HOURS_KEY, "72", SEA_SLA_HOURS_REMARK);
         ensureVirtualDefault(rows, SEA_WH_DAILY_CAP_KEY, "5", SEA_WH_DAILY_CAP_REMARK);
         ensureVirtualDefault(rows, SEA_WH_ACTIVE_CAP_KEY, "10", SEA_WH_ACTIVE_CAP_REMARK);

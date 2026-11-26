@@ -110,4 +110,4 @@ FROM (
     UNION ALL SELECT 'sea_checkin_max_meters', '500', '公海地推现场GPS打卡最大允许偏差米数（默认500米内有效）'
     UNION ALL SELECT 'sea_visit_protect_days', '15',  '通过500米现场拍照打卡后授予的深度地推保护天数（默认15天）'
 ) t
-WHERE NOT EXISTS (SELECT 1 FROM biz_setting b WHERE b.module = 'marketing' AND b.skey = t.k AND b.deleted = 0);
+WHERE NOT EXISTS (SELECT 1 FROM biz_setting b WHERE b.module = 'marketing' AND b.skey COLLATE utf8mb4_general_ci = t.k COLLATE utf8mb4_general_ci AND b.deleted = 0);

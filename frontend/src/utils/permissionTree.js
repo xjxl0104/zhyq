@@ -4,13 +4,26 @@ const pathOf = path => path ? `/${path.replace(/^\/+|\/+$/g, '')}` : ''
 const ALIASES = {
   '/budget/supplier': '/property/responsible-unit',
   '/budget/supplier-contract': '/property/responsible-unit',
+  '/contract/archive': '/contract/list',
   '/crm/marketing/position': '/crm/marketing/setting',
   '/crm/marketing/grade': '/crm/marketing/setting',
   '/crm/marketing/template': '/crm/marketing/contract'
 }
+const RETIRED_PATHS = new Set([
+  '/system/dept', '/system/post',
+  '/property/meeting', '/property/check-quality', '/property/complaint', '/property/feedback',
+  '/property/survey', '/property/activity', '/rsv/resource', '/rsv/booking',
+  '/service/mall', '/service/pass', '/service/site',
+  '/service/passcard', '/service/forum', '/service/declare', '/service/ip',
+  '/service/policy', '/service/ecosystem',
+  '/oa/schedule', '/oa/notice', '/oa/recruit', '/oa/article', '/oa/attendance',
+  '/iot/device', '/iot/access', '/iot/lock', '/iot/charging', '/iot/sensor',
+  '/iot/breaker', '/iot/point', '/iot/channel', '/iot/vendor',
+  '/acc/access', '/acc/visitor', '/acc/parking'
+])
+const RETIRED_PERM_RE = /^(system:(dept|post)|property:(meeting|feedback|survey|activity)|rsv|service:(mall|pass|site|passcard|forum|declare|ip|policy|ecosystem)|oa:(schedule|notice|recruit|article|attendance)|iot:(point|channel|vendor)|acc)(:|$)/
 export function isRetiredPermission(menu) {
-  return ['/system/dept', '/system/post'].includes(pathOf(menu.path))
-    || /^system:(dept|post)(:|$)/.test(menu.perm || '')
+  return RETIRED_PATHS.has(pathOf(menu.path)) || RETIRED_PERM_RE.test(menu.perm || '')
 }
 
 // These API permissions are shared by several pages or have an older resource name.
@@ -32,14 +45,14 @@ const SHARED = {
   budget: ['预算管理', '年度 / 月度预算共用操作'],
   'pur:plan': ['预算管理', '年度 / 月度采购计划共用操作'],
   'pur:request': ['预算管理', '采购申请操作'],
-  'property:check': ['物业', '保洁 / 绿化 / 品质共用操作'],
-  'property:feedback': ['物业', '投诉 / 意见反馈共用操作']
+  'property:check': ['物业服务', '保洁 / 绿化共用操作'],
+  'iot:device': ['智慧物联', '智能安防 / 智慧停车场 / 智慧安消共用操作']
 }
 const MODULE_INDEX = {
-  dashboard: 0, data: 0, screen: 0, overview: 0, building: 1, am: 1, space: 1,
+  dashboard: 0, data: 0, screen: 0, overview: 0, building: 1, space: 1,
   crm: 2, contract: 2, tenant: 2, finance: 3, receivable: 3,
-  property: 4, rsv: 4, service: 4, hui: 4, energy: 5, iot: 5, acc: 5,
-  oa: 6, budget: 6, pur: 6, vending: 6, app: 6, workflow: 6, bi: 7, suggestion: 8, system: 9
+  property: 4, rsv: 4, service: 4, hui: 4, iot: 5, acc: 5,
+  am: 6, energy: 6, oa: 6, budget: 6, pur: 6, vending: 6, app: 6, workflow: 6, bi: 7, suggestion: 8, system: 9
 }
 
 export function permissionIds(nodes) {

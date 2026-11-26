@@ -71,6 +71,7 @@ public class ContractService {
                 .set(request.getCode() != null, Contract::getCode, request.getCode())
                 .set(request.getTenantRefId() != null, Contract::getTenantRefId, request.getTenantRefId())
                 .set(request.getProjectId() != null, Contract::getProjectId, request.getProjectId())
+                .set(request.getLeaseScope() != null, Contract::getLeaseScope, request.getLeaseScope())
                 .set(request.getContractType() != null, Contract::getContractType, request.getContractType())
                 .set(request.getStartDate() != null, Contract::getStartDate, request.getStartDate())
                 .set(request.getEndDate() != null, Contract::getEndDate, request.getEndDate())

@@ -1,6 +1,6 @@
 <template>
   <el-descriptions v-if="readonly" :column="1" border class="requirements-detail">
-    <el-descriptions-item v-for="[label, text] in requirementsRows(modelValue)" :key="label" :label="label">{{ text }}</el-descriptions-item>
+    <el-descriptions-item v-for="[label, text] in requirementsRows(modelValue, quoteRequirements)" :key="label" :label="label">{{ text }}</el-descriptions-item>
   </el-descriptions>
   <template v-else>
     <el-form-item label="对接人职位"><el-input :model-value="modelValue.contactPosition" @update:model-value="update('contactPosition', $event)" maxlength="50" placeholder="选填，如运营总监" /></el-form-item>
@@ -35,7 +35,7 @@
 </template>
 <script setup>
 import { platformOptions, productCategoryOptions, itemsPerParcelRanges, itemsPerParcelLabel, courierOptions, exclusiveNone, warehouseModeOptions, painPointOptions, weightRanges, rangeFields, rangeLabel, requirementsRows } from './customerRequirements'
-const props = defineProps({ modelValue: { type: Object, required: true }, readonly: Boolean })
+const props = defineProps({ modelValue: { type: Object, required: true }, quoteRequirements: { type: Object, default: null }, readonly: Boolean })
 const emit = defineEmits(['update:modelValue'])
 const update = (key, value) => emit('update:modelValue', { ...props.modelValue, [key]: value })
 const setItemsPerParcel = value => emit('update:modelValue', { ...props.modelValue, itemsPerParcelRange: value, itemsPerParcel: null })

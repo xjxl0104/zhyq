@@ -29,5 +29,5 @@ export function prepareRateCard(card) {
     }
     return result
   })
-  return {scopeNote:card.scopeNote.trim(),fields:prices(card.fields),services:prices(card.services),carriers}
+  return {scopeNote:card.scopeNote.trim(),fields:prices(card.fields),services:prices(card.services),carriers,...(card.tariff ? {tariff:card.tariff} : {})}
 }

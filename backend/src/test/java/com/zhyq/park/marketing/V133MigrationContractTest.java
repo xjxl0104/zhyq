@@ -13,7 +13,7 @@ import static org.junit.jupiter.api.Assertions.*;
  */
 class V133MigrationContractTest {
 
-    private static final String V133 = "/db/migration/V133__full_ext_connector_hub_and_verifiers.sql";
+    private static final String V133 = "/db/migration/V149__full_ext_connector_hub_and_verifiers.sql";
 
     @Test
     void v133CreatesFourVerifierTablesWithoutAlteringCustomerTable() throws Exception {
@@ -26,7 +26,7 @@ class V133MigrationContractTest {
                 "CREATE TABLE IF NOT EXISTS crm_invoice_verify_log")) {
             assertTrue(sql.contains(table), "V133 缺少核心表声明: " + table);
         }
-        assertTrue(sql.contains("COLLATE=utf8mb4_unicode_ci"), "字符集排序规则须统一 utf8mb4_unicode_ci");
+        assertTrue(sql.contains("COLLATE=utf8mb4_general_ci"), "字符集排序规则须统一 utf8mb4_general_ci");
     }
 
     @Test

@@ -11,7 +11,7 @@ import lombok.EqualsAndHashCode;
 @TableName("crm_warehouse_contact")
 public class MktWarehouseContact extends BaseEntity {
     private Long warehouseId;
-    /** 微信 openid,一个 openid 只能属于一个云仓(唯一键) */
+    /** 微信 openid,每个角色内唯一，主账号与业务员分别绑定 */
     private String openid;
     private String unionid;
     private String phone;
@@ -26,4 +26,6 @@ public class MktWarehouseContact extends BaseEntity {
     private Boolean phoneBindingApproved;
     private Boolean passwordResetRequired;
     private Long projectId;
+    /** 关联的全民营销伙伴 ID（P0 云仓业务员） */
+    private Long promoterId;
 }

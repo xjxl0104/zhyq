@@ -76,7 +76,8 @@ public final class BusinessRouteAccess {
         if ("dashboard".equals(area))
             return anyMenu(grants, "/dashboard", "/overview", "/data/center");
         if ("contract".equals(area))
-            return anyMenu(grants, "/contract/list", "/contract/archive", "/contract/setting")
+            return anyMenu(grants, "/contract/list", "/contract/simple", "/contract/template",
+                    "/contract/archive", "/contract/setting")
                     || hasPrefix(grants, "contract:");
         if ("budget".equals(area))
             return hasPrefix(grants, "budget:") || hasMenu(grants, "/budget/annual")
@@ -108,6 +109,25 @@ public final class BusinessRouteAccess {
             case "energy/reading" -> hasMenu(grants, "/energy/meter");
             case "energy/fee-period" -> anyMenu(grants, "/energy/electric", "/energy/water",
                     "/energy/garbage", "/energy/summary");
+            case "energy/lease-fee" -> anyMenu(grants, "/energy/contracts", "/energy/deposit", "/energy/rent",
+                    "/energy/property", "/energy/summary")
+                    || ("GET".equals(method) && path.equals("/energy/lease-fee/contracts")
+                        && anyMenu(grants, "/energy/electric", "/energy/water", "/energy/garbage"));
+            case "energy/notice-header-profile", "energy/notice-ai" -> anyMenu(grants,
+                    "/energy/contracts", "/energy/deposit", "/energy/rent", "/energy/property",
+                    "/energy/electric", "/energy/water", "/energy/garbage", "/energy/summary")
+                    || hasPrefix(grants, "energy:feebill:");
+            case "oa/seal" -> {
+                if (hasMenu(grants, "/oa/seal") || hasPrefix(grants, "oa:seal:")) yield true;
+                boolean canUseSeal = anyMenu(grants, "/energy/summary", "/energy/deposit", "/energy/rent", "/energy/property",
+                        "/energy/electric", "/energy/water", "/energy/garbage", "/service/decoration")
+                        || hasPrefix(grants, "energy:feebill:")
+                        || hasPrefix(grants, "service:decoration:");
+                yield canUseSeal && ("GET".equals(method) || path.startsWith("/oa/seal/placement/"));
+            }
+            case "oa/periodic-task" -> hasMenu(grants, "/oa/task") || hasPrefix(grants, "oa:task:");
+            case "iot/device" -> anyMenu(grants, "/iot/camera", "/iot/parking", "/iot/fire")
+                    || hasPrefix(grants, "iot:device:");
             case "service/product" -> hasMenu(grants, "/service/mall");
             case "space/", "space/room" -> hasMenu(grants, "/building/room") || hasPrefix(grants, "building:room:");
             case "app/", "app/vending", "vending/", "vending/machine" -> hasMenu(grants, "/app/center") || hasPrefix(grants, "vending:");

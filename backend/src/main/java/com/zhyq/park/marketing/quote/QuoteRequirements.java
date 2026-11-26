@@ -7,6 +7,26 @@ import java.util.*;
 /** Canonical customer-facing demand. Monetary rates belong to the warehouse rate card. */
 public final class QuoteRequirements {
     private QuoteRequirements() {}
+
+    /** Only standard options and numeric workload may be compared by the external AI.
+     * Never include other/custom names, remarks, contact details or free-text quantities. */
+    public static Map<String,Object> assessmentProfile(com.fasterxml.jackson.databind.JsonNode demand) {
+        var profile=new TreeMap<String,Object>();
+        for (var field:COLLECTIONS.entrySet()) {
+            var selected=new ArrayList<String>();
+            for(var value:demand.path(field.getKey()))
+                if (value.isTextual() && field.getValue().contains(value.textValue())) selected.add(value.textValue());
+            if(!selected.isEmpty()) profile.put(field.getKey(),selected);
+        }
+        for(var field:CHOICES.entrySet()) {
+            String choice=demand.path(field.getKey()).asText("");
+            if(field.getValue().contains(choice)) profile.put(field.getKey(),choice);
+        }
+        for(String key:List.of("palletCount","heavyWeightKg","itemsPerParcel","batchPercent")) {
+            if(demand.path(key).isNumber()) profile.put(key,demand.path(key).decimalValue());
+        }
+        return profile;
+    }
     static final List<String> SERVICES = List.of("收货清点上架","仓方装卸货","入库抽检","外观或效期全检","额外盘点","批次或残次品挑选",
             "成品组套","称重组套","礼盒定制组装","拆套还原单品","制标贴大标","制标贴小标","增扫溯源码","折飞机盒","折异形纸盒","十字封箱","单件防护","整箱防护","整托防护",
             "退件回仓上架","发货后拦截","残次品报废","纸箱或周转箱回收","整箱调拨或退仓","整板调拨或退仓","拼箱调拨或退仓","随货带走卡板");

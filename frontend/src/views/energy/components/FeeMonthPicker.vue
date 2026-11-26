@@ -55,7 +55,7 @@ const years = computed(() => [center.value - 1, center.value, center.value + 1])
 const loading = ref(false)
 const data = ref({})
 
-const TITLES = { electric: '电费 · 年月表', water: '水费 · 年月表', garbage: '垃圾处理费 · 年月表', summary: '缴费汇总 · 年月表' }
+const TITLES = { electric: '电费 · 年月表', water: '水费 · 年月表', garbage: '垃圾处理费 · 年月表', summary: '水电费、垃圾处理费 · 年月表' }
 const title = computed(() => TITLES[props.kind] || '年月表')
 
 const key = (y, m) => `${y}-${String(m).padStart(2, '0')}`

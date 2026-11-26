@@ -74,4 +74,48 @@ class BusinessRouteAccessTest {
         // 小程序令牌在入口即被隔离，不能借此进入后台提现接口
         assertThat(BusinessRouteAccess.allowed("/crm/marketing/withdrawal/18", "GET", Set.of("ROLE_MP"))).isFalse();
     }
+
+    @Test void leaseFeeEndpointsAllowRentPropertyAndSummaryMenus() {
+        assertThat(BusinessRouteAccess.allowed("/energy/lease-fee/deposits", "GET", Set.of("MENU:/energy/deposit"))).isTrue();
+        assertThat(BusinessRouteAccess.allowed("/energy/lease-fee/overview", "GET", Set.of("MENU:/energy/rent"))).isTrue();
+        assertThat(BusinessRouteAccess.allowed("/energy/lease-fee/open", "POST", Set.of("MENU:/energy/property"))).isTrue();
+        assertThat(BusinessRouteAccess.allowed("/energy/lease-fee/1/notices", "GET", Set.of("MENU:/energy/summary"))).isTrue();
+        assertThat(BusinessRouteAccess.allowed("/energy/lease-fee/overview", "GET", Set.of("MENU:/energy/electric"))).isFalse();
+        assertThat(BusinessRouteAccess.allowed("/energy/lease-fee/overview", "GET", Set.of())).isFalse();
+    }
+
+    @Test void retainedIotCategoryMenusCanCallDeviceApi() {
+        assertThat(BusinessRouteAccess.allowed("/iot/device/page", "GET", Set.of("MENU:/iot/camera"))).isTrue();
+        assertThat(BusinessRouteAccess.allowed("/iot/device/page", "GET", Set.of("MENU:/iot/parking"))).isTrue();
+        assertThat(BusinessRouteAccess.allowed("/iot/device/page", "GET", Set.of("MENU:/iot/fire"))).isTrue();
+        assertThat(BusinessRouteAccess.allowed("/iot/device/page", "GET", Set.of("MENU:/iot/alarm"))).isFalse();
+    }
+
+    @Test void simpleAndTemplateContractMenusAllowContractEndpoints() {
+        assertThat(BusinessRouteAccess.allowed("/contract/simple/list", "GET", Set.of("MENU:/contract/simple"))).isTrue();
+        assertThat(BusinessRouteAccess.allowed("/contract/template/list", "GET", Set.of("MENU:/contract/template"))).isTrue();
+        assertThat(BusinessRouteAccess.allowed("/contract/simple/list", "GET", Set.of())).isFalse();
+    }
+
+    @Test void sealAndPeriodicTaskRoutesFollowScopedMenuPermissions() {
+        assertThat(BusinessRouteAccess.allowed("/oa/seal/list", "GET", Set.of("MENU:/oa/seal"))).isTrue();
+        assertThat(BusinessRouteAccess.allowed("/oa/seal", "POST", Set.of("MENU:/oa/seal"))).isTrue();
+        assertThat(BusinessRouteAccess.allowed("/oa/seal/list", "GET", Set.of("MENU:/energy/summary"))).isTrue();
+        assertThat(BusinessRouteAccess.allowed("/oa/seal/placement/UTILITY_NOTICE", "PUT", Set.of("MENU:/energy/summary"))).isTrue();
+        assertThat(BusinessRouteAccess.allowed("/oa/seal", "POST", Set.of("MENU:/energy/summary"))).isFalse();
+        assertThat(BusinessRouteAccess.allowed("/oa/seal/list", "GET", Set.of("MENU:/service/decoration"))).isTrue();
+        assertThat(BusinessRouteAccess.allowed("/oa/periodic-task/board", "GET", Set.of("MENU:/oa/task"))).isTrue();
+        assertThat(BusinessRouteAccess.allowed("/oa/periodic-task/log", "PUT", Set.of("MENU:/oa/task"))).isTrue();
+        assertThat(BusinessRouteAccess.allowed("/oa/periodic-task/board", "GET", Set.of())).isFalse();
+    }
+
+    @Test void noticeHeaderProfileAndAiVerifyRoutesAllowEnergySummaryAndDepositMenus() {
+        assertThat(BusinessRouteAccess.allowed("/energy/notice-header-profile", "GET", Set.of("MENU:/energy/summary"))).isTrue();
+        assertThat(BusinessRouteAccess.allowed("/energy/notice-header-profile", "POST", Set.of("MENU:/energy/summary"))).isTrue();
+        assertThat(BusinessRouteAccess.allowed("/energy/notice-header-profile", "DELETE", Set.of("MENU:/energy/deposit"))).isTrue();
+        assertThat(BusinessRouteAccess.allowed("/energy/notice-ai/verify-upload", "POST", Set.of("MENU:/energy/summary"))).isTrue();
+        assertThat(BusinessRouteAccess.allowed("/energy/lease-fee/contracts", "GET", Set.of("MENU:/energy/electric"))).isTrue();
+        assertThat(BusinessRouteAccess.allowed("/energy/notice-header-profile", "POST", Set.of())).isFalse();
+        assertThat(BusinessRouteAccess.allowed("/energy/notice-ai/verify-upload", "POST", Set.of())).isFalse();
+    }
 }

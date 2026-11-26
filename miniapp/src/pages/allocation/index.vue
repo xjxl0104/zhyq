@@ -2,7 +2,7 @@
   <view class="page-wrap allocation-list-page">
     <view class="card introduction">
       <view class="title">客户分佣</view>
-      <view class="note">{{ canPrice ? '按已签约合同查看客户，选择一项设置每单分佣。平台服务费为总佣金的 10%。' : '查看已分配给您的合同、客户和每单金额。' }}</view>
+      <view class="note">{{ canPrice ? '按已签约合同查看客户，选择一项设置每单分佣。平台服务费为总佣金的 10%，云仓业务员（P0）固定佣金 0.020 元/单。' : '查看已分配给您的合同、客户和每单金额。' }}</view>
     </view>
     <view v-if="loading" class="card state">正在加载客户分佣…</view>
     <view v-else-if="loadError" class="card"><view class="error-text">{{ loadError }}</view><button class="btn secondary" @click="load">重新加载</button></view>

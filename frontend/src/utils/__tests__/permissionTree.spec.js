@@ -33,10 +33,9 @@ it('places suppliers, floor plans, assets, marketing and shared budgets in the r
   const tree = buildPermissionTree([grant(1, 'pur:supplierContract:add'), grant(2, 'pur:supplier:edit'),
     grant(3, 'building:floorPlan:edit'), grant(4, 'property:asset:edit'), grant(5, 'budget:edit'),
     grant(6, 'pur:plan:edit'), grant(7, 'crm:marketing:promoter:edit'), grant(8, 'workflow:definition:manage')])
-  expect(permissionIds([tree[1]])).toEqual([3, 4])
-  expect(permissionIds([tree[4]])).toEqual([1, 2])
+  expect(permissionIds([tree[1]])).toEqual([3])
   expect(permissionIds([tree[2]])).toEqual([7])
-  expect(permissionIds([tree[6]]).sort()).toEqual([5, 6, 8])
+  expect(permissionIds([tree[6]]).sort()).toEqual([1, 2, 4, 5, 6, 8])
   expect(flatten(tree).some(n => n.name === '年度 / 月度预算共用操作')).toBe(true)
 })
 it('handles slash-less routes and older type-1 permission records', () => {
@@ -57,6 +56,39 @@ it('retains custom grants exactly once and searches the full ancestor context', 
   expect(filterPermission('系统管理', flatten(tree).find(n => n.id === 2))).toBe(true)
   expect(filterPermission('自定义', tree[9])).toBe(true)
 })
-it('places legacy supplier URLs under the property supplier archive', () => {
-  expect(permissionIds([buildPermissionTree([page(1, '/budget/supplier'), page(2, '/budget/supplier-contract')])[4]])).toEqual([1, 2])
+it('places legacy supplier URLs under the office supplier archive', () => {
+  expect(permissionIds([buildPermissionTree([page(1, '/budget/supplier'), page(2, '/budget/supplier-contract')])[6]])).toEqual([1, 2])
+})
+it('flattens overview, property service and smart iot menus and organizes park operations', () => {
+  const overview = menuTree.find(n => n.title === '项目概况')
+  expect(overview.children.map(c => c.title)).toEqual(['项目管理', '建筑管理', '租控管理'])
+  const propertyService = menuTree.find(n => n.title === '物业服务')
+  expect(propertyService.children.map(c => c.title)).toEqual([
+    '工单汇总', '物业报修', '设备巡检', '安防巡更', '保洁检查', '绿化检查',
+    '访客预约', '装修及动火'
+  ])
+  const smartIot = menuTree.find(n => n.title === '智慧物联')
+  expect(smartIot.children.map(c => c.title)).toEqual(['预警事件', '智能安防', '智慧停车场', '智慧安消'])
+  const ops = menuTree.find(n => n.title === '园区运营')
+  expect(ops.children[0].title).toBe('办公管理')
+  expect(ops.children[0].children.map(c => c.title)).toEqual(['供应商档案', '任务管理', '印章管理', '公文管理', '审批中心', '流程管理'])
+  expect(ops.children[1].title).toBe('物资管理')
+  expect(ops.children[1].icon).toBeTruthy()
+  const leasing = menuTree.find(n => n.title === '招商租赁')
+  const contractMenu = leasing.children.find(c => c.title === '合同')
+  expect(contractMenu.children.map(c => c.title)).toEqual(['正式合同', '简易合同', '合同模板', '合同设置'])
+  const feeMgmt = ops.children.find(c => c.title === '缴费管理')
+  expect(feeMgmt).toBeTruthy()
+  expect(feeMgmt.children.map(c => c.title)).toEqual(['合同基础台账', '保证金', '租金', '物业费', '电费', '水费', '垃圾处理费', '缴费汇总'])
+  const tree = buildPermissionTree([
+    page(10, '/property/meeting'), page(11, '/service/forum'), page(15, '/iot/device'), page(16, '/acc/access'),
+    page(19, '/service/mall'), page(20, '/oa/notice'), page(21, '/oa/attendance'),
+    grant(12, 'property:check:edit', '检查-编辑'),
+    page(13, '/energy/rent'), page(14, '/energy/property'), page(17, '/energy/deposit'),
+    page(22, '/oa/seal'),
+    grant(18, 'iot:device:query', '设备-查询')
+  ])
+  expect(permissionIds(tree)).toEqual([12, 18, 22, 17, 13, 14])
+  expect(permissionIds([tree[5]])).toEqual([18])
+  expect(permissionIds([tree[6]])).toEqual([22, 17, 13, 14])
 })

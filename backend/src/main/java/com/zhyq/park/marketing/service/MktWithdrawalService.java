@@ -20,6 +20,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Map;
@@ -44,13 +45,14 @@ public class MktWithdrawalService {
     /** Cash precision, not an accumulated-earnings threshold; legacy min_withdraw settings are retired. */
     public static final BigDecimal MIN_WITHDRAWAL = new BigDecimal("0.01");
     public static final String DEFAULT_ARRIVAL_TIME = "财务审批通过后 3 个工作日内打款，实际到账以收款渠道处理为准";
-    /** 提现申请开放日(含)。默认起始日为 0 表示全月随时可申请;若显式设为 1–28 则按窗口限制。 */
-    public static final int DEFAULT_WINDOW_START_DAY = 0;
-    public static final int DEFAULT_WINDOW_END_DAY = 31;
+    /** 提现申请开放日(含)。默认每月 25 至 30 日，短月截至月末。 */
+    public static final int DEFAULT_WINDOW_START_DAY = 25;
+    public static final int DEFAULT_WINDOW_END_DAY = 30;
     /** 每月自动提现日:系统把伙伴的全部可提现余额自动提交提现申请。0 = 关闭;开启窗口限制时自动钳制在开放窗口内。 */
-    public static final int DEFAULT_AUTO_WITHDRAW_DAY = 10;
+    public static final int DEFAULT_AUTO_WITHDRAW_DAY = 25;
     public static final String WORKFLOW_BIZ_TYPE = "withdrawal";
 
+    private static final ZoneId BUSINESS_ZONE = ZoneId.of("Asia/Shanghai");
     private static final String MODULE = "marketing";
     private static final String BIZ_TYPE = "withdrawal";
     private static final DateTimeFormatter DAY = DateTimeFormatter.ofPattern("yyyyMMdd");
@@ -70,7 +72,7 @@ public class MktWithdrawalService {
     public Map<String, Object> withdrawalRules() {
         int start = windowStartDay(), end = windowEndDay();
         return Map.of(
-                "applicationOpen", inWindow(start, end, LocalDate.now()),
+                "applicationOpen", inWindow(start, end, LocalDate.now(BUSINESS_ZONE)),
                 "minimumAmount", MIN_WITHDRAWAL,
                 "dailyLimit", 0, // No daily application-count gate exists. Reserved funds cannot be claimed twice.
                 "applicationTime", start <= 0 ? "随时可提交申请" : "每月 " + start + "–" + Math.max(start, end) + " 日开放提现申请",
@@ -125,7 +127,7 @@ public class MktWithdrawalService {
         return apply(promoterId, amount, false);
     }
 
-    /** automatic=true 为每月自动提现:不受开放日限制,审计记为系统提交。 */
+    /** 系统自动提交同样校验开放日期。 */
     @Transactional
     public MktWithdrawal apply(Long promoterId, BigDecimal amount, boolean automatic) {
         MktPromoter p = promoterMapper.selectForUpdate(promoterId);
@@ -136,7 +138,7 @@ public class MktWithdrawalService {
             throw new BizException("本期已自动提现或存在处理中提现单");
         }
         int startDay = windowStartDay(), endDay = windowEndDay();
-        if (!automatic && !inWindow(startDay, endDay, LocalDate.now())) {
+        if (!inWindow(startDay, endDay, LocalDate.now(BUSINESS_ZONE))) {
             throw new BizException("每月 " + startDay + "–" + Math.max(startDay, endDay) + " 日开放提现申请,请在开放期内提交");
         }
         if (!Integer.valueOf(1).equals(p.getIdVerified())) throw new BizException("收款资料尚未通过人工审核,暂不能提现");
@@ -158,9 +160,9 @@ public class MktWithdrawalService {
         BigDecimal tax = amount.multiply(taxRate).setScale(2, RoundingMode.HALF_UP);
 
         MktWithdrawal w = new MktWithdrawal();
-        w.setWithdrawalNo("WD-" + LocalDate.now().format(DAY) + "-" + UUID.randomUUID().toString().replace("-", "").substring(0, 6).toUpperCase());
+        w.setWithdrawalNo("WD-" + LocalDate.now(BUSINESS_ZONE).format(DAY) + "-" + UUID.randomUUID().toString().replace("-", "").substring(0, 6).toUpperCase());
         w.setPromoterId(promoterId);
-        if (automatic) w.setAutoPeriod(java.time.YearMonth.now(java.time.ZoneId.of("Asia/Shanghai")).toString());
+        if (automatic) w.setAutoPeriod(java.time.YearMonth.now(BUSINESS_ZONE).toString());
         w.setAmount(amount);
         w.setTaxMode(taxMode);
         w.setTaxAmount(tax);
@@ -226,7 +228,7 @@ public class MktWithdrawalService {
     }
 
     public boolean autoAppliedThisMonth(Long promoterId) {
-        LocalDate start = LocalDate.now(java.time.ZoneId.of("Asia/Shanghai")).withDayOfMonth(1);
+        LocalDate start = LocalDate.now(BUSINESS_ZONE).withDayOfMonth(1);
         return withdrawalMapper.countAutomatic(promoterId, start, start.plusMonths(1)) > 0;
     }
 

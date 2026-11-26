@@ -54,4 +54,8 @@ public class MktServiceContract extends BaseEntity {
     private String terminateReason;
     private String remark;
     private Long projectId;
+    /** 合同快照的云仓确认返点政策 */
+    private String rebatePolicyType;
+    /** 合同快照的云仓确认返点单价(元/单)，锁定为总计佣单价 */
+    private BigDecimal rebateUnitPrice;
 }

@@ -133,6 +133,15 @@ public class MktServiceContractService {
         // 佣金归属与比例一律以客户档案为准,不接受调用方传入(防越权指定收款伙伴 / 抬评级)
         draft.setGrade(customer.getGrade());
         draft.setPartnerId(customer.getReferrerId());
+        if (customer.getRebateUnitPrice() != null
+                && (customer.getRebateConfirmedAt() != null
+                || Integer.valueOf(MktCustomerAssignmentService.ACCEPTED).equals(customer.getWarehouseAssignmentStatus()))) {
+            draft.setRebatePolicyType(customer.getRebatePolicyType());
+            draft.setRebateUnitPrice(customer.getRebateUnitPrice());
+        } else {
+            draft.setRebatePolicyType(null);
+            draft.setRebateUnitPrice(null);
+        }
         validateEconomics(draft);
         contractMapper.insert(draft);
         auditService.log("contract.create", BIZ_TYPE, draft.getId(), null);
