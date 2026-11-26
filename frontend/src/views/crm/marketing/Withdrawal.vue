@@ -32,6 +32,15 @@
         <el-table-column label="税额(元)" width="100" align="right"><template #default="{ row }">{{ money(row.taxAmount) }}</template></el-table-column>
         <el-table-column label="税后实付(元)" width="120" align="right"><template #default="{ row }">{{ money(row.netAmount) }}</template></el-table-column>
         <el-table-column label="税务" width="90"><template #default="{ row }">{{ TAX[row.taxMode] }}</template></el-table-column>
+        <el-table-column label="专票核验" width="135">
+          <template #default="{ row }">
+            <el-tag v-if="row.invoiceVerifyStatus === 'VERIFIED_VALID'" type="success" size="small">专票已验真</el-tag>
+            <el-tag v-else-if="row.invoiceVerifyStatus === 'STANDBY_MANUAL'" type="warning" size="small">待人工复核</el-tag>
+            <el-tag v-else-if="row.invoiceVerifyStatus" type="danger" size="small">专票异常</el-tag>
+            <span v-else class="hint">未核验</span>
+            <div v-if="row.invoiceVerifyNo" class="hint">{{ row.invoiceVerifyNo }}</div>
+          </template>
+        </el-table-column>
         <el-table-column label="状态" width="110"><template #default="{ row }"><el-tag :type="stType(row.status)">{{ ST[row.status] }}</el-tag></template></el-table-column>
         <el-table-column label="审批进度" min-width="160"><template #default="{ row }"><template v-if="row.approval"><div>{{ APPROVAL[row.approval.status] || '—' }}<template v-if="row.approval.status === 1"> · {{ row.approval.nodeName }}</template></div><div class="hint">{{ row.approval.status === 1 ? '待 ' + (row.approval.assignee || '—') + ' 办理' : (row.approval.opinion || '') }}</div></template><span v-else class="hint">未走审批流</span></template></el-table-column>
         <el-table-column label="申请时收款账户" min-width="190"><template #default="{ row }">{{ row.accountName || '待补资料' }} · 尾号 {{ row.accountTail || '—' }}<div class="hint">{{ row.bankName }}</div></template></el-table-column>
@@ -39,11 +48,12 @@
         <el-table-column prop="auditBy" label="审核人" width="90" />
         <el-table-column prop="payAt" label="打款时间" width="160" />
         <el-table-column prop="rejectReason" label="驳回原因" min-width="120" />
-        <el-table-column label="操作" width="200" fixed="right">
+        <el-table-column label="操作" width="240" fixed="right">
           <template #default="{ row }">
             <el-button v-if="row.canApprove === true" link type="success" @click="approve(row)">审批通过</el-button>
             <el-button v-if="row.canReject === true" link type="danger" @click="reject(row)">驳回</el-button>
             <el-button v-if="row.canPay === true" link type="success" @click="pay(row)">登记线下打款</el-button>
+            <el-button link type="warning" @click="openInvoiceVerify(row)">专票验真</el-button>
             <router-link v-if="row.status === 1 && row.canApprove === true" :to="{ path: '/oa/approval', query: { bizType: 'withdrawal', bizId: row.id } }"><el-button link type="primary">审批详情</el-button></router-link>
             <el-button v-if="row.payProof" link @click="downloadProof(row)">查看凭证</el-button>
           </template>
@@ -271,16 +281,23 @@ async function savePayment(){
   try{await mktWithdrawalApi.pay(id,{payNo:payment.payNo.trim(),payProof:`file:${payment.files[0].id}`});closePayment();ElMessage.success('付款凭证已保存');await load()}finally{saving.value=false}
 }
 async function downloadProof(row){const id=row.payProof?.match(/^file:(\d+)$/)?.[1];if(id)await startFileDownload(id,'提现付款凭证')}
-const invVerify = reactive({ visible: false, invoiceNo: '', invoiceDate: new Date().toISOString().slice(0, 10), itemName: '*现代服务*招商推广服务费', totalAmount: '', buyerTaxNo: '', busy: false, result: null })
-function openInvoiceVerify() { invVerify.result = null; invVerify.visible = true }
+const invVerify = reactive({ visible: false, withdrawalId: null, invoiceNo: '', invoiceDate: new Date().toISOString().slice(0, 10), itemName: '*现代服务*招商推广服务费', totalAmount: '', buyerTaxNo: '', busy: false, result: null })
+function openInvoiceVerify(row) {
+  invVerify.result = null
+  invVerify.withdrawalId = row && typeof row === 'object' && row.id ? row.id : null
+  if (row && typeof row === 'object' && row.amount != null) invVerify.totalAmount = String(row.amount)
+  invVerify.visible = true
+}
 async function submitInvoiceVerify() {
-  if (invVerify.busy) return
+  if (invVerify.busy || !mktConnectorHubApi?.verifyInvoice) return
   invVerify.busy = true
   try {
     invVerify.result = await mktConnectorHubApi.verifyInvoice({
+      withdrawalId: invVerify.withdrawalId || undefined,
       invoiceNo: invVerify.invoiceNo, invoiceDate: invVerify.invoiceDate,
       itemName: invVerify.itemName, totalAmount: invVerify.totalAmount, buyerTaxNo: invVerify.buyerTaxNo
     })
+    await load()
   } catch (_) { /* request.js统一弹错 */ } finally { invVerify.busy = false }
 }
 onMounted(load)

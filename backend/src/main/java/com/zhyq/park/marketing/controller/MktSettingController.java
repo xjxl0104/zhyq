@@ -49,6 +49,8 @@ public class MktSettingController {
     private static final String SEA_CHECKIN_METERS_REMARK = "公海地推现场GPS打卡最大允许偏差米数（默认500米内有效）";
     private static final String SEA_VISIT_DAYS_KEY = "sea_visit_protect_days";
     private static final String SEA_VISIT_DAYS_REMARK = "通过500米现场拍照打卡后授予的深度地推保护天数（默认15天）";
+    private static final String SEA_FOLLOWUP_MAX_DAYS_KEY = "sea_followup_max_days";
+    private static final String SEA_FOLLOWUP_MAX_DAYS_REMARK = "公海客户完成首触达或15天保护期满后最长跟进天数（超期未签约且无新跟进自动回流公海，默认30天）";
     /** 外部接口密钥已统一迁到「外部数据连接器中心」，历史 ext_* 行不在规则参数页展示也不允许保存。 */
     public static final String LEGACY_CONNECTOR_KEY_PREFIX = "ext_";
 
@@ -64,7 +66,7 @@ public class MktSettingController {
             "lock_cooldown_days", "lease_clawback_days",
             WINDOW_START_KEY, WINDOW_END_KEY, AUTO_WITHDRAW_KEY, ARRIVAL_TIME,
             SEA_SLA_HOURS_KEY, SEA_WH_DAILY_CAP_KEY, SEA_WH_ACTIVE_CAP_KEY, SEA_ADMIN_ACTIVE_CAP_KEY,
-            SEA_REGION_LOCK_KEY, SEA_CHECKIN_METERS_KEY, SEA_VISIT_DAYS_KEY);
+            SEA_REGION_LOCK_KEY, SEA_CHECKIN_METERS_KEY, SEA_VISIT_DAYS_KEY, SEA_FOLLOWUP_MAX_DAYS_KEY);
 
     private final JdbcTemplate jdbc;
     private final MktAuditService auditService;
@@ -93,6 +95,7 @@ public class MktSettingController {
         ensureVirtualDefault(rows, SEA_REGION_LOCK_KEY, "广东省", SEA_REGION_LOCK_REMARK);
         ensureVirtualDefault(rows, SEA_CHECKIN_METERS_KEY, "500", SEA_CHECKIN_METERS_REMARK);
         ensureVirtualDefault(rows, SEA_VISIT_DAYS_KEY, "15", SEA_VISIT_DAYS_REMARK);
+        ensureVirtualDefault(rows, SEA_FOLLOWUP_MAX_DAYS_KEY, "30", SEA_FOLLOWUP_MAX_DAYS_REMARK);
         return Result.ok(rows);
     }
 
@@ -172,6 +175,11 @@ public class MktSettingController {
             if (SEA_VISIT_DAYS_KEY.equals(key)) {
                 int days = parseBoundedInt(value, 1, 90, "地推打卡保护天数请填写 1–90 天");
                 upsertSetting(SEA_VISIT_DAYS_KEY, String.valueOf(days), SEA_VISIT_DAYS_REMARK, "地推打卡保护天数已变化，请刷新页面后重试");
+                continue;
+            }
+            if (SEA_FOLLOWUP_MAX_DAYS_KEY.equals(key)) {
+                int days = parseBoundedInt(value, 3, 365, "最长跟进回收天数请填写 3–365 天");
+                upsertSetting(SEA_FOLLOWUP_MAX_DAYS_KEY, String.valueOf(days), SEA_FOLLOWUP_MAX_DAYS_REMARK, "最长跟进回收天数已变化，请刷新页面后重试");
                 continue;
             }
             if (SEA_REGION_LOCK_KEY.equals(key)) {

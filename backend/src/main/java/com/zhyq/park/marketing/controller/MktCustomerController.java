@@ -137,6 +137,9 @@ public class MktCustomerController {
         if (StringUtils.hasText(c.getPhone()) && c.getPhone().equals(p.getPhone())) throw new BizException("不能自我推荐");
         if (c.getProjectId() != null && p.getProjectId() != null && !c.getProjectId().equals(p.getProjectId())) throw new BizException("不能跨园区调整推荐归属");
         if (c.getReferrerId() != null && !StringUtils.hasText(body.get("reason"))) throw new BizException("更换推荐人必须填写原因");
+        if (c.getReferrerId() == null) {
+            lockService.assertNotInternalSeaProtected(id);
+        }
         if (!p.getId().equals(c.getReferrerId())) {
             MktCustomerLock displayed = lockService.displayLockOf(id);
             if (displayed != null && Integer.valueOf(MktLockService.LS_DEAL).equals(displayed.getStatus()))

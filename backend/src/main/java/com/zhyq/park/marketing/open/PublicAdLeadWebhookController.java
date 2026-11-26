@@ -109,8 +109,16 @@ public class PublicAdLeadWebhookController {
         String note = ch + "广告实时留资" + (StringUtils.hasText(advName) ? "（计划：" + advName + "）" : "");
 
         String targetName = StringUtils.hasText(name) ? name : (ch + "投流准货主");
-        Map<String, Object> wash = washService.ingestAdWebhookLead(
-                projectId, ch, targetName, phone, category, estDaily, location, note);
+        Map<String, Object> wash;
+        try {
+            wash = washService.ingestAdWebhookLead(
+                    projectId, ch, targetName, phone, category, estDaily, location, note);
+        } catch (RuntimeException ex) {
+            // 洗数入库异常时清理 PROCESSING 占位行，允许广告平台自动重试重推，避免付费投流线索永久丢失
+            jdbc.update("DELETE FROM crm_ext_ad_lead_inbox WHERE channel = ? AND external_lead_id = ? AND wash_result = 'PROCESSING'",
+                    ch, leadId);
+            throw ex;
+        }
         boolean inserted = ((Number) wash.get("insertedRows")).intValue() > 0;
         Long cid = wash.get("lastCustomerId") instanceof Number n ? n.longValue() : null;
         jdbc.update("UPDATE crm_ext_ad_lead_inbox SET customer_id = ?, wash_result = ? WHERE channel = ? AND external_lead_id = ?",

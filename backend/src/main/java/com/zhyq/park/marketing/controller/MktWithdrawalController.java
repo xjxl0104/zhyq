@@ -37,6 +37,27 @@ public class MktWithdrawalController {
     private final com.zhyq.park.marketing.service.MktWithdrawalViewService views;
     private final com.zhyq.park.marketing.service.MktWithdrawalApprovalIdentity approvalIdentity;
 
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private org.springframework.jdbc.core.JdbcTemplate jdbc;
+
+    private Map<Long, Map<String, Object>> loadLatestInvoiceLogs(List<Long> withdrawalIds) {
+        if (jdbc == null || withdrawalIds == null || withdrawalIds.isEmpty()) return Map.of();
+        try {
+            String ph = String.join(",", java.util.Collections.nCopies(withdrawalIds.size(), "?"));
+            List<Map<String, Object>> rows = jdbc.queryForList(
+                    "SELECT withdrawal_id AS wid, invoice_no AS invoiceNo, verify_status AS verifyStatus, verify_msg AS verifyMsg"
+                            + " FROM crm_invoice_verify_log WHERE withdrawal_id IN (" + ph + ") ORDER BY id DESC",
+                    withdrawalIds.toArray());
+            Map<Long, Map<String, Object>> out = new HashMap<>();
+            for (Map<String, Object> r : rows) {
+                if (r.get("wid") instanceof Number n) out.putIfAbsent(n.longValue(), r);
+            }
+            return out;
+        } catch (Exception e) {
+            return Map.of();
+        }
+    }
+
     @PreAuthorize("hasRole('admin')") @GetMapping("/approval-identity")
     public Result<Map<String,Object>> approvalIdentity() { return Result.ok(approvalIdentity.configuration()); }
 
@@ -59,7 +80,19 @@ public class MktWithdrawalController {
                 .and(projectId != null, q -> q.eq(MktWithdrawal::getProjectId, projectId).or().isNull(MktWithdrawal::getProjectId))
                 .orderByDesc(MktWithdrawal::getId);
         IPage<MktWithdrawal> p = withdrawalMapper.selectPage(new Page<>(Math.max(pageNo, 1), Math.min(Math.max(pageSize, 1), 50)), qw);
-        return Result.ok(PageResult.of(p.getTotal(), p.getRecords().stream().map(w -> views.describe(w, false)).toList()));
+        Map<Long, Map<String, Object>> invMap = loadLatestInvoiceLogs(
+                p.getRecords().stream().map(MktWithdrawal::getId).filter(java.util.Objects::nonNull).toList());
+        List<Map<String, Object>> enriched = p.getRecords().stream().map(w -> {
+            Map<String, Object> m = new java.util.LinkedHashMap<>(views.describe(w, false));
+            Map<String, Object> inv = invMap.get(w.getId());
+            if (inv != null) {
+                m.put("invoiceVerifyStatus", inv.get("verifyStatus"));
+                m.put("invoiceVerifyNo", inv.get("invoiceNo"));
+                m.put("invoiceVerifyMsg", inv.get("verifyMsg"));
+            }
+            return m;
+        }).toList();
+        return Result.ok(PageResult.of(p.getTotal(), enriched));
     }
     @Operation(summary = "提现详情与审批轨迹") @PreAuthorize("isAuthenticated()") @GetMapping("/{id}")
     public Result<Map<String, Object>> one(@PathVariable Long id) { return Result.ok(views.one(id, null)); }

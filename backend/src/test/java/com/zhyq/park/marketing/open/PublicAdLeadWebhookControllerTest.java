@@ -57,4 +57,17 @@ class PublicAdLeadWebhookControllerTest {
         assertThat(controller.receive("feiyu", null, sign, null, body, request).getData())
                 .containsEntry("mode", "ping_test");
     }
+
+    @Test
+    void cleansProcessingInboxRowOnWashFailureSoPlatformRetryIsNotDropped() {
+        when(hub.activeCredentials(anyLong(), eq("AD_FEIYU"))).thenReturn(Map.of("signatureSecret", "s3cret"));
+        when(wash.ingestAdWebhookLead(any(), any(), any(), any(), any(), any(), any(), any()))
+                .thenThrow(new RuntimeException("数据库瞬断"));
+        String body = "{\"lead_id\":\"L9988\",\"phone\":\"13811112222\",\"name\":\"广州某店\"}";
+        String sign = new HMac(HmacAlgorithm.HmacSHA256, "s3cret".getBytes(StandardCharsets.UTF_8))
+                .digestHex(body, StandardCharsets.UTF_8);
+        assertThatThrownBy(() -> controller.receive("feiyu", null, sign, null, body, request))
+                .isInstanceOf(RuntimeException.class);
+        verify(jdbc).update(contains("DELETE FROM crm_ext_ad_lead_inbox"), eq("FEIYU"), eq("L9988"));
+    }
 }

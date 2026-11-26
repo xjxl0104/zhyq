@@ -84,6 +84,15 @@ public class MktDashboardController {
         drilldown.put("activeLocksCount", count("SELECT COUNT(*) FROM crm_customer_lock WHERE deleted = 0 AND status = 2"));
         drilldown.put("dealLocksCount", count("SELECT COUNT(*) FROM crm_customer_lock WHERE deleted = 0 AND status = 3"));
         drilldown.put("releasedLocksCount", count("SELECT COUNT(*) FROM crm_customer_lock WHERE deleted = 0 AND status = 4"));
+        drilldown.put("publicSeaActiveTotal", safeCount(
+                "SELECT COUNT(1) FROM crm_public_sea_meta m JOIN crm_customer c ON c.id = m.customer_id AND c.deleted = 0 "
+                        + "WHERE c.referrer_id IS NULL AND c.status = 1 AND m.claim_status NOT IN ('ARCHIVED_COLD', 'SIGNED')"));
+        drilldown.put("publicSeaClaimedCount", safeCount(
+                "SELECT COUNT(1) FROM crm_public_sea_meta m JOIN crm_customer c ON c.id = m.customer_id AND c.deleted = 0 "
+                        + "WHERE c.referrer_id IS NULL AND c.status = 1 AND m.claim_status IN ('CLAIMED_ADMIN', 'CLAIMED_WH')"));
+        drilldown.put("publicSeaSignedCount", safeCount(
+                "SELECT COUNT(1) FROM crm_public_sea_meta m JOIN crm_customer c ON c.id = m.customer_id AND c.deleted = 0 "
+                        + "WHERE c.referrer_id IS NULL AND (m.claim_status = 'SIGNED' OR c.status = 2) AND m.updated_at >= ?", since));
 
         m.put("drilldown", drilldown);
         return Result.ok(m);
@@ -114,6 +123,11 @@ public class MktDashboardController {
                 "LEFT JOIN (SELECT DATE(event_time) day, COUNT(*) orders, SUM(service_fee) service_fee FROM crm_referral_order WHERE deleted = 0 AND source_type = 2 AND status = 2 AND event_time >= ? GROUP BY DATE(event_time)) o ON o.day = d.day " +
                 "LEFT JOIN (SELECT DATE(create_time) day, SUM(amount) commission FROM crm_promoter_commission WHERE deleted = 0 AND status IN (2,3,4) AND create_time >= ? GROUP BY DATE(create_time)) c ON c.day = d.day " +
                 "ORDER BY d.day", since, since, since, since));
+    }
+
+    private long safeCount(String sql, Object... args) {
+        try { return count(sql, args); }
+        catch (Exception e) { return 0L; }
     }
 
     private long count(String sql, Object... args) {

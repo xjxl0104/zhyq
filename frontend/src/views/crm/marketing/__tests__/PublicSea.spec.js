@@ -1,6 +1,6 @@
 import { mount, flushPromises } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
 import ElementPlus from 'element-plus'
 
 const mockSummary = vi.fn()
@@ -13,9 +13,15 @@ const mockAmapRadar = vi.fn()
 const mockFirstTouch = vi.fn()
 const mockWashRows = vi.fn()
 const mockFeed = vi.fn()
+const mockMapPoints = vi.fn()
+const mockWashBatches = vi.fn()
+const mockFollowups = vi.fn()
+const mockAddFollowup = vi.fn()
+const mockAdoptVerify = vi.fn()
+const mockPush = vi.fn()
 
 vi.mock('vue-router', () => ({
-  useRouter: () => ({ push: vi.fn() })
+  useRouter: () => ({ push: (...args) => mockPush(...args) })
 }))
 
 vi.mock('@/utils/permission', () => ({
@@ -26,14 +32,20 @@ vi.mock('@/api/marketing', () => ({
   mktPublicSeaApi: {
     summary: (...args) => mockSummary(...args),
     page: (...args) => mockPage(...args),
+    mapPoints: (...args) => mockMapPoints(...args),
     claim: (...args) => mockClaim(...args),
+    assign: vi.fn().mockResolvedValue({ customerId: 901 }),
+    revive: vi.fn().mockResolvedValue({ customerId: 901 }),
     visitCheckin: (...args) => mockVisitCheckin(...args),
     checkins: (...args) => mockCheckins(...args),
+    followups: (...args) => mockFollowups(...args),
+    addFollowup: (...args) => mockAddFollowup(...args),
     shopLookup: (...args) => mockShopLookup(...args),
     amapRadar: (...args) => mockAmapRadar(...args),
     firstTouch: (...args) => mockFirstTouch(...args),
     washRows: (...args) => mockWashRows(...args),
     washBatch: vi.fn().mockResolvedValue({ batchNo: 'WASH-1', status: 'RUNNING', totalRows: 60, processedRows: 20 }),
+    washBatches: (...args) => mockWashBatches(...args),
     feedWarehouses: (...args) => mockFeed(...args),
     batchFeedWarehouses: vi.fn(),
     release: vi.fn()
@@ -41,11 +53,17 @@ vi.mock('@/api/marketing', () => ({
   mktConnectorHubApi: {
     pullLeads: vi.fn().mockResolvedValue({ status: 'STANDBY', message: '待开通' }),
     createShopVerifyInvite: vi.fn().mockResolvedValue({ invitePath: '/open/shop-verify/sv_test', modeHint: '测试' }),
-    listShopVerifications: vi.fn().mockResolvedValue([]),
+    listShopVerifications: vi.fn().mockResolvedValue([
+      { id: 51, platform: 'DOUDIAN', shopName: '衣恋广派女装旗舰店', status: 'SELF_REPORTED', verified30dOrders: 36000, verifiedDailyAvg: 1200, avgWeightKg: 0.45 }
+    ]),
+    adoptShopVerification: (...args) => mockAdoptVerify(...args),
     privacyCall: vi.fn().mockResolvedValue({ status: 'STANDBY', message: '待开通' })
   },
   mktWarehouseApi: {
     page: vi.fn().mockResolvedValue({ records: [{ id: 10, name: '广州番禺一号云仓' }] })
+  },
+  mktCustomerApi: {
+    assignWarehouse: vi.fn().mockResolvedValue({})
   }
 }))
 
@@ -164,10 +182,25 @@ describe('PublicSea.vue 广东公海双视图、四卡三层下钻与500m打卡�
     mockClaim.mockResolvedValue({ customerId: 901, phone: '13826098821', hoursLeft: 72 })
     mockVisitCheckin.mockResolvedValue({ customerId: 901, distanceMeters: 42, visitProtectDays: 15 })
     mockCheckins.mockResolvedValue([])
+    mockMapPoints.mockResolvedValue([{ customerId: 901, name: '广州衣恋风尚服饰电子商务有限公司', lng: 113.34921, lat: 23.02912, distNearestWhKm: 3.1, claimStatus: 'UNCLAIMED' }])
+    mockWashBatches.mockResolvedValue([{ batchNo: 'WASH-DEMO-1', status: 'DONE', totalRows: 80, processedRows: 80, insertedCount: 52 }])
+    mockFollowups.mockResolvedValue([{ id: 1, actionType: 'CALL', note: '已联系林总约周四寄样', operator: 'admin', createdAt: '2026-11-26 10:20:00' }])
+    mockAddFollowup.mockResolvedValue({ id: 2 })
+    mockAdoptVerify.mockResolvedValue({ verifiedDailyAvg: 1200, avgWeightKg: 0.45 })
+  })
+
+  let activeWrapper = null
+  afterEach(() => {
+    if (activeWrapper) {
+      activeWrapper.unmount()
+      activeWrapper = null
+    }
+    document.body.innerHTML = ''
   })
 
   it('渲染诚实连接器状态条、广东分区快切、4张L1-L3下钻卡，并支持双视图切换与认领/500m打卡', async () => {
-    const wrapper = mount(PublicSea, {
+    const wrapper = activeWrapper = mount(PublicSea, {
+      attachTo: document.body,
       global: { plugins: [ElementPlus] }
     })
     await flushPromises()
@@ -205,8 +238,8 @@ describe('PublicSea.vue 广东公海双视图、四卡三层下钻与500m打卡�
     await flushPromises()
     await wrapper.find('.drilldown-trigger').trigger('click')
     await flushPromises()
-    expect(document.body.innerHTML).toContain('L2 判定逻辑')
-    expect(document.body.innerHTML).toContain('巨量飞鱼免费 Webhook')
+    expect(wrapper.html() + document.body.innerHTML).toContain('L2 判定逻辑')
+    expect(wrapper.html() + document.body.innerHTML).toContain('巨量飞鱼免费 Webhook')
 
     const claimBtn = wrapper.findAll('button').find(b => b.text().includes('认领电销'))
     expect(claimBtn).toBeTruthy()
@@ -217,36 +250,76 @@ describe('PublicSea.vue 广东公海双视图、四卡三层下钻与500m打卡�
     // 打开现场打卡弹窗：未定位、未拍照时不能提交；开发环境模拟到门头 + 拍照 + 纪要后提交
     await wrapper.find('[data-testid="btn-visit-checkin"]').trigger('click')
     await flushPromises()
-    const submitBtn = () => wrapper.find('[data-testid="btn-submit-checkin"]')
-    expect(submitBtn().attributes('disabled')).toBeDefined()
-    expect(wrapper.text()).not.toContain('/uploads/checkin/door-live.jpg')
+    const submitBtn = () => document.body.querySelector('[data-testid="btn-submit-checkin"]')
+    expect(submitBtn().hasAttribute('disabled')).toBe(true)
+    expect(document.body.textContent).not.toContain('/uploads/checkin/door-live.jpg')
 
-    await wrapper.find('[data-testid="btn-mock-near-gps"]').trigger('click')
-    await wrapper.find('.stub-photo-capture').trigger('click')
+    document.body.querySelector('[data-testid="btn-mock-near-gps"]').click()
+    document.body.querySelector('.stub-photo-capture').click()
     await flushPromises()
-    expect(wrapper.find('[data-testid="checkin-photo-ok"]').exists()).toBe(true)
-    await wrapper.find('textarea[placeholder*="现场面见林老板"]').setValue('现场面见老板核实单量')
+    expect(document.body.querySelector('[data-testid="checkin-photo-ok"]')).toBeTruthy()
+    const noteTa = document.body.querySelector('textarea[placeholder*="现场面见林老板"]')
+    noteTa.value = '现场面见老板核实单量'
+    noteTa.dispatchEvent(new Event('input'))
     await flushPromises()
-    expect(submitBtn().attributes('disabled')).toBeUndefined()
-    await submitBtn().trigger('click')
+    expect(submitBtn().hasAttribute('disabled')).toBe(false)
+    submitBtn().click()
     await flushPromises()
     expect(mockVisitCheckin).toHaveBeenCalledWith(901, expect.objectContaining({ photoUrl: 'file:77' }))
   })
 
   it('大名单正式导入转后台时显示进度条，而不是直接提示完成', async () => {
     mockWashRows.mockResolvedValue({ async: true, status: 'RUNNING', batchNo: 'WASH-1', totalRows: 60, processedRows: 0, message: '已转为后台处理' })
-    const wrapper = mount(PublicSea, { global: { plugins: [ElementPlus] } })
+    const wrapper = activeWrapper = mount(PublicSea, { attachTo: document.body, global: { plugins: [ElementPlus] } })
     await flushPromises()
     const openBtn = wrapper.findAll('button').find(b => b.text().includes('类目TOP500店铺榜对齐入池'))
     await openBtn.trigger('click')
     await flushPromises()
-    await wrapper.find('textarea[placeholder*="广州白云悦颜生物科技有限公司"]').setValue('广州甲公司,13700000001,个人洗护,100,4.5,广州市白云区')
-    const submit = wrapper.findAll('button').find(b => b.text().includes('确认洗数入池'))
-    await submit.trigger('click')
+    const washTa = document.body.querySelector('textarea[placeholder*="广州白云悦颜生物科技有限公司"]')
+    washTa.value = '广州甲公司,13700000001,个人洗护,100,4.5,广州市白云区'
+    washTa.dispatchEvent(new Event('input'))
+    await flushPromises()
+    const submit = [...document.body.querySelectorAll('button')].find(b => b.textContent.includes('确认洗数入池'))
+    submit.click()
     await flushPromises()
     expect(mockWashRows).toHaveBeenCalledWith(expect.objectContaining({ dryRun: false }))
-    expect(wrapper.find('[data-testid="wash-progress"]').exists()).toBe(true)
-    expect(wrapper.text()).toContain('后台导入中')
-    wrapper.unmount()
+    expect(document.body.querySelector('[data-testid="wash-progress"]')).toBeTruthy()
+    expect(document.body.textContent).toContain('后台导入中')
+  })
+
+  it('支持我的在跟快筛、360°抽屉采纳验店画像、多轮跟进登记与带客户跳转新建合同', async () => {
+    const wrapper = activeWrapper = mount(PublicSea, { attachTo: document.body, global: { plugins: [ElementPlus] } })
+    await flushPromises()
+
+    // 切换「只看我在跟」快筛，不再重复调 summary，仅调 page(claimStatus=MINE)
+    const summaryCallCountBefore = mockSummary.mock.calls.length
+    const mineChip = wrapper.find('[data-testid="quick-mine"]')
+    expect(mineChip.exists()).toBe(true)
+    await mineChip.trigger('click')
+    await flushPromises()
+    expect(mockPage).toHaveBeenLastCalledWith(expect.objectContaining({ claimStatus: 'MINE' }))
+    expect(mockSummary.mock.calls.length).toBe(summaryCallCountBefore)
+
+    // 打开 360° 抽屉，验证货主自报单量一键采纳与跳转新建合同
+    const open360Btn = wrapper.findAll('button').find(b => b.text().includes('360°与时间线'))
+    await open360Btn.trigger('click')
+    await flushPromises()
+    expect(mockFollowups).toHaveBeenCalledWith(901)
+    expect(document.body.textContent).toContain('已联系林总约周四寄样')
+
+    const adoptBtn = [...document.body.querySelectorAll('button')].find(b => b.textContent.includes('一键采纳更新画像'))
+    expect(adoptBtn).toBeTruthy()
+    adoptBtn.click()
+    await flushPromises()
+    expect(mockAdoptVerify).toHaveBeenCalledWith(901, 51)
+
+    const contractJumpBtn = [...document.body.querySelectorAll('button')].find(b => b.textContent.includes('带客户跳转新建服务合同'))
+    expect(contractJumpBtn).toBeTruthy()
+    contractJumpBtn.click()
+    await flushPromises()
+    expect(mockPush).toHaveBeenCalledWith(expect.objectContaining({
+      path: '/crm/marketing/contract',
+      query: expect.objectContaining({ customerId: '901' })
+    }))
   })
 })

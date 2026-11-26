@@ -54,6 +54,13 @@ public class MktWarehouseOnboardingService {
     private final MktAuditService auditService;
     private final WhPhoneClaimService phoneClaims;
 
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private MktPublicSeaService publicSeaService;
+
+    void setPublicSeaService(MktPublicSeaService publicSeaService) {
+        this.publicSeaService = publicSeaService;
+    }
+
     /** 新建云仓 = 提交加盟申请:join_status=1,建 5 行步骤,第 1 步直接通过、第 2 步进行中。 */
     @Transactional
     public MktWarehouse apply(MktWarehouse w) {
@@ -241,6 +248,7 @@ public class MktWarehouseOnboardingService {
     public void pause(Long warehouseId, String reason) {
         requireReason(reason);
         transition(warehouseId, JS_PAUSED, "warehouse.pause", reason, JS_ONLINE);
+        if (publicSeaService != null) publicSeaService.releaseWarehouseClaimsOnOffline(warehouseId, reason);
     }
 
     /** 恢复时须保有云山发货量同步模式或正式 ERP 连接。 */
@@ -258,6 +266,7 @@ public class MktWarehouseOnboardingService {
     public void exit(Long warehouseId, String reason) {
         requireReason(reason);
         transition(warehouseId, JS_EXITED, "warehouse.exit", reason, JS_ONLINE, JS_PAUSED);
+        if (publicSeaService != null) publicSeaService.releaseWarehouseClaimsOnOffline(warehouseId, reason);
     }
 
     /** 已上线且已选择可用订单模式的云仓可承接客户。 */

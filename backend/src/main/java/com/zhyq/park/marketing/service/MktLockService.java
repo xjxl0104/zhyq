@@ -11,18 +11,24 @@ import java.util.Objects;
 import com.zhyq.park.marketing.entity.MktCustomerLock;
 import com.zhyq.park.marketing.entity.MktPosition;
 import com.zhyq.park.marketing.entity.MktPromoter;
+import com.zhyq.park.marketing.entity.MktPublicSeaMeta;
 import com.zhyq.park.marketing.mapper.MktCustomerLockMapper;
 import com.zhyq.park.marketing.mapper.MktPositionMapper;
 import com.zhyq.park.marketing.mapper.MktPromoterMapper;
+import com.zhyq.park.marketing.mapper.MktPublicSeaMetaMapper;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DuplicateKeyException;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Set;
 
 /**
  * 伙伴报备后直接锁定三个自然月；签约成交后归属长期有效。
@@ -53,10 +59,42 @@ public class MktLockService {
     private final MktCustomerAssignmentService assignmentService;
     private final MktCompetitionProtectionService protectionService;
 
+    private static final Set<String> PROTECTED_SEA_STATUSES = Set.of("CLAIMED_ADMIN", "CLAIMED_WH", "FEED_WH", "SIGNED");
+    private static final Set<String> EXCLUSIVE_SEA_SOURCES = Set.of("CALC_HOT", "FEIYU_AD", "AMAP_POI", "CHANMAMA", "TUNGEE_JOB");
+
+    @Autowired(required = false)
+    private MktPublicSeaMetaMapper seaMetas;
+
+    void setSeaMetas(MktPublicSeaMetaMapper seaMetas) {
+        this.seaMetas = seaMetas;
+    }
+
+    /** 校验内部公海保护态：内部专员/云仓在跟、15天保护期内或公司自投流线索，非超管禁止改挂给外部伙伴。 */
+    public void assertNotInternalSeaProtected(Long customerId) {
+        if (seaMetas == null || customerId == null || isSuperAdmin()) return;
+        MktPublicSeaMeta meta = seaMetas.selectById(customerId);
+        if (meta == null) return;
+        if (PROTECTED_SEA_STATUSES.contains(meta.getClaimStatus())
+                || (meta.getVisitProtectedUntil() != null && meta.getVisitProtectedUntil().isAfter(LocalDateTime.now()))) {
+            throw new BizException(409, "该客户正由园区内部专员或加盟云仓保护跟进中，不可改挂外部推荐伙伴");
+        }
+        if (meta.getSeaSource() != null && EXCLUSIVE_SEA_SOURCES.contains(meta.getSeaSource())) {
+            throw new BizException(409, "该客户属园区付费拓客/投流专属公海线索，不可挂给外部伙伴计佣");
+        }
+    }
+
+    private static boolean isSuperAdmin() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        return auth != null && auth.getAuthorities().stream().anyMatch(a -> "ROLE_admin".equals(a.getAuthority()));
+    }
+
     /** 兼容旧报备接口名称，直接锁定三个自然月，不再创建预锁。 */
     @Transactional
     public MktCustomerLock prelock(Long customerId, Long promoterId) {
         Customer customer = requireCustomer(customerId);
+        if (customer.getReferrerId() == null) {
+            assertNotInternalSeaProtected(customerId);
+        }
         MktCustomerLock previous = displayLockOf(customerId);
         if (previous != null && Integer.valueOf(LS_DEAL).equals(previous.getStatus())) {
             throw new BizException("已成交客户归属长期有效，不能重新报备");

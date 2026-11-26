@@ -5,11 +5,14 @@ import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.zhyq.park.common.exception.BizException;
 import com.zhyq.park.crm.entity.Customer;
 import com.zhyq.park.crm.mapper.CustomerMapper;
+import com.zhyq.park.marketing.entity.MktPublicSeaMeta;
 import com.zhyq.park.marketing.entity.MktServiceContract;
 import com.zhyq.park.marketing.entity.MktWarehouse;
+import com.zhyq.park.marketing.mapper.MktPublicSeaMetaMapper;
 import com.zhyq.park.marketing.mapper.MktServiceContractMapper;
 import com.zhyq.park.marketing.mapper.MktWarehouseMapper;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -32,6 +35,14 @@ public class MktCustomerAssignmentService {
     private final MktServiceContractMapper contracts;
     private final MktAuditService audit;
     private final MktCustomerProgressService progress;
+
+    /** 非构造注入保持存量单测兼容；合同签约生效时同步完结公海状态释放专员在跟名额。 */
+    @Autowired(required = false)
+    private MktPublicSeaMetaMapper seaMetas;
+
+    void setSeaMetas(MktPublicSeaMetaMapper seaMetas) {
+        this.seaMetas = seaMetas;
+    }
 
     public MktWarehouse requireAvailableWarehouse(Long warehouseId, Long projectId) {
         if (warehouseId == null || warehouseId <= 0) throw new BizException(400, "请选择承接云仓");
@@ -141,6 +152,7 @@ public class MktCustomerAssignmentService {
     public void contractEffective(MktServiceContract contract) {
         Customer customer = validateContractWarehouse(contract);
         if (!Objects.equals(contract.getPartnerId(), customer.getReferrerId())) throw new BizException("合同推荐伙伴与客户当前归属不一致，请重新核对合同");
+        markPublicSeaSigned(customer.getId());
         if (Integer.valueOf(2).equals(customer.getStatus())) {
             progress.transition(customer.getId(), 100, "新增服务合同已生效，继续为客户提供服务", "signed");
             return;
@@ -148,6 +160,16 @@ public class MktCustomerAssignmentService {
         requireUpdated(customers.update(null, versionGuard(customer).eq(Customer::getStatus, 1).set(Customer::getStatus, 2)));
         progress.transition(customer.getId(), 100, "服务合同已签约生效，服务对接完成", "signed");
         audit.log("customer.contract.effective", "customer", customer.getId(), "服务合同生效");
+    }
+
+    private void markPublicSeaSigned(Long customerId) {
+        if (seaMetas == null || customerId == null) return;
+        seaMetas.update(null, new LambdaUpdateWrapper<MktPublicSeaMeta>()
+                .eq(MktPublicSeaMeta::getCustomerId, customerId)
+                .ne(MktPublicSeaMeta::getClaimStatus, "SIGNED")
+                .set(MktPublicSeaMeta::getClaimStatus, "SIGNED")
+                .set(MktPublicSeaMeta::getSlaDeadlineAt, null)
+                .set(MktPublicSeaMeta::getUpdatedAt, LocalDateTime.now()));
     }
 
     /** 最后一份有效合同关闭时返回跟进中；有其他履约合同则保留已签约。返回是否已无有效合同。 */
@@ -172,6 +194,21 @@ public class MktCustomerAssignmentService {
                     : Integer.valueOf(PENDING).equals(customer.getWarehouseAssignmentStatus()) ? 30 : 0;
             progress.transition(customerId, remainingStage, "有效服务合同已结束，返回服务跟进；伙伴成交归属继续有效", "following");
             audit.log("customer.contract.closed", "customer", customerId, "有效服务合同已结束，返回跟进");
+        }
+        if (seaMetas != null && customer.getReferrerId() == null) {
+            seaMetas.update(null, new LambdaUpdateWrapper<MktPublicSeaMeta>()
+                    .eq(MktPublicSeaMeta::getCustomerId, customerId)
+                    .eq(MktPublicSeaMeta::getClaimStatus, "SIGNED")
+                    .set(MktPublicSeaMeta::getClaimStatus, "UNCLAIMED")
+                    .set(MktPublicSeaMeta::getSeaSource, "EXPIRE_RETURN")
+                    .set(MktPublicSeaMeta::getClaimHolderType, null)
+                    .set(MktPublicSeaMeta::getClaimHolderId, null)
+                    .set(MktPublicSeaMeta::getClaimHolderName, null)
+                    .set(MktPublicSeaMeta::getSlaDeadlineAt, null)
+                    .set(MktPublicSeaMeta::getVisitProtectedUntil, null)
+                    .set(MktPublicSeaMeta::getFirstTouchedAt, null)
+                    .set(MktPublicSeaMeta::getBlockNote, "历史服务合同已结束，回流内部公海待续签或换仓激活")
+                    .set(MktPublicSeaMeta::getUpdatedAt, LocalDateTime.now()));
         }
         return true;
     }

@@ -53,6 +53,17 @@
             提交接洽反馈（解除超时回收）
           </button>
         </template>
+        <view class="release-zone">
+          <input
+            class="touch-inp release-inp"
+            v-model="releaseReasons[item.customerId]"
+            maxlength="200"
+            placeholder="如报价/类目不匹配可填原因主动退回公海释放额度"
+          />
+          <button class="wh-ghost-btn" :disabled="busyId === item.customerId" @click="submitRelease(item)">
+            谈崩主动退回公海（释放名额）
+          </button>
+        </view>
       </view>
       <button
         v-else
@@ -83,6 +94,7 @@ const loading = ref(false)
 const error = ref('')
 const busyId = ref(null)
 const touchNotes = reactive({})
+const releaseReasons = reactive({})
 
 async function load(next = 1) {
   loading.value = true
@@ -128,6 +140,20 @@ async function submitTouch(item) {
   }
 }
 
+async function submitRelease(item) {
+  if (busyId.value) return
+  const reason = (releaseReasons[item.customerId] || '').trim() || '云仓洽谈不匹配主动退回'
+  busyId.value = item.customerId
+  try {
+    await warehouseApi.releasePublicSea(item.customerId, reason)
+    releaseReasons[item.customerId] = ''
+    uni.showToast({ title: '已退回公海并释放额度', icon: 'success' })
+    await load(page.value)
+  } finally {
+    busyId.value = null
+  }
+}
+
 onShow(() => load(1))
 </script>
 
@@ -149,4 +175,7 @@ onShow(() => load(1))
 .touch-ok { font-size: 25rpx; color: #16a34a; font-weight: 600; }
 .touch-warn { font-size: 24rpx; color: #d97706; margin-bottom: 10rpx; }
 .touch-inp { border: 1rpx solid #cbd5e1; border-radius: 10rpx; padding: 14rpx 16rpx; font-size: 26rpx; background: #fff; }
+.release-zone { margin-top: 16rpx; padding-top: 14rpx; border-top: 1rpx dotted #e2e8f0; }
+.release-inp { font-size: 24rpx; background: #f8fafc; }
+.wh-ghost-btn { margin-top: 12rpx; background: #fff1f2; color: #be123c; border: 1rpx solid #fecdd3; border-radius: 12rpx; font-size: 26rpx; font-weight: 600; padding: 12rpx 0; }
 </style>

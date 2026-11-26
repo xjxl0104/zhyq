@@ -10,6 +10,8 @@
     </div>
     <div class="table-card">
       <div class="toolbar"><el-button v-if="canEdit" type="primary" :loading="choicesLoading" @click="openGenerate">{{ isBill ? '生成 / 补充服务费账单' : '生成 / 补充云仓结算' }}</el-button><el-button v-if="isBill && canGenerate" :loading="generatingFixed" @click="generateFixed">补齐到期固定月费</el-button><el-button v-if="isBill && canPay" :disabled="choicesLoading" @click="openDirect">登记直签平台费到账</el-button><el-button v-if="isBill" @click="showDirectRecords">平台费到账记录</el-button><el-button v-if="!isBill" @click="openReconcile">票数对账</el-button><el-button v-if="!isBill" type="warning" plain @click="openWaybillCheck">📦 快递100 轨迹2%抽检</el-button></div>
+      <el-alert v-if="!isBill && fakeEmptyChecks.length" type="error" :closable="false" show-icon class="notice"
+                :title="`🚨 防刷佣风控预警：近期快递100 轨迹抽检发现 ${fakeEmptyChecks.length} 票异常空单（FAKE_EMPTY），打款前请务必点击「快递100 轨迹2%抽检」复核对应云仓账期！`" />
       <el-alert v-if="error" :title="error" type="error" :closable="false" class="notice"><el-button link @click="load">重新加载</el-button></el-alert>
       <el-table :data="rows" v-loading="loading" border stripe empty-text="暂无单据。先完成有效合同、订单导入和费用配置，再生成本期账单。">
         <el-table-column prop="id" label="单据ID" width="85" />
@@ -18,7 +20,7 @@
         <el-table-column v-else prop="batchNo" label="批次号" min-width="170" />
         <el-table-column label="账期" min-width="210"><template #default="{row}">{{ row.periodStart }} 至 {{ row.periodEnd }}</template></el-table-column>
         <el-table-column :label="isBill ? '应收服务费（元）' : '应付云仓（元）'" width="160" align="right"><template #default="{row}">{{ money(row.amount) }}</template></el-table-column>
-        <el-table-column label="状态" width="120"><template #default="{row}"><el-tag :type="tagType(row.status)">{{ statuses[row.status] || '未知状态' }}</el-tag></template></el-table-column>
+        <el-table-column label="状态" width="150"><template #default="{row}"><el-tag :type="tagType(row.status)">{{ statuses[row.status] || '未知状态' }}</el-tag><div v-if="!isBill && hasFakeWaybillWarning(row)" style="margin-top:4px"><el-tag type="danger" size="small">含空包预警</el-tag></div></template></el-table-column>
         <el-table-column :prop="isBill ? 'disputeReason' : 'frozenReason'" label="争议 / 处理说明" min-width="180" show-overflow-tooltip />
         <el-table-column label="操作" width="240" fixed="right"><template #default="{row}">
           <el-button v-if="isBill" link type="primary" @click="showLines(row)">明细</el-button>
@@ -179,15 +181,33 @@ async function showDirectRecords(){Object.assign(details,{visible:true,loading:t
 function snapshotText(value){try{const s=JSON.parse(value||'{}');return `单票 ${s.perOrder} × ${s.packages} 包裹；按件 ${s.perItem} × ${s.qty} 件`}catch{return '快照暂不可读'}}
 async function downloadProof(proof){const id=String(proof).match(/^file:(\d+)$/)?.[1];if(id)await startFileDownload(id,'交易凭证')}
 const wbCheck=reactive({visible:false,settleMonth:new Date().toISOString().slice(0,7),trackingInput:'',loading:false,result:null})
+const fakeEmptyChecks=ref([])
+async function loadFakeEmptyWarnings(){
+  if(isBill.value || !mktConnectorHubApi?.listWaybillChecks) return
+  try{
+    const list=await mktConnectorHubApi.listWaybillChecks({limit:60})
+    fakeEmptyChecks.value=(Array.isArray(list)?list:[]).filter(x=>x?.checkStatus==='FAKE_EMPTY')
+  }catch(_){ fakeEmptyChecks.value=[] }
+}
+function hasFakeWaybillWarning(row){
+  if(!fakeEmptyChecks.value.length || !row) return false
+  const monthPrefix=String(row.periodStart||'').slice(0,7)
+  return fakeEmptyChecks.value.some(x=>{
+    const whMatch=!x.warehouseId || Number(x.warehouseId)===Number(row.warehouseId)
+    const mMatch=!x.settleMonth || !monthPrefix || String(x.settleMonth)===monthPrefix
+    return whMatch && mMatch
+  })
+}
 function openWaybillCheck(){wbCheck.result=null;wbCheck.visible=true}
 async function runWaybillCheck(){
   wbCheck.loading=true
   try{
     const waybills=wbCheck.trackingInput.trim()?[{trackingNo:wbCheck.trackingInput.trim(),carrierCode:'jtexpress'}]:undefined
     wbCheck.result=await mktConnectorHubApi.waybillSpotCheck({warehouseId:query.warehouseId||undefined,settleMonth:wbCheck.settleMonth,waybills})
+    await loadFakeEmptyWarnings()
   }catch(_){/* request.js统一弹错 */}finally{wbCheck.loading=false}
 }
-onMounted(()=>{load();allChoices(mktWarehouseApi.page).then(records=>warehouses.value=records).catch(()=>{})})
+onMounted(()=>{load();loadFakeEmptyWarnings();allChoices(mktWarehouseApi.page).then(records=>warehouses.value=records).catch(()=>{})})
 </script>
 <style scoped>
 .notice{margin-bottom:16px}.toolbar{display:flex;flex-wrap:wrap;gap:12px;margin-bottom:16px}.selector{width:220px}.full{width:100%}.hint{color:var(--el-text-color-secondary);line-height:1.7}.pager{margin-top:16px;justify-content:flex-end}.rt{margin-top:16px}.el-table{font-variant-numeric:tabular-nums}@media(max-width:640px){.selector{width:100%}.search-bar :deep(.el-form-item){display:flex}.pager{justify-content:flex-start;overflow:auto}}

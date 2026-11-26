@@ -72,6 +72,13 @@ public class MktConnectorHubController {
         return Result.ok(connectorHub.listShopVerifications(customerId));
     }
 
+    @Operation(summary = "专员确认采纳验店/自报单量并同步更新公海客户日均单量")
+    @PreAuthorize("hasAnyAuthority('crm:marketing:public-sea:edit', 'crm:marketing:customer:edit')")
+    @PostMapping("/customers/{customerId}/shop-verifications/{sessionId}/adopt")
+    public Result<Map<String, Object>> adoptShopVerification(@PathVariable Long customerId, @PathVariable Long sessionId) {
+        return Result.ok(connectorHub.adoptShopVerification(customerId, sessionId));
+    }
+
     @Operation(summary = "阿里云 AXB 隐私小号一键外呼绑定")
     @PreAuthorize("hasAnyAuthority('crm:marketing:public-sea:edit', 'crm:marketing:customer:edit')")
     @PostMapping("/customers/{customerId}/privacy-call")

@@ -9,9 +9,12 @@ import com.zhyq.park.common.result.Result;
 import com.zhyq.park.crm.entity.Customer;
 import com.zhyq.park.crm.mapper.CustomerMapper;
 import com.zhyq.park.marketing.entity.MktPromoter;
+import com.zhyq.park.marketing.entity.MktPublicSeaMeta;
 import com.zhyq.park.marketing.mapper.MktPromoterMapper;
+import com.zhyq.park.marketing.mapper.MktPublicSeaMetaMapper;
 import com.zhyq.park.marketing.service.*;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.transaction.annotation.Transactional;
@@ -35,6 +38,13 @@ public class MktCustomerCreateController {
     private final MktCustomerAssignmentService assignment;
     private final MktAuditService audit;
     private final MktCustomerIntakeGuard intakeGuard;
+
+    @Autowired(required = false)
+    private MktPublicSeaMetaMapper seaMetas;
+
+    void setSeaMetas(MktPublicSeaMetaMapper seaMetas) {
+        this.seaMetas = seaMetas;
+    }
 
     @GetMapping("/referrers")
     public Result<List<Map<String, Object>>> referrers(@RequestParam Long projectId,
@@ -97,6 +107,26 @@ public class MktCustomerCreateController {
         customer.setAttributionNote("后台新增，园区直接客户");
         try { customers.insert(customer); }
         catch (DuplicateKeyException e) { throw new BizException("该客户已在系统中，请使用已有客户档案"); }
+        if (seaMetas != null && customer.getId() != null && Integer.valueOf(2).equals(customer.getBizLine())) {
+            MktPublicSeaMeta meta = new MktPublicSeaMeta();
+            meta.setCustomerId(customer.getId());
+            meta.setTenantId(customer.getTenantId());
+            meta.setProjectId(projectId);
+            meta.setSeaSource("PARK_CRM");
+            meta.setZoneCode(MktExtDataGateway.classifyZone(name, null));
+            meta.setShopName(customer.getBrandName());
+            meta.setCategory("综合电商");
+            meta.setUrgencyLevel("B");
+            meta.setUrgencyReason("后台新增园区直接云仓客户自动归集内部公海");
+            meta.setBlockNote(customer.getRemark());
+            meta.setClaimStatus("UNCLAIMED");
+            meta.setReleaseCount(0);
+            meta.setDishonestCount(0);
+            meta.setQccAligned(0);
+            meta.setCreatedAt(java.time.LocalDateTime.now());
+            meta.setUpdatedAt(java.time.LocalDateTime.now());
+            try { seaMetas.insert(meta); } catch (Exception ignored) {}
+        }
         audit.log("customer.admin.create", "customer", customer.getId(), "后台新增园区直接客户");
         return Result.ok(Map.of("customerId", customer.getId()));
     }

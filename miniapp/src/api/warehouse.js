@@ -38,6 +38,7 @@ export const warehouseApi = {
   publicSea: (params) => whGet('/public-sea', params),
   claimPublicSea: (customerId) => whPost(`/public-sea/${customerId}/claim`),
   touchPublicSea: (customerId, note) => whPost(`/public-sea/${customerId}/first-touch`, { note }),
+  releasePublicSea: (customerId, reason) => whPost(`/public-sea/${customerId}/release`, { reason }),
   orders: (params) => whGet('/orders/page', params),
   erp: () => whGet('/erp'),
   issueSandbox: () => whPost('/erp/issue-sandbox'),

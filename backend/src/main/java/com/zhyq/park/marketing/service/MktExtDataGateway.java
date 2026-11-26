@@ -264,14 +264,21 @@ public class MktExtDataGateway {
             HttpRequest req = HttpRequest.newBuilder(URI.create(url)).timeout(Duration.ofSeconds(5))
                     .header("Token", token).header("Timespan", timespan).GET().build();
             HttpResponse<String> resp = http.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
-            if (resp.statusCode() != 200) return Lookup.error();
+            if (resp.statusCode() != 200) {
+                connectorHub.refundQuotaOnError(tenantId, "QCC_PRO");
+                return Lookup.error();
+            }
             JsonNode root = json.readTree(resp.body());
             String status = root.path("Status").asText("");
             if ("201".equals(status)) return Lookup.notFound();
-            if (!"200".equals(status)) return Lookup.error();
+            if (!"200".equals(status)) {
+                connectorHub.refundQuotaOnError(tenantId, "QCC_PRO");
+                return Lookup.error();
+            }
             CompanyProfile p = parseStandardCompanyNode(root.path("Result"));
             return p == null ? Lookup.notFound() : new Lookup(LookupOutcome.FOUND, p);
         } catch (Exception e) {
+            connectorHub.refundQuotaOnError(tenantId, "QCC_PRO");
             log.warn("[qcc-pro] 企查查官方接口调用异常: {}", e.getMessage());
             return Lookup.error();
         }
@@ -289,14 +296,21 @@ public class MktExtDataGateway {
             HttpRequest req = HttpRequest.newBuilder(URI.create(url)).timeout(Duration.ofSeconds(5))
                     .header("Authorization", token).GET().build();
             HttpResponse<String> resp = http.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
-            if (resp.statusCode() != 200) return Lookup.error();
+            if (resp.statusCode() != 200) {
+                connectorHub.refundQuotaOnError(tenantId, "TYC_PRO");
+                return Lookup.error();
+            }
             JsonNode root = json.readTree(resp.body());
             int code = root.path("error_code").asInt(-1);
             if (code == 300000) return Lookup.notFound();
-            if (code != 0) return Lookup.error();
+            if (code != 0) {
+                connectorHub.refundQuotaOnError(tenantId, "TYC_PRO");
+                return Lookup.error();
+            }
             CompanyProfile p = parseStandardCompanyNode(root.path("result"));
             return p == null ? Lookup.notFound() : new Lookup(LookupOutcome.FOUND, p);
         } catch (Exception e) {
+            connectorHub.refundQuotaOnError(tenantId, "TYC_PRO");
             log.warn("[tyc-pro] 天眼查接口调用异常: {}", e.getMessage());
             return Lookup.error();
         }
@@ -308,18 +322,25 @@ public class MktExtDataGateway {
         if (opt.isEmpty()) return Lookup.skipped();
         String appCode = trimNull(opt.get().get("appCode"));
         String endpoint = trimNull(opt.get().get("endpoint"));
-        if (!StringUtils.hasText(appCode) || !StringUtils.hasText(endpoint)) return Lookup.skipped();
+        if (!StringUtils.hasText(appCode) || !StringUtils.hasText(endpoint)) {
+            connectorHub.refundQuotaOnError(tenantId, "LIGHT_CORP");
+            return Lookup.skipped();
+        }
         try {
             String url = endpoint + (endpoint.contains("?") ? "&" : "?") + "keyword=" + URLEncoder.encode(keyword.trim(), StandardCharsets.UTF_8);
             HttpRequest req = HttpRequest.newBuilder(URI.create(url)).timeout(Duration.ofSeconds(5))
                     .header("Authorization", "APPCODE " + appCode).header("Token", appCode).GET().build();
             HttpResponse<String> resp = http.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
-            if (resp.statusCode() != 200) return Lookup.error();
+            if (resp.statusCode() != 200) {
+                connectorHub.refundQuotaOnError(tenantId, "LIGHT_CORP");
+                return Lookup.error();
+            }
             JsonNode root = json.readTree(resp.body());
             JsonNode data = root.has("Result") ? root.path("Result") : root.has("result") ? root.path("result") : root.path("data");
             CompanyProfile p = parseStandardCompanyNode(data);
             return p == null ? Lookup.notFound() : new Lookup(LookupOutcome.FOUND, p);
         } catch (Exception e) {
+            connectorHub.refundQuotaOnError(tenantId, "LIGHT_CORP");
             log.warn("[light-corp] 轻量工商网关异常: {}", e.getMessage());
             return Lookup.error();
         }
@@ -462,6 +483,49 @@ public class MktExtDataGateway {
         double s = 2 * Math.asin(Math.sqrt(Math.pow(Math.sin(a / 2), 2)
                 + Math.cos(radLat1) * Math.cos(radLat2) * Math.pow(Math.sin(b / 2), 2)));
         return (int) Math.round(s * 6_378_137.0);
+    }
+
+    /**
+     * 标准 WGS-84（手机/浏览器原始 GPS）转 GCJ-02（高德火星坐标），消除广东地区 300~550 米系统偏移。
+     * 中国境外坐标原样返回。
+     */
+    public static BigDecimal[] wgs84ToGcj02(BigDecimal wgLng, BigDecimal wgLat) {
+        if (wgLng == null || wgLat == null) return new BigDecimal[]{wgLng, wgLat};
+        double lon = wgLng.doubleValue();
+        double lat = wgLat.doubleValue();
+        if (lon < 72.004 || lon > 137.8347 || lat < 0.8293 || lat > 55.8271) {
+            return new BigDecimal[]{wgLng, wgLat};
+        }
+        final double a = 6378245.0;
+        final double ee = 0.00669342162296594323;
+        double dLat = transformLat(lon - 105.0, lat - 35.0);
+        double dLon = transformLon(lon - 105.0, lat - 35.0);
+        double radLat = lat / 180.0 * Math.PI;
+        double magic = Math.sin(radLat);
+        magic = 1 - ee * magic * magic;
+        double sqrtMagic = Math.sqrt(magic);
+        dLat = (dLat * 180.0) / ((a * (1 - ee)) / (magic * sqrtMagic) * Math.PI);
+        dLon = (dLon * 180.0) / (a / sqrtMagic * Math.cos(radLat) * Math.PI);
+        return new BigDecimal[]{
+                BigDecimal.valueOf(lon + dLon).setScale(6, RoundingMode.HALF_UP),
+                BigDecimal.valueOf(lat + dLat).setScale(6, RoundingMode.HALF_UP)
+        };
+    }
+
+    private static double transformLat(double x, double y) {
+        double ret = -100.0 + 2.0 * x + 3.0 * y + 0.2 * y * y + 0.1 * x * y + 0.2 * Math.sqrt(Math.abs(x));
+        ret += (20.0 * Math.sin(6.0 * x * Math.PI) + 20.0 * Math.sin(2.0 * x * Math.PI)) * 2.0 / 3.0;
+        ret += (20.0 * Math.sin(y * Math.PI) + 40.0 * Math.sin(y / 3.0 * Math.PI)) * 2.0 / 3.0;
+        ret += (160.0 * Math.sin(y / 12.0 * Math.PI) + 320 * Math.sin(y * Math.PI / 30.0)) * 2.0 / 3.0;
+        return ret;
+    }
+
+    private static double transformLon(double x, double y) {
+        double ret = 300.0 + x + 2.0 * y + 0.1 * x * x + 0.1 * x * y + 0.1 * Math.sqrt(Math.abs(x));
+        ret += (20.0 * Math.sin(6.0 * x * Math.PI) + 20.0 * Math.sin(2.0 * x * Math.PI)) * 2.0 / 3.0;
+        ret += (20.0 * Math.sin(x * Math.PI) + 40.0 * Math.sin(x / 3.0 * Math.PI)) * 2.0 / 3.0;
+        ret += (150.0 * Math.sin(x / 12.0 * Math.PI) + 300.0 * Math.sin(x / 30.0 * Math.PI)) * 2.0 / 3.0;
+        return ret;
     }
 
     /** 连接器状态回显（供公海页读取）；只反映连接器中心的真实开关。 */

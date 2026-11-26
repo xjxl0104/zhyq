@@ -52,6 +52,24 @@ public class MktPublicSeaController {
                 projectId, zoneCode, seaSource, claimStatus, distFilter, platform, riskFilter, keyword, pageNo, pageSize));
     }
 
+    @Operation(summary = "地图视图专用：查询当前战区已落图客户点位（上限 300 点）")
+    @PreAuthorize("hasAnyAuthority('crm:marketing:public-sea:query', 'crm:marketing:customer:query')")
+    @GetMapping("/map-points")
+    public Result<List<Map<String, Object>>> mapPoints(
+            @RequestParam(required = false) Long projectId,
+            @RequestParam(required = false) String zoneCode,
+            @RequestParam(required = false) String seaSource,
+            @RequestParam(required = false) String claimStatus,
+            @RequestParam(required = false) String distFilter) {
+        return Result.ok(publicSeaService.mapPoints(projectId, zoneCode, seaSource, claimStatus, distFilter));
+    }
+
+    @Operation(summary = "查询最近洗数批次列表（页面刷新后查看后台导入历史与进度）")
+    @PreAuthorize("hasAnyAuthority('crm:marketing:public-sea:query', 'crm:marketing:customer:query')")
+    @GetMapping("/wash-batches")
+    public Result<List<Map<String, Object>>> washBatches(@RequestParam(required = false) Long projectId) {
+        return Result.ok(washService.listWashBatches(projectId));
+    }
     @Operation(summary = "上传 Excel/CSV 榜单或名单三道防撞洗数对齐入池(支持 dryRun 预览)")
     @PreAuthorize("hasAnyAuthority('crm:marketing:public-sea:edit', 'crm:marketing:customer:edit')")
     @PostMapping("/wash-file")
@@ -114,15 +132,55 @@ public class MktPublicSeaController {
         return Result.ok(publicSeaService.claimByAdmin(customerId));
     }
 
-    @Operation(summary = "外勤 500m GPS 定位 + 现场门头拍照打卡(解锁 15 天地推保护期)")
+    @Operation(summary = "外勤 500m GPS 定位 + 现场门头拍照打卡(支持 WGS84 自动转 GCJ02 火星坐标，解锁 15 天保护期)")
     @PreAuthorize("hasAnyAuthority('crm:marketing:public-sea:edit', 'crm:marketing:customer:edit')")
     @PostMapping("/{customerId}/visit-checkin")
     public Result<Map<String, Object>> visitCheckin(@PathVariable Long customerId, @RequestBody Map<String, Object> body) {
         BigDecimal lng = asDecimal(body.get("checkinLng") != null ? body.get("checkinLng") : body.get("lng"));
         BigDecimal lat = asDecimal(body.get("checkinLat") != null ? body.get("checkinLat") : body.get("lat"));
+        String coordType = body.get("coordType") == null ? "GCJ02" : String.valueOf(body.get("coordType"));
         String photoUrl = body.get("photoUrl") == null ? null : String.valueOf(body.get("photoUrl"));
         String note = body.get("note") == null ? null : String.valueOf(body.get("note"));
-        return Result.ok(publicSeaService.visitCheckin(customerId, lng, lat, photoUrl, note));
+        return Result.ok(publicSeaService.visitCheckin(customerId, lng, lat, coordType, photoUrl, note));
+    }
+
+    @Operation(summary = "查询公海客户多轮跟进沟通时间线")
+    @PreAuthorize("hasAnyAuthority('crm:marketing:public-sea:query', 'crm:marketing:customer:query')")
+    @GetMapping("/{customerId}/followups")
+    public Result<List<Map<String, Object>>> followups(@PathVariable Long customerId) {
+        return Result.ok(publicSeaService.listFollowups(customerId));
+    }
+
+    @Operation(summary = "追加多轮跟进沟通记录（电联/微信报价/看仓）")
+    @PreAuthorize("hasAnyAuthority('crm:marketing:public-sea:edit', 'crm:marketing:customer:edit')")
+    @PostMapping("/{customerId}/followups")
+    public Result<Map<String, Object>> addFollowup(@PathVariable Long customerId, @RequestBody Map<String, Object> body) {
+        String actionType = body.get("actionType") == null ? "CALL" : String.valueOf(body.get("actionType"));
+        String note = body.get("note") == null ? null : String.valueOf(body.get("note"));
+        java.time.LocalDateTime nextAt = null;
+        if (body.get("nextFollowupAt") != null && !String.valueOf(body.get("nextFollowupAt")).isBlank()) {
+            try { nextAt = java.time.LocalDateTime.parse(String.valueOf(body.get("nextFollowupAt")).trim().replace(" ", "T")); }
+            catch (Exception ignored) {}
+        }
+        return Result.ok(publicSeaService.addFollowup(customerId, actionType, note, nextAt));
+    }
+
+    @Operation(summary = "主管/运营将公海客户定向指派给指定招商专员")
+    @PreAuthorize("hasAnyRole('admin', 'mkt_ops') or hasAuthority('crm:marketing:setting:config')")
+    @PostMapping("/{customerId}/assign")
+    public Result<Map<String, Object>> assign(@PathVariable Long customerId, @RequestBody Map<String, Object> body) {
+        String target = body.get("targetUsername") == null ? null : String.valueOf(body.get("targetUsername"));
+        String note = body.get("note") == null ? null : String.valueOf(body.get("note"));
+        return Result.ok(publicSeaService.assignToSpecialist(customerId, target, note));
+    }
+
+    @Operation(summary = "管理员将冷宫归档客户重新激活回公海池")
+    @PreAuthorize("hasAnyRole('admin', 'mkt_ops') or hasAuthority('crm:marketing:setting:config')")
+    @PostMapping("/{customerId}/revive")
+    public Result<Void> revive(@PathVariable Long customerId, @RequestBody(required = false) Map<String, Object> body) {
+        String note = body == null || body.get("note") == null ? null : String.valueOf(body.get("note"));
+        publicSeaService.reviveFromCold(customerId, note);
+        return Result.ok();
     }
 
     @Operation(summary = "查询公海客户历史现场 GPS 打卡足迹")

@@ -29,6 +29,21 @@
       </component>
     </section>
 
+    <section class="sea-collab-strip" aria-label="内部专属公海直营概览" data-testid="dash-public-sea-strip">
+      <div class="sea-collab-left">
+        <span class="sea-collab-badge">内部直营 0 外部佣金</span>
+        <span class="sea-collab-title">广东主战区 · 专属公海池协同转化</span>
+      </div>
+      <div class="sea-collab-metrics">
+        <span>活跃池 <b>{{ fmt(summary.drilldown?.publicSeaActiveTotal ?? 0) }}</b> 户</span>
+        <span class="sea-dot">·</span>
+        <span>专员/云仓在跟 <b>{{ fmt(summary.drilldown?.publicSeaClaimedCount ?? 0) }}</b> 户</span>
+        <span class="sea-dot">·</span>
+        <span>已签约沉淀 <b class="sea-signed">{{ fmt(summary.drilldown?.publicSeaSignedCount ?? 0) }}</b> 户</span>
+      </div>
+      <el-button type="primary" plain size="small" @click="$router.push('/crm/marketing/public-sea')">进入公海作战台 ›</el-button>
+    </section>
+
     <!-- 4 张核心经营分析结论卡（L1 结论卡面，右上角固定挂「下钻 ›」） -->
     <section class="analysis-grid" aria-label="核心经营分析结论">
       <article v-for="item in analysisCards" :key="item.key" class="analysis-card" :data-analysis-key="item.key">
@@ -319,6 +334,18 @@ defineExpose({
 .kpi--alert { border-color: #f3d19e; background: #fffaf0; }
 .kpi--alert .kpi-value { color: #9a5b00; }
 .kpi--alert .kpi-foot { color: #9a5b00; font-weight: 500; }
+
+.sea-collab-strip {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+  padding: 12px 16px; background: linear-gradient(90deg, #eff6ff 0%, #f8fafc 100%);
+  border: 1px solid #bfdbfe; border-radius: var(--radius-lg); font-size: 13px; color: #1e293b;
+}
+.sea-collab-left { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.sea-collab-badge { background: #1d4ed8; color: #fff; font-size: 11.5px; font-weight: 600; padding: 2px 8px; border-radius: 999px; }
+.sea-collab-title { font-weight: 600; color: #0f172a; }
+.sea-collab-metrics { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; color: #334155; font-variant-numeric: tabular-nums; }
+.sea-dot { color: #94a3b8; }
+.sea-signed { color: #16a34a; }
 
 /* 4 张经营分析结论卡 */
 .analysis-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }

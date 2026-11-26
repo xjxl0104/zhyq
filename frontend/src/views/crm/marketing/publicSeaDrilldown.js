@@ -10,6 +10,33 @@ export function fmtInt(v) {
   return Math.trunc(toNum(v, 0)).toLocaleString('zh-CN')
 }
 
+function buildChannelRoiRow(funnel, fetchedAt) {
+  const list = Array.isArray(funnel) ? funnel : []
+  const totLeads = list.reduce((a, r) => a + toNum(r.totalLeads), 0)
+  const totSigned = list.reduce((a, r) => a + toNum(r.signedCount), 0)
+  const totClaimed = list.reduce((a, r) => a + toNum(r.claimedCount), 0)
+  const rate = fmtPct(totSigned, totLeads)
+  const breakdown = list.slice(0, 4)
+    .map(r => `${r.seaSource}:入${toNum(r.totalLeads)}→领${toNum(r.claimedCount)}→签${toNum(r.signedCount)}`)
+    .join(' | ')
+  return {
+    key: 'pool-roi',
+    label: '📊 分渠道获客投产转化漏斗（入池 → 认领 → 首触 → 签约 ROI）',
+    value: `签约 ${fmtInt(totSigned)} 户 (${rate})`,
+    verdict: list.length
+      ? `累计追踪 ${fmtInt(totLeads)} 户 → 认领 ${fmtInt(totClaimed)} 户 → 正式签约 ${fmtInt(totSigned)} 户（${breakdown}）`
+      : '待产生签约转化样本后自动计算各获客渠道投产比',
+    evidence: {
+      rawTable: breakdown || `totalLeads=${totLeads}, claimed=${totClaimed}, signed=${totSigned}`,
+      sourceNote: `crm_public_sea_meta JOIN crm_customer 同源漏斗聚合 · ${fetchedAt}`,
+      formula: totLeads > 0 ? `综合签约转化率 = 已签约(${totSigned}) ÷ 总入池(${totLeads}) × 100% = ${rate}` : '总入池为 0，记 0.0%',
+      actionLabel: '前往「服务合同」查看已生效合同',
+      toPath: '/crm/marketing/contract',
+      aiNote: '规则直算 · 零模型调用'
+    }
+  }
+}
+
 export function fmtPct(num, den) {
   const d = toNum(den, 0)
   if (d <= 0) return '0.0%'
@@ -101,7 +128,8 @@ export function buildPublicSeaDrilldownCards(rawSummary = {}) {
           filterSource: 'EXPIRE_RETURN',
           aiNote: '规则直算 · 零模型调用'
         }
-      }
+      },
+      buildChannelRoiRow(s.channelFunnel, fetchedAt)
     ]
   }
 

@@ -41,6 +41,8 @@
         </span>
       </div>
       <div v-if="canEdit" class="sea-banner-actions">
+        <el-button size="small" @click="openWashHistoryDrawer" data-testid="btn-wash-history">📂 导入批次进度</el-button>
+        <el-button size="small" @click="openDrilldown('pool', 'pool-roi')" data-testid="btn-roi-funnel">📊 渠道签约漏斗</el-button>
         <el-button size="small" @click="openPullLeadsDialog" data-testid="btn-pull-leads">🤖 蝉妈妈/店透巢/探迹拉榜</el-button>
         <el-button type="warning" plain size="small" @click="openRadarDialog">📡 高德广东商圈扫楼雷达</el-button>
         <el-button type="success" plain size="small" @click="openShopLookupDialog">🛍️ 单店名反查公司</el-button>
@@ -66,6 +68,29 @@
         </button>
       </div>
       <span class="sub-note">🔒 严隔外部 P1–P4 推广员</span>
+    </div>
+
+    <!-- 专员快捷工作台：只看我在跟 / 12h临期预警 / 待认领 / 冷宫库(超管可捞回) -->
+    <div class="my-workbench-bar" data-testid="my-workbench-bar">
+      <div class="gd-zone-buttons">
+        <span class="gd-zone-title" style="color: #854d0e">🎯 专员快捷工作台：</span>
+        <button type="button" class="zone-chip" :class="{ active: query.claimStatus === 'ALL' }" @click="selectQuickClaim('ALL')">
+          🌊 全部公海
+        </button>
+        <button type="button" class="zone-chip" :class="{ active: query.claimStatus === 'MINE' }" data-testid="quick-mine" @click="selectQuickClaim('MINE')">
+          👤 只看我在跟 ({{ summaryData.myClaimedCount || 0 }}/{{ summaryData.adminActiveCap || 30 }}户)
+        </button>
+        <button type="button" class="zone-chip" :class="{ active: query.claimStatus === 'NEAR_EXPIRE' }" data-testid="quick-near-expire" @click="selectQuickClaim('NEAR_EXPIRE')">
+          ⏰ 12h内临期急需首触 ({{ summaryData.nearExpireCount || 0 }}户)
+        </button>
+        <button type="button" class="zone-chip" :class="{ active: query.claimStatus === 'UNCLAIMED' }" @click="selectQuickClaim('UNCLAIMED')">
+          🆕 待认领活水
+        </button>
+        <button v-if="canManage" type="button" class="zone-chip" :class="{ active: query.claimStatus === 'ARCHIVED_COLD' }" data-testid="quick-cold" @click="selectQuickClaim('ARCHIVED_COLD')">
+          🧊 冷宫归档库 (可捞回)
+        </button>
+      </div>
+      <span class="sub-note">签约自动完结释放名额 · 首触/打卡后超 {{ summaryData.followupMaxDays || 30 }} 天无新跟进自动回流</span>
     </div>
 
     <el-alert
@@ -142,13 +167,16 @@
           </el-select>
         </el-form-item>
         <el-form-item label="保活状态">
-          <el-select v-model="query.claimStatus" style="width: 150px" @change="search">
+          <el-select v-model="query.claimStatus" style="width: 165px" @change="search">
             <el-option value="ALL" label="全部状态" />
+            <el-option value="MINE" label="👤 只看我在跟" />
+            <el-option value="NEAR_EXPIRE" label="⏰ 12h内临期预警" />
             <el-option value="UNCLAIMED" label="待认领跟进" />
             <el-option value="VISIT_15D" label="📍 15天地推保护中" />
             <el-option value="CLAIMED_ADMIN" label="专员电销跟进中" />
             <el-option value="FEED_WH" label="已投喂云仓池" />
             <el-option value="CLAIMED_WH" label="云仓已认领" />
+            <el-option v-if="canManage" value="ARCHIVED_COLD" label="🧊 冷宫归档库" />
           </el-select>
         </el-form-item>
         <el-form-item label="关键词">
@@ -208,7 +236,11 @@
                     🔴 失信({{ row.dishonestCount }})·禁月结 ›
                   </el-tag>
                   <el-tag v-else-if="row.qccAligned === 1" type="success" size="small" effect="plain">🟢 企查0失信</el-tag>
-                  <span class="sub-note">{{ row.contact || '负责人' }} · <b>{{ row.phone }}</b></span>
+                  <span class="sub-note">
+                    {{ row.contact || '负责人' }} ·
+                    <a v-if="row.phoneUnlocked" :href="`tel:${row.phone}`" class="tel-link">📞 {{ row.phone }}</a>
+                    <b v-else>{{ row.phone }}</b>
+                  </span>
                   <el-tag v-if="row.phoneUnlocked" type="success" size="small" effect="plain">已解锁</el-tag>
                 </div>
               </template>
@@ -291,10 +323,18 @@
               </template>
             </el-table-column>
 
-            <el-table-column label="操作" width="210" fixed="right">
+            <el-table-column label="操作" width="220" fixed="right">
               <template #default="{ row }">
                 <div class="row-action-col">
                   <div class="row-action-line">
+                    <el-button
+                      v-if="canManage && row.claimStatus === 'ARCHIVED_COLD'"
+                      type="success"
+                      size="small"
+                      @click="handleRevive(row)"
+                    >
+                      ♻️ 捞回激活
+                    </el-button>
                     <el-button
                       v-if="canEdit && ['UNCLAIMED', 'FEED_WH'].includes(row.claimStatus)"
                       type="primary"
@@ -304,7 +344,7 @@
                       认领电销
                     </el-button>
                     <el-button
-                      v-if="canEdit"
+                      v-if="canEdit && canOperateRow(row)"
                       type="success"
                       plain
                       size="small"
@@ -315,9 +355,10 @@
                     </el-button>
                   </div>
                   <div class="row-action-line">
-                    <el-button link type="primary" size="small" @click="openDetailDrawer(row, 'quote')">360°与比价</el-button>
-                    <el-button v-if="canEdit" link type="primary" size="small" @click="openFeedDialog(row)">投喂云仓</el-button>
-                    <el-button v-if="canEdit" link type="warning" size="small" @click="openReleaseDialog(row)">释放</el-button>
+                    <el-button link type="primary" size="small" @click="openDetailDrawer(row, 'quote')">360°与时间线</el-button>
+                    <el-button v-if="canEdit && canOperateRow(row)" link type="primary" size="small" @click="openFeedDialog(row)">投喂云仓</el-button>
+                    <el-button v-if="canEdit && canReleaseRow(row)" link type="warning" size="small" @click="openReleaseDialog(row)">释放</el-button>
+                    <el-button v-if="canManage && row.claimStatus !== 'ARCHIVED_COLD'" link type="primary" size="small" @click="openAssignDialog(row)">指派</el-button>
                   </div>
                 </div>
               </template>
@@ -341,9 +382,11 @@
             </div>
             <div class="sub-note">📍 {{ row.address || row.city || '广东产业带' }}</div>
             <div class="sub-note">
-              <span v-if="row.distNearestWhKm != null">距云仓 {{ row.distNearestWhKm }}km · </span>
+              <span v-if="row.distNearestWhKm != null">距{{ row.nearestWhName || '云仓' }} {{ row.distNearestWhKm }}km · </span>
               <span v-if="row.estDailyOrders">日估 {{ row.estDailyOrders }} 单 · </span>
-              {{ row.contact || '负责人' }} <b>{{ row.phone }}</b>
+              {{ row.contact || '负责人' }}
+              <a v-if="row.phoneUnlocked" :href="`tel:${row.phone}`" class="tel-link">📞 {{ row.phone }}</a>
+              <b v-else>{{ row.phone }}</b>
             </div>
             <div class="m-card-tags">
               <button type="button" class="urgency-pill" :data-level="row.urgencyLevel || 'B'" @click="openUrgencyDrawer(row)">
@@ -362,10 +405,10 @@
               >
                 认领电销
               </el-button>
-              <el-button v-if="canEdit" type="success" plain size="small" @click="openCheckinDialog(row)">
+              <el-button v-if="canEdit && canOperateRow(row)" type="success" plain size="small" @click="openCheckinDialog(row)">
                 📍500m打卡
               </el-button>
-              <el-button size="small" @click="openDetailDrawer(row, 'quote')">360°与比价</el-button>
+              <el-button size="small" @click="openDetailDrawer(row, 'quote')">360°与时间线</el-button>
               <el-button size="small" @click="openSingleAmapNav(row)">🧭导航</el-button>
             </div>
           </div>
@@ -592,11 +635,24 @@
 
             <div v-if="detailDrawer.verifications.length" style="margin-bottom: 10px">
               <div v-for="v in detailDrawer.verifications" :key="v.id" class="drill-box" style="margin-bottom: 6px">
-                <b>[{{ v.platform }}] 近30天单量：{{ v.verified30dOrders ?? '等待货主填写' }} 单</b>
-                <el-tag size="small" :type="v.status === 'OAUTH_VERIFIED' ? 'success' : 'warning'" style="margin-left: 6px">
-                  {{ v.status === 'OAUTH_VERIFIED' ? '官方核验' : v.status === 'SELF_REPORTED' ? '货主自报（未核验）' : '待填写' }}
-                </el-tag>
-                <span v-if="v.verifiedDailyAvg">（折合日均 {{ v.verifiedDailyAvg }} 单）</span>
+                <div class="drill-box-head">
+                  <div>
+                    <b>[{{ v.platform }}] 近30天单量：{{ v.verified30dOrders ?? '等待货主填写' }} 单</b>
+                    <el-tag size="small" :type="v.status === 'ADOPTED' || v.status === 'OAUTH_VERIFIED' ? 'success' : 'warning'" style="margin-left: 6px">
+                      {{ v.status === 'ADOPTED' ? '已采纳更新画像' : v.status === 'OAUTH_VERIFIED' ? '官方核验' : v.status === 'SELF_REPORTED' ? '货主自报（未核验）' : '待填写' }}
+                    </el-tag>
+                    <span v-if="v.verifiedDailyAvg">（折合日均 {{ v.verifiedDailyAvg }} 单）</span>
+                  </div>
+                  <el-button
+                    v-if="canEdit && ['SELF_REPORTED', 'OAUTH_VERIFIED'].includes(v.status)"
+                    size="small"
+                    type="success"
+                    data-testid="btn-adopt-verify"
+                    @click="adoptVerification(v)"
+                  >
+                    一键采纳更新画像
+                  </el-button>
+                </div>
               </div>
             </div>
 
@@ -643,21 +699,70 @@
             <div v-else class="sub-note">暂无现场 GPS 打卡记录（到达客户门头 ≤500m 拍照打卡可解锁 15 天深度保护期）。</div>
           </el-tab-pane>
 
-          <el-tab-pane label="💰 多仓比价 & 首通纪要" name="quote">
+          <el-tab-pane label="💰 比价 · 分派合同 & 跟进时间线" name="quote">
             <CustomerQuotePanel
               v-if="detailDrawer.visible && effectiveProjectId"
               :key="`${effectiveProjectId}/${detailDrawer.row.customerId}`"
               :customer-id="detailDrawer.row.customerId"
               :project-id="effectiveProjectId"
             />
+
+            <!-- 跨模块打通：公海谈妥后直接分派承接云仓并跳转新建服务合同草稿 -->
+            <div v-if="canEdit" class="drill-box" style="margin-top: 12px; background: #eff6ff; border-color: #bfdbfe">
+              <div class="drill-box-head">
+                <b>🔗 成单直通车：分派承接云仓 & 发起服务合同草稿</b>
+                <el-tag v-if="detailDrawer.row.dishonestCount > 0" type="danger" size="small">失信禁0保证金月结</el-tag>
+              </div>
+              <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 8px">
+                <el-select v-model="detailDrawer.assignWhId" clearable placeholder="选择承接加盟云仓" style="width: 220px" @focus="ensureWarehousesLoaded">
+                  <el-option v-for="w in onlineWarehouses" :key="w.id" :value="w.id" :label="w.name" />
+                </el-select>
+                <el-button size="small" type="primary" plain :loading="detailDrawer.assignBusy" @click="assignWarehouseFromSea">
+                  分派云仓
+                </el-button>
+                <el-button size="small" type="success" data-testid="btn-jump-contract" @click="jumpToCreateContract">
+                  📄 带客户跳转新建服务合同 ›
+                </el-button>
+              </div>
+            </div>
+
+            <!-- 多轮跟进沟通时间线（历史留痕不覆盖） -->
+            <div class="drill-box" style="margin-top: 12px">
+              <div class="drill-box-head">
+                <b>📞 多轮跟进沟通时间线 ({{ detailDrawer.followups.length }})</b>
+                <span class="sub-note">每次保存自动解除72h弹回并顺延活跃保护期</span>
+              </div>
+              <div v-if="detailDrawer.followups.length" style="margin-top: 8px; display: flex; flex-direction: column; gap: 6px">
+                <div v-for="f in detailDrawer.followups" :key="f.id" class="followup-tl-item">
+                  <div>
+                    <b>[{{ FOLLOWUP_TYPE_LABELS[f.actionType] || f.actionType }}]</b> {{ f.operator }}
+                    <span class="sub-note"> · {{ f.createdAt }}</span>
+                    <span v-if="f.nextFollowupAt" class="sub-note"> · 下次提醒 {{ f.nextFollowupAt }}</span>
+                  </div>
+                  <div class="sub-note">{{ f.note }}</div>
+                </div>
+              </div>
+              <div v-else class="sub-note" style="margin-top: 6px">暂无多轮跟进记录，请在下方填写首通或后续跟进结果。</div>
+            </div>
+
             <el-form v-if="canEdit" label-position="top" style="margin-top: 12px">
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px">
+                <el-form-item label="跟进方式">
+                  <el-select v-model="detailDrawer.actionType" style="width: 100%">
+                    <el-option value="CALL" label="📞 电话核实/回访" />
+                    <el-option value="WECHAT" label="💬 微信发送比价单" />
+                    <el-option value="VISIT" label="🏢 预约现场看云仓" />
+                    <el-option value="QUOTE" label="💰 商务阶梯议价" />
+                  </el-select>
+                </el-form-item>
+                <el-form-item label="核实日均发货单量（单/天）">
+                  <el-input-number v-model="detailDrawer.estDailyOrders" :min="0" :max="200000" style="width: 100%" />
+                </el-form-item>
+              </div>
               <el-form-item label="核实后主营类目">
                 <el-input v-model="detailDrawer.category" maxlength="64" placeholder="如：个人洗护 / 女装服饰 / 数码小家电" />
               </el-form-item>
-              <el-form-item label="核实日均发货单量（单/天）">
-                <el-input-number v-model="detailDrawer.estDailyOrders" :min="0" :max="200000" style="width: 100%" />
-              </el-form-item>
-              <el-form-item label="电销首通核实纪要（保存即解除 72h 超时自动弹回）" required>
+              <el-form-item label="本次跟进核实纪要（保存写入时间线并解除 72h 超时自动弹回）" required>
                 <el-input
                   v-model="detailDrawer.note"
                   type="textarea"
@@ -669,7 +774,7 @@
               </el-form-item>
               <div style="display: flex; gap: 8px; justify-content: flex-end">
                 <el-button @click="detailDrawer.visible = false">关闭</el-button>
-                <el-button type="primary" :loading="detailDrawer.busy" @click="submitFirstTouch">保存首通核实纪要</el-button>
+                <el-button type="primary" :loading="detailDrawer.busy" @click="submitFirstTouch">保存跟进纪要</el-button>
               </div>
             </el-form>
           </el-tab-pane>
@@ -678,7 +783,7 @@
     </el-drawer>
 
     <!-- 弹窗 1：类目 TOP500 店铺榜自动企查对齐 + 广东定向省钱锁洗数入池 -->
-    <el-dialog v-model="washDialog.visible" title="🏆 类目 TOP500 店铺榜自动对齐 & 三道防撞洗数" width="min(650px, 95vw)">
+    <el-dialog v-model="washDialog.visible" title="🏆 类目 TOP500 店铺榜自动对齐 & 三道防撞洗数" width="min(650px, 95vw)" append-to-body>
       <el-alert
         type="success"
         :closable="false"
@@ -749,7 +854,7 @@
     </el-dialog>
 
     <!-- 弹窗 2：单店名称反查背后广东公司并入池 -->
-    <el-dialog v-model="shopDialog.visible" title="🛍️ 输入网店名 → 反查广东工商主体与地址入池" width="min(520px, 94vw)">
+    <el-dialog v-model="shopDialog.visible" title="🛍️ 输入网店名 → 反查广东工商主体与地址入池" width="min(520px, 94vw)" append-to-body>
       <el-form label-position="top">
         <el-form-item label="所属电商平台">
           <el-select v-model="shopDialog.platform" style="width: 100%">
@@ -774,7 +879,7 @@
     </el-dialog>
 
     <!-- 弹窗 3：高德周边 10km 广东电商园/商圈 POI 扫楼雷达 -->
-    <el-dialog v-model="radarDialog.visible" title="📡 高德周边 10km 广东商圈 POI 扫楼雷达（0元免费配额）" width="min(540px, 94vw)">
+    <el-dialog v-model="radarDialog.visible" title="📡 高德周边 10km 广东商圈 POI 扫楼雷达（0元免费配额）" width="min(540px, 94vw)" append-to-body>
       <el-form label-position="top">
         <el-form-item label="选择广东核心电商产业带中心锚点">
           <el-select v-model="radarDialog.hubKey" style="width: 100%" @change="onPickRadarHub">
@@ -795,7 +900,7 @@
     </el-dialog>
 
     <!-- 弹窗 4：外勤现场 500m GPS 定位 + 现场拍照打卡（解锁 15 天保护期） -->
-    <el-dialog v-model="checkinDialog.visible" title="📸 外勤现场打卡（500 米内 + 现场拍照）" width="min(540px, 95vw)">
+    <el-dialog v-model="checkinDialog.visible" title="📸 外勤现场打卡（500 米内 + 现场拍照）" width="min(540px, 95vw)" append-to-body>
       <div v-if="checkinDialog.row">
         <el-alert
           v-if="!checkinDialog.row.lng || !checkinDialog.row.lat"
@@ -860,7 +965,7 @@
     </el-dialog>
 
     <!-- 定向投喂加盟云仓限时认领池弹窗（支持单户与批量） -->
-    <el-dialog v-model="feedDialog.visible" title="🏭 定向投喂至加盟云仓限时认领池" width="min(520px, 94vw)">
+    <el-dialog v-model="feedDialog.visible" title="🏭 定向投喂至加盟云仓限时认领池" width="min(520px, 94vw)" append-to-body>
       <p class="sub-note" style="margin-top: 0">
         将
         <b v-if="feedDialog.batchIds.length">所勾选的 {{ feedDialog.batchIds.length }} 户广东货主</b>
@@ -884,7 +989,7 @@
     </el-dialog>
 
     <!-- 主动释放或归档冷宫弹窗 -->
-    <el-dialog v-model="releaseDialog.visible" title="释放回公海或归档冷宫" width="min(460px, 94vw)">
+    <el-dialog v-model="releaseDialog.visible" title="释放回公海或归档冷宫" width="min(460px, 94vw)" append-to-body>
       <el-form label-position="top">
         <el-form-item label="释放原因 / 最新未成卡点（必填，供下一任专员或换仓参考）" required>
           <el-input v-model="releaseDialog.reason" type="textarea" :rows="3" maxlength="300" show-word-limit placeholder="如：嫌常温首重高 0.15 元，建议改推经济仓..." />
@@ -898,7 +1003,7 @@
     </el-dialog>
 
     <!-- 弹窗 5：蝉妈妈 / 店透巢 / 探迹 商业 API 在线拉取广东痛点榜单 -->
-    <el-dialog v-model="pullDialog.visible" title="🤖 蝉妈妈 / 店透巢 / 探迹 在线拉取广东痛点货主" width="min(560px, 95vw)">
+    <el-dialog v-model="pullDialog.visible" title="🤖 蝉妈妈 / 店透巢 / 探迹 在线拉取广东痛点货主" width="min(560px, 95vw)" append-to-body>
       <el-form label-position="top">
         <el-form-item label="选择商业数据源通道">
           <el-select v-model="pullDialog.connectorCode" style="width: 100%">
@@ -930,6 +1035,44 @@
         <el-button type="primary" :loading="pullDialog.busy" @click="submitPullLeads">执行在线拉取</el-button>
       </template>
     </el-dialog>
+
+    <!-- 弹窗 6：主管/运营定向指派给指定招商专员 -->
+    <el-dialog v-model="assignDialog.visible" title="👑 主管定向指派招商专员" width="min(460px, 94vw)" append-to-body>
+      <el-form label-position="top">
+        <el-form-item label="目标招商专员登录账号" required>
+          <el-input v-model="assignDialog.targetUsername" placeholder="例如：mkt_sales" clearable />
+        </el-form-item>
+        <el-form-item label="派单督办说明">
+          <el-input v-model="assignDialog.note" type="textarea" :rows="2" maxlength="200" placeholder="如：高潜S级热单，请今日中午前电联出具多仓比价表" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button :disabled="assignDialog.busy" @click="assignDialog.visible = false">取消</el-button>
+        <el-button type="primary" :loading="assignDialog.busy" @click="submitAssign">确认指派</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 抽屉：最近洗数导入批次历史与进度（关闭导入弹窗或刷新页面不丢进度） -->
+    <el-drawer v-model="washHistoryDrawer.visible" title="📂 最近洗数导入批次与后台进度" size="min(540px, 95vw)" append-to-body>
+      <div v-loading="washHistoryDrawer.loading" class="drill-body">
+        <div v-if="washHistoryDrawer.rows.length" class="drill-body">
+          <div v-for="b in washHistoryDrawer.rows" :key="b.batchNo" class="drill-box">
+            <div class="drill-box-head">
+              <b>{{ b.batchNo }} · {{ b.fileName || b.seaSource }}</b>
+              <el-tag size="small" :type="b.status === 'DONE' ? 'success' : b.status === 'FAILED' ? 'danger' : 'warning'">
+                {{ b.status === 'DONE' ? '已完成' : b.status === 'FAILED' ? '中断/失败' : '后台处理中' }}
+              </el-tag>
+            </div>
+            <div class="sub-note" style="margin-top: 4px">
+              已处理 {{ b.processedRows ?? b.totalRows }} / {{ b.totalRows }} 行 · 净入 <b>{{ b.insertedRows }}</b> 户 · 外省跳过 {{ b.skippedOutProvince || 0 }} 行 · 缓存命中 {{ b.qccCacheHits || 0 }} 次
+            </div>
+            <div v-if="b.errorMsg" class="sub-note warn-text">{{ b.errorMsg }}</div>
+            <div class="sub-note">操作人：{{ b.operator || '—' }} · {{ b.createdAt }}</div>
+          </div>
+        </div>
+        <el-empty v-else description="暂无洗数导入批次记录" />
+      </div>
+    </el-drawer>
   </div>
 </template>
 
@@ -939,7 +1082,7 @@ import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { hasPermission } from '@/utils/permission'
 import { useProjectStore } from '@/stores/project'
-import { mktPublicSeaApi, mktWarehouseApi, mktConnectorHubApi } from '@/api/marketing'
+import { mktPublicSeaApi, mktWarehouseApi, mktConnectorHubApi, mktCustomerApi } from '@/api/marketing'
 import { fileApi } from '@/api/file'
 import PhotoCapture from '@/components/PhotoCapture.vue'
 import CustomerQuotePanel from './CustomerQuotePanel.vue'
@@ -948,6 +1091,7 @@ import { buildPublicSeaDrilldownCards } from './publicSeaDrilldown'
 const router = useRouter()
 const projectStore = useProjectStore()
 const canEdit = computed(() => hasPermission('crm:marketing:public-sea:edit') || hasPermission('crm:marketing:customer:edit'))
+const canManage = computed(() => hasPermission('crm:marketing:setting:config'))
 const effectiveProjectId = computed(() => projectStore.currentProjectId || null)
 
 const GD_ZONES = [
@@ -991,7 +1135,16 @@ const CLAIM_LABELS = {
   UNCLAIMED: '待认领跟进',
   CLAIMED_ADMIN: '专员跟进中',
   FEED_WH: '已投喂云仓池',
-  CLAIMED_WH: '云仓已认领'
+  CLAIMED_WH: '云仓已认领',
+  ARCHIVED_COLD: '冷宫归档'
+}
+const FOLLOWUP_TYPE_LABELS = {
+  CALL: '电话沟通',
+  WECHAT: '微信报价',
+  VISIT: '现场打卡/看仓',
+  QUOTE: '阶梯议价',
+  ASSIGN: '主管派单',
+  OTHER: '状态流转'
 }
 const URGENCY_TEXT = { S: '急迫', A: '高潜', B: '储备' }
 
@@ -1001,10 +1154,24 @@ const activeMapCustomerId = ref(null)
 const selectedRows = ref([])
 const summaryData = ref({})
 const list = ref([])
+const mapList = ref([])
 const total = ref(0)
 const loading = ref(false)
 const loadError = ref('')
 const onlineWarehouses = ref([])
+let amapInstance = null
+
+function canOperateRow(row) {
+  if (!row || row.claimStatus === 'ARCHIVED_COLD') return false
+  if (['UNCLAIMED', 'FEED_WH'].includes(row.claimStatus)) return true
+  return Boolean(row.claimedByMe || canManage.value)
+}
+
+function canReleaseRow(row) {
+  if (!row || row.claimStatus === 'ARCHIVED_COLD') return false
+  if (row.claimStatus === 'UNCLAIMED') return true
+  return Boolean(row.claimedByMe || canManage.value)
+}
 
 const connectors = computed(() => summaryData.value?.connectors || {})
 const showConnectorHint = computed(() => {
@@ -1040,15 +1207,21 @@ function selectZone(code) {
   search()
 }
 
+function selectQuickClaim(status) {
+  query.claimStatus = status
+  search()
+}
+
 const analysisCards = computed(() => buildPublicSeaDrilldownCards(summaryData.value))
 const drill = reactive({ visible: false, key: 'pool' })
 const expandedKeys = ref([])
 const activeDrillCard = computed(() => analysisCards.value.find(c => c.key === drill.key) || null)
 
-function openDrilldown(key) {
+function openDrilldown(key, focusRowKey = null) {
   drill.key = key
   const card = analysisCards.value.find(c => c.key === key)
-  expandedKeys.value = card?.rows?.[0] ? [card.rows[0].key] : []
+  if (focusRowKey) expandedKeys.value = [focusRowKey]
+  else expandedKeys.value = card?.rows?.[0] ? [card.rows[0].key] : []
   drill.visible = true
 }
 
@@ -1080,17 +1253,17 @@ function claimTagType(row) {
   return 'success'
 }
 
-// 地图锚点投影（将广东经纬度映射为战术地图画布百分比坐标；无经纬度时按客户ID确定性分布）
+// 地图锚点投影（优先使用 /map-points 独立加载的 300 点全区落图集合，未返回时回退当前页数据）
+const effectiveMapRows = computed(() => (mapList.value.length ? mapList.value : list.value))
 const mapPins = computed(() => {
-  const rows = list.value
+  const rows = effectiveMapRows.value
   if (!rows.length) return []
-  return rows.slice(0, 30).map((row, idx) => {
+  return rows.slice(0, 60).map((row, idx) => {
     const lng = Number(row.lng)
     const lat = Number(row.lat)
     let x = 22 + ((idx * 19) % 58)
     let y = 24 + ((idx * 23) % 54)
     if (Number.isFinite(lng) && Number.isFinite(lat) && lng > 108 && lat > 20) {
-      // 以广州/珠三角轴心 (113.35, 23.03) 做比例缩放并钳位在可视画布内
       x = Math.max(14, Math.min(86, Math.round(48 + (lng - 113.35) * 42)))
       y = Math.max(16, Math.min(84, Math.round(50 - (lat - 23.03) * 58)))
     }
@@ -1099,12 +1272,15 @@ const mapPins = computed(() => {
 })
 
 const activeMapRow = computed(() => {
-  if (!list.value.length) return null
-  return list.value.find(r => r.customerId === activeMapCustomerId.value) || list.value[0]
+  const rows = effectiveMapRows.value
+  if (!rows.length) return null
+  return rows.find(r => r.customerId === activeMapCustomerId.value) || rows[0]
 })
 
 const routePolylinePoints = computed(() => {
-  const pts = [{ x: 48, y: 50 }, ...mapPins.value.slice(0, 5)]
+  const ordered = sortRowsGreedyNearest(mapPins.value.slice(0, 6).map(p => p.row))
+  const pinById = new Map(mapPins.value.map(p => [p.row.customerId, p]))
+  const pts = [{ x: 48, y: 50 }, ...ordered.map(r => pinById.get(r.customerId)).filter(Boolean)]
   return pts.map(p => `${p.x},${p.y}`).join(' ')
 })
 
@@ -1113,10 +1289,34 @@ function shortName(s) {
   return t.length > 8 ? `${t.slice(0, 8)}…` : t
 }
 
-function switchToMapView() {
+function destroyAmapInstance() {
+  if (amapInstance && typeof amapInstance.destroy === 'function') {
+    try { amapInstance.destroy() } catch (_) {}
+  }
+  amapInstance = null
+}
+
+async function loadMapPoints() {
+  if (!mktPublicSeaApi.mapPoints) return
+  try {
+    mapList.value = (await mktPublicSeaApi.mapPoints({
+      projectId: effectiveProjectId.value,
+      zoneCode: query.zoneCode,
+      seaSource: query.seaSource,
+      claimStatus: query.claimStatus,
+      distFilter: query.distFilter
+    })) || []
+  } catch (_) {
+    mapList.value = []
+  }
+}
+
+async function switchToMapView() {
   viewMode.value = 'map'
-  if (!activeMapCustomerId.value && list.value.length) {
-    activeMapCustomerId.value = list.value[0].customerId
+  await loadMapPoints()
+  const rows = effectiveMapRows.value
+  if (!activeMapCustomerId.value && rows.length) {
+    activeMapCustomerId.value = rows[0].customerId
   }
   if (connectors.value.amapJsConfigured && connectors.value.amapJsKey) {
     nextTick(() => mountRealAmapIfConfigured())
@@ -1134,18 +1334,19 @@ function mountRealAmapIfConfigured() {
   if (!key || !el || typeof window === 'undefined') return
   const render = () => {
     if (!window.AMap) return
+    destroyAmapInstance()
     const center = activeMapRow.value?.lng && activeMapRow.value?.lat
       ? [Number(activeMapRow.value.lng), Number(activeMapRow.value.lat)]
       : [113.34862, 23.02854]
-    const map = new window.AMap.Map(el, { zoom: 12, center })
-    list.value.forEach(r => {
+    amapInstance = new window.AMap.Map(el, { zoom: 12, center })
+    effectiveMapRows.value.forEach(r => {
       if (r.lng && r.lat) {
         const marker = new window.AMap.Marker({
           position: [Number(r.lng), Number(r.lat)],
           title: r.name
         })
         marker.on('click', () => { activeMapCustomerId.value = r.customerId })
-        map.add(marker)
+        amapInstance.add(marker)
       }
     })
   }
@@ -1163,6 +1364,35 @@ function onSelectionChange(rows) {
   selectedRows.value = rows || []
 }
 
+/** 贪心最近邻排序：按经纬度由近及远排列顺路拜访次序，避免折返跑。 */
+function sortRowsGreedyNearest(rows) {
+  if (!Array.isArray(rows) || rows.length <= 2) return rows || []
+  const remaining = [...rows]
+  const ordered = [remaining.shift()]
+  while (remaining.length) {
+    const cur = ordered[ordered.length - 1]
+    const cLng = Number(cur.lng) || 113.34862
+    const cLat = Number(cur.lat) || 23.02854
+    let bestIdx = 0
+    let bestDist = Infinity
+    remaining.forEach((cand, idx) => {
+      const d = ((Number(cand.lng) || cLng) - cLng) ** 2 + ((Number(cand.lat) || cLat) - cLat) ** 2
+      if (d < bestDist) { bestDist = d; bestIdx = idx }
+    })
+    ordered.push(remaining.splice(bestIdx, 1)[0])
+  }
+  return ordered
+}
+
+function openExternalMapUri(uri) {
+  if (typeof window !== 'undefined' && window.navigator?.clipboard?.writeText) {
+    window.navigator.clipboard.writeText(uri).catch(() => {})
+  }
+  if (typeof window !== 'undefined' && typeof window.open === 'function' && !import.meta.env.VITEST) {
+    try { window.open(uri, '_blank', 'noopener,noreferrer') } catch (_) {}
+  }
+}
+
 function buildAmapSingleUri(row) {
   const name = encodeURIComponent(row.address || row.name || '广东目标客户')
   if (row.lng && row.lat) {
@@ -1173,14 +1403,12 @@ function buildAmapSingleUri(row) {
 
 function openSingleAmapNav(row) {
   const uri = buildAmapSingleUri(row)
-  ElMessage.success(`已生成「${row.name}」高德导航指令：${row.address || row.city || '广东战区'}`)
-  if (typeof window !== 'undefined' && window.navigator?.clipboard?.writeText) {
-    window.navigator.clipboard.writeText(uri).catch(() => {})
-  }
+  openExternalMapUri(uri)
+  ElMessage.success(`已拉起并复制「${row.name}」高德导航：${row.address || row.city || '广东战区'}`)
 }
 
 function openAmapBatchRoute() {
-  const rows = selectedRows.value
+  const rows = sortRowsGreedyNearest(selectedRows.value)
   if (!rows.length) return
   const dest = rows[rows.length - 1]
   const vias = rows.slice(0, -1).filter(r => r.lng && r.lat).slice(0, 3)
@@ -1191,12 +1419,10 @@ function openAmapBatchRoute() {
       : ''
     uri = `https://uri.amap.com/navigation?to=${dest.lng},${dest.lat},${encodeURIComponent(shortName(dest.name))}${viaParam}&mode=car&callnative=1`
   }
-  if (typeof window !== 'undefined' && window.navigator?.clipboard?.writeText) {
-    window.navigator.clipboard.writeText(uri).catch(() => {})
-  }
-  viewMode.value = 'map'
+  openExternalMapUri(uri)
+  switchToMapView()
   routePreviewOn.value = true
-  ElMessage.success(`已串联 ${rows.length} 站广东顺路拜访路线并复制高德导航链接`)
+  ElMessage.success(`已按最近邻排好 ${rows.length} 站顺路拜访路线并拉起高德导航`)
 }
 
 async function loadSummary() {
@@ -1239,7 +1465,12 @@ async function reloadAll() {
 
 function search() {
   query.pageNo = 1
-  reloadAll()
+  loadPage()
+  if (viewMode.value === 'map') {
+    loadMapPoints().then(() => {
+      if (connectors.value.amapJsConfigured && connectors.value.amapJsKey) nextTick(() => mountRealAmapIfConfigured())
+    })
+  }
 }
 
 function resetQuery() {
@@ -1269,29 +1500,84 @@ function openUrgencyDrawer(row) {
 
 const detailDrawer = reactive({
   visible: false, tab: 'qcc', row: null,
-  category: '', estDailyOrders: 0, note: '', checkins: [],
+  actionType: 'CALL', category: '', estDailyOrders: 0, note: '',
+  assignWhId: null, assignBusy: false,
+  checkins: [], followups: [],
   verifications: [], inviteResult: null, busy: false
 })
 async function openDetailDrawer(row, tab = 'qcc') {
   detailDrawer.row = row
   detailDrawer.tab = tab
+  detailDrawer.actionType = 'CALL'
   detailDrawer.category = row.category || ''
   detailDrawer.estDailyOrders = row.estDailyOrders || 0
-  detailDrawer.note = row.firstTouchNote || ''
+  detailDrawer.note = ''
+  detailDrawer.assignWhId = row.assignedWarehouseId || null
   detailDrawer.checkins = []
+  detailDrawer.followups = []
   detailDrawer.verifications = []
   detailDrawer.inviteResult = null
   detailDrawer.visible = true
+  if (tab === 'quote') ensureWarehousesLoaded()
   if (mktPublicSeaApi.checkins) {
     try {
       detailDrawer.checkins = (await mktPublicSeaApi.checkins(row.customerId)) || []
     } catch (_) { detailDrawer.checkins = [] }
+  }
+  if (mktPublicSeaApi.followups) {
+    try {
+      detailDrawer.followups = (await mktPublicSeaApi.followups(row.customerId)) || []
+    } catch (_) { detailDrawer.followups = [] }
   }
   if (mktConnectorHubApi?.listShopVerifications) {
     try {
       detailDrawer.verifications = (await mktConnectorHubApi.listShopVerifications(row.customerId)) || []
     } catch (_) { detailDrawer.verifications = [] }
   }
+}
+
+async function adoptVerification(v) {
+  if (!detailDrawer.row || !mktConnectorHubApi?.adoptShopVerification) return
+  try {
+    const res = await mktConnectorHubApi.adoptShopVerification(detailDrawer.row.customerId, v.id)
+    v.status = 'ADOPTED'
+    if (res?.adoptedDailyOrders) detailDrawer.estDailyOrders = res.adoptedDailyOrders
+    ElMessage.success(`已采纳单量并回写客户画像（日均 ${res?.adoptedDailyOrders || v.verifiedDailyAvg} 单）`)
+    await reloadAll()
+  } catch (_) {}
+}
+
+async function assignWarehouseFromSea() {
+  if (!detailDrawer.row || !detailDrawer.assignWhId || !mktCustomerApi?.assignWarehouse) {
+    ElMessage.warning('请先选择要分派的承接加盟云仓')
+    return
+  }
+  detailDrawer.assignBusy = true
+  try {
+    await mktCustomerApi.assignWarehouse(detailDrawer.row.customerId, {
+      warehouseId: detailDrawer.assignWhId,
+      reason: '内部公海跟进谈妥分派承接云仓'
+    })
+    detailDrawer.row.assignedWarehouseId = detailDrawer.assignWhId
+    ElMessage.success('已分派承接云仓，待云仓确认后即可签署正式合同')
+  } catch (_) {} finally {
+    detailDrawer.assignBusy = false
+  }
+}
+
+function jumpToCreateContract() {
+  if (!detailDrawer.row) return
+  const wid = detailDrawer.assignWhId || detailDrawer.row.assignedWarehouseId || undefined
+  const cname = detailDrawer.row.name || undefined
+  detailDrawer.visible = false
+  router.push({
+    path: '/crm/marketing/contract',
+    query: {
+      customerId: String(detailDrawer.row.customerId),
+      ...(cname ? { customerName: cname } : {}),
+      ...(wid ? { warehouseId: String(wid) } : {})
+    }
+  })
 }
 
 async function createShopInvite(platform) {
@@ -1350,12 +1636,19 @@ async function submitFirstTouch() {
   if (!detailDrawer.row || detailDrawer.busy) return
   detailDrawer.busy = true
   try {
-    await mktPublicSeaApi.firstTouch(detailDrawer.row.customerId, {
-      note: detailDrawer.note,
-      category: detailDrawer.category,
-      estDailyOrders: detailDrawer.estDailyOrders || undefined
-    })
-    ElMessage.success('首通核实纪要已保存，72h 超时自动弹回已解除')
+    if (!detailDrawer.row.firstTouchedAt || detailDrawer.category || detailDrawer.estDailyOrders) {
+      await mktPublicSeaApi.firstTouch(detailDrawer.row.customerId, {
+        note: detailDrawer.note,
+        category: detailDrawer.category,
+        estDailyOrders: detailDrawer.estDailyOrders || undefined
+      })
+    } else if (mktPublicSeaApi.addFollowup) {
+      await mktPublicSeaApi.addFollowup(detailDrawer.row.customerId, {
+        actionType: detailDrawer.actionType,
+        note: detailDrawer.note
+      })
+    }
+    ElMessage.success('跟进纪要已写入沟通时间线，保活期已顺延')
     detailDrawer.visible = false
     await reloadAll()
   } catch (_) {
@@ -1363,6 +1656,53 @@ async function submitFirstTouch() {
   } finally {
     detailDrawer.busy = false
   }
+}
+
+const washHistoryDrawer = reactive({ visible: false, loading: false, rows: [] })
+async function openWashHistoryDrawer() {
+  washHistoryDrawer.visible = true
+  if (!mktPublicSeaApi.washBatches) return
+  washHistoryDrawer.loading = true
+  try {
+    washHistoryDrawer.rows = (await mktPublicSeaApi.washBatches({ projectId: effectiveProjectId.value || undefined })) || []
+  } catch (_) {
+    washHistoryDrawer.rows = []
+  } finally {
+    washHistoryDrawer.loading = false
+  }
+}
+
+const assignDialog = reactive({ visible: false, row: null, targetUsername: '', note: '', busy: false })
+function openAssignDialog(row) {
+  Object.assign(assignDialog, { visible: true, row, targetUsername: row.claimHolderName || '', note: '', busy: false })
+}
+async function submitAssign() {
+  if (!assignDialog.row || assignDialog.busy || !mktPublicSeaApi.assign) return
+  if (!assignDialog.targetUsername.trim()) {
+    ElMessage.warning('请填写目标招商专员账号')
+    return
+  }
+  assignDialog.busy = true
+  try {
+    await mktPublicSeaApi.assign(assignDialog.row.customerId, {
+      targetUsername: assignDialog.targetUsername.trim(),
+      note: assignDialog.note
+    })
+    ElMessage.success(`已定向指派给「${assignDialog.targetUsername.trim()}」`)
+    assignDialog.visible = false
+    await reloadAll()
+  } catch (_) {} finally {
+    assignDialog.busy = false
+  }
+}
+
+async function handleRevive(row) {
+  if (!row || !mktPublicSeaApi.revive) return
+  try {
+    await mktPublicSeaApi.revive(row.customerId, { note: '管理员从冷宫归档库捞回激活' })
+    ElMessage.success('已从冷宫捞回公海待认领池')
+    await reloadAll()
+  } catch (_) {}
 }
 
 // 1) 类目 TOP500 店铺榜洗数对齐弹窗
@@ -1401,7 +1741,10 @@ async function pollWashBatch(batchNo) {
     washPollTimer = setTimeout(() => pollWashBatch(batchNo), 5000)
   }
 }
-onBeforeUnmount(stopWashPoll)
+onBeforeUnmount(() => {
+  stopWashPoll()
+  destroyAmapInstance()
+})
 function onPickWashFile(ev) {
   washDialog.file = ev.target?.files?.[0] || null
   washDialog.preview = null
@@ -1545,20 +1888,21 @@ async function submitAmapRadar() {
   }
 }
 
-// 4) 外勤现场打卡：定位只能通过浏览器获取（不可手填），照片必须现场拍摄上传；开发环境才显示模拟按钮
+// 4) 外勤现场打卡：手机真实定位返回 WGS-84 自动转 GCJ-02 火星坐标消除偏移；开发环境模拟按钮已是 GCJ-02
 const isDevBuild = import.meta.env.DEV
 const checkinDialog = reactive({
-  visible: false, row: null, lng: '', lat: '', photoFileId: null, uploading: false, note: '', busy: false
+  visible: false, row: null, lng: '', lat: '', coordType: 'GCJ02', photoFileId: null, uploading: false, note: '', busy: false
 })
 function openCheckinDialog(row) {
   Object.assign(checkinDialog, {
-    visible: true, row, lng: '', lat: '', photoFileId: null, uploading: false, note: '', busy: false
+    visible: true, row, lng: '', lat: '', coordType: 'GCJ02', photoFileId: null, uploading: false, note: '', busy: false
   })
 }
 function useMockFieldGps(within500m) {
   if (!isDevBuild || !checkinDialog.row?.lng || !checkinDialog.row?.lat) return
   const baseLng = Number(checkinDialog.row.lng)
   const baseLat = Number(checkinDialog.row.lat)
+  checkinDialog.coordType = 'GCJ02'
   checkinDialog.lng = (baseLng + (within500m ? 0.00032 : 0.0135)).toFixed(6)
   checkinDialog.lat = (baseLat + (within500m ? 0.00024 : 0.0085)).toFixed(6)
 }
@@ -1569,13 +1913,37 @@ function locateBrowserGps() {
   }
   navigator.geolocation.getCurrentPosition(
     pos => {
+      checkinDialog.coordType = 'WGS84'
       checkinDialog.lng = pos.coords.longitude.toFixed(6)
       checkinDialog.lat = pos.coords.latitude.toFixed(6)
-      ElMessage.success('已获取当前定位')
+      ElMessage.success('已获取当前定位（已自动对齐高德火星坐标系）')
     },
     () => ElMessage.warning('未获得定位权限，请在浏览器设置中允许定位'),
     { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
   )
+}
+
+function wgs84ToGcj02Client(lon, lat) {
+  if (lon < 72.004 || lon > 137.8347 || lat < 0.8293 || lat > 55.8271) return [lon, lat]
+  const a = 6378245.0
+  const ee = 0.00669342162296594323
+  const x = lon - 105.0
+  const y = lat - 35.0
+  let dLat = -100.0 + 2.0 * x + 3.0 * y + 0.2 * y * y + 0.1 * x * y + 0.2 * Math.sqrt(Math.abs(x))
+  dLat += ((20.0 * Math.sin(6.0 * x * Math.PI) + 20.0 * Math.sin(2.0 * x * Math.PI)) * 2.0) / 3.0
+  dLat += ((20.0 * Math.sin(y * Math.PI) + 40.0 * Math.sin((y / 3.0) * Math.PI)) * 2.0) / 3.0
+  dLat += ((160.0 * Math.sin((y / 12.0) * Math.PI) + 320 * Math.sin((y * Math.PI) / 30.0)) * 2.0) / 3.0
+  let dLon = 300.0 + x + 2.0 * y + 0.1 * x * x + 0.1 * x * y + 0.1 * Math.sqrt(Math.abs(x))
+  dLon += ((20.0 * Math.sin(6.0 * x * Math.PI) + 20.0 * Math.sin(2.0 * x * Math.PI)) * 2.0) / 3.0
+  dLon += ((20.0 * Math.sin(x * Math.PI) + 40.0 * Math.sin((x / 3.0) * Math.PI)) * 2.0) / 3.0
+  dLon += ((150.0 * Math.sin((x / 12.0) * Math.PI) + 300.0 * Math.sin((x / 30.0) * Math.PI)) * 2.0) / 3.0
+  const radLat = (lat / 180.0) * Math.PI
+  let magic = Math.sin(radLat)
+  magic = 1 - ee * magic * magic
+  const sqrtMagic = Math.sqrt(magic)
+  dLat = (dLat * 180.0) / (((a * (1 - ee)) / (magic * sqrtMagic)) * Math.PI)
+  dLon = (dLon * 180.0) / ((a / sqrtMagic) * Math.cos(radLat) * Math.PI)
+  return [lon + dLon, lat + dLat]
 }
 async function onCheckinPhoto(file) {
   if (!file) return
@@ -1595,11 +1963,14 @@ async function onCheckinPhoto(file) {
 
 const checkinPreviewMeters = computed(() => {
   const r = checkinDialog.row
-  const lng1 = Number(checkinDialog.lng)
-  const lat1 = Number(checkinDialog.lat)
+  let lng1 = Number(checkinDialog.lng)
+  let lat1 = Number(checkinDialog.lat)
   const lng2 = Number(r?.lng)
   const lat2 = Number(r?.lat)
   if (!checkinDialog.lng || !r?.lng || ![lng1, lat1, lng2, lat2].every(Number.isFinite)) return null
+  if (checkinDialog.coordType === 'WGS84') {
+    ;[lng1, lat1] = wgs84ToGcj02Client(lng1, lat1)
+  }
   const toRad = d => (d * Math.PI) / 180
   const radLat1 = toRad(lat1)
   const radLat2 = toRad(lat2)
@@ -1622,6 +1993,7 @@ async function submitCheckin() {
     const res = await mktPublicSeaApi.visitCheckin(checkinDialog.row.customerId, {
       checkinLng: checkinDialog.lng,
       checkinLat: checkinDialog.lat,
+      coordType: checkinDialog.coordType,
       photoUrl: `file:${checkinDialog.photoFileId}`,
       note: checkinDialog.note
     })
@@ -1786,12 +2158,36 @@ onMounted(reloadAll)
   border: 1px solid #e2e8f0;
   border-radius: 10px;
   padding: 8px 12px;
+  margin-bottom: 10px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.my-workbench-bar {
+  background: #fefce8;
+  border: 1px solid #fde047;
+  border-radius: 10px;
+  padding: 8px 12px;
   margin-bottom: 12px;
   display: flex;
   justify-content: space-between;
   align-items: center;
   flex-wrap: wrap;
   gap: 8px;
+}
+.tel-link {
+  color: #15803d;
+  font-weight: 700;
+  text-decoration: none;
+}
+.tel-link:hover {
+  text-decoration: underline;
+}
+.followup-tl-item {
+  border-left: 2px solid #60a5fa;
+  padding-left: 10px;
 }
 .gd-zone-buttons {
   display: flex;

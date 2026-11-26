@@ -160,6 +160,7 @@
 
 <script setup>
 import { reactive, ref, onMounted, computed } from 'vue'
+import { useRoute } from 'vue-router'
 import { hasPermission } from '@/utils/permission'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { mktContractApi, mktWarehouseApi, mktTemplateApi, mktCustomerApi } from '@/api/marketing'
@@ -303,7 +304,23 @@ async function openDetail(row) {
   detail.visible = true
 }
 
-onMounted(load)
+const route = useRoute()
+onMounted(async () => {
+  await load()
+  const qCid = Number(route?.query?.customerId)
+  if (Number.isFinite(qCid) && qCid > 0 && mktWarehouseApi?.online && mktCustomerApi?.page) {
+    await openDialog()
+    const qName = String(route?.query?.customerName || `公海客户 #${qCid}`)
+    if (!customers.value.some(c => Number(c.id) === qCid)) {
+      customers.value.unshift({ id: qCid, name: qName })
+    }
+    form.customerId = qCid
+    selectCustomer(qCid)
+    const qWid = Number(route?.query?.warehouseId)
+    if (Number.isFinite(qWid) && qWid > 0) form.warehouseId = qWid
+    if (!form.signMode) form.signMode = 1
+  }
+})
 </script>
 
 <style scoped>

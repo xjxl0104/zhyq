@@ -291,14 +291,166 @@ class MktPublicSeaServiceAndAccessTest {
     }
 
     @Test
-    void specialistCannotClaimBeyondActiveCap() {
+    void specialistCannotClaimBeyondActiveCapAndSignedDealsDoNotCount() {
         JdbcTemplate jdbc = mock(JdbcTemplate.class);
         BizSettings settings = mock(BizSettings.class);
         when(settings.getInt(eq("marketing"), anyString(), anyInt())).thenAnswer(inv -> inv.getArgument(2));
-        when(jdbc.queryForObject(contains("claim_holder_name = ?"), eq(Integer.class), eq("system"))).thenReturn(30);
+        when(jdbc.queryForObject(argThat(sql -> sql.contains("claim_holder_name = ?") && sql.contains("c.status = 1")),
+                eq(Integer.class), eq(1L), eq("system"))).thenReturn(30);
         MktPublicSeaService service = seaService(jdbc, mock(MktPublicSeaMetaMapper.class), settings);
         assertThatThrownBy(() -> service.claimByAdmin(901L))
                 .isInstanceOf(BizException.class).hasMessageContaining("30 户");
+    }
+
+    @Test
+    void round2P0AndP1GuardsCoverAntiHijackContractSignWgs84OwnershipMultiWarehouseAndCsv() throws Exception {
+        // 1) V135 契约安全：零 ALTER crm_customer + 新表与索引齐全
+        try (var in = getClass().getResourceAsStream("/db/migration/V135__public_sea_round2_hardening.sql")) {
+            assertThat(in).isNotNull();
+            String sql = new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+            assertThat(sql.toLowerCase()).doesNotContain("alter table crm_customer");
+            assertThat(sql).contains("crm_public_sea_followup", "idx_sea_admin_cap", "idx_sea_zone_sort",
+                    "idx_waybill_check_order", "sea_followup_max_days");
+        }
+
+        // 2) P0-1：外部 P1-P4 推广员严禁重报接管内部公海在跟 / 15天保护 / 自投流线索
+        CustomerMapper custMapper = mock(CustomerMapper.class);
+        com.zhyq.park.marketing.mapper.MktPromoterMapper promMapper = mock(com.zhyq.park.marketing.mapper.MktPromoterMapper.class);
+        MktPublicSeaMetaMapper seaMetas = mock(MktPublicSeaMetaMapper.class);
+        BizSettings bizSettings = mock(BizSettings.class);
+        when(bizSettings.getInt("marketing", "daily_referral_cap", 20)).thenReturn(20);
+        com.zhyq.park.marketing.entity.MktPromoter promoter = new com.zhyq.park.marketing.entity.MktPromoter();
+        promoter.setId(77L); promoter.setStatus(1); promoter.setTenantId(1L); promoter.setProjectId(1L); promoter.setInviteCode("P001");
+        when(promMapper.selectForUpdate(77L)).thenReturn(promoter);
+        Customer seaCust = new Customer();
+        seaCust.setId(3001L); seaCust.setTenantId(1L); seaCust.setName("广州白云热单美妆公司"); seaCust.setStatus(1);
+        when(custMapper.selectCount(any())).thenReturn(1L);
+        when(custMapper.selectOne(any())).thenReturn(seaCust);
+        MktPublicSeaMeta protectedMeta = meta("CLAIMED_ADMIN", "李专员", true);
+        protectedMeta.setCustomerId(3001L);
+        when(seaMetas.selectById(3001L)).thenReturn(protectedMeta);
+
+        MktReferralService referralService = new MktReferralService(custMapper, promMapper, mock(MktLockService.class),
+                bizSettings, mock(MktAuditService.class), mock(MktCustomerAssignmentService.class),
+                mock(MktCustomerIntakeGuard.class), mock(MktCustomerProgressService.class));
+        referralService.setSeaMetas(seaMetas);
+        assertThatThrownBy(() -> referralService.create(77L, Map.of("name", "广州白云热单美妆公司", "phone", "13812345678")))
+                .isInstanceOf(BizException.class).hasMessageContaining("保护跟进中");
+
+        // 3) P0-2：合同生效自动将公海状态同步为 SIGNED，释放专员在跟额度
+        Customer signingCust = new Customer();
+        signingCust.setId(3002L); signingCust.setStatus(1); signingCust.setAssignedWarehouseId(10L);
+        signingCust.setWarehouseAssignmentStatus(MktCustomerAssignmentService.ACCEPTED); signingCust.setVersion(1);
+        when(custMapper.selectForUpdate(3002L)).thenReturn(signingCust);
+        when(custMapper.update(isNull(), any())).thenReturn(1);
+        MktWarehouseMapper whMapper = mock(MktWarehouseMapper.class);
+        MktWarehouse onlineWh = new MktWarehouse();
+        onlineWh.setId(10L); onlineWh.setJoinStatus(5); onlineWh.setErpStatus(2);
+        when(whMapper.selectForUpdate(10L)).thenReturn(onlineWh);
+        MktCustomerAssignmentService assignSvc = new MktCustomerAssignmentService(custMapper, whMapper,
+                mock(com.zhyq.park.marketing.mapper.MktServiceContractMapper.class),
+                mock(MktAuditService.class), mock(MktCustomerProgressService.class));
+        assignSvc.setSeaMetas(seaMetas);
+        com.zhyq.park.marketing.entity.MktServiceContract sc = new com.zhyq.park.marketing.entity.MktServiceContract();
+        sc.setCustomerId(3002L); sc.setWarehouseId(10L);
+        assignSvc.contractEffective(sc);
+        verify(seaMetas).update(isNull(), any());
+
+        // 4) P0-3：手机原始 WGS-84 坐标（未转换前距 GCJ-02 门头 >520m 会误拦，开启 WGS84 转换后 <30m 顺利打卡）
+        JdbcTemplate jdbc = mock(JdbcTemplate.class);
+        when(bizSettings.getInt(eq("marketing"), anyString(), anyInt())).thenAnswer(inv -> inv.getArgument(2));
+        // 广州白云某点 WGS-84 = (113.280300, 23.227350)，其对应 GCJ-02 约为 (113.285610, 23.224810)
+        BigDecimal wgsLng = new BigDecimal("113.280300");
+        BigDecimal wgsLat = new BigDecimal("23.227350");
+        BigDecimal[] gcjTarget = MktExtDataGateway.wgs84ToGcj02(wgsLng, wgsLat);
+        // 证明未转换前原始偏差超过 500 米
+        assertThat(MktExtDataGateway.haversineMeters(wgsLng, wgsLat, gcjTarget[0], gcjTarget[1])).isGreaterThan(500);
+        MktPublicSeaMeta doorMeta = meta("UNCLAIMED", null, false);
+        doorMeta.setLng(gcjTarget[0]);
+        doorMeta.setLat(gcjTarget[1]);
+        when(seaMetas.selectById(2001L)).thenReturn(doorMeta);
+        when(seaMetas.update(isNull(), any())).thenReturn(1);
+        when(jdbc.queryForList(contains("FROM sys_file"), eq(77L))).thenReturn(List.of(
+                Map.of("create_by", "system", "create_time", LocalDateTime.now().minusMinutes(2), "content_type", "image/jpeg")));
+        MktPublicSeaService seaSvc = seaService(jdbc, seaMetas, bizSettings);
+        Map<String, Object> ck = seaSvc.visitCheckin(2001L, wgsLng, wgsLat, "WGS84", "file:77", "站在客户门头实拍打卡");
+        assertThat((Integer) ck.get("distanceMeters")).isLessThan(20);
+
+        // 5) P1-4：非本人严禁越权释放、投喂、登记首通他人在跟单
+        when(seaMetas.selectById(2009L)).thenReturn(meta("CLAIMED_ADMIN", "王专员", true));
+        assertThatThrownBy(() -> seaSvc.releaseToSea(2009L, "想抢他的单", false))
+                .isInstanceOf(BizException.class).hasMessageContaining("王专员");
+        assertThatThrownBy(() -> seaSvc.feedToWarehouses(2009L, List.of(10L), "越权投喂"))
+                .isInstanceOf(BizException.class).hasMessageContaining("王专员");
+        assertThatThrownBy(() -> seaSvc.recordFirstTouch(2009L, "越权替别人写纪要", 500, "女装"))
+                .isInstanceOf(BizException.class).hasMessageContaining("本人");
+
+        // 6) P1-8 + P1-10 + P2-15：CSV 引号逗号不串列 + 多云仓按东莞仓真实就近测距 + 二次洗数不冲掉在跟纪要
+        String[] csvCols = MktPublicSeaWashService.parseCsvLine("\"东莞虎门潮服有限公司\",\"东莞市虎门镇,博涌服装城,4楼\",13800138009");
+        assertThat(csvCols).containsExactly("东莞虎门潮服有限公司", "东莞市虎门镇,博涌服装城,4楼", "13800138009");
+
+        JdbcTemplate washJdbc = mock(JdbcTemplate.class);
+        CustomerMapper washCusts = mock(CustomerMapper.class);
+        MktPublicSeaMetaMapper washMetas = mock(MktPublicSeaMetaMapper.class);
+        when(washJdbc.queryForList(contains("SELECT tenant_id"), eq(Long.class), anyLong())).thenReturn(List.of(1L));
+        when(washJdbc.queryForObject(contains("COUNT(DISTINCT name)"), eq(Integer.class), any(), any(), any())).thenReturn(0);
+        when(washJdbc.queryForList(contains("FROM crm_warehouse"), eq(1L), eq(1L))).thenReturn(List.of(
+                Map.of("id", 1L, "name", "广州番禺一仓", "region", "广州市番禺区", "address", ""),
+                Map.of("id", 2L, "name", "东莞虎门二仓", "region", "东莞市虎门镇", "address", "")));
+        Customer existDg = new Customer(); existDg.setId(808L);
+        when(washCusts.selectOne(any())).thenReturn(existDg);
+        MktPublicSeaMeta activeDgMeta = new MktPublicSeaMeta();
+        activeDgMeta.setCustomerId(808L);
+        activeDgMeta.setClaimStatus("CLAIMED_ADMIN");
+        activeDgMeta.setSeaSource("FEIYU_AD");
+        activeDgMeta.setBlockNote("专员首通：老板约周四下午看虎门二仓");
+        when(washMetas.selectById(808L)).thenReturn(activeDgMeta);
+        MktExtDataGateway gw = mock(MktExtDataGateway.class);
+        when(gw.alignCompany(anyLong(), anyString(), anyString(), any()))
+                .thenReturn(MktExtDataGateway.CompanyProfile.empty("UNCONFIGURED"));
+        MktPublicSeaWashService washSvc = washWith(washJdbc, washCusts, washMetas, mock(MktPublicSeaWashBatchMapper.class), gw);
+        washSvc.washJsonRows(1L, "CHANMAMA", "dg.xlsx", List.of(Map.of(
+                "name", "东莞虎门潮服有限公司", "phone", "13800138009", "address", "东莞市虎门镇博涌服装城",
+                "lng", "113.675000", "lat", "22.823000", "remark", "榜单备注不应覆盖专员纪要")), false);
+        assertThat(activeDgMeta.getNearestWhName()).isEqualTo("东莞虎门二仓");
+        assertThat(activeDgMeta.getDistNearestWhKm()).isLessThan(new BigDecimal("5.0"));
+        assertThat(activeDgMeta.getSeaSource()).isEqualTo("FEIYU_AD");
+        assertThat(activeDgMeta.getBlockNote()).isEqualTo("专员首通：老板约周四下午看虎门二仓");
+
+        // 7) 跨模块 T-30：MktLockService.prelock 同样拦截后台把公海保护单挂给外部推广员
+        MktLockService lockSvc = new MktLockService(
+                mock(com.zhyq.park.marketing.mapper.MktCustomerLockMapper.class), promMapper,
+                mock(com.zhyq.park.marketing.mapper.MktPositionMapper.class), bizSettings,
+                mock(MktAuditService.class), mock(org.springframework.context.ApplicationEventPublisher.class),
+                custMapper, assignSvc, mock(MktCompetitionProtectionService.class));
+        lockSvc.setSeaMetas(seaMetas);
+        when(custMapper.selectForUpdate(3001L)).thenReturn(seaCust);
+        assertThatThrownBy(() -> lockSvc.prelock(3001L, 77L))
+                .isInstanceOf(BizException.class).hasMessageContaining("保护跟进中");
+
+        // 8) 跨模块 T-32：失信主体(>0)建服务合同时硬拦截 0 保证金月结，但允许周结或收保证金
+        MktServiceContractService contractSvc = new MktServiceContractService(
+                mock(com.zhyq.park.marketing.mapper.MktServiceContractMapper.class),
+                mock(com.zhyq.park.marketing.mapper.MktServiceContractVersionMapper.class),
+                mock(com.zhyq.park.marketing.mapper.MktCustomerGradeMapper.class),
+                custMapper, mock(com.zhyq.park.finance.mapper.BillMapper.class),
+                mock(MktCommissionService.class), lockSvc, mock(MktAuditService.class),
+                mock(org.springframework.context.ApplicationEventPublisher.class), assignSvc);
+        contractSvc.setSeaMetas(seaMetas);
+        MktPublicSeaMeta dishonestMeta = meta("CLAIMED_ADMIN", "李专员", true);
+        dishonestMeta.setDishonestCount(2);
+        when(seaMetas.selectById(3002L)).thenReturn(dishonestMeta);
+        com.zhyq.park.marketing.entity.MktServiceContract badDraft = new com.zhyq.park.marketing.entity.MktServiceContract();
+        badDraft.setCustomerId(3002L); badDraft.setWarehouseId(10L); badDraft.setSignMode(2);
+        badDraft.setServiceType(2); badDraft.setFeeModel(2); badDraft.setPayCycle(3);
+        badDraft.setDeposit(BigDecimal.ZERO); badDraft.setPriceTable("{\"perOrder\":2.5}");
+        badDraft.setStartDate(java.time.LocalDate.now()); badDraft.setEndDate(java.time.LocalDate.now().plusMonths(6));
+        assertThatThrownBy(() -> contractSvc.createDraft(badDraft))
+                .isInstanceOf(BizException.class).hasMessageContaining("失信");
+
+        // 9) 跨模块 T-33：加盟云仓暂停时自动释放该仓名下在途公海客户
+        when(jdbc.queryForList(contains("claim_status = 'CLAIMED_WH'"), eq(Long.class), eq(10L))).thenReturn(List.of(3009L));
+        assertThat(seaSvc.releaseWarehouseClaimsOnOffline(10L, "云仓设备检修暂停")).isEqualTo(1);
     }
 
     @Test

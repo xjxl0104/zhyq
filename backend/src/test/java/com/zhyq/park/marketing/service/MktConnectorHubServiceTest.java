@@ -146,7 +146,31 @@ class MktConnectorHubServiceTest {
 
         Map<String, Object> res = hub.runWaybillSpotCheck(null, "2026-11", null);
         assertThat(res.get("eligibleCount")).isEqualTo(300);
-        // 300 单 × 2% = 6 单随机抽样，取数来自 crm_referral_order 的 logistics_no
-        verify(jdbc).queryForList(contains("logistics_no AS trackingNo"), eq(1L), isNull(), isNull(), any(), any(), eq(6));
+        // 300 单 × 2% = 6 单抽样，排除已抽检 order_id，避免 ORDER BY RAND()
+        verify(jdbc).queryForList(argThat(sql -> sql.contains("r.logistics_no AS trackingNo")
+                && sql.contains("NOT EXISTS") && !sql.contains("RAND()")),
+                eq(1L), isNull(), isNull(), any(), any(), eq(6));
+    }
+
+    @Test
+    void pullOnlineLeadsValidatesEndpointBeforeDeductingMonthlyQuotaAndShopVerifyCanBeAdopted() {
+        JdbcTemplate jdbc = mock(JdbcTemplate.class);
+        FieldEncryptionService crypto = new FieldEncryptionService(KEY_B64);
+        String missingEndpointCipher = crypto.encrypt("{\"appId\":\"cm_id_1234\",\"appSecret\":\"cm_sec_5678\"}");
+        when(jdbc.queryForList(contains("connector_code = ?"), eq(1L), eq("CHANMAMA_API")))
+                .thenReturn(List.of(row("CHANMAMA_API", 1, 1, 1000, 5, missingEndpointCipher)));
+        MktConnectorHubService hub = new MktConnectorHubService(jdbc, new ObjectMapper(), crypto, mock(MktAuditService.class));
+
+        assertThatThrownBy(() -> hub.pullOnlineLeads("CHANMAMA_API", "GZ", "个人洗护", mock(MktPublicSeaWashService.class), 1L))
+                .isInstanceOf(BizException.class).hasMessageContaining("endpoint");
+        verify(jdbc, never()).update(contains("month_used_count < monthly_quota_limit"), any(Object[].class));
+
+        when(jdbc.queryForList(contains("FROM crm_shop_oauth_session"), eq(88L), eq(901L)))
+                .thenReturn(List.of(Map.of("id", 88L, "platform", "DOUYIN", "shopName", "某店",
+                        "status", "SELF_REPORTED", "verifiedDailyAvg", 1250, "avgWeightKg", "0.65")));
+        Map<String, Object> adopted = hub.adoptShopVerification(901L, 88L);
+        assertThat(adopted.get("adoptedDailyOrders")).isEqualTo(1250);
+        assertThat(adopted.get("status")).isEqualTo("ADOPTED");
+        verify(jdbc).update(contains("UPDATE crm_public_sea_meta"), eq(1250), eq(1250), any(), eq(1250), eq(901L));
     }
 }

@@ -249,6 +249,16 @@ public class MktConnectorHubService {
         return Optional.of(creds);
     }
 
+    /** 当外部请求因网络超时或上游 5xx 失败（未产生有效查询结果）时，退回刚才预扣的 1 次当月额度。 */
+    public void refundQuotaOnError(Long tenantId, String connectorCode) {
+        String ym = YearMonth.now().toString();
+        execSafe("""
+                UPDATE crm_ext_connector_config
+                   SET month_used_count = CASE WHEN month_used_count > 0 THEN month_used_count - 1 ELSE 0 END
+                 WHERE tenant_id = ? AND connector_code = ? AND usage_month = ?
+                """, tenantId, connectorCode, ym);
+    }
+
     /** 免费通道（高德、广告回调、群机器人）取用凭证：只看开关与密钥，不计额度。 */
     public Map<String, String> activeCredentials(Long tenantId, String connectorCode) {
         Map<String, Object> row = queryConnectorRow(tenantId, connectorCode);
@@ -270,7 +280,7 @@ public class MktConnectorHubService {
         }
     }
 
-    /** 蝉妈妈 / 店透巢 / 探迹 在线拉榜（未开通则如实返回申领指引）。 */
+    /** 蝉妈妈 / 店透巢 / 探迹 在线拉榜（先校验必填 endpoint 再扣配额；网络或 5xx 异常退回当次配额）。 */
     @Transactional
     public Map<String, Object> pullOnlineLeads(String connectorCode, String zoneCode, String category, MktPublicSeaWashService washService, Long projectId) {
         DefaultConnectorSeed seed = findSeed(connectorCode);
@@ -278,6 +288,13 @@ public class MktConnectorHubService {
             throw new BizException(400, "不支持在线拉榜的连接器类型: " + connectorCode);
         }
         Long tenantId = MyMetaObjectHandler.DEFAULT_TENANT_ID;
+        Map<String, Object> cfgRow = queryConnectorRow(tenantId, seed.code());
+        if (cfgRow != null && toInt(cfgRow.get("enabled")) == 1) {
+            Map<String, String> preCheck = decodeCredentials(str(cfgRow.get("credentials_cipher")));
+            if (coreSecretPresent(preCheck) && !StringUtils.hasText(preCheck.get("endpoint"))) {
+                throw new BizException(400, "请先在连接器中心填写 " + seed.name() + " 的接口地址 endpoint");
+            }
+        }
         Optional<Map<String, String>> credsOpt = acquireActiveCredentials(tenantId, seed.code(), false);
         if (credsOpt.isEmpty()) {
             Map<String, Object> out = new LinkedHashMap<>();
@@ -293,7 +310,10 @@ public class MktConnectorHubService {
         }
         Map<String, String> creds = credsOpt.get();
         String endpoint = creds.get("endpoint");
-        if (!StringUtils.hasText(endpoint)) throw new BizException(400, "请先在连接器中心填写 " + seed.name() + " 的接口地址 endpoint");
+        if (!StringUtils.hasText(endpoint)) {
+            refundQuotaOnError(tenantId, seed.code());
+            throw new BizException(400, "请先在连接器中心填写 " + seed.name() + " 的接口地址 endpoint");
+        }
         try {
             String url = endpoint + (endpoint.contains("?") ? "&" : "?")
                     + "province=" + URLEncoder.encode("广东省", StandardCharsets.UTF_8)
@@ -304,7 +324,10 @@ public class MktConnectorHubService {
             if (StringUtils.hasText(creds.get("appId"))) rb.header("X-App-Id", creds.get("appId"));
             if (StringUtils.hasText(creds.get("appKey"))) rb.header("X-App-Key", creds.get("appKey"));
             HttpResponse<String> resp = http.send(rb.build(), HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
-            if (resp.statusCode() != 200) throw new BizException(502, seed.name() + " 返回 HTTP " + resp.statusCode());
+            if (resp.statusCode() != 200) {
+                if (resp.statusCode() >= 500) refundQuotaOnError(tenantId, seed.code());
+                throw new BizException(502, seed.name() + " 返回 HTTP " + resp.statusCode());
+            }
             JsonNode root = json.readTree(resp.body());
             JsonNode arr = root.path("data").isArray() ? root.path("data") : root.path("list");
             List<Map<String, Object>> rows = new ArrayList<>();
@@ -334,6 +357,7 @@ public class MktConnectorHubService {
         } catch (BizException e) {
             throw e;
         } catch (Exception e) {
+            refundQuotaOnError(tenantId, seed.code());
             throw new BizException(502, "调用 " + seed.name() + " 异常：" + e.getMessage());
         }
     }
@@ -403,6 +427,36 @@ public class MktConnectorHubService {
                   FROM crm_shop_oauth_session
                  WHERE customer_id = ? ORDER BY id DESC LIMIT 10
                 """, customerId);
+    }
+
+    /** 专员人工核对后一键采纳验店/自报单量，同步回写客户公海画像的日均单量与件重。 */
+    @Transactional
+    public Map<String, Object> adoptShopVerification(Long customerId, Long sessionId) {
+        List<Map<String, Object>> rows = jdbc.queryForList("""
+                SELECT id, platform, shop_name AS shopName, status, verified_daily_avg AS verifiedDailyAvg,
+                       avg_weight_kg AS avgWeightKg
+                  FROM crm_shop_oauth_session
+                 WHERE id = ? AND customer_id = ? LIMIT 1
+                """, sessionId, customerId);
+        if (rows.isEmpty()) throw new BizException(404, "验店记录不存在");
+        Map<String, Object> s = rows.get(0);
+        String st = str(s.get("status"));
+        if (!Set.of("SELF_REPORTED", "OAUTH_VERIFIED", "ADOPTED").contains(st)) {
+            throw new BizException(400, "货主尚未提交单量数据，暂不可采纳");
+        }
+        int daily = toInt(s.get("verifiedDailyAvg"));
+        BigDecimal weight = parseDec(s.get("avgWeightKg"), null);
+        jdbc.update("""
+                UPDATE crm_public_sea_meta
+                   SET est_daily_orders = CASE WHEN ? > 0 THEN ? ELSE est_daily_orders END,
+                       avg_weight_kg = COALESCE(?, avg_weight_kg),
+                       urgency_level = CASE WHEN ? >= 500 AND urgency_level = 'B' THEN 'A' ELSE urgency_level END,
+                       updated_at = NOW()
+                 WHERE customer_id = ?
+                """, daily, daily, weight, daily, customerId);
+        jdbc.update("UPDATE crm_shop_oauth_session SET status = 'ADOPTED' WHERE id = ? AND customer_id = ?", sessionId, customerId);
+        audit.log("connector.shop_verify.adopt", "customer", customerId, "采纳验店单量：日均 " + daily + " 单");
+        return Map.of("customerId", customerId, "sessionId", sessionId, "adoptedDailyOrders", daily, "status", "ADOPTED");
     }
 
     /** 快递100 运单轨迹抽检（未开通时标记为待人工核对）。 */
@@ -647,14 +701,18 @@ public class MktConnectorHubService {
 
     private static final int MAX_WAYBILL_SAMPLES = 200;
     private static final String OUTBOUND_WHERE = """
-             FROM crm_referral_order
-            WHERE tenant_id = ? AND source_type = 2 AND status = 2 AND deleted = 0
-              AND logistics_no IS NOT NULL AND logistics_no <> ''
-              AND (? IS NULL OR warehouse_id = ?)
-              AND event_time >= ? AND event_time < ?
+             FROM crm_referral_order r
+            WHERE r.tenant_id = ? AND r.source_type = 2 AND r.status = 2 AND r.deleted = 0
+              AND r.logistics_no IS NOT NULL AND r.logistics_no <> ''
+              AND (? IS NULL OR r.warehouse_id = ?)
+              AND r.event_time >= ? AND r.event_time < ?
+              AND NOT EXISTS (
+                    SELECT 1 FROM crm_waybill_spot_check sc
+                     WHERE sc.tenant_id = r.tenant_id AND sc.order_id = r.id
+                  )
             """;
 
-    /** 账期内带运单号的已确认出库单数（crm_referral_order：source_type=2 出库单，logistics_no 为运单号）。 */
+    /** 账期内带运单号且尚未抽检过的已确认出库单数（crm_referral_order：source_type=2 出库单，logistics_no 为运单号）。 */
     private int countEligibleOutbound(Long tenantId, Long warehouseId, String ym) {
         try {
             YearMonth m = YearMonth.parse(ym);
@@ -663,13 +721,14 @@ public class MktConnectorHubService {
         } catch (Exception e) { return 0; }
     }
 
-    /** 随机抽样；快递公司编码取 ERP 推送原文里的 logistics.carrier，没有则由快递100自动识别。 */
+    /** 按哈希伪随机抽样（排除已抽检运单，避免大表 ORDER BY RAND() 全量临时表排序与重复扣费）。 */
     private List<Map<String, Object>> querySampleOrdersSafe(Long tenantId, Long warehouseId, String ym, int limit) {
         try {
             YearMonth m = YearMonth.parse(ym);
-            return jdbc.queryForList("SELECT id AS orderId, logistics_no AS trackingNo, "
-                            + "JSON_UNQUOTE(JSON_EXTRACT(raw_payload, '$.logistics.carrier')) AS carrierCode"
-                            + OUTBOUND_WHERE + " ORDER BY RAND() LIMIT ?",
+            int salt = new Random().nextInt(100_000);
+            return jdbc.queryForList("SELECT r.id AS orderId, r.logistics_no AS trackingNo, "
+                            + "JSON_UNQUOTE(JSON_EXTRACT(r.raw_payload, '$.logistics.carrier')) AS carrierCode"
+                            + OUTBOUND_WHERE + " ORDER BY MOD(CRC32(CONCAT(r.id, '-', " + salt + ")), 99991) LIMIT ?",
                     tenantId, warehouseId, warehouseId, m.atDay(1).atStartOfDay(), m.plusMonths(1).atDay(1).atStartOfDay(), limit);
         } catch (Exception e) { return List.of(); }
     }

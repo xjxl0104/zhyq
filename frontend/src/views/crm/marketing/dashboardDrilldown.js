@@ -223,6 +223,9 @@ export function buildDashboardDrilldownCards(summaryInput = {}, rangeLabel = '�
   const activeLocksCount = toNum(pickFirst(lockSrc, ['activeLocksCount', 'lockingCount', 'inLockCount'], 0))
   const dealLocksCount = toNum(pickFirst(lockSrc, ['dealLocksCount', 'convertedCount', 'longTermLocks'], 0))
   const releasedLocksCount = toNum(pickFirst(lockSrc, ['releasedLocksCount', 'releasedCount', 'publicSeaCount'], 0))
+  const publicSeaActiveTotal = toNum(pickFirst([d, summary], ['publicSeaActiveTotal'], 0))
+  const publicSeaClaimedCount = toNum(pickFirst([d, summary], ['publicSeaClaimedCount'], 0))
+  const publicSeaSignedCount = toNum(pickFirst([d, summary], ['publicSeaSignedCount'], 0))
   const totalLocks = activeLocksCount + dealLocksCount + releasedLocksCount
   const explicitLockRate = pickFirst(lockSrc, ['conversionRate', 'lockConversionRate'], null)
   const lockConversionRate = explicitLockRate !== null
@@ -267,6 +270,19 @@ export function buildDashboardDrilldownCards(summaryInput = {}, rangeLabel = '�
           formula: null,
           linkLabel: '前往客户管理查看「公海可重报」客户',
           to: { path: '/crm/marketing/customer' }
+        }
+      },
+      {
+        key: 'lock-public-sea',
+        label: '🌊 内部专属公海（免 70% 外部团队佣金）协同沉淀',
+        value: `活跃池 ${fmtInt(publicSeaActiveTotal)} 户 · 在跟 ${fmtInt(publicSeaClaimedCount)} 户 · 已签约 ${fmtInt(publicSeaSignedCount)} 户`,
+        verdict: publicSeaSignedCount > 0 ? '内部直营公海已跑通 0 外部佣金成单闭环' : '公海池持续供给直营招商与严选云仓',
+        evidence: {
+          raw: JSON.stringify({ publicSeaActiveTotal, publicSeaClaimedCount, publicSeaSignedCount }),
+          source: `数据表：crm_public_sea_meta JOIN crm_customer (deleted=0, referrer_id IS NULL) · ${fetchedNote}`,
+          formula: `直营公海签约占比 = 已签约 ${fmtInt(publicSeaSignedCount)} ÷ 活跃公海池 ${fmtInt(publicSeaActiveTotal || 1)} × 100% = ${fmtRate(publicSeaActiveTotal > 0 ? (publicSeaSignedCount / publicSeaActiveTotal * 100) : 0)}`,
+          linkLabel: '前往公海线索池作战台',
+          to: { path: '/crm/marketing/public-sea' }
         }
       }
     ]

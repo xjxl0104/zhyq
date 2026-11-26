@@ -7,20 +7,30 @@ import com.zhyq.park.common.setting.BizSettings;
 import com.zhyq.park.crm.entity.Customer;
 import com.zhyq.park.crm.mapper.CustomerMapper;
 import com.zhyq.park.marketing.entity.MktPromoter;
+import com.zhyq.park.marketing.entity.MktPublicSeaMeta;
 import com.zhyq.park.marketing.mapper.MktPromoterMapper;
+import com.zhyq.park.marketing.mapper.MktPublicSeaMetaMapper;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
 
 /** All referral channels resolve the partner on the server and share attribution checks. */
 @Service
 @RequiredArgsConstructor
 public class MktReferralService {
+    private static final Set<String> INTERNAL_EXCLUSIVE_SEA_SOURCES = Set.of(
+            "CALC_HOT", "FEIYU_AD", "AMAP_POI", "CHANMAMA", "TUNGEE_JOB");
+    private static final Set<String> PROTECTED_SEA_STATUSES = Set.of(
+            "CLAIMED_ADMIN", "CLAIMED_WH", "FEED_WH", "SIGNED");
+
     private final CustomerMapper customers;
     private final MktPromoterMapper promoters;
     private final MktLockService locks;
@@ -29,6 +39,14 @@ public class MktReferralService {
     private final MktCustomerAssignmentService assignment;
     private final MktCustomerIntakeGuard intakeGuard;
     private final MktCustomerProgressService progress;
+
+    /** 非构造注入以保持存量单测兼容；生产态由 Spring 自动装配，拦截外部伙伴截胡内部公海保护单。 */
+    @Autowired(required = false)
+    private MktPublicSeaMetaMapper seaMetas;
+
+    void setSeaMetas(MktPublicSeaMetaMapper seaMetas) {
+        this.seaMetas = seaMetas;
+    }
 
     @Transactional(isolation = org.springframework.transaction.annotation.Isolation.READ_COMMITTED)
     public Map<String,Object> create(Long promoterId, Map<String,Object> body) {
@@ -157,8 +175,23 @@ public class MktReferralService {
         return result;
     }
 
-    private static boolean isReclaimablePublicCustomer(Customer c) {
-        return c.getReferrerId() == null && !Integer.valueOf(2).equals(c.getStatus());
+    private boolean isReclaimablePublicCustomer(Customer c) {
+        if (c.getReferrerId() != null || Integer.valueOf(2).equals(c.getStatus())) {
+            return false;
+        }
+        if (seaMetas != null && c.getId() != null) {
+            MktPublicSeaMeta meta = seaMetas.selectById(c.getId());
+            if (meta != null) {
+                if (PROTECTED_SEA_STATUSES.contains(meta.getClaimStatus())
+                        || (meta.getVisitProtectedUntil() != null && meta.getVisitProtectedUntil().isAfter(LocalDateTime.now()))) {
+                    throw new BizException(409, "该客户正由园区内部专员或加盟云仓保护跟进中，不可外部重报接管");
+                }
+                if (meta.getSeaSource() != null && INTERNAL_EXCLUSIVE_SEA_SOURCES.contains(meta.getSeaSource())) {
+                    throw new BizException(409, "该客户属园区自投流/付费拓客专属公海线索，不可外部重报接管");
+                }
+            }
+        }
+        return true;
     }
 
     private static String text(Map<String,Object> body, String key, int max, String label) {

@@ -42,4 +42,11 @@ public class WhPublicSeaController {
         publicSeaService.recordWarehouseTouch(customerId, body.get("note"));
         return Result.ok();
     }
+
+    @Operation(summary = "主动退回未谈拢的公海客户(释放本仓在途配额)")
+    @PostMapping("/{customerId}/release")
+    public Result<Void> release(@PathVariable Long customerId, @RequestBody Map<String, String> body) {
+        publicSeaService.releaseByWarehouse(customerId, body.get("reason"));
+        return Result.ok();
+    }
 }

@@ -268,6 +268,7 @@ const PUBLIC_SEA = `${BASE}/public-sea`
 export const mktPublicSeaApi = {
   summary: (params) => request.get(`${PUBLIC_SEA}/summary`, { params }),
   page: (params) => request.get(`${PUBLIC_SEA}/page`, { params }),
+  mapPoints: (params) => request.get(`${PUBLIC_SEA}/map-points`, { params }),
   washFile: (formData, params) => request.post(`${PUBLIC_SEA}/wash-file`, formData, {
     params,
     headers: { 'Content-Type': 'multipart/form-data' },
@@ -275,11 +276,16 @@ export const mktPublicSeaApi = {
   }),
   washRows: (data) => request.post(`${PUBLIC_SEA}/wash-rows`, data, { timeout: 60000 }),
   washBatch: (batchNo) => request.get(`${PUBLIC_SEA}/wash-batches/${batchNo}`),
+  washBatches: (params) => request.get(`${PUBLIC_SEA}/wash-batches`, { params }),
   shopLookup: (data) => request.post(`${PUBLIC_SEA}/shop-lookup`, data, { timeout: 30000 }),
   amapRadar: (data) => request.post(`${PUBLIC_SEA}/amap-radar`, data, { timeout: 30000 }),
   claim: (customerId) => request.post(`${PUBLIC_SEA}/${customerId}/claim`),
+  assign: (customerId, data) => request.post(`${PUBLIC_SEA}/${customerId}/assign`, data),
+  revive: (customerId, data) => request.post(`${PUBLIC_SEA}/${customerId}/revive`, data),
   visitCheckin: (customerId, data) => request.post(`${PUBLIC_SEA}/${customerId}/visit-checkin`, data),
   checkins: (customerId) => request.get(`${PUBLIC_SEA}/${customerId}/checkins`),
+  followups: (customerId) => request.get(`${PUBLIC_SEA}/${customerId}/followups`),
+  addFollowup: (customerId, data) => request.post(`${PUBLIC_SEA}/${customerId}/followups`, data),
   firstTouch: (customerId, data) => request.post(`${PUBLIC_SEA}/${customerId}/first-touch`, data),
   feedWarehouses: (customerId, data) => request.post(`${PUBLIC_SEA}/${customerId}/feed-warehouses`, data),
   batchFeedWarehouses: (data) => request.post(`${PUBLIC_SEA}/batch-feed-warehouses`, data),
@@ -294,9 +300,13 @@ export const mktConnectorHubApi = {
   pullLeads: (data) => request.post(`${CONNECTORS}/pull-leads`, data, { timeout: 30000 }),
   createShopVerifyInvite: (customerId, data) => request.post(`${CONNECTORS}/customers/${customerId}/shop-verify-invite`, data),
   listShopVerifications: (customerId) => request.get(`${CONNECTORS}/customers/${customerId}/shop-verifications`),
+  adoptShopVerification: (customerId, sessionId) => request.post(`${CONNECTORS}/customers/${customerId}/shop-verifications/${sessionId}/adopt`),
   privacyCall: (customerId, data) => request.post(`${CONNECTORS}/customers/${customerId}/privacy-call`, data),
   waybillSpotCheck: (data) => request.post(`${CONNECTORS}/waybill-spot-check`, data),
   listWaybillChecks: (params) => request.get(`${CONNECTORS}/waybill-spot-checks`, { params }),
   verifyInvoice: (data) => request.post(`${CONNECTORS}/invoice-verify`, data),
   listInvoiceLogs: (params) => request.get(`${CONNECTORS}/invoice-verify-logs`, { params })
 }
+
+export { mktPublicOpenApi } from './publicMarketing'
+

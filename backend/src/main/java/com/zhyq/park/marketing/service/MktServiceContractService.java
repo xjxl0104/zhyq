@@ -11,9 +11,11 @@ import com.zhyq.park.crm.mapper.CustomerMapper;
 import com.zhyq.park.finance.entity.Bill;
 import com.zhyq.park.finance.mapper.BillMapper;
 import com.zhyq.park.marketing.entity.MktCustomerGrade;
+import com.zhyq.park.marketing.entity.MktPublicSeaMeta;
 import com.zhyq.park.marketing.entity.MktServiceContract;
 import com.zhyq.park.marketing.entity.MktServiceContractVersion;
 import com.zhyq.park.marketing.mapper.MktCustomerGradeMapper;
+import com.zhyq.park.marketing.mapper.MktPublicSeaMetaMapper;
 import com.zhyq.park.marketing.mapper.MktServiceContractMapper;
 import com.zhyq.park.marketing.mapper.MktServiceContractVersionMapper;
 import com.zhyq.park.marketing.service.MktCommissionService.CommissionEvent;
@@ -83,6 +85,24 @@ public class MktServiceContractService {
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     @lombok.Setter
     private MktCustomerPricingService pricingService;
+
+    /** 非构造注入：失信客户签署服务合同时硬拦截 0 保证金月结，保持既有构造器兼容。 */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    @lombok.Setter
+    private MktPublicSeaMetaMapper seaMetas;
+
+    private void assertDishonestPayCycleSafe(MktServiceContract c) {
+        if (seaMetas == null || c == null || c.getCustomerId() == null) return;
+        MktPublicSeaMeta meta = seaMetas.selectById(c.getCustomerId());
+        if (meta != null && meta.getDishonestCount() != null && meta.getDishonestCount() > 0) {
+            boolean monthlyNoDeposit = Integer.valueOf(3).equals(c.getPayCycle())
+                    && (c.getDeposit() == null || c.getDeposit().signum() <= 0);
+            if (monthlyNoDeposit) {
+                throw new BizException(400, "风控拦截：该客户命中 " + meta.getDishonestCount()
+                        + " 条失信/限高记录，严禁签署 0 保证金月结合同，请改为周结或收取履约保证金");
+            }
+        }
+    }
     private static final ObjectMapper JSON = new ObjectMapper().findAndRegisterModules()
             .disable(com.fasterxml.jackson.databind.SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
     private static final Set<String> PRICE_KEYS = Set.of("perOrder", "perItem", "storage", "monthly");
@@ -104,6 +124,7 @@ public class MktServiceContractService {
         }
         if (draft.getAutoRenew() == null) draft.setAutoRenew(0);
         validateTerms(draft);
+        assertDishonestPayCycleSafe(draft);
         if (StringUtils.hasText(draft.getFiles())) validateFiles(draft.getFiles(), false);
         draft.setId(null);
         draft.setProjectId(customer.getProjectId());
@@ -131,6 +152,7 @@ public class MktServiceContractService {
         assignmentService.validateContractWarehouse(current);
         if (draft.getAutoRenew() == null) draft.setAutoRenew(current.getAutoRenew() == null ? 0 : current.getAutoRenew());
         validateTerms(draft);
+        assertDishonestPayCycleSafe(draft);
         draft.setGrade(current.getGrade());
         validateEconomics(draft);
         if (StringUtils.hasText(draft.getFiles())) validateFiles(draft.getFiles(), false);
@@ -152,6 +174,7 @@ public class MktServiceContractService {
         if (Integer.valueOf(ST_PENDING_AUDIT).equals(c.getStatus())) return;
         assignmentService.validateContractWarehouse(c);
         validateTerms(c);
+        assertDishonestPayCycleSafe(c);
         validateEconomics(c);
         if (Integer.valueOf(SIGN_MODE_DIRECT).equals(c.getSignMode())) validateFiles(c.getFiles(), true);
         transition(id, ST_PENDING_AUDIT, "contract.submit", null, ST_DRAFT);
@@ -185,6 +208,7 @@ public class MktServiceContractService {
         if (isActive(c)) return;
         assignmentService.validateContractWarehouse(c);
         validateTerms(c);
+        assertDishonestPayCycleSafe(c);
         validateEconomics(c);
         int updated = contractMapper.update(null, new LambdaUpdateWrapper<MktServiceContract>()
                 .eq(MktServiceContract::getId, id)
@@ -211,6 +235,7 @@ public class MktServiceContractService {
         if (!Integer.valueOf(ST_PENDING_AUDIT).equals(c.getStatus())) throw new BizException("直签合同须先提交审核，才能备案生效");
         assignmentService.validateContractWarehouse(c);
         validateTerms(c);
+        assertDishonestPayCycleSafe(c);
         validateEconomics(c);
         validateFiles(c.getFiles(), true);
         int updated = contractMapper.update(null, new LambdaUpdateWrapper<MktServiceContract>()

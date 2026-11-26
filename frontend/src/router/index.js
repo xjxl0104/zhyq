@@ -13,6 +13,9 @@ const routes = [
   { path: '/login', name: 'Login', meta: { title: '登录', public: true }, component: () => import('@/views/Login.vue') },
   // 手机自助报修:业主扫码/点链接直接进,不需要账号
   { path: '/m/repair', name: 'MobileRepair', meta: { title: '园区报修', public: true }, component: () => import('@/views/mobile/MobileRepair.vue') },
+  // 公开免登录获客页:10秒货主扫码验店 & 30秒云仓代发底价计算器
+  { path: '/open/shop-verify/:token', name: 'ShopVerifyOpen', meta: { title: '店铺发货量登记', public: true }, component: () => import('@/views/open/ShopVerifyOpen.vue') },
+  { path: '/open/public-calc', name: 'PublicCalcOpen', meta: { title: '30秒云仓底价计算器', public: true }, component: () => import('@/views/open/PublicCalcOpen.vue') },
   {
     path: '/',
     component: Layout,

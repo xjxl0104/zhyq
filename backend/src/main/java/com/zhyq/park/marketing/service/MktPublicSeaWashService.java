@@ -49,9 +49,18 @@ public class MktPublicSeaWashService {
     private static final int MAX_IMPORT_ROWS = 1000;
     private static final Set<String> VALID_SOURCES = Set.of(
             "CALC_HOT", "FEIYU_AD", "AMAP_POI", "CHANMAMA", "TUNGEE_JOB", "EXPIRE_RETURN", "PARK_CRM", "MANUAL_IMPORT");
-    /** 广东基准中心坐标（当园区加盟云仓未登记精确经纬度时，按广州番禺/白云电商仓轴心测算参考里程） */
+    /** 广东各战区产业带基准轴心坐标（当加盟云仓未填详细门牌或未开高德时，按云仓所在城市/区域匹配最近仓） */
     private static final BigDecimal DEFAULT_GD_WH_LNG = new BigDecimal("113.348620");
     private static final BigDecimal DEFAULT_GD_WH_LAT = new BigDecimal("23.028540");
+    private static final Map<String, BigDecimal[]> ZONE_WH_CENTROIDS = Map.of(
+            "GZ", new BigDecimal[]{new BigDecimal("113.318500"), new BigDecimal("23.128600")},
+            "DG", new BigDecimal[]{new BigDecimal("113.673120"), new BigDecimal("22.821950")},
+            "FS", new BigDecimal[]{new BigDecimal("113.216840"), new BigDecimal("22.932180")},
+            "SZ", new BigDecimal[]{new BigDecimal("114.065210"), new BigDecimal("22.658420")},
+            "YD", new BigDecimal[]{new BigDecimal("116.165400"), new BigDecimal("23.302500")},
+            "OTHER_GD", new BigDecimal[]{DEFAULT_GD_WH_LNG, DEFAULT_GD_WH_LAT}
+    );
+    private final Map<String, BigDecimal[]> whGeoCache = new java.util.concurrent.ConcurrentHashMap<>();
 
     private final JdbcTemplate jdbc;
     private final ObjectMapper json;
@@ -635,9 +644,10 @@ public class MktPublicSeaWashService {
                 status, batchId);
     }
 
-    /** 查询批次进度（后台导入轮询用）。 */
-    @Transactional(readOnly = true)
+    /** 查询批次进度（后台导入轮询用；自动将超过 30 分钟无响应的僵死 RUNNING 批次标为中断）。 */
+    @Transactional
     public Map<String, Object> getWashBatch(String batchNo) {
+        recoverStaleRunningBatches();
         List<Map<String, Object>> rows = jdbc.queryForList("""
                 SELECT batch_no AS batchNo, sea_source AS seaSource, file_name AS fileName, status,
                        total_rows AS totalRows, processed_rows AS processedRows, inserted_rows AS insertedRows,
@@ -658,6 +668,40 @@ public class MktPublicSeaWashService {
             out.put("blockedDetails", List.of());
         }
         return out;
+    }
+
+    /** 最近 20 条洗数导入批次历史（刷新页面后仍可查看后台导入进度与结果）。 */
+    @Transactional
+    public List<Map<String, Object>> listWashBatches(Long projectId) {
+        recoverStaleRunningBatches();
+        Long effProject = resolveProjectId(projectId);
+        Long tenantId = resolveTenantId(effProject);
+        try {
+            return jdbc.queryForList("""
+                    SELECT batch_no AS batchNo, sea_source AS seaSource, file_name AS fileName, status,
+                           total_rows AS totalRows, processed_rows AS processedRows, inserted_rows AS insertedRows,
+                           skipped_out_province AS skippedOutProvince, qcc_cache_hits AS qccCacheHits,
+                           qcc_api_calls AS qccApiCalls, error_msg AS errorMsg, operator,
+                           created_at AS createdAt, finished_at AS finishedAt
+                      FROM crm_public_sea_wash_batch
+                     WHERE tenant_id = ? AND (? IS NULL OR project_id = ? OR project_id IS NULL)
+                     ORDER BY id DESC LIMIT 20
+                    """, tenantId, effProject, effProject);
+        } catch (Exception e) {
+            return List.of();
+        }
+    }
+
+    private void recoverStaleRunningBatches() {
+        try {
+            jdbc.update("""
+                    UPDATE crm_public_sea_wash_batch
+                       SET status = 'FAILED',
+                           error_msg = '服务重启或后台任务超过30分钟中断，可重新上传未入池名单（已有记录自动去重）',
+                           finished_at = NOW()
+                     WHERE status = 'RUNNING' AND created_at < DATE_SUB(NOW(), INTERVAL 30 MINUTE)
+                    """);
+        } catch (Exception ignored) { /* 兼容单测 Mock */ }
     }
 
     @PreDestroy
@@ -681,7 +725,11 @@ public class MktPublicSeaWashService {
             meta.setQccAligned(0);
             meta.setCreatedAt(LocalDateTime.now());
         }
-        meta.setSeaSource(seaSource);
+        boolean activelyFollowed = !isNew
+                && Set.of("CLAIMED_ADMIN", "CLAIMED_WH", "SIGNED").contains(meta.getClaimStatus());
+        if (!activelyFollowed) {
+            meta.setSeaSource(seaSource);
+        }
         meta.setZoneCode(zoneCode);
         meta.setProvince(StringUtils.hasText(aligned.province()) ? aligned.province()
                 : (MktExtDataGateway.GD_ZONES.contains(zoneCode) ? "广东省" : null));
@@ -694,7 +742,9 @@ public class MktPublicSeaWashService {
         if (calcLow != null) meta.setCalcLowPrice(calcLow);
         if (calcHigh != null) meta.setCalcHighPrice(calcHigh);
         if (r.logisticsScore() != null) meta.setLogisticsScore(r.logisticsScore());
-        if (StringUtils.hasText(r.blockNote())) meta.setBlockNote(r.blockNote());
+        if (StringUtils.hasText(r.blockNote()) && (!activelyFollowed || !StringUtils.hasText(meta.getBlockNote()))) {
+            meta.setBlockNote(r.blockNote());
+        }
 
         if ("CACHE_HIT".equals(aligned.status()) || "API_ALIGNED".equals(aligned.status())) {
             meta.setQccAligned(1);
@@ -726,16 +776,13 @@ public class MktPublicSeaWashService {
             meta.setBuildingName(MktExtDataGateway.extractBuildingName(meta.getAddress()));
         }
         if (meta.getLng() != null && meta.getLat() != null) {
-            int meters = MktExtDataGateway.haversineMeters(meta.getLng(), meta.getLat(), DEFAULT_GD_WH_LNG, DEFAULT_GD_WH_LAT);
-            // 城市道路折算系数约 1.28 × 直线距离
-            BigDecimal km = BigDecimal.valueOf(meters * 1.28 / 1000.0).setScale(1, RoundingMode.HALF_UP);
-            meta.setDistNearestWhKm(km);
-            if (!StringUtils.hasText(meta.getNearestWhName())) {
-                meta.setNearestWhName( resolveDefaultWhName(tenantId, projectId) );
-            }
+            NearestWh nearest = resolveNearestWarehouse(tenantId, projectId, meta.getLng(), meta.getLat());
+            meta.setNearestWhId(nearest.id());
+            meta.setNearestWhName(nearest.name());
+            meta.setDistNearestWhKm(nearest.distKm());
         }
 
-        computeUrgency(meta, seaSource);
+        computeUrgency(meta, meta.getSeaSource());
         meta.setUpdatedAt(LocalDateTime.now());
         if (isNew) seaMetas.insert(meta);
         else seaMetas.updateById(meta);
@@ -768,11 +815,64 @@ public class MktPublicSeaWashService {
         } catch (Exception ignored) { /* 兼容尚未跑 V132 的单测 Mock */ }
     }
 
-    private String resolveDefaultWhName(Long tenantId, Long projectId) {
-        List<String> names = jdbc.queryForList(
-                "SELECT name FROM crm_warehouse WHERE tenant_id = ? AND (project_id = ? OR project_id IS NULL) AND join_status = 5 AND deleted = 0 ORDER BY id LIMIT 1",
-                String.class, tenantId, projectId);
-        return names.isEmpty() ? "广东园区主力云仓" : names.get(0);
+    private record NearestWh(Long id, String name, BigDecimal distKm) {}
+
+    /**
+     * 遍历本园区全部已上线加盟云仓，按真实地址地理编码（缓存）或所属城市产业带坐标求最近一仓里程，
+     * 避免把东莞/深圳/佛山客户统一按广州番禺单点算偏。
+     */
+    private NearestWh resolveNearestWarehouse(Long tenantId, Long projectId, BigDecimal custLng, BigDecimal custLat) {
+        List<Map<String, Object>> whRows = List.of();
+        try {
+            whRows = jdbc.queryForList("""
+                    SELECT id, name, region, address
+                      FROM crm_warehouse
+                     WHERE tenant_id = ? AND (project_id = ? OR project_id IS NULL)
+                       AND join_status = 5 AND deleted = 0
+                     ORDER BY id
+                    """, tenantId, projectId);
+        } catch (Exception ignored) {}
+        if (whRows == null || whRows.isEmpty()) {
+            int m = MktExtDataGateway.haversineMeters(custLng, custLat, DEFAULT_GD_WH_LNG, DEFAULT_GD_WH_LAT);
+            return new NearestWh(null, "广东园区主力云仓",
+                    BigDecimal.valueOf(m * 1.28 / 1000.0).setScale(1, RoundingMode.HALF_UP));
+        }
+        Long bestId = null;
+        String bestName = "广东园区主力云仓";
+        int bestMeters = Integer.MAX_VALUE;
+        for (Map<String, Object> w : whRows) {
+            Long id = w.get("id") instanceof Number n ? n.longValue() : null;
+            String name = w.get("name") == null ? "加盟云仓" : String.valueOf(w.get("name"));
+            String addr = w.get("address") == null ? "" : String.valueOf(w.get("address")).trim();
+            String region = w.get("region") == null ? "" : String.valueOf(w.get("region")).trim();
+            BigDecimal[] pt = resolveWarehouseCoord(name, region, addr);
+            int meters = MktExtDataGateway.haversineMeters(custLng, custLat, pt[0], pt[1]);
+            if (meters < bestMeters) {
+                bestMeters = meters;
+                bestId = id;
+                bestName = name;
+            }
+        }
+        BigDecimal km = BigDecimal.valueOf(bestMeters * 1.28 / 1000.0).setScale(1, RoundingMode.HALF_UP);
+        return new NearestWh(bestId, bestName, km);
+    }
+
+    private BigDecimal[] resolveWarehouseCoord(String name, String region, String address) {
+        String cacheKey = (region + "|" + address + "|" + name).trim();
+        BigDecimal[] hit = whGeoCache.get(cacheKey);
+        if (hit != null) return hit;
+        if (StringUtils.hasText(address)) {
+            Optional<MktExtDataGateway.GeoPoint> geo = extGateway.geocodeAddress(address, region);
+            if (geo.isPresent()) {
+                BigDecimal[] pt = new BigDecimal[]{geo.get().lng(), geo.get().lat()};
+                whGeoCache.put(cacheKey, pt);
+                return pt;
+            }
+        }
+        String zone = MktExtDataGateway.classifyZone(address + " " + region + " " + name, null);
+        BigDecimal[] fallback = ZONE_WH_CENTROIDS.getOrDefault(zone, new BigDecimal[]{DEFAULT_GD_WH_LNG, DEFAULT_GD_WH_LAT});
+        whGeoCache.put(cacheKey, fallback);
+        return fallback;
     }
 
     private static void computeUrgency(MktPublicSeaMeta meta, String seaSource) {
@@ -818,11 +918,11 @@ public class MktPublicSeaWashService {
                 try (BufferedReader br = new BufferedReader(new InputStreamReader(file.getInputStream(), StandardCharsets.UTF_8))) {
                     String headerLine = br.readLine();
                     if (headerLine == null) return out;
-                    String[] headers = headerLine.replace("\uFEFF", "").split(",");
+                    String[] headers = parseCsvLine(headerLine.replace("\uFEFF", ""));
                     Map<String, Integer> idx = mapHeaderIndexes(Arrays.asList(headers));
                     String line;
                     while ((line = br.readLine()) != null && out.size() < MAX_IMPORT_ROWS) {
-                        if (!line.isBlank()) out.add(rowFromArray(line.split(",", -1), idx));
+                        if (!line.isBlank()) out.add(rowFromArray(parseCsvLine(line), idx));
                     }
                 }
                 return out;
@@ -851,6 +951,40 @@ public class MktPublicSeaWashService {
         } catch (BizException e) { throw e; }
         catch (Exception e) { throw new BizException(400, "榜单文件解析失败，请上传标准 .xlsx 或 UTF-8 .csv 文件"); }
         return out;
+    }
+
+    /** 标准 RFC-4180 CSV 单行解析：正确处理双引号包裹的英文逗号（如地址）与 "" 转义，避免串列。 */
+    static String[] parseCsvLine(String line) {
+        if (line == null) return new String[0];
+        List<String> fields = new ArrayList<>();
+        StringBuilder cur = new StringBuilder();
+        boolean inQuotes = false;
+        for (int i = 0; i < line.length(); i++) {
+            char ch = line.charAt(i);
+            if (inQuotes) {
+                if (ch == '"') {
+                    if (i + 1 < line.length() && line.charAt(i + 1) == '"') {
+                        cur.append('"');
+                        i++;
+                    } else {
+                        inQuotes = false;
+                    }
+                } else {
+                    cur.append(ch);
+                }
+            } else {
+                if (ch == '"') {
+                    inQuotes = true;
+                } else if (ch == ',') {
+                    fields.add(cur.toString().trim());
+                    cur.setLength(0);
+                } else {
+                    cur.append(ch);
+                }
+            }
+        }
+        fields.add(cur.toString().trim());
+        return fields.toArray(String[]::new);
     }
 
     private static Map<String, Integer> mapHeaderIndexes(List<String> headers) {
