@@ -141,12 +141,14 @@ public class NoticeDocumentAiService {
         } catch (Exception e) {
             throw new BizException("读取上传文件失败");
         }
+        MultipartFile reusableFile = new InMemoryMultipartFile(
+                file.getName(), fileName, file.getContentType(), bytes);
 
         ExtractedFields extracted = extractFields(bytes, fileName, normDoc);
         if (DOC_RECEIPT.equals(normDoc)) {
-            return matchAndApplyReceipt(file, fileName, normMode, candidates, extracted);
+            return matchAndApplyReceipt(reusableFile, fileName, normMode, candidates, extracted);
         }
-        return matchAndApplyInvoice(file, fileName, normMode, candidates, extracted);
+        return matchAndApplyInvoice(reusableFile, fileName, normMode, candidates, extracted);
     }
 
     private List<NoticeCandidate> loadCandidates(String mode, Long periodId) {
@@ -722,6 +724,32 @@ public class NoticeDocumentAiService {
             return n.isMissingNode() || n.isNull() ? "" : n.asText("");
         } catch (Exception e) {
             return "";
+        }
+    }
+
+    /** 基于已读取字节数组的可重复落盘 MultipartFile，避免部分容器上 getBytes() 后 transferTo() 流耗尽报错 */
+    private static final class InMemoryMultipartFile implements MultipartFile {
+        private final String name;
+        private final String originalFilename;
+        private final String contentType;
+        private final byte[] content;
+
+        private InMemoryMultipartFile(String name, String originalFilename, String contentType, byte[] content) {
+            this.name = name == null ? "file" : name;
+            this.originalFilename = originalFilename;
+            this.contentType = contentType;
+            this.content = content == null ? new byte[0] : content;
+        }
+
+        @Override public String getName() { return name; }
+        @Override public String getOriginalFilename() { return originalFilename; }
+        @Override public String getContentType() { return contentType; }
+        @Override public boolean isEmpty() { return content.length == 0; }
+        @Override public long getSize() { return content.length; }
+        @Override public byte[] getBytes() { return content; }
+        @Override public java.io.InputStream getInputStream() { return new ByteArrayInputStream(content); }
+        @Override public void transferTo(java.io.File dest) throws java.io.IOException {
+            java.nio.file.Files.write(dest.toPath(), content);
         }
     }
 }

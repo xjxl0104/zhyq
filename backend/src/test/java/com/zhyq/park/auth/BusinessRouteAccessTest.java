@@ -108,4 +108,14 @@ class BusinessRouteAccessTest {
         assertThat(BusinessRouteAccess.allowed("/oa/periodic-task/log", "PUT", Set.of("MENU:/oa/task"))).isTrue();
         assertThat(BusinessRouteAccess.allowed("/oa/periodic-task/board", "GET", Set.of())).isFalse();
     }
+
+    @Test void noticeHeaderProfileAndAiVerifyRoutesAllowEnergySummaryAndDepositMenus() {
+        assertThat(BusinessRouteAccess.allowed("/energy/notice-header-profile", "GET", Set.of("MENU:/energy/summary"))).isTrue();
+        assertThat(BusinessRouteAccess.allowed("/energy/notice-header-profile", "POST", Set.of("MENU:/energy/summary"))).isTrue();
+        assertThat(BusinessRouteAccess.allowed("/energy/notice-header-profile", "DELETE", Set.of("MENU:/energy/deposit"))).isTrue();
+        assertThat(BusinessRouteAccess.allowed("/energy/notice-ai/verify-upload", "POST", Set.of("MENU:/energy/summary"))).isTrue();
+        assertThat(BusinessRouteAccess.allowed("/energy/lease-fee/contracts", "GET", Set.of("MENU:/energy/electric"))).isTrue();
+        assertThat(BusinessRouteAccess.allowed("/energy/notice-header-profile", "POST", Set.of())).isFalse();
+        assertThat(BusinessRouteAccess.allowed("/energy/notice-ai/verify-upload", "POST", Set.of())).isFalse();
+    }
 }

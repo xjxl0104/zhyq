@@ -87,7 +87,13 @@ public final class BusinessRouteAccess {
             case "energy/fee-period" -> anyMenu(grants, "/energy/electric", "/energy/water",
                     "/energy/garbage", "/energy/summary");
             case "energy/lease-fee" -> anyMenu(grants, "/energy/contracts", "/energy/deposit", "/energy/rent",
-                    "/energy/property", "/energy/summary");
+                    "/energy/property", "/energy/summary")
+                    || ("GET".equals(method) && path.equals("/energy/lease-fee/contracts")
+                        && anyMenu(grants, "/energy/electric", "/energy/water", "/energy/garbage"));
+            case "energy/notice-header-profile", "energy/notice-ai" -> anyMenu(grants,
+                    "/energy/contracts", "/energy/deposit", "/energy/rent", "/energy/property",
+                    "/energy/electric", "/energy/water", "/energy/garbage", "/energy/summary")
+                    || hasPrefix(grants, "energy:feebill:");
             case "oa/seal" -> {
                 if (hasMenu(grants, "/oa/seal") || hasPrefix(grants, "oa:seal:")) yield true;
                 boolean canUseSeal = anyMenu(grants, "/energy/summary", "/energy/deposit", "/energy/rent", "/energy/property",

@@ -6,7 +6,6 @@ import com.zhyq.park.energy.service.NoticeDocumentAiService.VerifyResult;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
-import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -19,7 +18,6 @@ public class NoticeDocumentAiController {
     private final NoticeDocumentAiService aiService;
 
     @Operation(summary = "上传租户缴费回执或发票并由AI自动识别核准")
-    @PreAuthorize("hasAuthority('energy:edit')")
     @PostMapping(value = "/verify-upload", consumes = "multipart/form-data")
     public Result<VerifyResult> verifyUpload(
             @RequestParam("file") MultipartFile file,

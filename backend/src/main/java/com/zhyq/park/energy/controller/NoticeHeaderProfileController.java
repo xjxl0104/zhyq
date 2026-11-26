@@ -7,7 +7,6 @@ import com.zhyq.park.energy.service.NoticeHeaderProfileService.SaveRequest;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
-import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -21,21 +20,18 @@ public class NoticeHeaderProfileController {
     private final NoticeHeaderProfileService service;
 
     @Operation(summary = "查询指定模块的所有定制抬头配置")
-    @PreAuthorize("hasAuthority('energy:query')")
     @GetMapping
     public Result<List<NoticeHeaderProfile>> list(@RequestParam String scopeType) {
         return Result.ok(service.listByScope(scopeType));
     }
 
     @Operation(summary = "保存指定缴费单位的定制抬头")
-    @PreAuthorize("hasAuthority('energy:edit')")
     @PostMapping
     public Result<NoticeHeaderProfile> save(@RequestBody SaveRequest req) {
         return Result.ok(service.save(req));
     }
 
     @Operation(summary = "删除指定缴费单位的定制抬头（恢复通用）")
-    @PreAuthorize("hasAuthority('energy:edit')")
     @DeleteMapping
     public Result<Void> remove(@RequestParam String scopeType,
                                @RequestParam String tenantName,
