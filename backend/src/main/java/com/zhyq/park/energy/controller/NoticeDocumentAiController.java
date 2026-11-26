@@ -23,7 +23,8 @@ public class NoticeDocumentAiController {
             @RequestParam("file") MultipartFile file,
             @RequestParam("mode") String mode,
             @RequestParam("docType") String docType,
-            @RequestParam("periodId") Long periodId) {
-        return Result.ok(aiService.verifyAndUpload(file, mode, docType, periodId));
+            @RequestParam("periodId") Long periodId,
+            @RequestParam(value = "ocrText", required = false) String ocrText) {
+        return Result.ok(aiService.verifyAndUpload(file, mode, docType, periodId, ocrText));
     }
 }

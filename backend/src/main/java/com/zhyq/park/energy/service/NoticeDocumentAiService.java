@@ -123,6 +123,11 @@ public class NoticeDocumentAiService {
 
     @Transactional(rollbackFor = Exception.class)
     public VerifyResult verifyAndUpload(MultipartFile file, String mode, String docType, Long periodId) {
+        return verifyAndUpload(file, mode, docType, periodId, null);
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public VerifyResult verifyAndUpload(MultipartFile file, String mode, String docType, Long periodId, String ocrText) {
         if (file == null || file.isEmpty()) {
             throw new BizException("请上传有效的文件");
         }
@@ -144,7 +149,7 @@ public class NoticeDocumentAiService {
         MultipartFile reusableFile = new InMemoryMultipartFile(
                 file.getName(), fileName, file.getContentType(), bytes);
 
-        ExtractedFields extracted = extractFields(bytes, fileName, normDoc);
+        ExtractedFields extracted = extractFields(bytes, fileName, normDoc, ocrText);
         if (DOC_RECEIPT.equals(normDoc)) {
             return matchAndApplyReceipt(reusableFile, fileName, normMode, candidates, extracted);
         }
@@ -368,7 +373,7 @@ public class NoticeDocumentAiService {
 
     // ------------------------------------------------------------------ 文本 & 视觉提取
 
-    private ExtractedFields extractFields(byte[] bytes, String fileName, String docType) {
+    private ExtractedFields extractFields(byte[] bytes, String fileName, String docType, String ocrText) {
         String lower = fileName.toLowerCase(Locale.ROOT);
         String text = "";
         String method = "TEXT";
@@ -385,6 +390,17 @@ public class NoticeDocumentAiService {
             parsed = DOC_RECEIPT.equals(docType)
                     ? parseReceiptText(text, method)
                     : parseInvoiceText(text, method);
+            if (isComplete(parsed, docType)) {
+                return parsed;
+            }
+        }
+
+        // 优先使用前端/本地 OCR 识别出的文字（支持 JPG/PNG/WEBP 银行回执与发票图片）
+        if (StringUtils.hasText(ocrText) && ocrText.trim().length() >= 10) {
+            ExtractedFields fromOcr = DOC_RECEIPT.equals(docType)
+                    ? parseReceiptText(ocrText, "OCR")
+                    : parseInvoiceText(ocrText, "OCR");
+            parsed = mergeExtracted(parsed, fromOcr);
             if (isComplete(parsed, docType)) {
                 return parsed;
             }
@@ -532,14 +548,18 @@ public class NoticeDocumentAiService {
     // ------------------------------------------------------------------ 结构化正则解析（纯函数）
 
     private static final Pattern PAYER_NAME_PAT = Pattern.compile(
-            "(?:付款人名称|付款户名|付款方名称|付款人全称|付方户名|付方名称|付款单位|转出户名|借方户名|付款人)[:：\\s]+([^\\r\\n]+)");
+            "(?:(?:付款人名称|付款户名|付款方名称|付款人全称|付款账户名称|付款人户名|付方户名|付方名称|付款单位|转出户名|借方户名)[:： \\t]+|付款人[:：])([^\\r\\n]+)");
     private static final Pattern PAYEE_NAME_PAT = Pattern.compile(
-            "(?:收款人名称|收款户名|收款方名称|收款人全称|收方户名|收方名称|收款单位|转入户名|贷方户名|收款人)[:：\\s]+([^\\r\\n]+)");
+            "(?:(?:收款人名称|收款户名|收款方名称|收款人全称|收款账户名称|收款人户名|收方户名|收方名称|收款单位|转入户名|贷方户名|对方户名)[:： \\t]+|收款人[:：])([^\\r\\n]+)");
     private static final Pattern PAYEE_ACC_PAT = Pattern.compile(
-            "(?:收款人账号|收款账号|收款方账号|收方账号|转入账号|贷方账号|收款卡号)[:：\\s]+([0-9\\s\\-]{10,36})");
+            "(?:收款人账号|收款账号|收款方账号|收方账号|转入账号|贷方账号|对方账号|收款卡号)[:：\\s]+([0-9\\s\\-]{10,36})");
+    private static final Pattern GENERIC_NAME_PAT = Pattern.compile(
+            "(?:户名|账户名称|全称|名称)[:：\\s]+([^\\r\\n]+)");
+    private static final Pattern GENERIC_ACC_PAT = Pattern.compile(
+            "(?:账号|银行账号|卡号)[:：\\s]+([0-9\\s\\-]{10,36})");
     private static final Pattern RECEIPT_AMT_PAT = Pattern.compile(
-            "(?:交易金额|汇款金额|付款金额|转账金额|小写金额|金额[（(]小写[）)]|小写|金\\s*额)[:：\\s]*(?:RMB|CNY|人民币)?\\s*[¥￥]?\\s*([0-9,]+\\.[0-9]{2})");
-    private static final Pattern YEN_AMT_PAT = Pattern.compile("[¥￥]\\s*([0-9,]+\\.[0-9]{2})");
+            "(?:交易金额|汇款金额|付款金额|转账金额|本次付款金额|实付金额|小写金额|金额[（(]小写[）)]|小写|金\\s*额)[:：\\s]*(?:RMB|CNY|人民币)?\\s*[¥￥]?\\s*([0-9,]+\\.[0-9]{2})");
+    private static final Pattern YEN_AMT_PAT = Pattern.compile("(?:[¥￥]|RMB|CNY)\\s*([0-9,]+\\.[0-9]{2})");
 
     private static final Pattern INVOICE_BUYER_PAT = Pattern.compile(
             "购\\s*买\\s*方[\\s\\S]{0,80}?名\\s*称[:：\\s]+([^\\r\\n]+)");
@@ -552,11 +572,60 @@ public class NoticeDocumentAiService {
     private static final Pattern INVOICE_NO_PAT = Pattern.compile(
             "(?:发票号码|号码)[:：\\s]*(\\d{8,20})");
 
+    /** 清理 OCR 文本中中文字符之间的单个多余空格，保留换行与双栏多空格分隔 */
+    static String normalizeOcrText(String raw) {
+        if (raw == null) return "";
+        String s = raw.replace('\u00A0', ' ').replace('　', ' ');
+        // 仅折叠相邻汉字间的单个空格（绝不跨换行，也保留 2+ 空格作为左右双栏分隔）
+        s = s.replaceAll("([\\u4e00-\\u9fa5]) ([\\u4e00-\\u9fa5])", "$1$2");
+        s = s.replaceAll("([\\u4e00-\\u9fa5]) ([\\u4e00-\\u9fa5])", "$1$2");
+        // 折叠汉字与中文括号/冒号间的单个水平空格
+        s = s.replaceAll("([\\u4e00-\\u9fa5]) ([（()）:：])", "$1$2");
+        s = s.replaceAll("([（(]) ([\\u4e00-\\u9fa5])", "$1$2");
+        s = s.replaceAll("([:：])[ \\t]+", "$1");
+        return s;
+    }
+
     static ExtractedFields parseReceiptText(String rawText, String method) {
-        String text = rawText == null ? "" : rawText;
+        String text = normalizeOcrText(rawText);
         String payer = cleanExtractedName(firstGroup(PAYER_NAME_PAT, text));
         String payee = cleanExtractedName(firstGroup(PAYEE_NAME_PAT, text));
         String payeeAcc = digitsOnly(firstGroup(PAYEE_ACC_PAT, text));
+
+        // 兜底：国内主流网银回单常采用左右双栏排版（「付款人 | 收款人」下各有一行「户名：...」「账号：...」）
+        if (!StringUtils.hasText(payer) || !StringUtils.hasText(payee)) {
+            List<String> genericNames = new ArrayList<>();
+            Matcher m = GENERIC_NAME_PAT.matcher(text);
+            while (m.find()) {
+                String seg = m.group(1);
+                for (String part : seg.split("(?:户名|账户名称|全称|名称)[:：]")) {
+                    String c = cleanExtractedName(part);
+                    if (StringUtils.hasText(c) && c.length() >= 4) {
+                        genericNames.add(c);
+                    }
+                }
+            }
+            if (genericNames.size() >= 2) {
+                if (!StringUtils.hasText(payer)) payer = genericNames.get(0);
+                if (!StringUtils.hasText(payee)) payee = genericNames.get(1);
+            }
+        }
+        if (!StringUtils.hasText(payeeAcc)) {
+            List<String> genericAccs = new ArrayList<>();
+            Matcher m = GENERIC_ACC_PAT.matcher(text);
+            while (m.find()) {
+                String d = digitsOnly(m.group(1));
+                if (d.length() >= 10 && d.length() <= 30) {
+                    genericAccs.add(d);
+                }
+            }
+            if (genericAccs.size() >= 2) {
+                payeeAcc = genericAccs.get(1);
+            } else if (genericAccs.size() == 1) {
+                payeeAcc = genericAccs.get(0);
+            }
+        }
+
         BigDecimal amt = parseDecimal(firstGroup(RECEIPT_AMT_PAT, text));
         if (amt == null) {
             amt = parseDecimal(firstGroup(YEN_AMT_PAT, text));
@@ -565,7 +634,7 @@ public class NoticeDocumentAiService {
     }
 
     static ExtractedFields parseInvoiceText(String rawText, String method) {
-        String text = rawText == null ? "" : rawText;
+        String text = normalizeOcrText(rawText);
         String buyer = null;
         String seller = null;
 
@@ -616,10 +685,12 @@ public class NoticeDocumentAiService {
     private static String cleanExtractedName(String raw) {
         if (!StringUtils.hasText(raw)) return null;
         String s = raw.trim();
-        // 截断同一行后续标签（如「收款人名称：」「纳税人识别号：」「账号：」「开户行：」）
-        s = s.replaceFirst("\\s+(?:收款人|付款人|收款方|付款方|收方|付方|纳税人识别号|统一社会信用代码|账号|开户行|开户银行|银行账号|销售方|购买方|名称|税号|金额|币种).*$", "");
-        s = s.replaceFirst("(?:收款人名称|收款户名|纳税人识别号|统一社会信用代码|开户行|账号)[:：].*$", "");
-        return s.trim();
+        // 截断同一行后续标签（如「收款人名称：」「户名：」「销售方信息」「纳税人识别号：」「账号：」「开户行：」）
+        s = s.replaceFirst("[ \\t]+(?:收款人|付款人|收款方|付款方|收方|付方|户名|账户名称|纳税人识别号|统一社会信用代码|账号|开户行|开户银行|银行账号|销售方|购买方|名称|税号|金额|币种).*$", "");
+        s = s.replaceFirst("(?:收款人名称|收款户名|户名|销售方信息|销售方|购买方信息|购买方|纳税人识别号|统一社会信用代码|开户行|账号)[:：]?.*$", "");
+        s = s.trim();
+        if (s.length() < 3 || "收款人".equals(s) || "付款人".equals(s)) return null;
+        return s;
     }
 
     static String extractPayeeNameFromAccountText(String accountText) {

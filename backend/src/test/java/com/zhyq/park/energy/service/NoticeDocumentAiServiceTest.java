@@ -83,4 +83,20 @@ class NoticeDocumentAiServiceTest {
         );
         assertFalse(NoticeDocumentAiService.evaluateInvoice(hit, foreignSeller).stream().allMatch(CheckItem::passed));
     }
+
+    @Test
+    void ocrSpacedTwoColumnBankReceiptParsesCleanly() {
+        String ocrText = """
+                银 行 电 子 回 单
+                付 款 人                           收 款 人
+                户 名 ： 广 州 云 帕 供 应 链 管 理 有 限 公 司   户 名 ： 广 州 市 昌 记 供 应 链 有 限 公 司
+                账 号 ： 4400 1234 5678 9012                 账 号 ： 6600 7523 9348
+                金 额 ： ¥ 99,000.00
+                """;
+        ExtractedFields ex = NoticeDocumentAiService.parseReceiptText(ocrText, "OCR");
+        assertEquals("广州云帕供应链管理有限公司", ex.payerName());
+        assertEquals("广州市昌记供应链有限公司", ex.payeeName());
+        assertEquals("660075239348", ex.payeeAccount());
+        assertEquals(new BigDecimal("99000.00"), ex.amount());
+    }
 }

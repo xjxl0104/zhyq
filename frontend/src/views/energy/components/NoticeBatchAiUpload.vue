@@ -28,14 +28,14 @@
             multiple
           >
             <el-button size="small" type="success" plain :loading="uploadingType === 'RECEIPT'">
-              <el-icon><Upload /></el-icon>选择回执
+              <el-icon><Upload /></el-icon>{{ uploadingType === 'RECEIPT' && statusText ? statusText : '选择回执' }}
             </el-button>
           </el-upload>
         </div>
         <div class="card-desc">
           {{ draggingType === 'RECEIPT'
-            ? '松开鼠标即可开始 AI 自动识别核对回执...'
-            : '拖拽银行电子回单（推荐 PDF）或点击上传。AI 自动核对：支付单位名称、接收单位名称及账号、支付金额；完全一致后自动上传至对应通知单「缴费」并标记已缴费。' }}
+            ? '松开鼠标即可开始 OCR + AI 自动识别核对回执...'
+            : '拖拽银行电子回单（支持 PDF / JPG / PNG，图片自动走内置中文 OCR 识别）或点击上传。AI 自动核对：支付单位名称、接收单位名称及账号、支付金额；完全一致后自动上传至对应通知单「缴费」并标记已缴费。' }}
         </div>
       </div>
 
@@ -61,14 +61,14 @@
             multiple
           >
             <el-button size="small" type="primary" plain :loading="uploadingType === 'INVOICE'">
-              <el-icon><Upload /></el-icon>选择发票
+              <el-icon><Upload /></el-icon>{{ uploadingType === 'INVOICE' && statusText ? statusText : '选择发票' }}
             </el-button>
           </el-upload>
         </div>
         <div class="card-desc">
           {{ draggingType === 'INVOICE'
-            ? '松开鼠标即可开始 AI 自动识别核对发票...'
-            : '拖拽数智云仓/昌记开具的电子发票（推荐 PDF / OFD）或点击上传。AI 自动核对：购买方、销售方、发票含税金额；完全一致后自动上传至对应通知单「发票」并标记已开票。' }}
+            ? '松开鼠标即可开始 OCR + AI 自动识别核对发票...'
+            : '拖拽数智云仓/昌记开具的电子发票（支持 PDF / OFD / JPG / PNG，图片自动走内置中文 OCR 识别）或点击上传。AI 自动核对：购买方、销售方、发票含税金额；完全一致后自动上传至对应通知单「发票」并标记已开票。' }}
         </div>
       </div>
     </div>
@@ -119,6 +119,7 @@ import { computed, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Upload } from '@element-plus/icons-vue'
 import { noticeAiApi } from '@/api/energy'
+import { isImageFile, recognizeImageText } from '../noticeOcr'
 
 const props = defineProps({
   periodId: { type: Number, default: null },
@@ -129,6 +130,7 @@ const emit = defineEmits(['matched'])
 
 const draggingType = ref('')
 const uploadingType = ref('')
+const statusText = ref('')
 const pendingCount = ref(0)
 const results = ref([])
 
@@ -167,11 +169,24 @@ async function handleOne(docType, file, emitNow = true) {
   uploadingType.value = docType
   pendingCount.value++
   try {
+    let ocrText = ''
+    if (isImageFile(file)) {
+      statusText.value = 'OCR识别中...'
+      try {
+        ocrText = await recognizeImageText(file, (pct) => {
+          statusText.value = `OCR识别 ${pct}%`
+        })
+      } catch {
+        ocrText = ''
+      }
+    }
+    statusText.value = '核对中...'
     const fd = new FormData()
     fd.append('file', file)
     fd.append('mode', props.mode)
     fd.append('docType', docType)
     fd.append('periodId', props.periodId)
+    if (ocrText) fd.append('ocrText', ocrText)
     const res = await noticeAiApi.verifyUpload(fd)
     results.value.unshift(res)
     if (res.status === 'AUTO_APPROVED') {
@@ -193,7 +208,10 @@ async function handleOne(docType, file, emitNow = true) {
     return false
   } finally {
     pendingCount.value = Math.max(0, pendingCount.value - 1)
-    if (pendingCount.value === 0) uploadingType.value = ''
+    if (pendingCount.value === 0) {
+      uploadingType.value = ''
+      statusText.value = ''
+    }
   }
 }
 </script>
