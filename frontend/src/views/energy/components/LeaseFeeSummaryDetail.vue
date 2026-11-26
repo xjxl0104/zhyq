@@ -13,6 +13,7 @@
     </el-alert>
 
     <FeeBillFiles v-if="period" :period-id="period.id" :kinds="[BILL_KINDS.rent, BILL_KINDS.property]" />
+    <NoticeBatchAiUpload v-if="period" :period-id="period.id" mode="lease" @matched="load" />
 
     <!-- 收取单位分开提示卡片 -->
     <div v-if="period" class="payee-bar">
@@ -77,7 +78,13 @@
         </el-dropdown>
         <el-button :disabled="!notices.length" @click="exportExcel"><el-icon><Download /></el-icon>导出 Excel</el-button>
         <el-button :disabled="!rentNotices.length" @click="printBatch(rentNotices)"><el-icon><Printer /></el-icon>打印全部租金通知单</el-button>
+        <el-button type="primary" plain :disabled="!rentNotices.length || !!downloadingPdf" :loading="downloadingPdf === 'RENT'" @click="downloadBatch(rentNotices, 'RENT')">
+          <el-icon><Download /></el-icon>{{ downloadingPdf === 'RENT' ? downloadProgressText : '下载全部租金通知单' }}
+        </el-button>
         <el-button :disabled="!propertyNotices.length" @click="printBatch(propertyNotices)"><el-icon><Printer /></el-icon>打印全部物业费通知单</el-button>
+        <el-button type="primary" plain :disabled="!propertyNotices.length || !!downloadingPdf" :loading="downloadingPdf === 'PROPERTY'" @click="downloadBatch(propertyNotices, 'PROPERTY')">
+          <el-icon><Download /></el-icon>{{ downloadingPdf === 'PROPERTY' ? downloadProgressText : '下载全部物业费通知单' }}
+        </el-button>
         <el-button v-if="!locked" type="success" :disabled="!notices.length || period?.noticeStale" @click="confirm">确认出账</el-button>
         <el-button v-else type="warning" @click="revoke">撤销确认</el-button>
       </div>
@@ -373,8 +380,10 @@ import { buildTenantChoices, resolveProfileDateForMonth } from '../noticeHeaderH
 import { sealApi } from '@/api/oa'
 import { BILL_KINDS, applyFilter, downloadBlob, filterOptions, money, num } from '../feePeriod'
 import { LEASE_NOTICE_CSS, leaseNoticeHtml, printLeaseNotices } from '../leaseNoticePrint'
+import { downloadNoticesAsSeparatePdfsZip } from '../noticePdfBatchDownload'
 import { parseHeaderOverride } from '../noticePrint'
 import FeeBillFiles from './FeeBillFiles.vue'
+import NoticeBatchAiUpload from './NoticeBatchAiUpload.vue'
 import FeeFilterBar from './FeeFilterBar.vue'
 import LeaseNoticePayment from './LeaseNoticePayment.vue'
 import NoticeInvoiceDialog from './NoticeInvoiceDialog.vue'
@@ -683,6 +692,34 @@ function printBatch(list) {
   if (!list?.length) return
   if (!printLeaseNotices(period.value, list, true, { RENT: rentSeal.value, PROPERTY: propertySeal.value })) {
     ElMessage.warning('浏览器拦截了打印窗口，请允许弹出窗口')
+  }
+}
+
+const downloadingPdf = ref('')
+const downloadProgressText = ref('打包中...')
+async function downloadBatch(list, category) {
+  if (!list?.length || !period.value) return
+  downloadingPdf.value = category
+  downloadProgressText.value = `生成中 (0/${list.length})`
+  const isRent = category === 'RENT'
+  const catLabel = isRent ? '租金' : '物业管理费'
+  const placement = isRent ? rentSeal.value : propertySeal.value
+  try {
+    const items = list.map((n) => ({
+      fileName: `${monthLabel.value}_${n.tenantName || n.noticeNo}_${catLabel}缴费通知单`,
+      html: leaseNoticeHtml(period.value, n, placement)
+    }))
+    await downloadNoticesAsSeparatePdfsZip({
+      items,
+      css: LEASE_NOTICE_CSS,
+      zipName: `${monthLabel.value}_全部${catLabel}缴费通知单_${list.length}份`,
+      onProgress: (done, total) => { downloadProgressText.value = `生成中 (${done}/${total})` }
+    })
+    ElMessage.success(`已打包下载 ${list.length} 份独立${catLabel}通知单 PDF`)
+  } catch (e) {
+    ElMessage.error(e?.message || '打包下载失败，请重试')
+  } finally {
+    downloadingPdf.value = ''
   }
 }
 

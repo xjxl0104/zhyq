@@ -60,7 +60,13 @@
         </el-dropdown>
         <el-button type="warning" plain :loading="calibrating" @click="calibrate">按2个月租金/物管费校准</el-button>
         <el-button :disabled="!viewRentNotices.length" @click="printBatch(viewRentNotices)"><el-icon><Printer /></el-icon>打印全部租金保证金通知单</el-button>
+        <el-button type="primary" plain :disabled="!viewRentNotices.length || !!downloadingPdf" :loading="downloadingPdf === 'RENT'" @click="downloadBatch(viewRentNotices, 'RENT')">
+          <el-icon><Download /></el-icon>{{ downloadingPdf === 'RENT' ? downloadProgressText : '下载全部租金保证金' }}
+        </el-button>
         <el-button :disabled="!viewPropertyNotices.length" @click="printBatch(viewPropertyNotices)"><el-icon><Printer /></el-icon>打印全部物业保证金通知单</el-button>
+        <el-button type="primary" plain :disabled="!viewPropertyNotices.length || !!downloadingPdf" :loading="downloadingPdf === 'PROPERTY'" @click="downloadBatch(viewPropertyNotices, 'PROPERTY')">
+          <el-icon><Download /></el-icon>{{ downloadingPdf === 'PROPERTY' ? downloadProgressText : '下载全部物业保证金' }}
+        </el-button>
       </div>
       <div class="toolbar-tip">
         保证金按合同 <strong>2个月租金</strong>（收取单位：{{ config?.rentPayeeName || '昌记' }}）与 <strong>2个月物业管理费</strong>（收取单位：{{ config?.propertyPayeeName || '数智云仓' }}）分开出单，同一租户多份合同自动合并在一张通知单内分行列示；保证金一次性收取、无需开具发票，缴纳后上传回执整行变绿。
@@ -298,13 +304,14 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowDown, Printer } from '@element-plus/icons-vue'
+import { ArrowDown, Download, Printer } from '@element-plus/icons-vue'
 import { leaseFeeApi, noticeHeaderProfileApi } from '@/api/energy'
 import { buildTenantChoices, mergeDepositConfigWithProfile } from '../noticeHeaderHelper'
 import { sealApi } from '@/api/oa'
 import { applyFilter, filterOptions, money, num } from '../feePeriod'
 import { LEASE_NOTICE_CSS } from '../leaseNoticePrint'
 import { depositNoticeHtml, printDepositNotices } from '../depositNoticePrint'
+import { downloadNoticesAsSeparatePdfsZip } from '../noticePdfBatchDownload'
 import FeeFilterBar from './FeeFilterBar.vue'
 import NoticeSealDesigner from './NoticeSealDesigner.vue'
 
@@ -662,6 +669,34 @@ function printBatch(list) {
   if (!list?.length) return
   if (!printDepositNotices(config.value, list, true, { RENT: rentSeal.value, PROPERTY: propertySeal.value })) {
     ElMessage.warning('浏览器拦截了打印窗口，请允许弹出窗口')
+  }
+}
+
+const downloadingPdf = ref('')
+const downloadProgressText = ref('打包中...')
+async function downloadBatch(list, category) {
+  if (!list?.length) return
+  downloadingPdf.value = category
+  downloadProgressText.value = `生成中 (0/${list.length})`
+  const isRent = category === 'RENT'
+  const catLabel = isRent ? '租金保证金' : '物业保证金'
+  const placement = isRent ? rentSeal.value : propertySeal.value
+  try {
+    const items = list.map((n) => ({
+      fileName: `${n.tenantName || n.noticeNo}_${catLabel}缴费通知单`,
+      html: depositNoticeHtml(config.value, n, placement)
+    }))
+    await downloadNoticesAsSeparatePdfsZip({
+      items,
+      css: LEASE_NOTICE_CSS,
+      zipName: `全部${catLabel}缴费通知单_${list.length}份`,
+      onProgress: (done, total) => { downloadProgressText.value = `生成中 (${done}/${total})` }
+    })
+    ElMessage.success(`已打包下载 ${list.length} 份独立${catLabel}通知单 PDF`)
+  } catch (e) {
+    ElMessage.error(e?.message || '打包下载失败，请重试')
+  } finally {
+    downloadingPdf.value = ''
   }
 }
 

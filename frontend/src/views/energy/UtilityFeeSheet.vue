@@ -13,8 +13,6 @@
         <el-tag v-else-if="period?.noticeStale" type="warning">读数或总量有改动，通知单需重新生成</el-tag>
       </div>
 
-      <FeeBillFiles v-if="period" :period-id="period.id" :kinds="[billKind]" />
-
       <!-- 账期与总量:对应线下表的「10月总度数 / 光伏 / 单价」几个格子 -->
       <div v-if="period" class="search-bar">
         <el-form :inline="true">

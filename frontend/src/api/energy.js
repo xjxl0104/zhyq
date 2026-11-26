@@ -67,3 +67,12 @@ export const noticeHeaderProfileApi = {
   remove: (scopeType, tenantName, periodId) =>
     request.delete('/energy/notice-header-profile', { params: { scopeType, tenantName, periodId } })
 }
+
+// 缴费汇总-AI自动识别核准租户缴费回执与发票
+export const noticeAiApi = {
+  verifyUpload: (formData) =>
+    request.post('/energy/notice-ai/verify-upload', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 120000
+    })
+}

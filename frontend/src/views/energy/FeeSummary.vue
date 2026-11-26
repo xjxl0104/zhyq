@@ -23,6 +23,7 @@
       </el-alert>
 
       <FeeBillFiles v-if="period" :period-id="period.id" :kinds="[BILL_KINDS.electric, BILL_KINDS.water, BILL_KINDS.garbage]" />
+      <NoticeBatchAiUpload v-if="period" :period-id="period.id" mode="utility" @matched="loadNotices" />
 
       <div v-if="period" class="summary-grid">
         <div class="summary-item"><span>电:南网 + 光伏</span><strong>{{ num(Number(period.electricGridUsage || 0) + Number(period.electricSolarUsage || 0)) }} 度</strong></div>
@@ -63,6 +64,9 @@
           </el-dropdown>
           <el-button :disabled="!notices.length" @click="exportExcel"><el-icon><Download /></el-icon>导出 Excel</el-button>
           <el-button :disabled="!notices.length" @click="printAll"><el-icon><Printer /></el-icon>{{ filterActive ? "打印检索结果" : "打印全部" }}</el-button>
+          <el-button type="primary" plain :disabled="!viewNotices.length || downloadingPdf" :loading="downloadingPdf" @click="downloadAllPdfs">
+            <el-icon><Download /></el-icon>{{ downloadingPdf ? downloadProgressText : (filterActive ? '下载检索通知单' : '下载全部通知单') }}
+          </el-button>
           <el-button :disabled="!selected.length" @click="printSelected">打印选中</el-button>
           <el-button type="danger" plain :disabled="!selected.length" @click="deleteSelected">
             <el-icon><Delete /></el-icon>删除选中<span v-if="selected.length">（{{ selected.length }}）</span>
@@ -328,8 +332,10 @@ import { sealApi } from '@/api/oa'
 import { useFeePeriod, money, num, downloadBlob, BILL_KINDS, applyFilter, filterOptions, floorBandClass, shortName } from './feePeriod'
 import FeeFilterBar from './components/FeeFilterBar.vue'
 import { noticeHtml, NOTICE_CSS, parseHeaderOverride, printNotices } from './noticePrint'
+import { downloadNoticesAsSeparatePdfsZip } from './noticePdfBatchDownload'
 import FeeMonthPicker from './components/FeeMonthPicker.vue'
 import FeeBillFiles from './components/FeeBillFiles.vue'
+import NoticeBatchAiUpload from './components/NoticeBatchAiUpload.vue'
 import FeeNoticePayment from './components/FeeNoticePayment.vue'
 import NoticeInvoiceDialog from './components/NoticeInvoiceDialog.vue'
 import NoticeSealDesigner from './components/NoticeSealDesigner.vue'
@@ -709,6 +715,32 @@ function doPrint(list) {
 const printOne = (row) => doPrint([row])
 const printAll = () => doPrint(viewNotices.value)
 const printSelected = () => doPrint(selected.value)
+
+const downloadingPdf = ref(false)
+const downloadProgressText = ref('打包中...')
+async function downloadAllPdfs() {
+  const list = viewNotices.value
+  if (!list.length || !period.value) return ElMessage.warning('当前没有可下载的通知单')
+  downloadingPdf.value = true
+  downloadProgressText.value = `生成中 (0/${list.length})`
+  try {
+    const items = list.map((n) => ({
+      fileName: `${monthLabel.value}_${n.tenantName || n.noticeNo}_水电垃圾费缴费通知单`,
+      html: noticeHtml(period.value, n, sealPlacement.value)
+    }))
+    await downloadNoticesAsSeparatePdfsZip({
+      items,
+      css: NOTICE_CSS,
+      zipName: `${monthLabel.value}_全部水电垃圾费缴费通知单_${list.length}份`,
+      onProgress: (done, total) => { downloadProgressText.value = `生成中 (${done}/${total})` }
+    })
+    ElMessage.success(`已打包下载 ${list.length} 份独立水电/垃圾费通知单 PDF`)
+  } catch (e) {
+    ElMessage.error(e?.message || '打包下载失败，请重试')
+  } finally {
+    downloadingPdf.value = false
+  }
+}
 async function exportExcel() {
   const res = await feePeriodApi.export(period.value.id)
   downloadBlob(res, `${period.value.period}应收收费明细表.xlsx`)

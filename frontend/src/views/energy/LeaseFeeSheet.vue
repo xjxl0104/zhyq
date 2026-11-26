@@ -18,8 +18,6 @@
         </el-tag>
       </div>
 
-      <FeeBillFiles v-if="period" :period-id="period.id" :kinds="[isRent ? BILL_KINDS.rent : BILL_KINDS.property]" />
-
       <div v-if="sheet" class="summary-grid">
         <div class="summary-item"><span>在租合同数</span><strong>{{ rows.length }} 份</strong></div>
         <div class="summary-item"><span>计租面积合计</span><strong>{{ num(sheet.totalArea) }} ㎡</strong></div>

@@ -11,8 +11,6 @@
         <el-tag v-else-if="period?.noticeStale" type="warning">总额或区域有改动，通知单需重新生成</el-tag>
       </div>
 
-      <FeeBillFiles v-if="period" :period-id="period.id" :kinds="[BILL_KINDS.garbage]" />
-
       <div v-if="period" class="search-bar">
         <el-form :inline="true">
           <el-form-item label="生活垃圾总额(元)">
