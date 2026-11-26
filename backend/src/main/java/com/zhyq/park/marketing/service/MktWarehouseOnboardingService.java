@@ -54,6 +54,7 @@ public class MktWarehouseOnboardingService {
     private final MktAuditService auditService;
     private final WhPhoneClaimService phoneClaims;
 
+    @org.springframework.context.annotation.Lazy
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private MktPublicSeaService publicSeaService;
 
