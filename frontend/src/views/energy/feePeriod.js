@@ -63,12 +63,18 @@ export function useFeePeriod(onOpened) {
 }
 
 export function downloadBlob(response, filename) {
-  const url = URL.createObjectURL(response.data)
+  const blob = response instanceof Blob ? response : response?.data
+  if (!(blob instanceof Blob)) {
+    throw new Error('下载内容为空，无法生成文件')
+  }
+  const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
   link.href = url
   link.download = filename
+  document.body.appendChild(link)
   link.click()
-  URL.revokeObjectURL(url)
+  link.remove()
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 
 /** 「2层A区」→「2层」,「室外」→「室外」;用来给每层上深浅色 */
