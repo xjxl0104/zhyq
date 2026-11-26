@@ -3,7 +3,7 @@
 -- 设计约束：
 --   1. 采用 customer_id 1:1 独立扩展表 crm_public_sea_meta，零 ALTER 存量大表 crm_customer，零锁表风险。
 --   2. 严格限制仅园区内部招商专员(mkt_sales)/运营(mkt_ops)/超管(admin)及加盟云仓主账号可访问，不对外部 P1-P4 开放。
---   3. 统一 ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci。
+--   3. 统一 ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci。
 -- =====================================================================
 
 CREATE TABLE IF NOT EXISTS crm_public_sea_meta (
@@ -36,7 +36,7 @@ CREATE TABLE IF NOT EXISTS crm_public_sea_meta (
     KEY idx_sea_scope_status (tenant_id, project_id, claim_status, sea_source),
     KEY idx_sea_sla (claim_status, first_touched_at, sla_deadline_at),
     KEY idx_sea_holder (claim_holder_type, claim_holder_id, claimed_at)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='内部专属公海池客户画像与72h认领保活状态表';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='内部专属公海池客户画像与72h认领保活状态表';
 
 CREATE TABLE IF NOT EXISTS crm_public_sea_wash_batch (
     id                   BIGINT       NOT NULL AUTO_INCREMENT PRIMARY KEY,
@@ -54,7 +54,7 @@ CREATE TABLE IF NOT EXISTS crm_public_sea_wash_batch (
     operator             VARCHAR(64)  NOT NULL DEFAULT 'system',
     created_at           DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
     KEY idx_wash_scope_time (tenant_id, project_id, created_at)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='公海入池三道防撞洗数批次审计表';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='公海入池三道防撞洗数批次审计表';
 
 -- 幂等回填历史已处于公海(无推荐人且跟进中)的存量云仓线客户，激活存量死水
 INSERT INTO crm_public_sea_meta (customer_id, tenant_id, project_id, sea_source, category, urgency_level, urgency_reason, block_note, claim_status)

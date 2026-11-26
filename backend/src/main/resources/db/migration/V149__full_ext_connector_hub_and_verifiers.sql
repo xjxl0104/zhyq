@@ -3,7 +3,7 @@
 -- 设计约束：
 --   1. 零 ALTER 存量核心表 crm_customer；新建 4 张独立表承载 18 通道注册、10秒官方扫码验店、快递100轨迹抽检与 6%专票验真。
 --   2. 未配置商业密钥的通道默认 enabled=0 (STANDBY)，¥0 待机绝不报错；填入密钥开启后即插即用，受月度限额熔断与广东省钱锁保护。
---   3. 统一 ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci。
+--   3. 统一 ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci。
 -- =====================================================================
 
 CREATE TABLE IF NOT EXISTS crm_ext_connector_config (
@@ -35,7 +35,7 @@ CREATE TABLE IF NOT EXISTS crm_ext_connector_config (
     updated_at            DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     UNIQUE KEY uk_ext_conn_code (tenant_id, connector_code),
     KEY idx_ext_conn_cat (tenant_id, category_code, sort_order)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='7大域18通道全量热插拔外部数据连接器配置与月度熔断台账';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='7大域18通道全量热插拔外部数据连接器配置与月度熔断台账';
 
 CREATE TABLE IF NOT EXISTS crm_shop_oauth_session (
     id                    BIGINT        NOT NULL AUTO_INCREMENT PRIMARY KEY,
@@ -57,7 +57,7 @@ CREATE TABLE IF NOT EXISTS crm_shop_oauth_session (
     created_at            DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
     UNIQUE KEY uk_shop_oauth_token (verify_token),
     KEY idx_shop_oauth_cust (customer_id, created_at)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='抖店/淘宝1688/拼多多10秒官方扫码验店会话与真实单量核验表';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='抖店/淘宝1688/拼多多10秒官方扫码验店会话与真实单量核验表';
 
 CREATE TABLE IF NOT EXISTS crm_waybill_spot_check (
     id                    BIGINT        NOT NULL AUTO_INCREMENT PRIMARY KEY,
@@ -73,7 +73,7 @@ CREATE TABLE IF NOT EXISTS crm_waybill_spot_check (
     checked_by            VARCHAR(64)   NULL,
     created_at            DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
     KEY idx_waybill_check_month (tenant_id, settle_month, warehouse_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='快递100真实物流轨迹2%随机抽检防空包刷佣金审计表';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='快递100真实物流轨迹2%随机抽检防空包刷佣金审计表';
 
 CREATE TABLE IF NOT EXISTS crm_invoice_verify_log (
     id                    BIGINT        NOT NULL AUTO_INCREMENT PRIMARY KEY,
@@ -93,7 +93,7 @@ CREATE TABLE IF NOT EXISTS crm_invoice_verify_log (
     created_at            DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
     KEY idx_inv_verify_wd (withdrawal_id, created_at),
     KEY idx_inv_verify_no (tenant_id, invoice_no)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='P4企业提现6%增值税专用发票OCR与税务总局真伪核验台账';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='P4企业提现6%增值税专用发票OCR与税务总局真伪核验台账';
 
 -- 幂等预置 7 大域 18 条全量外部数据连接器（全部默认 enabled=0 关闭；广告回调须填验签密钥后才可开启，付费接口待同事申领 Key 后开启）
 INSERT INTO crm_ext_connector_config

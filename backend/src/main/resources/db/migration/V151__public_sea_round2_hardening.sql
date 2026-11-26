@@ -18,7 +18,7 @@ CREATE TABLE IF NOT EXISTS crm_public_sea_followup (
     operator         VARCHAR(64)  NOT NULL COMMENT '跟进人账号',
     created_at       DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
     KEY idx_sea_followup_cust (customer_id, id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='内部公海客户多轮跟进时间线留痕表';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='内部公海客户多轮跟进时间线留痕表';
 
 ALTER TABLE crm_public_sea_meta
     ADD KEY idx_sea_admin_cap (tenant_id, claim_status, claim_holder_name),

@@ -2,7 +2,7 @@
 -- V132 全民营销 · 广东主力分区省钱锁、店铺榜单企查对齐30天缓存、高德地推500m打卡与飞鱼Webhook
 -- 设计约束：
 --   1. 零 ALTER 存量核心大表 crm_customer；仅扩展公海专属表 crm_public_sea_meta 并新建 4 张轻量独立表。
---   2. 统一 ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci，经纬度与距离全部采用精确 DECIMAL。
+--   2. 统一 ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci，经纬度与距离全部采用精确 DECIMAL。
 -- =====================================================================
 
 ALTER TABLE crm_public_sea_meta
@@ -57,7 +57,7 @@ CREATE TABLE IF NOT EXISTS crm_ext_company_cache (
     updated_at      DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     UNIQUE KEY uk_ext_company_lookup (tenant_id, lookup_key),
     KEY idx_ext_company_expire (expires_at)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='外部工商与网店关联信息30天本地省钱缓存表';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='外部工商与网店关联信息30天本地省钱缓存表';
 
 CREATE TABLE IF NOT EXISTS crm_public_sea_shop (
     id              BIGINT       NOT NULL AUTO_INCREMENT PRIMARY KEY,
@@ -72,7 +72,7 @@ CREATE TABLE IF NOT EXISTS crm_public_sea_shop (
     created_at      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
     UNIQUE KEY uk_sea_customer_shop (customer_id, platform, shop_name),
     KEY idx_sea_shop_plat (tenant_id, platform, category)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='公海客户1客多店电商矩阵表';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='公海客户1客多店电商矩阵表';
 
 CREATE TABLE IF NOT EXISTS crm_public_sea_checkin (
     id              BIGINT        NOT NULL AUTO_INCREMENT PRIMARY KEY,
@@ -88,7 +88,7 @@ CREATE TABLE IF NOT EXISTS crm_public_sea_checkin (
     protected_until DATETIME      NOT NULL COMMENT '本次打卡解锁的15天保护期截止时间',
     created_at      DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
     KEY idx_sea_checkin_cust (customer_id, created_at)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='公海地推500m GPS定位实拍打卡审计留痕表';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='公海地推500m GPS定位实拍打卡审计留痕表';
 
 CREATE TABLE IF NOT EXISTS crm_ext_ad_lead_inbox (
     id              BIGINT       NOT NULL AUTO_INCREMENT PRIMARY KEY,
@@ -100,7 +100,7 @@ CREATE TABLE IF NOT EXISTS crm_ext_ad_lead_inbox (
     payload_digest  CHAR(64)     NULL COMMENT 'SHA-256摘要排错不落敏感明文',
     created_at      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
     UNIQUE KEY uk_ad_lead_ext (channel, external_lead_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='巨量飞鱼与腾讯广告免费Webhook幂等接收箱';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='巨量飞鱼与腾讯广告免费Webhook幂等接收箱';
 
 -- 预置广东定向省钱锁与地推打卡规则参数（外部接口密钥统一放在 V133 连接器中心表，不在 biz_setting 存明文）
 INSERT INTO biz_setting (module, skey, svalue, remark, tenant_id, create_by, create_time, version, deleted)
