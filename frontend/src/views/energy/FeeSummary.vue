@@ -150,8 +150,35 @@
     </template>
 
     <!-- 通知单抬头 -->
-    <el-dialog v-model="headerDialog.visible" title="通知单抬头与计费期间" width="620px">
+    <el-dialog v-model="headerDialog.visible" title="通知单抬头与计费期间" width="660px">
       <el-form :model="headerForm" label-width="120px">
+        <el-form-item label="缴费单位">
+          <el-select v-model="headerTarget" filterable style="width: 100%" @change="onHeaderTargetChange">
+            <el-option value="" label="全部缴费单位（通用抬头）">
+              <div class="header-opt-row">
+                <span><strong>全部缴费单位（通用抬头）</strong></span>
+                <el-tag size="small" type="info" effect="plain">通用</el-tag>
+              </div>
+            </el-option>
+            <el-option v-for="t in headerTenantChoices" :key="t" :value="t" :label="`${t}（${headerProfilesMap[t] ? '定制' : '通用'}）`">
+              <div class="header-opt-row">
+                <span>{{ t }}</span>
+                <el-tag size="small" :type="headerProfilesMap[t] ? 'warning' : 'info'" effect="plain">
+                  {{ headerProfilesMap[t] ? '定制' : '通用' }}
+                </el-tag>
+              </div>
+            </el-option>
+          </el-select>
+          <div class="header-scope-tip">
+            <template v-if="headerTarget">
+              当前为 <strong>{{ headerTarget }}</strong> 的{{ headerProfilesMap[headerTarget] ? '定制' : '独立' }}抬头；保存后标记为「定制」，以后每月生成水电/垃圾费通知单均自动沿用（如独立缴费截止日）。
+            </template>
+            <template v-else>
+              当前为全体未定制单位共用的「通用抬头」；如需给某家单位单独设置缴费截止日或收款信息，请从上方下拉选择具体缴费单位。
+            </template>
+          </div>
+        </el-form-item>
+        <el-divider />
         <el-form-item label="园区名称"><el-input v-model="headerForm.parkName" /></el-form-item>
         <el-form-item label="单据编号前缀"><el-input v-model="headerForm.noticePrefix" placeholder="如 DIPARK" style="width: 200px" /></el-form-item>
         <el-form-item label="计费期间">
@@ -166,8 +193,11 @@
         <el-form-item label="收款账户/方式"><el-input v-model="headerForm.paymentAccount" type="textarea" :rows="3" /></el-form-item>
       </el-form>
       <template #footer>
+        <el-button v-if="headerTarget && headerProfilesMap[headerTarget]" type="warning" plain :disabled="locked" :loading="headerSaving" @click="resetHeaderToGeneral">恢复通用</el-button>
         <el-button @click="headerDialog.visible = false">取消</el-button>
-        <el-button type="primary" :disabled="locked" :loading="state.saving" @click="saveHeader">保存</el-button>
+        <el-button type="primary" :disabled="locked" :loading="state.saving || headerSaving" @click="saveHeader">
+          {{ headerTarget ? '保存为该单位定制抬头' : '保存通用抬头' }}
+        </el-button>
       </template>
     </el-dialog>
 
@@ -292,7 +322,8 @@
 import { computed, onActivated, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowDown, ArrowLeft, Delete, Download, Plus, Printer } from '@element-plus/icons-vue'
-import { feePeriodApi } from '@/api/energy'
+import { feePeriodApi, leaseFeeApi, noticeHeaderProfileApi } from '@/api/energy'
+import { buildTenantChoices, resolveProfileDateForMonth } from './noticeHeaderHelper'
 import { sealApi } from '@/api/oa'
 import { useFeePeriod, money, num, downloadBlob, BILL_KINDS, applyFilter, filterOptions, floorBandClass, shortName } from './feePeriod'
 import FeeFilterBar from './components/FeeFilterBar.vue'
@@ -438,19 +469,108 @@ async function generate() {
 
 const headerDialog = reactive({ visible: false })
 const headerForm = reactive({})
-function openHeader() {
-  const p = period.value
+const headerTarget = ref('')
+const headerSaving = ref(false)
+const headerProfiles = ref([])
+const headerLedgerContracts = ref([])
+const headerProfilesMap = computed(() => {
+  const m = {}
+  for (const p of headerProfiles.value) {
+    if (p?.tenantName) m[p.tenantName.trim()] = p
+  }
+  return m
+})
+const headerTenantChoices = computed(() =>
+  buildTenantChoices(headerLedgerContracts.value, notices.value, headerProfiles.value)
+)
+
+function fillHeaderFormFor(target) {
+  const p = period.value || {}
+  if (!target) {
+    Object.assign(headerForm, {
+      parkName: p.parkName, noticePrefix: p.noticePrefix, periodStart: p.periodStart, periodEnd: p.periodEnd,
+      issueDate: p.issueDate, dueDate: p.dueDate, contactName: p.contactName, contactPhone: p.contactPhone,
+      paymentAccount: p.paymentAccount
+    })
+    return
+  }
+  const prof = headerProfilesMap.value[target]
+  const ym = p.period
   Object.assign(headerForm, {
-    parkName: p.parkName, noticePrefix: p.noticePrefix, periodStart: p.periodStart, periodEnd: p.periodEnd,
-    issueDate: p.issueDate, dueDate: p.dueDate, contactName: p.contactName, contactPhone: p.contactPhone,
-    paymentAccount: p.paymentAccount
+    parkName: prof?.parkName || p.parkName || '',
+    noticePrefix: prof?.noticePrefix || p.noticePrefix || '',
+    periodStart: (prof?.periodStart && ym && String(prof.periodStart).startsWith(ym)) ? prof.periodStart : p.periodStart,
+    periodEnd: (prof?.periodEnd && ym && String(prof.periodEnd).startsWith(ym)) ? prof.periodEnd : p.periodEnd,
+    issueDate: resolveProfileDateForMonth(prof?.issueDate, prof?.issueMonthOffset, prof?.issueDay, ym) || p.issueDate,
+    dueDate: resolveProfileDateForMonth(prof?.dueDate, prof?.dueMonthOffset, prof?.dueDay, ym) || p.dueDate,
+    contactName: prof?.contactName || p.contactName || '',
+    contactPhone: prof?.contactPhone || p.contactPhone || '',
+    paymentAccount: prof?.paymentAccount || p.paymentAccount || ''
   })
-  headerDialog.visible = true
 }
+
+function onHeaderTargetChange(val) {
+  fillHeaderFormFor(val)
+}
+
+async function openHeader() {
+  headerTarget.value = ''
+  fillHeaderFormFor('')
+  headerDialog.visible = true
+  try {
+    const [profs, contracts] = await Promise.all([
+      noticeHeaderProfileApi.list('UTILITY'),
+      leaseFeeApi.contracts(false)
+    ])
+    headerProfiles.value = profs || []
+    headerLedgerContracts.value = contracts || []
+  } catch { /* ignore */ }
+}
+
 async function saveHeader() {
-  await save({ ...headerForm })
-  headerDialog.visible = false
-  ElMessage.success(notices.value.length ? '已保存；单据编号前缀与计费期间要点「重新生成通知单」才会更新到各户' : '已保存')
+  if (!headerTarget.value) {
+    await save({ ...headerForm })
+    headerDialog.visible = false
+    ElMessage.success(notices.value.length ? '通用抬头已保存；单据编号前缀与计费期间要点「重新生成通知单」才会更新到各户' : '通用抬头已保存')
+    return
+  }
+  headerSaving.value = true
+  try {
+    await noticeHeaderProfileApi.save({
+      scopeType: 'UTILITY',
+      tenantName: headerTarget.value,
+      referencePeriod: period.value?.period,
+      periodId: period.value?.id,
+      parkName: headerForm.parkName,
+      noticePrefix: headerForm.noticePrefix,
+      periodStart: headerForm.periodStart,
+      periodEnd: headerForm.periodEnd,
+      issueDate: headerForm.issueDate,
+      dueDate: headerForm.dueDate,
+      contactName: headerForm.contactName,
+      contactPhone: headerForm.contactPhone,
+      paymentAccount: headerForm.paymentAccount
+    })
+    headerProfiles.value = (await noticeHeaderProfileApi.list('UTILITY')) || []
+    await loadNotices()
+    ElMessage.success(`已保存「${headerTarget.value}」的定制抬头，后续生成通知单将自动沿用`)
+  } finally {
+    headerSaving.value = false
+  }
+}
+
+async function resetHeaderToGeneral() {
+  if (!headerTarget.value) return
+  headerSaving.value = true
+  try {
+    await noticeHeaderProfileApi.remove('UTILITY', headerTarget.value, period.value?.id)
+    headerProfiles.value = (await noticeHeaderProfileApi.list('UTILITY')) || []
+    fillHeaderFormFor(headerTarget.value)
+    await loadNotices()
+    ElMessage.success(`「${headerTarget.value}」已恢复为通用抬头`)
+  } finally {
+    headerSaving.value = false
+  }
 }
 
 const editDialog = reactive({ visible: false, saving: false })
@@ -707,4 +827,6 @@ async function revoke() {
 .seal-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #dc2626; margin-right: 6px; }
 .seal-drop-item { display: flex; align-items: center; gap: 8px; }
 .seal-drop-img { width: 22px; height: 18px; object-fit: contain; }
+.header-opt-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; width: 100%; }
+.header-scope-tip { margin-top: 4px; font-size: 12px; line-height: 1.5; color: var(--el-text-color-secondary); }
 </style>

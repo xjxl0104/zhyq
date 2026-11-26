@@ -3,11 +3,30 @@
              destroy-on-close @update:model-value="(v) => $emit('update:modelValue', v)" @open="onOpen">
     <el-form :model="form" label-width="110px">
       <el-form-item label="区域" required>
-        <el-autocomplete v-model="form.area" :fetch-suggestions="suggest" placeholder="如 2层D区、9层A区" clearable
-                         style="width: 100%" />
+        <el-select v-model="form.area" filterable allow-create default-first-option clearable
+                   placeholder="可下拉选择合同基础台账区域，或直接手动输入" style="width: 100%"
+                   @change="onAreaChange">
+          <el-option v-for="opt in areaOptions" :key="opt.value" :label="opt.value" :value="opt.value">
+            <div class="opt-row">
+              <span>{{ opt.value }}</span>
+              <span v-if="opt.hint" class="opt-hint">{{ opt.hint }}</span>
+            </div>
+          </el-option>
+        </el-select>
+        <div class="tip">可直接下拉拉取「合同基础台账」中的区域，也可直接键入自定义区域名称。</div>
       </el-form-item>
       <el-form-item label="用户名 / 租户">
-        <el-input v-model="form.customerName" placeholder="抄表表上的承租方简称，如 云山快仓" />
+        <el-select v-model="form.customerName" filterable allow-create default-first-option clearable
+                   placeholder="可下拉选择合同基础台账租户，或直接手动输入" style="width: 100%"
+                   @change="onTenantChange">
+          <el-option v-for="opt in tenantOptions" :key="opt.value" :label="opt.value" :value="opt.value">
+            <div class="opt-row">
+              <span>{{ opt.value }}</span>
+              <span v-if="opt.hint" class="opt-hint">{{ opt.hint }}</span>
+            </div>
+          </el-option>
+        </el-select>
+        <div class="tip">支持下拉选择合同基础台账租户（自动带出对应区域/面积），也保留手动输入。</div>
       </el-form-item>
       <el-form-item v-if="!meter" label="表计类型" required>
         <el-checkbox-group v-model="form.types">
@@ -52,7 +71,7 @@
 <script setup>
 import { computed, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { feePeriodApi } from '@/api/energy'
+import { feePeriodApi, leaseFeeApi } from '@/api/energy'
 import { roomApi } from '@/api/building'
 
 // meter 有值 = 修改;defaultTypes = 新增时默认勾选的表计类型;areas = 已有区域,做输入提示
@@ -66,8 +85,70 @@ const emit = defineEmits(['update:modelValue', 'saved'])
 
 const saving = ref(false)
 const rooms = ref([])
+const ledgerContracts = ref([])
 const form = reactive({ area: '', customerName: '', types: ['电'], ratio: 30, sharePublic: 1, leaseArea: null, lastReading: 0, roomId: null, code: '' })
 const showRatio = computed(() => (props.meter ? props.meter.energyType === '电' : form.types.includes('电')))
+
+const areaOptions = computed(() => {
+  const seen = new Set()
+  const list = []
+  for (const c of ledgerContracts.value) {
+    const unit = (c.unitName || '').trim()
+    if (!unit || seen.has(unit)) continue
+    seen.add(unit)
+    list.push({ value: unit, hint: c.tenantName || '', contract: c })
+  }
+  for (const a of props.areas || []) {
+    const unit = (a || '').trim()
+    if (!unit || seen.has(unit)) continue
+    seen.add(unit)
+    list.push({ value: unit, hint: '已有抄表区域', contract: null })
+  }
+  return list
+})
+
+const tenantOptions = computed(() => {
+  const map = new Map()
+  for (const c of ledgerContracts.value) {
+    const name = (c.tenantName || '').trim()
+    if (!name) continue
+    if (!map.has(name)) {
+      map.set(name, { value: name, units: [] })
+    }
+    if (c.unitName) map.get(name).units.push(c.unitName.trim())
+  }
+  return [...map.values()].map((x) => ({
+    value: x.value,
+    hint: x.units.length ? x.units.slice(0, 2).join('、') + (x.units.length > 2 ? ' 等' : '') : ''
+  }))
+})
+
+function onAreaChange(val) {
+  const area = (val || '').trim()
+  if (!area) return
+  const matched = ledgerContracts.value.find((c) => (c.unitName || '').trim() === area)
+  if (matched) {
+    if (!form.customerName?.trim() || ledgerContracts.value.some((c) => c.tenantName === form.customerName)) {
+      form.customerName = matched.tenantName || form.customerName
+    }
+    if ((form.leaseArea == null || Number(form.leaseArea) === 0) && Number(matched.leaseArea || 0) > 0) {
+      form.leaseArea = Number(matched.leaseArea)
+    }
+  }
+}
+
+function onTenantChange(val) {
+  const name = (val || '').trim()
+  if (!name) return
+  const matchedList = ledgerContracts.value.filter((c) => (c.tenantName || '').trim() === name)
+  if (matchedList.length === 1) {
+    const m = matchedList[0]
+    if (!form.area?.trim() && m.unitName) form.area = m.unitName.trim()
+    if ((form.leaseArea == null || Number(form.leaseArea) === 0) && Number(m.leaseArea || 0) > 0) {
+      form.leaseArea = Number(m.leaseArea)
+    }
+  }
+}
 
 function onOpen() {
   const m = props.meter
@@ -75,6 +156,7 @@ function onOpen() {
     ? { area: m.area || '', customerName: m.customerName || '', types: [m.energyType], ratio: Number(m.ratio || 1), sharePublic: m.sharePublic === 0 ? 0 : 1, leaseArea: m.leaseArea ?? null, lastReading: 0, roomId: m.roomId ?? null, code: '' }
     : { area: '', customerName: '', types: [...props.defaultTypes], ratio: 30, sharePublic: 1, leaseArea: null, lastReading: 0, roomId: null, code: '' })
   loadRooms()
+  loadLedgerContracts()
 }
 
 let roomsLoaded = false
@@ -88,9 +170,10 @@ async function loadRooms() {
   }
 }
 
-function suggest(query, cb) {
-  const q = (query || '').trim()
-  cb([...new Set(props.areas)].filter((a) => a && a.includes(q)).map((value) => ({ value })))
+async function loadLedgerContracts() {
+  try {
+    ledgerContracts.value = (await leaseFeeApi.contracts(false)) || []
+  } catch { /* ignore */ }
 }
 
 async function submit() {
@@ -125,4 +208,6 @@ async function submit() {
 <style scoped>
 .tip { margin-top: 4px; font-size: 12px; line-height: 1.5; color: var(--el-text-color-secondary); }
 .tip.inline { margin: 0 0 0 10px; }
+.opt-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; width: 100%; }
+.opt-hint { font-size: 12px; color: var(--el-text-color-secondary); max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 </style>

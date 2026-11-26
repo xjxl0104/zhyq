@@ -64,6 +64,8 @@ public class FeeNoticeService {
     private final FeeSnapshotMapper snapshotMapper;
     private final ObjectMapper objectMapper;
     private final FeeNoticePaymentService payments;
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private NoticeHeaderProfileService headerProfiles;
 
     /** 一种能源的工作表:行 + 汇总,给 电费 / 水费 页面 */
     public record Sheet(FeePeriod period, String energyType, BigDecimal total, String totalSource,
@@ -551,7 +553,16 @@ public class FeeNoticeService {
         itemMapper.delete(new LambdaQueryWrapper<FeeNoticeItem>().eq(FeeNoticeItem::getFeePeriodId, periodId));
         noticeMapper.delete(new LambdaQueryWrapper<FeeNotice>().eq(FeeNotice::getFeePeriodId, periodId));
         BigDecimal totalAmount = BigDecimal.ZERO;
+        Map<String, com.zhyq.park.energy.entity.NoticeHeaderProfile> customHeaders = headerProfiles != null
+                ? headerProfiles.mapByScope(NoticeHeaderProfileService.SCOPE_UTILITY)
+                : Map.of();
         for (FeeNotice n : batch.notices()) {
+            if (headerProfiles != null && StringUtils.hasText(n.getTenantName())) {
+                com.zhyq.park.energy.entity.NoticeHeaderProfile prof = customHeaders.get(n.getTenantName().trim());
+                if (prof != null) {
+                    headerProfiles.applyToUtilityNotice(p, n, prof);
+                }
+            }
             noticeMapper.insert(n);
             payments.moveAttachments(paymentSources, n);
             for (FeeNoticeItem it : n.getItems()) {

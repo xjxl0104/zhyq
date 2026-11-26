@@ -59,3 +59,11 @@ export const leaseFeeApi = {
   revoke: (id) => request.post(`/energy/lease-fee/${id}/revoke`),
   export: (id) => request.get(`/energy/lease-fee/${id}/export`, { responseType: 'blob' })
 }
+
+// 缴费通知单抬头-按缴费单位定制配置(LEASE | UTILITY | DEPOSIT)
+export const noticeHeaderProfileApi = {
+  list: (scopeType) => request.get('/energy/notice-header-profile', { params: { scopeType } }),
+  save: (data) => request.post('/energy/notice-header-profile', data),
+  remove: (scopeType, tenantName, periodId) =>
+    request.delete('/energy/notice-header-profile', { params: { scopeType, tenantName, periodId } })
+}

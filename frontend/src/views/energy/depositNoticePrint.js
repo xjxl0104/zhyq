@@ -13,12 +13,13 @@ const dateCn = (s) => {
 }
 
 export function depositNoticeHtml(config, notice, sealPlacement = null) {
+  const effCfg = notice?.headerConfig || config || {}
   const isRent = notice.feeCategory === 'RENT'
   const categoryTitle = isRent ? '租金保证金' : '物业保证金'
-  const payeeName = notice.payeeName || (isRent ? config?.rentPayeeName : config?.propertyPayeeName) || ''
-  const paymentAccount = notice.paymentAccount || (isRent ? config?.rentPaymentAccount : config?.propertyPaymentAccount) || ''
-  const contactName = isRent ? config?.rentContactName : config?.propertyContactName
-  const contactPhone = isRent ? config?.rentContactPhone : config?.propertyContactPhone
+  const payeeName = notice.payeeName || (isRent ? effCfg?.rentPayeeName : effCfg?.propertyPayeeName) || ''
+  const paymentAccount = notice.paymentAccount || (isRent ? effCfg?.rentPaymentAccount : effCfg?.propertyPaymentAccount) || ''
+  const contactName = isRent ? effCfg?.rentContactName : effCfg?.propertyContactName
+  const contactPhone = isRent ? effCfg?.rentContactPhone : effCfg?.propertyContactPhone
 
   const rows = (notice.items || []).map((it) => `<tr>
     <td class="c">${esc(it.seq)}</td>
@@ -47,12 +48,12 @@ export function depositNoticeHtml(config, notice, sealPlacement = null) {
       ]
 
   return `<section class="notice">
-    <h1>${esc(config?.parkName || 'DIPARK数智云仓产业园')} ${categoryTitle}缴费通知单</h1>
+    <h1>${esc(effCfg?.parkName || 'DIPARK数智云仓产业园')} ${categoryTitle}缴费通知单</h1>
     <p class="sub">收取单位：<strong>${esc(payeeName || '待配置')}</strong>　｜　费用类别：${categoryTitle}（一次性履约保证金）</p>
     <table class="head">
       <tr><th>收取单位</th><td><strong>${esc(payeeName)}</strong></td><th>租户/公司名称</th><td>${esc(notice.tenantName)}</td><th>单据编号</th><td>${esc(notice.noticeNo)}</td></tr>
       <tr><th>楼层/区域</th><td>${esc(notice.unitName)}</td><th>对应协议编号</th><td>${esc(notice.agreementNo || '-')}</td><th>计租面积合计</th><td>${n2(notice.leaseArea)} ㎡</td></tr>
-      <tr><th>开具日期</th><td>${dateCn(config?.issueDate) || '-'}</td><th>缴费截止日</th><td>${dateCn(config?.dueDate) || '按合同约定'}</td><th>联系人/电话</th><td>${esc([contactName, contactPhone].filter(Boolean).join(' / ') || '-')}</td></tr>
+      <tr><th>开具日期</th><td>${dateCn(effCfg?.issueDate) || '-'}</td><th>缴费截止日</th><td>${dateCn(effCfg?.dueDate) || '按合同约定'}</td><th>联系人/电话</th><td>${esc([contactName, contactPhone].filter(Boolean).join(' / ') || '-')}</td></tr>
       <tr><th>收款账户/方式</th><td colspan="5">${br(paymentAccount || '-')}</td></tr>
     </table>
     <table class="items">

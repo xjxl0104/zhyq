@@ -55,6 +55,8 @@ public class LeaseFeeService {
     private final ObjectMapper objectMapper;
     private final LeaseFeePaymentService payments;
     private final FieldEncryptionService encryption;
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private NoticeHeaderProfileService headerProfiles;
 
     public record Sheet(LeaseFeePeriod period, String feeType,
                         BigDecimal totalArea, BigDecimal standardRentTotal, BigDecimal standardPropertyTotal,
@@ -378,6 +380,12 @@ public class LeaseFeeService {
     @org.springframework.context.event.EventListener(org.springframework.boot.context.event.ApplicationReadyEvent.class)
     public void autoAlignMissingFormalContractsOnStartup() {
         try {
+            jdbc.update("""
+                    UPDATE eng_lease_contract lc
+                    LEFT JOIN biz_contract bc ON bc.id = lc.biz_contract_id AND bc.deleted = 0
+                    SET lc.biz_contract_id = NULL
+                    WHERE lc.deleted = 0 AND lc.biz_contract_id IS NOT NULL AND bc.id IS NULL
+                    """);
             Long unlinked = contractMapper.selectCount(new LambdaQueryWrapper<LeaseContract>()
                     .eq(LeaseContract::getStatus, 1)
                     .isNull(LeaseContract::getBizContractId));
@@ -1195,9 +1203,18 @@ public class LeaseFeeService {
 
         BigDecimal rentDueSum = BigDecimal.ZERO;
         BigDecimal propDueSum = BigDecimal.ZERO;
+        Map<String, com.zhyq.park.energy.entity.NoticeHeaderProfile> customHeaders = headerProfiles != null
+                ? headerProfiles.mapByScope(NoticeHeaderProfileService.SCOPE_LEASE)
+                : Map.of();
         for (LeaseFeeNotice n : fresh) {
             if (n.getTenantRefId() == null) {
                 n.setTenantRefId(lookupTenantRefId(n.getTenantName()));
+            }
+            if (headerProfiles != null && StringUtils.hasText(n.getTenantName())) {
+                com.zhyq.park.energy.entity.NoticeHeaderProfile prof = customHeaders.get(n.getTenantName().trim());
+                if (prof != null) {
+                    headerProfiles.applyToLeaseNotice(p, n, prof);
+                }
             }
             LeaseFeeNotice old = oldByKey.get(LeaseFeeCalculator.noticeKey(n));
             List<LeaseFeeNoticeItem> mergedItems = new ArrayList<>(n.getItems());

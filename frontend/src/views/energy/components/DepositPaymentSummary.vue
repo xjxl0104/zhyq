@@ -187,8 +187,35 @@
     </div>
 
     <!-- 收取单位与通知单抬头弹窗 -->
-    <el-dialog v-model="headerDlg.visible" title="保证金收取单位与通知单抬头（昌记 / 数智云仓分开配置）" width="720px">
+    <el-dialog v-model="headerDlg.visible" title="保证金收取单位与通知单抬头（昌记 / 数智云仓分开配置）" width="740px">
       <el-form :model="headerForm" label-width="140px" size="small">
+        <el-form-item label="缴费单位">
+          <el-select v-model="headerTarget" filterable style="width: 100%" @change="onHeaderTargetChange">
+            <el-option value="" label="全部缴费单位（通用抬头）">
+              <div class="header-opt-row">
+                <span><strong>全部缴费单位（通用抬头）</strong></span>
+                <el-tag size="small" type="info" effect="plain">通用</el-tag>
+              </div>
+            </el-option>
+            <el-option v-for="t in headerTenantChoices" :key="t" :value="t" :label="`${t}（${headerProfilesMap[t] ? '定制' : '通用'}）`">
+              <div class="header-opt-row">
+                <span>{{ t }}</span>
+                <el-tag size="small" :type="headerProfilesMap[t] ? 'warning' : 'info'" effect="plain">
+                  {{ headerProfilesMap[t] ? '定制' : '通用' }}
+                </el-tag>
+              </div>
+            </el-option>
+          </el-select>
+          <div class="header-scope-tip">
+            <template v-if="headerTarget">
+              当前为 <strong>{{ headerTarget }}</strong> 的{{ headerProfilesMap[headerTarget] ? '定制' : '独立' }}保证金抬头；保存后标记为「定制」，以后预览和打印该单位保证金通知单均自动沿用。
+            </template>
+            <template v-else>
+              当前为全体未定制单位共用的「通用抬头」；如需给某家单位单独设置缴费截止日或收款账户，请从上方下拉选择具体缴费单位。
+            </template>
+          </div>
+        </el-form-item>
+        <el-divider />
         <el-row :gutter="12">
           <el-col :span="12"><el-form-item label="园区名称"><el-input v-model="headerForm.parkName" /></el-form-item></el-col>
           <el-col :span="12"><el-form-item label="单据编号前缀"><el-input v-model="headerForm.noticePrefix" placeholder="如 DIPARK" /></el-form-item></el-col>
@@ -213,8 +240,11 @@
         <el-form-item label="收款账户/方式"><el-input v-model="headerForm.propertyPaymentAccount" type="textarea" :rows="3" /></el-form-item>
       </el-form>
       <template #footer>
+        <el-button v-if="headerTarget && headerProfilesMap[headerTarget]" type="warning" plain :loading="headerDlg.saving" @click="resetHeaderToGeneral">恢复通用</el-button>
         <el-button @click="headerDlg.visible = false">取消</el-button>
-        <el-button type="primary" :loading="headerDlg.saving" @click="saveHeader">保存</el-button>
+        <el-button type="primary" :loading="headerDlg.saving" @click="saveHeader">
+          {{ headerTarget ? '保存为该单位定制抬头' : '保存通用抬头' }}
+        </el-button>
       </template>
     </el-dialog>
 
@@ -269,7 +299,8 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowDown, Printer } from '@element-plus/icons-vue'
-import { leaseFeeApi } from '@/api/energy'
+import { leaseFeeApi, noticeHeaderProfileApi } from '@/api/energy'
+import { buildTenantChoices, mergeDepositConfigWithProfile } from '../noticeHeaderHelper'
 import { sealApi } from '@/api/oa'
 import { applyFilter, filterOptions, money, num } from '../feePeriod'
 import { LEASE_NOTICE_CSS } from '../leaseNoticePrint'
@@ -365,15 +396,21 @@ function buildNotices(category) {
     const totalUnpaid = Math.max(0, Math.round((totalDue - totalPaid) * 100) / 100)
     const receiptCount = list.reduce((s, c) => s + Number(isRent ? c.rentReceiptCount : c.propertyReceiptCount || 0), 0)
     const payState = stateOf(totalDue, totalPaid, list.map((c) => (isRent ? c.rentDepositStatus : c.propertyDepositStatus)))
+    const prof = headerProfilesMap.value[tenantName]
+    const effCfg = mergeDepositConfigWithProfile(config.value, prof)
+    const effPrefix = effCfg?.noticePrefix || prefix
+    const effPayee = (isRent ? effCfg?.rentPayeeName : effCfg?.propertyPayeeName) || payeeName
+    const effAcc = (isRent ? effCfg?.rentPaymentAccount : effCfg?.propertyPaymentAccount) || paymentAccount
     out.push({
       feeCategory: category,
-      noticeNo: `${prefix}-BZJ-${isRent ? 'ZJ' : 'WY'}-${String(idx).padStart(2, '0')}`,
+      noticeNo: `${effPrefix}-BZJ-${isRent ? 'ZJ' : 'WY'}-${String(idx).padStart(2, '0')}`,
       tenantName,
       unitName: [...new Set(list.map((c) => c.unitName).filter(Boolean))].join('、'),
       agreementNo: [...new Set(list.map((c) => c.agreementNo).filter((v) => v && v !== '待补充'))].join('；'),
       leaseArea: Math.round(list.reduce((s, c) => s + Number(c.leaseArea || 0), 0) * 100) / 100,
-      payeeName,
-      paymentAccount,
+      payeeName: effPayee,
+      paymentAccount: effAcc,
+      headerConfig: effCfg,
       totalDue,
       totalPaid,
       totalUnpaid,
@@ -443,7 +480,14 @@ const rentTotals = computed(() => sumNotices(rentNotices.value))
 const propTotals = computed(() => sumNotices(propertyNotices.value))
 
 async function loadConfigAndSeals() {
-  try { config.value = await leaseFeeApi.depositConfig() } catch { /* ignore */ }
+  try {
+    const [cfg, profs] = await Promise.all([
+      leaseFeeApi.depositConfig(),
+      noticeHeaderProfileApi.list('DEPOSIT')
+    ])
+    config.value = cfg
+    headerProfiles.value = profs || []
+  } catch { /* ignore */ }
   try {
     const [list, rSeal, pSeal] = await Promise.all([
       sealApi.list({ onlyEnabled: true }),
@@ -458,16 +502,82 @@ async function loadConfigAndSeals() {
 
 const headerDlg = reactive({ visible: false, saving: false })
 const headerForm = reactive({})
-function openHeader() {
-  Object.assign(headerForm, { ...(config.value || {}) })
-  headerDlg.visible = true
+const headerTarget = ref('')
+const headerProfiles = ref([])
+const headerProfilesMap = computed(() => {
+  const m = {}
+  for (const p of headerProfiles.value) {
+    if (p?.tenantName) m[p.tenantName.trim()] = p
+  }
+  return m
+})
+const headerTenantChoices = computed(() =>
+  buildTenantChoices(activeContracts.value, [], headerProfiles.value)
+)
+
+function fillHeaderFormFor(target) {
+  const base = config.value || {}
+  if (!target) {
+    Object.assign(headerForm, { ...base })
+    return
+  }
+  const merged = mergeDepositConfigWithProfile(base, headerProfilesMap.value[target])
+  Object.assign(headerForm, merged)
 }
+
+function onHeaderTargetChange(val) {
+  fillHeaderFormFor(val)
+}
+
+async function openHeader() {
+  headerTarget.value = ''
+  fillHeaderFormFor('')
+  headerDlg.visible = true
+  try {
+    headerProfiles.value = (await noticeHeaderProfileApi.list('DEPOSIT')) || []
+  } catch { /* ignore */ }
+}
+
 async function saveHeader() {
   headerDlg.saving = true
   try {
-    config.value = await leaseFeeApi.saveDepositConfig({ ...headerForm })
-    headerDlg.visible = false
-    ElMessage.success('保证金收取单位与通知单抬头已保存')
+    if (!headerTarget.value) {
+      config.value = await leaseFeeApi.saveDepositConfig({ ...headerForm })
+      headerDlg.visible = false
+      ElMessage.success('保证金通用收取单位与通知单抬头已保存')
+    } else {
+      await noticeHeaderProfileApi.save({
+        scopeType: 'DEPOSIT',
+        tenantName: headerTarget.value,
+        parkName: headerForm.parkName,
+        noticePrefix: headerForm.noticePrefix,
+        issueDate: headerForm.issueDate,
+        dueDate: headerForm.dueDate,
+        rentPayeeName: headerForm.rentPayeeName,
+        rentContactName: headerForm.rentContactName,
+        rentContactPhone: headerForm.rentContactPhone,
+        rentPaymentAccount: headerForm.rentPaymentAccount,
+        propertyPayeeName: headerForm.propertyPayeeName,
+        propertyContactName: headerForm.propertyContactName,
+        propertyContactPhone: headerForm.propertyContactPhone,
+        propertyPaymentAccount: headerForm.propertyPaymentAccount
+      })
+      headerProfiles.value = (await noticeHeaderProfileApi.list('DEPOSIT')) || []
+      ElMessage.success(`已保存「${headerTarget.value}」的保证金定制抬头`)
+    }
+  } finally {
+    headerDlg.saving = false
+  }
+}
+
+async function resetHeaderToGeneral() {
+  if (!headerTarget.value) return
+  headerDlg.saving = true
+  try {
+    await noticeHeaderProfileApi.remove('DEPOSIT', headerTarget.value)
+    headerProfiles.value = (await noticeHeaderProfileApi.list('DEPOSIT')) || []
+    fillHeaderFormFor(headerTarget.value)
+    ElMessage.success(`「${headerTarget.value}」已恢复为通用抬头`)
   } finally {
     headerDlg.saving = false
   }
@@ -614,4 +724,6 @@ onMounted(loadConfigAndSeals)
 .seal-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #dc2626; margin-right: 6px; }
 .seal-drop-item { display: flex; align-items: center; gap: 8px; }
 .seal-drop-img { width: 22px; height: 18px; object-fit: contain; }
+.header-opt-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; width: 100%; }
+.header-scope-tip { margin-top: 4px; font-size: 12px; line-height: 1.5; color: var(--el-text-color-secondary); }
 </style>
