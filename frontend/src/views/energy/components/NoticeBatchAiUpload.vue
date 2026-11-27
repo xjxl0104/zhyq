@@ -109,9 +109,6 @@
             <template v-if="!c.passed">（通知单：{{ c.expected }}）</template>
           </el-tag>
         </div>
-        <div v-if="!isDone(r) && r.extracted?.diagnostic" class="diag-box">
-          {{ r.extracted.diagnostic }}
-        </div>
         <!-- 识别失败或不一致时，支持直接手动选择通知单绑定 -->
         <div v-if="!isDone(r) && r._rawFile && noticeOptions.length" class="manual-bind-bar">
           <span class="bind-label">手动绑定：</span>
@@ -405,16 +402,5 @@ async function bindManually(row) {
 .bind-label {
   font-weight: 600;
   color: var(--el-text-color-primary);
-}
-.diag-box {
-  margin-top: 6px;
-  padding: 6px 8px;
-  border-radius: 4px;
-  background: rgba(0, 0, 0, 0.03);
-  color: var(--el-text-color-secondary);
-  font-size: 11px;
-  line-height: 1.5;
-  white-space: pre-wrap;
-  word-break: break-all;
 }
 </style>

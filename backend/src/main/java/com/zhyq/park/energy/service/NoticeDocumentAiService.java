@@ -579,17 +579,6 @@ public class NoticeDocumentAiService {
                     new ExtractedFields(null, null, null, null, null, null, null, null, null, null, "NONE", rapidErr),
                     combinedText);
         }
-        // 若已抽到原文但字段仍不完整，把原文摘要放进 diagnostic 方便排查是「没识别出」还是「银行版式/数据对不上」
-        if (parsed != null && !isComplete(parsed, docType)) {
-            String srcText = StringUtils.hasText(combinedText) ? combinedText.trim() : "";
-            String preview = srcText.length() > 360 ? srcText.substring(0, 360) + "..." : srcText;
-            String diag = firstNonBlank(parsed.diagnostic(), StringUtils.hasText(preview) ? "OCR原文：" + preview : rapidErr);
-            return new ExtractionBundle(new ExtractedFields(
-                    parsed.payerName(), parsed.payeeName(), parsed.payeeAccount(), parsed.amount(),
-                    parsed.buyerName(), parsed.sellerName(), parsed.taxInclusiveAmount(), parsed.invoiceNo(),
-                    parsed.billingPeriod(), parsed.docDate(), parsed.sourceMethod(), diag
-            ), combinedText);
-        }
         return new ExtractionBundle(parsed, combinedText);
     }
 
@@ -672,12 +661,8 @@ public class NoticeDocumentAiService {
             String trimmed = normalizeOcrText(rawText);
             if (trimmed.length() > 6000) trimmed = trimmed.substring(0, 6000);
             String sysPrompt = DOC_RECEIPT.equals(docType)
-                    ? "你是严格的财务回执结构化抽取助手。请从下面的银行电子回单 OCR/PDF 原文中抽取字段，只返回纯 JSON 对象（不要 markdown 代码块）："
-                      + "{\"payerName\":\"付款人/支付单位纯净全称\",\"payeeName\":\"收款人/接收单位纯净全称\",\"payeeAccount\":\"收款人银行账号纯数字\",\"amount\":\"支付金额数字(如99000.00)\"}。"
-                      + "注意：银行回单常为左右双栏表格，竖排表头字（如「付款人」「收款人」拆出的单字「收」「付」「款」「人」）及表格边框符号可能紧邻单位名称前后，请务必剔除这些表头与边框杂字，只保留纯净单位全称；只能抽取原文明确存在的信息，不得猜测编造，没有的填 null。"
-                    : "你是严格的财务发票结构化抽取助手。请从下面的电子发票 OCR/PDF 原文中抽取字段，只返回纯 JSON 对象（不要 markdown 代码块）："
-                      + "{\"buyerName\":\"购买方纯净全称\",\"sellerName\":\"销售方纯净全称\",\"taxInclusiveAmount\":\"价税合计(小写)含税金额数字(如99000.00)\",\"invoiceNo\":\"发票号码\"}。"
-                      + "注意：电子发票常为左右双栏表格，竖排表头字（如「购买方」「销售方」拆出的单字「购」「买」「销」「售」「方」）及边框符号可能紧邻企业名称前后，请务必剔除这些杂字，只保留纯净企业全称；只能抽取原文明确存在的信息，不得猜测编造，没有的填 null。";
+                    ? "从银行回单文本提取纯JSON（无markdown）：{\"payerName\":\"付款单位全称\",\"payeeName\":\"收款单位全称\",\"payeeAccount\":\"收款账号纯数字\",\"amount\":\"金额如99000.00\"}。剔除双栏表头杂字（如收/付/款/人），无则填null。"
+                    : "从电子发票文本提取纯JSON（无markdown）：{\"buyerName\":\"购买方全称\",\"sellerName\":\"销售方全称\",\"taxInclusiveAmount\":\"价税合计小写如99000.00\",\"invoiceNo\":\"发票号码\"}。剔除表头杂字，无则填null。";
             String modelName = StringUtils.hasText(deepseekModel) ? deepseekModel.trim() : "deepseek-flash";
             Map<String, Object> body = new LinkedHashMap<>();
             body.put("model", modelName);
@@ -780,9 +765,13 @@ public class NoticeDocumentAiService {
     // ------------------------------------------------------------------ 结构化正则解析（纯函数）
 
     private static final Pattern PAYER_NAME_PAT = Pattern.compile(
-            "(?:(?:付款人名称|付款户名|付款方名称|付款人全称|付款账户名称|付款人户名|付方户名|付方名称|付款单位|转出户名|借方户名)[:： \\t]+|付款人[:：])([^\\r\\n]+)");
+            "(?:(?:付款人名称|付款户名|付款方户名|付款方名称|付款人全称|付款账户名称|付款账户名|付款人户名|付方户名|付方名称|付方账户名|付款单位名称|付款单位|转出户名|借方户名)[:： \\t]+|付款人[:：])([^\\r\\n]+)");
     private static final Pattern PAYEE_NAME_PAT = Pattern.compile(
-            "(?:(?:收款人名称|收款户名|收款方名称|收款人全称|收款账户名称|收款人户名|收方户名|收方名称|收款单位|转入户名|贷方户名|对方户名)[:： \\t]+|收款人[:：])([^\\r\\n]+)");
+            "(?:(?:收款人名称|收款户名|收款方户名|收款方名称|收款人全称|收款账户名称|收款账户名|收款人户名|收方户名|收方名称|收方账户名|收款单位名称|收款单位|转入户名|贷方户名|对方户名)[:： \\t]+|收款人[:：])([^\\r\\n]+)");
+    private static final Pattern PAYER_LABEL_ONLY_PAT = Pattern.compile(
+            "^(?:付款人名称|付款户名|付款方户名|付款方名称|付款人全称|付款账户名称|付款人户名|付方户名|付方名称|付款单位名称|付款单位|转出户名|借方户名)[:：]?$");
+    private static final Pattern PAYEE_LABEL_ONLY_PAT = Pattern.compile(
+            "^(?:收款人名称|收款户名|收款方户名|收款方名称|收款人全称|收款账户名称|收款人户名|收方户名|收方名称|收款单位名称|收款单位|转入户名|贷方户名|对方户名)[:：]?$");
     private static final Pattern PAYEE_ACC_PAT = Pattern.compile(
             "(?:收款人账号|收款账号|收款方账号|收方账号|转入账号|贷方账号|对方账号|收款卡号)[:：\\s]+([0-9\\s\\-]{10,36})");
     private static final Pattern GENERIC_NAME_PAT = Pattern.compile(
@@ -823,6 +812,14 @@ public class NoticeDocumentAiService {
         String payer = cleanExtractedName(firstGroup(PAYER_NAME_PAT, text));
         String payee = cleanExtractedName(firstGroup(PAYEE_NAME_PAT, text));
         String payeeAcc = digitsOnly(firstGroup(PAYEE_ACC_PAT, text));
+
+        // 兼容农行掌银等手机银行回单：长企业名称因换行落在「收款方户名/付款方户名」标签的上一行或下一行
+        if (!StringUtils.hasText(payer)) {
+            payer = findAdjacentEntityName(text, PAYER_LABEL_ONLY_PAT, payee);
+        }
+        if (!StringUtils.hasText(payee)) {
+            payee = findAdjacentEntityName(text, PAYEE_LABEL_ONLY_PAT, payer);
+        }
 
         // 兜底：国内主流网银回单常采用左右双栏排版（「付款人 | 收款人」下各有一行「户名：...」「账号：...」）
         if (!StringUtils.hasText(payer) || !StringUtils.hasText(payee)) {
@@ -917,6 +914,41 @@ public class NoticeDocumentAiService {
     /** 匹配常见中国主体名称后缀后紧粘的双栏竖排表头杂字（如「...有限公司收」「...有限公司|付」） */
     private static final Pattern CORP_SUFFIX_TRAILING_NOISE_PAT = Pattern.compile(
             "^(.{2,60}?(?:有限责任公司|股份有限公司|有限公司|集团有限公司|分公司|合伙企业|经营部|服务中心|商行|事务所|研究院|工作室|中心)(?:[（(][^）)]{1,16}[）)])?)(?:[|｜¦\\s]*(?:收款?人?|付款?人?|购买?方?|销售?方?|户名?|账号?|开户行?|纳税人.*|统一社会.*|[收付款人购买销售方户账税行|｜¦]))+$");
+
+    /** 当银行回单标签独占一行（如农行企业掌银「收款方户名」）时，从相邻上下行寻找企业名称 */
+    private static String findAdjacentEntityName(String text, Pattern labelOnlyPat, String excludeName) {
+        if (!StringUtils.hasText(text)) return null;
+        String[] lines = text.split("\\r?\\n");
+        String normExclude = normName(excludeName);
+        for (int i = 0; i < lines.length; i++) {
+            String cur = lines[i].trim();
+            if (!labelOnlyPat.matcher(cur).matches()) continue;
+            // 优先查下一行，再查上一行（手机回单右栏长户名常因折行略偏上或略偏下）
+            int[] offsets = {1, -1, 2, -2};
+            for (int off : offsets) {
+                int idx = i + off;
+                if (idx < 0 || idx >= lines.length) continue;
+                String cand = cleanExtractedName(lines[idx]);
+                if (looksLikeEntityName(cand) && (normExclude.isEmpty() || !normName(cand).equals(normExclude))) {
+                    return cand;
+                }
+            }
+        }
+        return null;
+    }
+
+    private static boolean looksLikeEntityName(String s) {
+        if (!StringUtils.hasText(s) || s.length() < 4 || s.length() > 60) return false;
+        if (s.matches(".*\\d{5,}.*")) return false;
+        if (s.contains("银行") || s.contains("交易成功") || s.contains("电子回单") || s.contains("转账")
+                || s.contains("户名") || s.contains("账号") || s.contains("金额") || s.contains("时间")
+                || s.contains("二维码") || s.contains("掌银")) {
+            return false;
+        }
+        return s.contains("公司") || s.contains("中心") || s.contains("经营部") || s.contains("商行")
+                || s.contains("企业") || s.contains("事务所") || s.contains("研究院") || s.contains("工作室")
+                || s.contains("工厂");
+    }
 
     static String cleanExtractedName(String raw) {
         if (!StringUtils.hasText(raw)) return null;

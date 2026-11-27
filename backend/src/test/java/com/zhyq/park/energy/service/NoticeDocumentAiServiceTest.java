@@ -176,4 +176,27 @@ class NoticeDocumentAiServiceTest {
         assertEquals("44050129162500000277", ex.payeeAccount());
         assertEquals(new BigDecimal("370.67"), ex.amount());
     }
+
+    @Test
+    void abcMobileBankingReceiptWithWrappedPayeeLineParsesAllFourFieldsLocally() {
+        String abcOcr = """
+                中国农业银行
+                AGRICULTURALBANK OF CHINA
+                转账交易成功
+                广州数智云仓产业园运营有限公司
+                收款方户名
+                限
+                收款方账号   44050129162500000277
+                金额   4,870.56
+                交易时间   2026-11-2114:05:25
+                付款方户名   广州鑫晨供应链有限公司
+                付款方账号   44-085901040021657
+                农行企业掌银APP
+                """;
+        ExtractedFields ex = NoticeDocumentAiService.parseReceiptText(abcOcr, "RAPID_OCR");
+        assertEquals("广州鑫晨供应链有限公司", ex.payerName());
+        assertEquals("广州数智云仓产业园运营有限公司", ex.payeeName());
+        assertEquals("44050129162500000277", ex.payeeAccount());
+        assertEquals(new BigDecimal("4870.56"), ex.amount());
+    }
 }
