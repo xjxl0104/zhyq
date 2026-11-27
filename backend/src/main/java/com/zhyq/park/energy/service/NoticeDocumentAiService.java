@@ -163,11 +163,50 @@ public class NoticeDocumentAiService {
         MultipartFile reusableFile = new InMemoryMultipartFile(
                 file.getName(), fileName, file.getContentType(), bytes);
 
-        ExtractedFields extracted = extractFields(bytes, fileName, normDoc, ocrText);
+        ExtractionBundle bundle = extractFieldsWithRaw(bytes, fileName, normDoc, ocrText);
         if (DOC_RECEIPT.equals(normDoc)) {
-            return matchAndApplyReceipt(reusableFile, fileName, normMode, candidates, extracted);
+            VerifyResult first = matchAndApplyReceipt(reusableFile, fileName, normMode, candidates, bundle.fields());
+            if ("MANUAL_REVIEW".equals(first.status()) && shouldRetryWithDeepSeek(bundle)) {
+                ExtractedFields ds = callDeepSeekExtract(bundle.rawText(), DOC_RECEIPT);
+                if (ds != null) {
+                    ExtractedFields refined = mergeExtracted(bundle.fields(), ds);
+                    VerifyResult second = matchAndApplyReceipt(reusableFile, fileName, normMode, candidates, refined);
+                    if (!"MANUAL_REVIEW".equals(second.status()) || countPassed(second) > countPassed(first)) {
+                        return second;
+                    }
+                }
+            }
+            return first;
         }
-        return matchAndApplyInvoice(reusableFile, fileName, normMode, candidates, extracted);
+        VerifyResult first = matchAndApplyInvoice(reusableFile, fileName, normMode, candidates, bundle.fields());
+        if ("MANUAL_REVIEW".equals(first.status()) && shouldRetryWithDeepSeek(bundle)) {
+            ExtractedFields ds = callDeepSeekExtract(bundle.rawText(), DOC_INVOICE);
+            if (ds != null) {
+                ExtractedFields refined = mergeExtracted(bundle.fields(), ds);
+                VerifyResult second = matchAndApplyInvoice(reusableFile, fileName, normMode, candidates, refined);
+                if (!"MANUAL_REVIEW".equals(second.status()) || countPassed(second) > countPassed(first)) {
+                    return second;
+                }
+            }
+        }
+        return first;
+    }
+
+    private record ExtractionBundle(ExtractedFields fields, String rawText) {}
+
+    private boolean shouldRetryWithDeepSeek(ExtractionBundle bundle) {
+        if (bundle == null || !StringUtils.hasText(bundle.rawText()) || bundle.rawText().trim().length() < 10) {
+            return false;
+        }
+        if (bundle.fields() != null && "OCR+DEEPSEEK".equals(bundle.fields().sourceMethod())) {
+            return false;
+        }
+        return StringUtils.hasText(deepseekApiUrl) && StringUtils.hasText(deepseekApiKey);
+    }
+
+    private static int countPassed(VerifyResult r) {
+        if (r == null || r.checks() == null) return 0;
+        return (int) r.checks().stream().filter(CheckItem::passed).count();
     }
 
     /** 人工核对后手动绑定回执/发票至指定通知单并自动更新缴费/开票状态 */
@@ -453,7 +492,7 @@ public class NoticeDocumentAiService {
 
     // ------------------------------------------------------------------ 文本 & 视觉提取
 
-    private ExtractedFields extractFields(byte[] bytes, String fileName, String docType, String ocrText) {
+    private ExtractionBundle extractFieldsWithRaw(byte[] bytes, String fileName, String docType, String ocrText) {
         String lower = fileName.toLowerCase(Locale.ROOT);
         String text = "";
         String method = "TEXT";
@@ -471,7 +510,7 @@ public class NoticeDocumentAiService {
                     ? parseReceiptText(text, method)
                     : parseInvoiceText(text, method);
             if (isComplete(parsed, docType)) {
-                return parsed;
+                return new ExtractionBundle(parsed, text);
             }
         }
 
@@ -499,25 +538,25 @@ public class NoticeDocumentAiService {
         }
 
         String bestOcrText = StringUtils.hasText(rapidText) ? rapidText : (ocrText == null ? "" : ocrText);
+        String combinedText = StringUtils.hasText(bestOcrText) ? bestOcrText : text;
         if (StringUtils.hasText(bestOcrText) && bestOcrText.trim().length() >= 10) {
             ExtractedFields fromOcr = DOC_RECEIPT.equals(docType)
                     ? parseReceiptText(bestOcrText, StringUtils.hasText(rapidText) ? "RAPID_OCR" : "OCR")
                     : parseInvoiceText(bestOcrText, StringUtils.hasText(rapidText) ? "RAPID_OCR" : "OCR");
             parsed = mergeExtracted(parsed, fromOcr);
             if (isComplete(parsed, docType)) {
-                return parsed;
+                return new ExtractionBundle(parsed, combinedText);
             }
         }
 
         // 若有 OCR/PDF/OFD 原文但正则未完整抽出字段，调用系统已接入的 DeepSeek 模型做结构化提取
-        String combinedText = StringUtils.hasText(bestOcrText) ? bestOcrText : text;
         if (StringUtils.hasText(combinedText) && combinedText.trim().length() >= 10
                 && StringUtils.hasText(deepseekApiUrl) && StringUtils.hasText(deepseekApiKey)) {
             ExtractedFields ds = callDeepSeekExtract(combinedText, docType);
             if (ds != null) {
                 parsed = mergeExtracted(parsed, ds);
                 if (isComplete(parsed, docType)) {
-                    return parsed;
+                    return new ExtractionBundle(parsed, combinedText);
                 }
             }
         }
@@ -532,24 +571,26 @@ public class NoticeDocumentAiService {
             else if (lower.endsWith(".pdf")) { imgBytes = renderPdfFirstPagePng(bytes); mime = "image/png"; }
             if (imgBytes != null && imgBytes.length > 0) {
                 ExtractedFields ai = callVisionAi(imgBytes, mime, docType);
-                if (ai != null) return mergeExtracted(parsed, ai);
+                if (ai != null) return new ExtractionBundle(mergeExtracted(parsed, ai), combinedText);
             }
         }
         if (parsed == null && StringUtils.hasText(rapidErr)) {
-            return new ExtractedFields(null, null, null, null, null, null, null, null, null, null, "NONE", rapidErr);
+            return new ExtractionBundle(
+                    new ExtractedFields(null, null, null, null, null, null, null, null, null, null, "NONE", rapidErr),
+                    combinedText);
         }
         // 若已抽到原文但字段仍不完整，把原文摘要放进 diagnostic 方便排查是「没识别出」还是「银行版式/数据对不上」
         if (parsed != null && !isComplete(parsed, docType)) {
             String srcText = StringUtils.hasText(combinedText) ? combinedText.trim() : "";
             String preview = srcText.length() > 360 ? srcText.substring(0, 360) + "..." : srcText;
             String diag = firstNonBlank(parsed.diagnostic(), StringUtils.hasText(preview) ? "OCR原文：" + preview : rapidErr);
-            return new ExtractedFields(
+            return new ExtractionBundle(new ExtractedFields(
                     parsed.payerName(), parsed.payeeName(), parsed.payeeAccount(), parsed.amount(),
                     parsed.buyerName(), parsed.sellerName(), parsed.taxInclusiveAmount(), parsed.invoiceNo(),
                     parsed.billingPeriod(), parsed.docDate(), parsed.sourceMethod(), diag
-            );
+            ), combinedText);
         }
-        return parsed;
+        return new ExtractionBundle(parsed, combinedText);
     }
 
     private boolean isComplete(ExtractedFields ex, String docType) {
@@ -632,11 +673,11 @@ public class NoticeDocumentAiService {
             if (trimmed.length() > 6000) trimmed = trimmed.substring(0, 6000);
             String sysPrompt = DOC_RECEIPT.equals(docType)
                     ? "你是严格的财务回执结构化抽取助手。请从下面的银行电子回单 OCR/PDF 原文中抽取字段，只返回纯 JSON 对象（不要 markdown 代码块）："
-                      + "{\"payerName\":\"付款人/支付单位全称\",\"payeeName\":\"收款人/接收单位全称\",\"payeeAccount\":\"收款人银行账号纯数字\",\"amount\":\"支付金额数字(如99000.00)\",\"billingPeriod\":\"若摘要/附言/备注中明确写了所属账期月份则填YYYY-MM，否则null\",\"docDate\":\"记账日期或交易日期YYYY-MM-DD\"}。"
-                      + "只能抽取原文中明确存在的信息，不得猜测或编造，原文没有的填 null。"
+                      + "{\"payerName\":\"付款人/支付单位纯净全称\",\"payeeName\":\"收款人/接收单位纯净全称\",\"payeeAccount\":\"收款人银行账号纯数字\",\"amount\":\"支付金额数字(如99000.00)\"}。"
+                      + "注意：银行回单常为左右双栏表格，竖排表头字（如「付款人」「收款人」拆出的单字「收」「付」「款」「人」）及表格边框符号可能紧邻单位名称前后，请务必剔除这些表头与边框杂字，只保留纯净单位全称；只能抽取原文明确存在的信息，不得猜测编造，没有的填 null。"
                     : "你是严格的财务发票结构化抽取助手。请从下面的电子发票 OCR/PDF 原文中抽取字段，只返回纯 JSON 对象（不要 markdown 代码块）："
-                      + "{\"buyerName\":\"购买方名称全称\",\"sellerName\":\"销售方名称全称\",\"taxInclusiveAmount\":\"价税合计(小写)含税金额数字(如99000.00)\",\"invoiceNo\":\"发票号码\",\"billingPeriod\":\"若品名或备注中明确写了所属账期月份则填YYYY-MM，否则null\",\"docDate\":\"开票日期YYYY-MM-DD\"}。"
-                      + "只能抽取原文中明确存在的信息，不得猜测或编造，原文没有的填 null。";
+                      + "{\"buyerName\":\"购买方纯净全称\",\"sellerName\":\"销售方纯净全称\",\"taxInclusiveAmount\":\"价税合计(小写)含税金额数字(如99000.00)\",\"invoiceNo\":\"发票号码\"}。"
+                      + "注意：电子发票常为左右双栏表格，竖排表头字（如「购买方」「销售方」拆出的单字「购」「买」「销」「售」「方」）及边框符号可能紧邻企业名称前后，请务必剔除这些杂字，只保留纯净企业全称；只能抽取原文明确存在的信息，不得猜测编造，没有的填 null。";
             String modelName = StringUtils.hasText(deepseekModel) ? deepseekModel.trim() : "deepseek-flash";
             Map<String, Object> body = new LinkedHashMap<>();
             body.put("model", modelName);
@@ -663,12 +704,12 @@ public class NoticeDocumentAiService {
             if (l < 0 || r <= l) return null;
             JsonNode j = objectMapper.readTree(content.substring(l, r + 1));
             return new ExtractedFields(
-                    jsonStr(j, "payerName"),
-                    jsonStr(j, "payeeName"),
+                    cleanExtractedName(jsonStr(j, "payerName")),
+                    cleanExtractedName(jsonStr(j, "payeeName")),
                     digitsOnly(jsonStr(j, "payeeAccount")),
                     parseDecimal(jsonStr(j, "amount")),
-                    jsonStr(j, "buyerName"),
-                    jsonStr(j, "sellerName"),
+                    cleanExtractedName(jsonStr(j, "buyerName")),
+                    cleanExtractedName(jsonStr(j, "sellerName")),
                     parseDecimal(jsonStr(j, "taxInclusiveAmount")),
                     jsonStr(j, "invoiceNo"),
                     null,
@@ -873,13 +914,26 @@ public class NoticeDocumentAiService {
         return new ExtractedFields(null, null, null, null, buyer, seller, total, invoiceNo, null, null, method, null);
     }
 
-    private static String cleanExtractedName(String raw) {
+    /** 匹配常见中国主体名称后缀后紧粘的双栏竖排表头杂字（如「...有限公司收」「...有限公司|付」） */
+    private static final Pattern CORP_SUFFIX_TRAILING_NOISE_PAT = Pattern.compile(
+            "^(.{2,60}?(?:有限责任公司|股份有限公司|有限公司|集团有限公司|分公司|合伙企业|经营部|服务中心|商行|事务所|研究院|工作室|中心)(?:[（(][^）)]{1,16}[）)])?)(?:[|｜¦\\s]*(?:收款?人?|付款?人?|购买?方?|销售?方?|户名?|账号?|开户行?|纳税人.*|统一社会.*|[收付款人购买销售方户账税行|｜¦]))+$");
+
+    static String cleanExtractedName(String raw) {
         if (!StringUtils.hasText(raw)) return null;
         String s = raw.trim();
+        // 清理首尾表格边框/括号噪声符号
+        s = s.replaceAll("^[|｜¦\\[\\]【】\\s:：]+", "").replaceAll("[|｜¦\\[\\]【】\\s]+$", "");
         // 截断同一行后续标签（如「收款人名称：」「户名：」「销售方信息」「纳税人识别号：」「账号：」「开户行：」）
-        s = s.replaceFirst("[ \\t]+(?:收款人|付款人|收款方|付款方|收方|付方|户名|账户名称|纳税人识别号|统一社会信用代码|账号|开户行|开户银行|银行账号|销售方|购买方|名称|税号|金额|币种).*$", "");
+        s = s.replaceFirst("[ \\t]+(?:收款人|付款人|收款方|付款方|收方|付方|购方|销方|买方|卖方|户名|账户名称|纳税人识别号|统一社会信用代码|账号|开户行|开户银行|银行账号|销售方|购买方|名称|税号|金额|币种|摘要|用途|备注|附言).*$", "");
         s = s.replaceFirst("(?:收款人名称|收款户名|户名|销售方信息|销售方|购买方信息|购买方|纳税人识别号|统一社会信用代码|开户行|账号)[:：]?.*$", "");
-        s = s.trim();
+        // 截断双栏回单/发票中间竖排表头残字（如「广州好易点数字服务有限公司 收」「... 付」「... 收 款」）
+        s = s.replaceFirst("[ \\t]+(?:收|付|款|人|购|买|销|售|方|户|名|账|号|税|行|金|额)(?:[ \\t]+(?:收|付|款|人|购|买|销|售|方|户|名|账|号|税|行|金|额))*$", "");
+        // 截断无空格紧粘在企业标准后缀后面的竖排表头残字（如「广州好易点数字服务有限公司收」）
+        Matcher m = CORP_SUFFIX_TRAILING_NOISE_PAT.matcher(s);
+        if (m.matches()) {
+            s = m.group(1);
+        }
+        s = s.replaceAll("[|｜¦\\s]+$", "").trim();
         if (s.length() < 3 || "收款人".equals(s) || "付款人".equals(s)) return null;
         return s;
     }

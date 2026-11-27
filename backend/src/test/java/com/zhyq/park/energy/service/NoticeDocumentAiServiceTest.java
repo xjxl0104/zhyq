@@ -144,4 +144,36 @@ class NoticeDocumentAiServiceTest {
             java.nio.file.Files.deleteIfExists(tmp);
         }
     }
+
+    @Test
+    void cleanExtractedNameStripsTwoColumnVerticalHeaderNoiseWithoutCorruptingValidNames() {
+        // 实测场景：双栏回单右侧竖排「收款人」的「收」字落到付款人户名同行末尾
+        assertEquals("广州好易点数字服务有限公司",
+                NoticeDocumentAiService.cleanExtractedName("广州好易点数字服务有限公司 收"));
+        assertEquals("广州好易点数字服务有限公司",
+                NoticeDocumentAiService.cleanExtractedName("广州好易点数字服务有限公司收"));
+        assertEquals("广州好易点数字服务有限公司",
+                NoticeDocumentAiService.cleanExtractedName("广州好易点数字服务有限公司 | 收款"));
+        assertEquals("广州好易点数字服务有限公司",
+                NoticeDocumentAiService.cleanExtractedName("广州好易点数字服务有限公司 付 款"));
+        // 正常企业名称（含「收」字在中间、或正常分公司/服务中心后缀）绝不能被误截断
+        assertEquals("广州海收贸易有限公司",
+                NoticeDocumentAiService.cleanExtractedName("广州海收贸易有限公司"));
+        assertEquals("广州数智云仓产业园运营有限公司",
+                NoticeDocumentAiService.cleanExtractedName("广州数智云仓产业园运营有限公司"));
+        assertEquals("广州数智云仓产业园运营有限公司第一分公司",
+                NoticeDocumentAiService.cleanExtractedName("广州数智云仓产业园运营有限公司第一分公司"));
+
+        // 完整双栏 OCR 文本端到端测试
+        String ocr = """
+                户名   广州好易点数字服务有限公司   收   户名   广州数智云仓产业园运营有限公司
+                账号   4400123456789012345   款   账号   44050129162500000277
+                金额   ¥370.67
+                """;
+        ExtractedFields ex = NoticeDocumentAiService.parseReceiptText(ocr, "RAPID_OCR");
+        assertEquals("广州好易点数字服务有限公司", ex.payerName());
+        assertEquals("广州数智云仓产业园运营有限公司", ex.payeeName());
+        assertEquals("44050129162500000277", ex.payeeAccount());
+        assertEquals(new BigDecimal("370.67"), ex.amount());
+    }
 }
