@@ -154,6 +154,24 @@
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
                 <configuration>
+                    <requiresUnpack>
+                        <dependency>
+                            <groupId>io.github.mymonstercat</groupId>
+                            <artifactId>rapidocr</artifactId>
+                        </dependency>
+                        <dependency>
+                            <groupId>io.github.mymonstercat</groupId>
+                            <artifactId>rapidocr-onnx-models</artifactId>
+                        </dependency>
+                        <dependency>
+                            <groupId>io.github.mymonstercat</groupId>
+                            <artifactId>rapidocr-onnx-linux-x86_64</artifactId>
+                        </dependency>
+                        <dependency>
+                            <groupId>io.github.mymonstercat</groupId>
+                            <artifactId>rapidocr-onnx-windows-x86_64</artifactId>
+                        </dependency>
+                    </requiresUnpack>
                     <excludes>
                         <exclude>
                             <groupId>org.projectlombok</groupId>

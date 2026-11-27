@@ -29,7 +29,7 @@ class NoticeDocumentAiServiceTest {
         assertEquals(new BigDecimal("34983.86"), ex.amount());
 
         NoticeCandidate hit = new NoticeCandidate(
-                10L, "DIPARK-202610-01", "广州云帕供应链管理有限公司", "水电/垃圾费",
+                10L, "DIPARK-202610-01", "广州云帕供应链管理有限公司", "水电/垃圾费", "2026-10",
                 "广州数智云仓产业园运营管理有限公司",
                 "户名：广州数智云仓产业园运营管理有限公司\n账号：44050147010100001234",
                 Set.of("44050147010100001234"),
@@ -40,7 +40,7 @@ class NoticeDocumentAiServiceTest {
 
         // 金额差 0.01 元也必须拦截，交由人工核对
         NoticeCandidate wrongAmt = new NoticeCandidate(
-                10L, "DIPARK-202610-01", "广州云帕供应链管理有限公司", "水电/垃圾费",
+                10L, "DIPARK-202610-01", "广州云帕供应链管理有限公司", "水电/垃圾费", "2026-10",
                 "广州数智云仓产业园运营管理有限公司", "", Set.of("44050147010100001234"),
                 new BigDecimal("34983.85")
         );
@@ -48,7 +48,7 @@ class NoticeDocumentAiServiceTest {
 
         // 收款账号不匹配必须拦截
         NoticeCandidate wrongAcc = new NoticeCandidate(
-                10L, "DIPARK-202610-01", "广州云帕供应链管理有限公司", "水电/垃圾费",
+                10L, "DIPARK-202610-01", "广州云帕供应链管理有限公司", "水电/垃圾费", "2026-10",
                 "广州数智云仓产业园运营管理有限公司", "", Set.of("44050147010100009999"),
                 new BigDecimal("34983.86")
         );
@@ -70,7 +70,7 @@ class NoticeDocumentAiServiceTest {
         assertEquals("26442000000123456789", ex.invoiceNo());
 
         NoticeCandidate hit = new NoticeCandidate(
-                20L, "DIPARK-ZJ-202610-01", "广州云帕供应链管理有限公司", "租金",
+                20L, "DIPARK-ZJ-202610-01", "广州云帕供应链管理有限公司", "租金", "2026-10",
                 "广州昌记物流有限公司", "", Set.of(),
                 new BigDecimal("99000.00")
         );
@@ -79,7 +79,8 @@ class NoticeDocumentAiServiceTest {
         // 非数智云仓/昌记开具的发票必须拦截
         ExtractedFields foreignSeller = new ExtractedFields(
                 null, null, null, null,
-                "广州云帕供应链管理有限公司", "其他第三方有限公司", new BigDecimal("99000.00"), "12345678", "PDF_TEXT"
+                "广州云帕供应链管理有限公司", "其他第三方有限公司", new BigDecimal("99000.00"), "12345678",
+                null, null, "PDF_TEXT", null
         );
         assertFalse(NoticeDocumentAiService.evaluateInvoice(hit, foreignSeller).stream().allMatch(CheckItem::passed));
     }

@@ -21,6 +21,8 @@ import java.util.List;
 @Component
 public class RapidOcrEngine {
 
+    public record OcrOutput(String text, String error) {}
+
     private volatile InferenceEngine engine;
 
     private InferenceEngine getEngine() {
@@ -35,22 +37,31 @@ public class RapidOcrEngine {
     }
 
     public String recognize(byte[] imageBytes, String ext) {
-        if (imageBytes == null || imageBytes.length == 0) return "";
+        return recognizeDetailed(imageBytes, ext).text();
+    }
+
+    public OcrOutput recognizeDetailed(byte[] imageBytes, String ext) {
+        if (imageBytes == null || imageBytes.length == 0) return new OcrOutput("", "图片为空");
         String safeExt = (ext != null && ext.matches("[a-zA-Z0-9]{2,5}")) ? ext.toLowerCase() : "jpg";
         Path tmp = null;
         try {
             tmp = Files.createTempFile("zhyq-ocr-", "." + safeExt);
             Files.write(tmp, imageBytes);
             OcrResult result = getEngine().runOcr(tmp.toAbsolutePath().toString());
-            if (result == null) return "";
+            if (result == null) return new OcrOutput("", "OCR 引擎返回空结果");
             List<TextBlock> blocks = result.getTextBlocks();
-            if (blocks != null && !blocks.isEmpty()) {
-                return formatBlocksByRows(blocks);
-            }
-            return result.getStrRes() == null ? "" : result.getStrRes().trim();
+            String text = (blocks != null && !blocks.isEmpty())
+                    ? formatBlocksByRows(blocks)
+                    : (result.getStrRes() == null ? "" : result.getStrRes().trim());
+            return new OcrOutput(text, text.isBlank() ? "图片未检测到文字" : null);
         } catch (Throwable t) {
-            log.warn("RapidOCR recognize failed: {}", t.getMessage());
-            return "";
+            log.warn("RapidOCR recognize failed", t);
+            String msg = t.getClass().getSimpleName() + (t.getMessage() != null ? ": " + t.getMessage() : "");
+            if (t.getCause() != null) {
+                msg += " -> " + t.getCause().getClass().getSimpleName()
+                        + (t.getCause().getMessage() != null ? ": " + t.getCause().getMessage() : "");
+            }
+            return new OcrOutput("", msg);
         } finally {
             if (tmp != null) {
                 try { Files.deleteIfExists(tmp); } catch (Exception ignored) {}

@@ -101,13 +101,16 @@ public class NoticeDocumentAiService {
             String sellerName,
             BigDecimal taxInclusiveAmount,
             String invoiceNo,
-            String sourceMethod
+            String billingPeriod, // 摘要/备注/品名中明确注明的账期(YYYY-MM)，可为空
+            String docDate,       // 记账日期/交易日期/开票日期(YYYY-MM-DD)，可为空
+            String sourceMethod,
+            String diagnostic     // OCR/解析诊断信息(仅异常或空文本时填充)
     ) {}
 
     public record CheckItem(String label, boolean passed, String expected, String actual) {}
 
     public record VerifyResult(
-            String status, // AUTO_APPROVED | MANUAL_REVIEW
+            String status, // AUTO_APPROVED | MANUAL_BOUND | MANUAL_REVIEW
             String fileName,
             String docType,
             Long matchedNoticeId,
@@ -125,6 +128,7 @@ public class NoticeDocumentAiService {
             String noticeNo,
             String tenantName,
             String category,
+            String period,
             String expectedPayeeName,
             String expectedPaymentAccount,
             Set<String> expectedAccountsDigits,
@@ -243,6 +247,7 @@ public class NoticeDocumentAiService {
                 out.add(new NoticeCandidate(
                         n.getId(), n.getNoticeNo(), n.getTenantName(),
                         isRent ? "租金" : "物业管理费",
+                        p.getPeriod(),
                         payee, acc, extractAccountNumbers(acc), scale2(n.getTotalDue())
                 ));
             }
@@ -259,6 +264,7 @@ public class NoticeDocumentAiService {
                 out.add(new NoticeCandidate(
                         n.getId(), n.getNoticeNo(), n.getTenantName(),
                         "水电/垃圾费",
+                        p.getPeriod(),
                         payee, acc, extractAccountNumbers(acc), scale2(n.getTotalDue())
                 ));
             }
@@ -270,8 +276,9 @@ public class NoticeDocumentAiService {
                                               List<NoticeCandidate> candidates, ExtractedFields ex) {
         if (ex == null || (!StringUtils.hasText(ex.payerName()) && !StringUtils.hasText(ex.payeeName())
                 && !StringUtils.hasText(ex.payeeAccount()) && ex.amount() == null)) {
+            String diag = (ex != null && StringUtils.hasText(ex.diagnostic())) ? "（诊断：" + ex.diagnostic() + "）" : "";
             return manualReview(fileName, DOC_RECEIPT, ex,
-                    "无法从该文件提取清晰回执文字（建议上传银行电子回单 PDF，或由人工核对后手动上传至对应通知单）", List.of());
+                    "无法从该文件提取清晰回执文字，请在下方手动绑定对应通知单" + diag, List.of());
         }
 
         List<NoticeCandidate> fullMatches = new ArrayList<>();
@@ -328,8 +335,9 @@ public class NoticeDocumentAiService {
                                               List<NoticeCandidate> candidates, ExtractedFields ex) {
         if (ex == null || (!StringUtils.hasText(ex.buyerName()) && !StringUtils.hasText(ex.sellerName())
                 && ex.taxInclusiveAmount() == null)) {
+            String diag = (ex != null && StringUtils.hasText(ex.diagnostic())) ? "（诊断：" + ex.diagnostic() + "）" : "";
             return manualReview(fileName, DOC_INVOICE, ex,
-                    "无法从该文件提取清晰发票信息（建议上传数电票/电子发票 PDF 或 OFD，或由人工核对后手动上传）", List.of());
+                    "无法从该文件提取清晰发票信息，请在下方手动绑定对应通知单" + diag, List.of());
         }
 
         List<NoticeCandidate> fullMatches = new ArrayList<>();
@@ -469,18 +477,25 @@ public class NoticeDocumentAiService {
 
         // 图片（JPG/PNG/WEBP/BMP）或扫描件 PDF：优先走后端 RapidOCR (PaddleOCR PP-OCRv4 中文表格引擎)
         String rapidText = "";
+        String rapidErr = null;
         if (rapidOcr != null) {
             boolean isImage = lower.endsWith(".jpg") || lower.endsWith(".jpeg")
                     || lower.endsWith(".png") || lower.endsWith(".webp") || lower.endsWith(".bmp");
             if (isImage) {
                 String ext = lower.substring(lower.lastIndexOf('.') + 1);
-                rapidText = rapidOcr.recognize(bytes, ext);
+                RapidOcrEngine.OcrOutput out = rapidOcr.recognizeDetailed(bytes, ext);
+                rapidText = out.text();
+                rapidErr = out.error();
             } else if (lower.endsWith(".pdf") && (!StringUtils.hasText(text) || text.trim().length() < 15)) {
                 byte[] png = renderPdfFirstPagePng(bytes);
                 if (png != null && png.length > 0) {
-                    rapidText = rapidOcr.recognize(png, "png");
+                    RapidOcrEngine.OcrOutput out = rapidOcr.recognizeDetailed(png, "png");
+                    rapidText = out.text();
+                    rapidErr = out.error();
                 }
             }
+        } else {
+            rapidErr = "RapidOcrEngine 未注入";
         }
 
         String bestOcrText = StringUtils.hasText(rapidText) ? rapidText : (ocrText == null ? "" : ocrText);
@@ -520,6 +535,9 @@ public class NoticeDocumentAiService {
                 if (ai != null) return mergeExtracted(parsed, ai);
             }
         }
+        if (parsed == null && StringUtils.hasText(rapidErr)) {
+            return new ExtractedFields(null, null, null, null, null, null, null, null, null, null, "NONE", rapidErr);
+        }
         return parsed;
     }
 
@@ -545,7 +563,10 @@ public class NoticeDocumentAiService {
                 firstNonBlank(b.sellerName(), a.sellerName()),
                 b.taxInclusiveAmount() != null ? b.taxInclusiveAmount() : a.taxInclusiveAmount(),
                 firstNonBlank(b.invoiceNo(), a.invoiceNo()),
-                "AI_VISION"
+                firstNonBlank(b.billingPeriod(), a.billingPeriod()),
+                firstNonBlank(b.docDate(), a.docDate()),
+                firstNonBlank(b.sourceMethod(), a.sourceMethod()),
+                firstNonBlank(b.diagnostic(), a.diagnostic())
         );
     }
 
@@ -600,10 +621,10 @@ public class NoticeDocumentAiService {
             if (trimmed.length() > 6000) trimmed = trimmed.substring(0, 6000);
             String sysPrompt = DOC_RECEIPT.equals(docType)
                     ? "你是严格的财务回执结构化抽取助手。请从下面的银行电子回单 OCR/PDF 原文中抽取字段，只返回纯 JSON 对象（不要 markdown 代码块）："
-                      + "{\"payerName\":\"付款人/支付单位全称\",\"payeeName\":\"收款人/接收单位全称\",\"payeeAccount\":\"收款人银行账号纯数字\",\"amount\":\"支付金额数字(如99000.00)\"}。"
+                      + "{\"payerName\":\"付款人/支付单位全称\",\"payeeName\":\"收款人/接收单位全称\",\"payeeAccount\":\"收款人银行账号纯数字\",\"amount\":\"支付金额数字(如99000.00)\",\"billingPeriod\":\"若摘要/附言/备注中明确写了所属账期月份则填YYYY-MM，否则null\",\"docDate\":\"记账日期或交易日期YYYY-MM-DD\"}。"
                       + "只能抽取原文中明确存在的信息，不得猜测或编造，原文没有的填 null。"
                     : "你是严格的财务发票结构化抽取助手。请从下面的电子发票 OCR/PDF 原文中抽取字段，只返回纯 JSON 对象（不要 markdown 代码块）："
-                      + "{\"buyerName\":\"购买方名称全称\",\"sellerName\":\"销售方名称全称\",\"taxInclusiveAmount\":\"价税合计(小写)含税金额数字(如99000.00)\",\"invoiceNo\":\"发票号码\"}。"
+                      + "{\"buyerName\":\"购买方名称全称\",\"sellerName\":\"销售方名称全称\",\"taxInclusiveAmount\":\"价税合计(小写)含税金额数字(如99000.00)\",\"invoiceNo\":\"发票号码\",\"billingPeriod\":\"若品名或备注中明确写了所属账期月份则填YYYY-MM，否则null\",\"docDate\":\"开票日期YYYY-MM-DD\"}。"
                       + "只能抽取原文中明确存在的信息，不得猜测或编造，原文没有的填 null。";
             String modelName = StringUtils.hasText(deepseekModel) ? deepseekModel.trim() : "deepseek-flash";
             Map<String, Object> body = new LinkedHashMap<>();
@@ -639,7 +660,10 @@ public class NoticeDocumentAiService {
                     jsonStr(j, "sellerName"),
                     parseDecimal(jsonStr(j, "taxInclusiveAmount")),
                     jsonStr(j, "invoiceNo"),
-                    "OCR+DEEPSEEK"
+                    null,
+                    null,
+                    "OCR+DEEPSEEK",
+                    null
             );
         } catch (Exception e) {
             return null;
@@ -691,7 +715,10 @@ public class NoticeDocumentAiService {
                     jsonStr(j, "sellerName"),
                     parseDecimal(jsonStr(j, "taxInclusiveAmount")),
                     jsonStr(j, "invoiceNo"),
-                    "AI_VISION"
+                    null,
+                    null,
+                    "AI_VISION",
+                    null
             );
         } catch (Exception e) {
             return null;
@@ -783,7 +810,7 @@ public class NoticeDocumentAiService {
         if (amt == null) {
             amt = parseDecimal(firstGroup(YEN_AMT_PAT, text));
         }
-        return new ExtractedFields(payer, payee, payeeAcc, amt, null, null, null, null, method);
+        return new ExtractedFields(payer, payee, payeeAcc, amt, null, null, null, null, null, null, method, null);
     }
 
     static ExtractedFields parseInvoiceText(String rawText, String method) {
@@ -832,7 +859,7 @@ public class NoticeDocumentAiService {
             }
         }
         String invoiceNo = firstGroup(INVOICE_NO_PAT, text);
-        return new ExtractedFields(null, null, null, null, buyer, seller, total, invoiceNo, method);
+        return new ExtractedFields(null, null, null, null, buyer, seller, total, invoiceNo, null, null, method, null);
     }
 
     private static String cleanExtractedName(String raw) {
