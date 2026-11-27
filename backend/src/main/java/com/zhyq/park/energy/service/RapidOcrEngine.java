@@ -15,7 +15,10 @@ import java.util.List;
 
 /**
  * 后端中文 OCR 引擎（RapidOCR / PaddleOCR PP-OCRv4 ONNX）。
- * 懒加载初始化，不影响应用启动速度；按文本块 Y/X 坐标逐行重排，适配银行电子回单双栏表格与电子发票。
+ * 1) 懒加载初始化，不影响应用启动速度；
+ * 2) 全程加锁串行调用：规避 rapidocr 0.0.7 内部 isLibraryLoaded.compareAndSet(false,true) 在并发上传多张图时
+ *    直接跳过同步块触发 nativeLoader=null 的并发竞态 bug，也避免底层 ONNX/JNI 单实例并发踩内存；
+ * 3) 记录首次初始化真实根因异常，避免后续调用被掩盖为 nativeLoader is null。
  */
 @Slf4j
 @Component
@@ -24,14 +27,11 @@ public class RapidOcrEngine {
     public record OcrOutput(String text, String error) {}
 
     private volatile InferenceEngine engine;
+    private volatile String firstInitError;
 
     private InferenceEngine getEngine() {
         if (engine == null) {
-            synchronized (this) {
-                if (engine == null) {
-                    engine = InferenceEngine.getInstance(Model.ONNX_PPOCR_V4);
-                }
-            }
+            engine = InferenceEngine.getInstance(Model.ONNX_PPOCR_V4);
         }
         return engine;
     }
@@ -40,7 +40,7 @@ public class RapidOcrEngine {
         return recognizeDetailed(imageBytes, ext).text();
     }
 
-    public OcrOutput recognizeDetailed(byte[] imageBytes, String ext) {
+    public synchronized OcrOutput recognizeDetailed(byte[] imageBytes, String ext) {
         if (imageBytes == null || imageBytes.length == 0) return new OcrOutput("", "图片为空");
         String safeExt = (ext != null && ext.matches("[a-zA-Z0-9]{2,5}")) ? ext.toLowerCase() : "jpg";
         Path tmp = null;
@@ -48,6 +48,7 @@ public class RapidOcrEngine {
             tmp = Files.createTempFile("zhyq-ocr-", "." + safeExt);
             Files.write(tmp, imageBytes);
             OcrResult result = getEngine().runOcr(tmp.toAbsolutePath().toString());
+            firstInitError = null;
             if (result == null) return new OcrOutput("", "OCR 引擎返回空结果");
             List<TextBlock> blocks = result.getTextBlocks();
             String text = (blocks != null && !blocks.isEmpty())
@@ -56,10 +57,11 @@ public class RapidOcrEngine {
             return new OcrOutput(text, text.isBlank() ? "图片未检测到文字" : null);
         } catch (Throwable t) {
             log.warn("RapidOCR recognize failed", t);
-            String msg = t.getClass().getSimpleName() + (t.getMessage() != null ? ": " + t.getMessage() : "");
-            if (t.getCause() != null) {
-                msg += " -> " + t.getCause().getClass().getSimpleName()
-                        + (t.getCause().getMessage() != null ? ": " + t.getCause().getMessage() : "");
+            String msg = describeThrowable(t);
+            if (firstInitError == null) {
+                firstInitError = msg;
+            } else if (msg.contains("nativeLoader") && !firstInitError.equals(msg)) {
+                msg = "首次初始化失败根因: " + firstInitError;
             }
             return new OcrOutput("", msg);
         } finally {
@@ -67,6 +69,22 @@ public class RapidOcrEngine {
                 try { Files.deleteIfExists(tmp); } catch (Exception ignored) {}
             }
         }
+    }
+
+    private static String describeThrowable(Throwable t) {
+        StringBuilder sb = new StringBuilder();
+        Throwable cur = t;
+        int depth = 0;
+        while (cur != null && depth < 4) {
+            if (depth > 0) sb.append(" -> ");
+            sb.append(cur.getClass().getSimpleName());
+            if (cur.getMessage() != null && !cur.getMessage().isBlank()) {
+                sb.append(": ").append(cur.getMessage());
+            }
+            cur = cur.getCause();
+            depth++;
+        }
+        return sb.toString();
     }
 
     /** 按文本框中心 Y 坐标分行、同行内按 X 从左到右拼接（同一行不同列用 3 个空格分隔，便于双栏回单解析） */
