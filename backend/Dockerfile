@@ -7,10 +7,14 @@ RUN mvn -q -B dependency:go-offline
 COPY src ./src
 RUN mvn -q -B clean package -DskipTests
 
-# ---- 运行阶段:仅 JRE ----
+# ---- 运行阶段:JRE + RapidOCR(ONNX OpenMP) 运行库 ----
 FROM eclipse-temurin:17-jre
 WORKDIR /app
 ENV TZ=Asia/Shanghai
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libgomp1 libstdc++6 \
+    && rm -rf /var/lib/apt/lists/* \
+    && mkdir -p /app/tmp
 COPY --from=build /build/target/zhyq-park.jar app.jar
 EXPOSE 8090
-ENTRYPOINT ["java", "-jar", "app.jar"]
+ENTRYPOINT ["java", "-Djava.io.tmpdir=/app/tmp", "-jar", "app.jar"]

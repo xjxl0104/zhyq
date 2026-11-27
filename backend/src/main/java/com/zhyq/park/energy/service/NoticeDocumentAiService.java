@@ -538,6 +538,17 @@ public class NoticeDocumentAiService {
         if (parsed == null && StringUtils.hasText(rapidErr)) {
             return new ExtractedFields(null, null, null, null, null, null, null, null, null, null, "NONE", rapidErr);
         }
+        // 若已抽到原文但字段仍不完整，把原文摘要放进 diagnostic 方便排查是「没识别出」还是「银行版式/数据对不上」
+        if (parsed != null && !isComplete(parsed, docType)) {
+            String srcText = StringUtils.hasText(combinedText) ? combinedText.trim() : "";
+            String preview = srcText.length() > 360 ? srcText.substring(0, 360) + "..." : srcText;
+            String diag = firstNonBlank(parsed.diagnostic(), StringUtils.hasText(preview) ? "OCR原文：" + preview : rapidErr);
+            return new ExtractedFields(
+                    parsed.payerName(), parsed.payeeName(), parsed.payeeAccount(), parsed.amount(),
+                    parsed.buyerName(), parsed.sellerName(), parsed.taxInclusiveAmount(), parsed.invoiceNo(),
+                    parsed.billingPeriod(), parsed.docDate(), parsed.sourceMethod(), diag
+            );
+        }
         return parsed;
     }
 
