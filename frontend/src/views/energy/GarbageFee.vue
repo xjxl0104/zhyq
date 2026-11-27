@@ -44,9 +44,8 @@
       <div class="table-card">
         <div class="toolbar">
           <el-button type="primary" :disabled="locked" @click="meterDialog.visible = true"><el-icon><Plus /></el-icon>新增区域/用户</el-button>
-          <el-button :disabled="locked" :loading="generating" @click="generate">重新生成通知单</el-button>
-          <el-button link type="primary" @click="$router.push('/energy/summary')">去缴费汇总 →</el-button>
-          <span class="toolbar-tip">两笔总额按各单元「计租面积 ÷ 参与分摊的计租面积合计」分摊到分，各单元之和恰好等于总额；只有园区租户（参与公摊的单元）分摊，充电桩、未租单元不摊。计租面积在此直接改，同区域所有表计一起生效。</span>
+          <el-button link type="primary" @click="$router.push('/energy/summary')">去缴费汇总生成通知单 →</el-button>
+          <span class="toolbar-tip">两笔总额按各单元「计租面积 ÷ 参与分摊的计租面积合计」分摊到分；保存后前往「缴费汇总」统一生成并打印通知单。</span>
         </div>
         <FeeFilterBar :model="filter" :companies="opts.companies" :floors="opts.floors">
           检索结果 {{ viewRows.length }} / {{ allRows.length }} 个区域 · 垃圾费合计 ¥{{ money(viewRows.reduce((s, r) => s + Number(r.domesticFee || 0) + Number(r.industrialFee || 0), 0)) }}（表格底部合计行同步汇总）

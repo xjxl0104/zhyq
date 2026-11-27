@@ -41,10 +41,9 @@
           <el-button type="primary" :disabled="locked || !dirtyCount" :loading="savingEntries" @click="saveEntries">
             保存本月调整<span v-if="dirtyCount">（{{ dirtyCount }} 条）</span>
           </el-button>
-          <el-button :disabled="locked" :loading="generating" @click="generate">生成 / 重新生成通知单</el-button>
-          <el-button link type="primary" @click="$router.push('/energy/summary')">去缴费汇总 →</el-button>
+          <el-button link type="primary" @click="$router.push('/energy/summary')">去缴费汇总生成通知单 →</el-button>
           <span class="toolbar-tip">
-            应付金额 = 计租面积 × 当期单价 × 减免系数（1=全额，0.5=5折，0.7=7折，0=全免）；可直接修改蓝色减免系数与备注，保存后到「缴费汇总」下方租金与物业管理费年月表打印通知单。
+            应付金额 = 计租面积 × 当期单价 × 减免系数（1=全额，0.5=5折，0.7=7折，0=全免）；修改保存后请前往「缴费汇总」统一生成并打印通知单。
           </span>
         </div>
 

@@ -71,12 +71,14 @@
             保存读数<span v-if="dirtyCount">（{{ dirtyCount }} 块表）</span>
           </el-button>
           <el-button :disabled="locked" @click="openMeter(null)"><el-icon><Plus /></el-icon>新增区域/用户</el-button>
-          <el-button :disabled="locked" :loading="generating" @click="generate">重新生成通知单</el-button>
-          <el-button link type="primary" @click="$router.push('/energy/summary')">去缴费汇总 →</el-button>
+          <el-button type="primary" plain :disabled="!period" @click="readingSheetVisible = true">
+            <el-icon><Document /></el-icon>水电表抄表单
+          </el-button>
+          <el-button link type="primary" @click="$router.push('/energy/summary')">去缴费汇总生成通知单 →</el-button>
           <span class="toolbar-tip">
             {{ isElectric
-              ? '公摊度数 = 南网 + 光伏 − 参与公摊的租户用量(室外充电桩、未租单元不参与也不扣，各自另收)；按各户实际用量占比摊回；线下表里的公摊度数是手填的，也可直接在上面填。本月读数自动成为下个月的上期读数；所有数保留两位小数，各户之和与合计逐分一致。'
-              : '公摊度数 = 总表度数 − 参与公摊的租户用量；按各户实际用量占比摊回；也可直接手填公摊度数。总表度数不填时按发票总表当月抄表自动取。本月读数自动成为下个月的上期读数；所有数保留两位小数。' }}
+              ? '上期读数已锁定（自动沿用上月本期读数），仅录入本期读数即可；保存后前往「缴费汇总」统一生成通知单。公摊度数 = 南网 + 光伏 − 参与公摊租户用量，按用量占比摊回。'
+              : '上期读数已锁定（自动沿用上月本期读数），仅录入本期读数即可；保存后前往「缴费汇总」统一生成通知单。公摊度数 = 总表度数 − 参与公摊租户用量，按用量占比摊回。' }}
           </span>
         </div>
         <FeeFilterBar :model="filter" :companies="opts.companies" :floors="opts.floors">
@@ -94,10 +96,16 @@
             </template>
           </el-table-column>
           <el-table-column prop="ratio" label="倍率" width="55" align="right" />
-          <el-table-column label="上期读数" width="105" align="right">
+          <el-table-column width="110" align="right">
+            <template #header>
+              <span class="locked-col-head" title="上期读数已锁定，自动沿用上月本期读数，防止误操作修改">
+                上期读数<el-icon class="lock-ico"><Lock /></el-icon>
+              </span>
+            </template>
             <template #default="{ row }">
-              <el-input-number v-model="row.prevReading" :precision="2" :controls="false" size="small" :disabled="locked"
-                               style="width: 95px" @change="() => markDirty(row)" />
+              <span class="locked-reading" title="上期读数已锁定，自动沿用上月本期读数">
+                {{ row.prevReading == null ? '-' : num(row.prevReading, 2) }}
+              </span>
             </template>
           </el-table-column>
           <el-table-column label="本期读数" width="110" align="right">
@@ -159,6 +167,7 @@
 
     <FeeMeterDialog v-model="meterDialog.visible" :meter="meterDialog.meter" :default-types="[energyType]"
                     :areas="rows.map(r => r.area)" @saved="afterMeterChange" />
+    <MeterReadingSheetDialog v-model="readingSheetVisible" :period="period" :default-energy-type="energyType" />
   </div>
 </template>
 
@@ -166,14 +175,14 @@
 import { computed, onActivated, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowLeft, Plus } from '@element-plus/icons-vue'
+import { ArrowLeft, Document, Lock, Plus } from '@element-plus/icons-vue'
 import { feePeriodApi } from '@/api/energy'
 import { useFeePeriod, money, num, BILL_KINDS, applyFilter, filterOptions, floorBandClass } from './feePeriod'
 import FeeFilterBar from './components/FeeFilterBar.vue'
 import FeeMonthPicker from './components/FeeMonthPicker.vue'
 import FeeCharts from './components/FeeCharts.vue'
-import FeeBillFiles from './components/FeeBillFiles.vue'
 import FeeMeterDialog from './components/FeeMeterDialog.vue'
+import MeterReadingSheetDialog from './components/MeterReadingSheetDialog.vue'
 
 const props = defineProps({
   embedded: { type: Boolean, default: false },
@@ -192,7 +201,7 @@ const sheet = ref(null)
 const rows = ref([])
 const sheetLoading = ref(false)
 const savingReadings = ref(false)
-const generating = ref(false)
+const readingSheetVisible = ref(false)
 const picker = ref(null)
 const charts = ref(null)
 const chartYear = ref(new Date().getFullYear())
@@ -277,8 +286,9 @@ async function saveHeader() {
 }
 
 async function saveReadings() {
+  // 上期读数已锁定，不向后端提交 prevReading，由后端严格沿用上月本期读数
   const inputs = rows.value.filter(r => dirty.has(r.meterId) && r.currReading != null)
-    .map(r => ({ meterId: r.meterId, prevReading: r.prevReading, currReading: r.currReading }))
+    .map(r => ({ meterId: r.meterId, currReading: r.currReading }))
   if (!inputs.length) return ElMessage.warning('没有填了本期读数的行')
   savingReadings.value = true
   try {
@@ -297,18 +307,6 @@ async function toggleShare(row, value) {
   ElMessage.success(value ? '已加入公摊' : '已设为不参与公摊（只付自身用量）')
   await reload()
   await loadSheet()
-}
-
-async function generate() {
-  generating.value = true
-  try {
-    const r = await feePeriodApi.generate(period.value.id)
-    ElMessage.success(`已生成 ${r.notices?.length || 0} 张通知单，到「缴费汇总」核对与打印`)
-    if (r.warnings?.length) ElMessage.warning({ message: r.warnings.join('；'), duration: 8000 })
-    await reload()
-  } finally {
-    generating.value = false
-  }
 }
 
 // 增减区域 / 用户
@@ -369,6 +367,17 @@ function summary({ columns, data }) {
 .ratio { font-weight: 600; color: var(--el-color-primary); font-variant-numeric: tabular-nums; }
 .muted { color: var(--el-text-color-placeholder); font-size: 12px; }
 .dirty-tip { margin-top: 8px; font-size: 12px; color: var(--el-color-warning); }
+.locked-col-head { display: inline-flex; align-items: center; gap: 3px; }
+.lock-ico { font-size: 12px; color: var(--el-text-color-secondary); }
+.locked-reading {
+  display: inline-block;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--el-fill-color-light);
+  color: var(--el-text-color-secondary);
+  font-variant-numeric: tabular-nums;
+  user-select: all;
+}
 :deep(.row-dirty) td { background: var(--el-color-warning-light-9) !important; }
 :deep(.row-nonshare) td { color: var(--el-text-color-secondary); }
 </style>
