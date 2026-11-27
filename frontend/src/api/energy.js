@@ -74,5 +74,10 @@ export const noticeAiApi = {
     request.post('/energy/notice-ai/verify-upload', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
       timeout: 120000
+    }),
+  manualBind: (formData) =>
+    request.post('/energy/notice-ai/manual-bind', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 120000
     })
 }

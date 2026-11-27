@@ -74,6 +74,8 @@ public class NoticeDocumentAiService {
     private final FeeNoticePaymentService feeNoticePayments;
     private final LeaseFeePaymentService leaseFeePayments;
     private final ObjectMapper objectMapper;
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private RapidOcrEngine rapidOcr;
 
     @Value("${zhyq.ai.vision-api-url:${ZHYQ_AI_VISION_URL:}}")
     private String visionApiUrl;
@@ -162,6 +164,68 @@ public class NoticeDocumentAiService {
             return matchAndApplyReceipt(reusableFile, fileName, normMode, candidates, extracted);
         }
         return matchAndApplyInvoice(reusableFile, fileName, normMode, candidates, extracted);
+    }
+
+    /** 人工核对后手动绑定回执/发票至指定通知单并自动更新缴费/开票状态 */
+    @Transactional(rollbackFor = Exception.class)
+    public VerifyResult manualBind(MultipartFile file, String mode, String docType, Long noticeId) {
+        if (file == null || file.isEmpty()) throw new BizException("请上传有效的文件");
+        if (noticeId == null || noticeId <= 0) throw new BizException("请选择要绑定的缴费通知单");
+        String normMode = MODE_LEASE.equalsIgnoreCase(mode) ? MODE_LEASE : MODE_UTILITY;
+        String normDoc = DOC_INVOICE.equalsIgnoreCase(docType) ? DOC_INVOICE : DOC_RECEIPT;
+        String fileName = file.getOriginalFilename() == null ? "未命名文件" : file.getOriginalFilename();
+
+        String noticeNo;
+        String tenantName;
+        String category;
+        if (MODE_LEASE.equals(normMode)) {
+            LeaseFeeNotice n = leaseNoticeMapper.selectById(noticeId);
+            if (n == null) throw new BizException(404, "目标租金/物业费通知单不存在，请刷新后重试");
+            noticeNo = n.getNoticeNo();
+            tenantName = n.getTenantName();
+            category = "RENT".equalsIgnoreCase(n.getFeeCategory()) ? "租金" : "物业管理费";
+        } else {
+            FeeNotice n = feeNoticeMapper.selectById(noticeId);
+            if (n == null) throw new BizException(404, "目标水电/垃圾费通知单不存在，请刷新后重试");
+            noticeNo = n.getNoticeNo();
+            tenantName = n.getTenantName();
+            category = "水电/垃圾费";
+        }
+
+        SysFile saved;
+        if (DOC_RECEIPT.equals(normDoc)) {
+            saved = MODE_LEASE.equals(normMode)
+                    ? leaseFeePayments.upload(file, noticeId)
+                    : feeNoticePayments.upload(file, noticeId);
+            if (MODE_LEASE.equals(normMode)) {
+                leaseFeePayments.updateStatus(noticeId, 1);
+            } else {
+                feeNoticePayments.updateStatus(noticeId, 1);
+            }
+            return new VerifyResult(
+                    "MANUAL_BOUND", fileName, DOC_RECEIPT,
+                    noticeId, noticeNo, tenantName, category,
+                    saved != null ? saved.getId() : null,
+                    "已人工核对并手动绑定回执，缴费状态已更新为「已缴费」",
+                    null, List.of()
+            );
+        } else {
+            saved = MODE_LEASE.equals(normMode)
+                    ? leaseFeePayments.uploadInvoice(file, noticeId)
+                    : feeNoticePayments.uploadInvoice(file, noticeId);
+            if (MODE_LEASE.equals(normMode)) {
+                leaseFeePayments.updateInvoiceStatus(noticeId, 1);
+            } else {
+                feeNoticePayments.updateInvoiceStatus(noticeId, 1);
+            }
+            return new VerifyResult(
+                    "MANUAL_BOUND", fileName, DOC_INVOICE,
+                    noticeId, noticeNo, tenantName, category,
+                    saved != null ? saved.getId() : null,
+                    "已人工核对并手动绑定发票，开票状态已更新为「已开票」",
+                    null, List.of()
+            );
+        }
     }
 
     private List<NoticeCandidate> loadCandidates(String mode, Long periodId) {
@@ -403,12 +467,27 @@ public class NoticeDocumentAiService {
             }
         }
 
-        // 优先使用前端/本地 OCR 识别出的文字（支持 JPG/PNG/WEBP 银行回执与发票图片）
-        String combinedText = StringUtils.hasText(text) ? text : (ocrText == null ? "" : ocrText);
-        if (StringUtils.hasText(ocrText) && ocrText.trim().length() >= 10) {
+        // 图片（JPG/PNG/WEBP/BMP）或扫描件 PDF：优先走后端 RapidOCR (PaddleOCR PP-OCRv4 中文表格引擎)
+        String rapidText = "";
+        if (rapidOcr != null) {
+            boolean isImage = lower.endsWith(".jpg") || lower.endsWith(".jpeg")
+                    || lower.endsWith(".png") || lower.endsWith(".webp") || lower.endsWith(".bmp");
+            if (isImage) {
+                String ext = lower.substring(lower.lastIndexOf('.') + 1);
+                rapidText = rapidOcr.recognize(bytes, ext);
+            } else if (lower.endsWith(".pdf") && (!StringUtils.hasText(text) || text.trim().length() < 15)) {
+                byte[] png = renderPdfFirstPagePng(bytes);
+                if (png != null && png.length > 0) {
+                    rapidText = rapidOcr.recognize(png, "png");
+                }
+            }
+        }
+
+        String bestOcrText = StringUtils.hasText(rapidText) ? rapidText : (ocrText == null ? "" : ocrText);
+        if (StringUtils.hasText(bestOcrText) && bestOcrText.trim().length() >= 10) {
             ExtractedFields fromOcr = DOC_RECEIPT.equals(docType)
-                    ? parseReceiptText(ocrText, "OCR")
-                    : parseInvoiceText(ocrText, "OCR");
+                    ? parseReceiptText(bestOcrText, StringUtils.hasText(rapidText) ? "RAPID_OCR" : "OCR")
+                    : parseInvoiceText(bestOcrText, StringUtils.hasText(rapidText) ? "RAPID_OCR" : "OCR");
             parsed = mergeExtracted(parsed, fromOcr);
             if (isComplete(parsed, docType)) {
                 return parsed;
@@ -416,6 +495,7 @@ public class NoticeDocumentAiService {
         }
 
         // 若有 OCR/PDF/OFD 原文但正则未完整抽出字段，调用系统已接入的 DeepSeek 模型做结构化提取
+        String combinedText = StringUtils.hasText(bestOcrText) ? bestOcrText : text;
         if (StringUtils.hasText(combinedText) && combinedText.trim().length() >= 10
                 && StringUtils.hasText(deepseekApiUrl) && StringUtils.hasText(deepseekApiKey)) {
             ExtractedFields ds = callDeepSeekExtract(combinedText, docType);
@@ -627,9 +707,9 @@ public class NoticeDocumentAiService {
     private static final Pattern PAYEE_ACC_PAT = Pattern.compile(
             "(?:收款人账号|收款账号|收款方账号|收方账号|转入账号|贷方账号|对方账号|收款卡号)[:：\\s]+([0-9\\s\\-]{10,36})");
     private static final Pattern GENERIC_NAME_PAT = Pattern.compile(
-            "(?:户名|账户名称|全称|名称)[:：\\s]+([^\\r\\n]+)");
+            "(?:户[ \\t]*名|账户名称|全称|名[ \\t]*称)[:： \\t]+([^\\r\\n]+)");
     private static final Pattern GENERIC_ACC_PAT = Pattern.compile(
-            "(?:账号|银行账号|卡号)[:：\\s]+([0-9\\s\\-]{10,36})");
+            "(?:账[ \\t]*号|银行账号|卡号)[:： \\t]+([0-9 \\-]{10,36})");
     private static final Pattern RECEIPT_AMT_PAT = Pattern.compile(
             "(?:交易金额|汇款金额|付款金额|转账金额|本次付款金额|实付金额|小写金额|金额[（(]小写[）)]|小写|金\\s*额)[:：\\s]*(?:RMB|CNY|人民币)?\\s*[¥￥]?\\s*([0-9,]+\\.[0-9]{2})");
     private static final Pattern YEN_AMT_PAT = Pattern.compile("(?:[¥￥]|RMB|CNY)\\s*([0-9,]+\\.[0-9]{2})");
@@ -671,7 +751,7 @@ public class NoticeDocumentAiService {
             Matcher m = GENERIC_NAME_PAT.matcher(text);
             while (m.find()) {
                 String seg = m.group(1);
-                for (String part : seg.split("(?:户名|账户名称|全称|名称)[:：]")) {
+                for (String part : seg.split("(?:户[ \\t]*名|账户名称|全称|名[ \\t]*称)[:： \\t]+")) {
                     String c = cleanExtractedName(part);
                     if (StringUtils.hasText(c) && c.length() >= 4) {
                         genericNames.add(c);

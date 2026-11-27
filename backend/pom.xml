@@ -98,6 +98,17 @@
             <artifactId>pdfbox</artifactId>
             <version>3.0.2</version>
         </dependency>
+        <!-- 缴费回执/发票图片中文 OCR(基于 PaddleOCR ONNX，纯 Java 跨平台 CPU 推理，专攻中文宋体与银行表格) -->
+        <dependency>
+            <groupId>io.github.mymonstercat</groupId>
+            <artifactId>rapidocr</artifactId>
+            <version>0.0.7</version>
+        </dependency>
+        <dependency>
+            <groupId>io.github.mymonstercat</groupId>
+            <artifactId>rapidocr-onnx-platform</artifactId>
+            <version>0.0.7</version>
+        </dependency>
 
         <dependency>
             <groupId>org.projectlombok</groupId>

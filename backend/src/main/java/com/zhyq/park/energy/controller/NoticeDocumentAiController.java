@@ -27,4 +27,14 @@ public class NoticeDocumentAiController {
             @RequestParam(value = "ocrText", required = false) String ocrText) {
         return Result.ok(aiService.verifyAndUpload(file, mode, docType, periodId, ocrText));
     }
+
+    @Operation(summary = "人工核对后手动绑定回执或发票到指定通知单")
+    @PostMapping(value = "/manual-bind", consumes = "multipart/form-data")
+    public Result<VerifyResult> manualBind(
+            @RequestParam("file") MultipartFile file,
+            @RequestParam("mode") String mode,
+            @RequestParam("docType") String docType,
+            @RequestParam("noticeId") Long noticeId) {
+        return Result.ok(aiService.manualBind(file, mode, docType, noticeId));
+    }
 }

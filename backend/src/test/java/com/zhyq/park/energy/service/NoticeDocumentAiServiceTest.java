@@ -99,4 +99,20 @@ class NoticeDocumentAiServiceTest {
         assertEquals("660075239348", ex.payeeAccount());
         assertEquals(new BigDecimal("99000.00"), ex.amount());
     }
+
+    @Test
+    void rapidOcrRecognizesRealIcbcReceiptImageWhenPresent() throws Exception {
+        java.nio.file.Path sample = java.nio.file.Path.of(
+                "C:/Users/27896/.gemini/antigravity/brain/b8db1729-839e-4646-97e6-1a92bfb60dc1/.user_uploaded/media_1795750657006_f2cc25c4.jpg");
+        if (!java.nio.file.Files.isRegularFile(sample)) return;
+        RapidOcrEngine engine = new RapidOcrEngine();
+        String ocrText = engine.recognize(java.nio.file.Files.readAllBytes(sample), "jpg");
+        System.out.println("=== RAPID OCR REAL ICBC OUTPUT ===\n" + ocrText + "\n=== END ===");
+        ExtractedFields ex = NoticeDocumentAiService.parseReceiptText(ocrText, "RAPID_OCR");
+        System.out.println("EXTRACTED = " + ex);
+        assertEquals("广州昌泰供应链科技有限公司", ex.payerName());
+        assertEquals("广州数智云仓产业园运营有限公司", ex.payeeName());
+        assertEquals("44050129162500000277", ex.payeeAccount());
+        assertEquals(new BigDecimal("9400.00"), ex.amount());
+    }
 }

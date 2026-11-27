@@ -1,8 +1,8 @@
 <template>
   <div class="ai-box">
     <div class="ai-head">
-      <strong>租户缴费回执与发票批量上传（AI 自动识别核准）</strong>
-      <span>支持点击或直接拖拽多个文件到下方对应区域；核对完全一致将自动归入对应通知单并更新状态，存在差异或识别不清将拦截并提醒人工核对。</span>
+      <strong>租户缴费回执与发票批量上传（PaddleOCR + DeepSeek 自动识别核准）</strong>
+      <span>支持点击或直接拖拽多个文件（JPG / PNG / PDF / OFD）到下方对应区域；核对完全一致将自动归入对应通知单并更新状态，存在差异时将拦截并支持一键手动绑定。</span>
     </div>
 
     <div class="ai-grid">
@@ -24,18 +24,18 @@
             :show-file-list="false"
             :http-request="(opt) => handleOne('RECEIPT', opt.file)"
             :disabled="!periodId || busy"
-            accept=".pdf,.jpg,.jpeg,.png,.webp"
+            accept=".pdf,.jpg,.jpeg,.png,.webp,.bmp"
             multiple
           >
             <el-button size="small" type="success" plain :loading="uploadingType === 'RECEIPT'">
-              <el-icon><Upload /></el-icon>{{ uploadingType === 'RECEIPT' && statusText ? statusText : '选择回执' }}
+              <el-icon><Upload /></el-icon>{{ uploadingType === 'RECEIPT' ? '识别核对中...' : '选择回执' }}
             </el-button>
           </el-upload>
         </div>
         <div class="card-desc">
           {{ draggingType === 'RECEIPT'
-            ? '松开鼠标即可开始 OCR + AI 自动识别核对回执...'
-            : '拖拽银行电子回单（支持 PDF / JPG / PNG，图片自动走内置中文 OCR 识别）或点击上传。AI 自动核对：支付单位名称、接收单位名称及账号、支付金额；完全一致后自动上传至对应通知单「缴费」并标记已缴费。' }}
+            ? '松开鼠标即可开始 PaddleOCR + DeepSeek 自动识别核对回执...'
+            : '拖拽银行电子回单（支持 JPG / PNG / PDF）或点击上传。自动核对：支付单位名称、接收单位名称及账号、支付金额；完全一致后自动归入对应通知单「缴费」并标记已缴费。' }}
         </div>
       </div>
 
@@ -57,18 +57,18 @@
             :show-file-list="false"
             :http-request="(opt) => handleOne('INVOICE', opt.file)"
             :disabled="!periodId || busy"
-            accept=".pdf,.ofd,.jpg,.jpeg,.png,.webp"
+            accept=".pdf,.ofd,.jpg,.jpeg,.png,.webp,.bmp"
             multiple
           >
             <el-button size="small" type="primary" plain :loading="uploadingType === 'INVOICE'">
-              <el-icon><Upload /></el-icon>{{ uploadingType === 'INVOICE' && statusText ? statusText : '选择发票' }}
+              <el-icon><Upload /></el-icon>{{ uploadingType === 'INVOICE' ? '识别核对中...' : '选择发票' }}
             </el-button>
           </el-upload>
         </div>
         <div class="card-desc">
           {{ draggingType === 'INVOICE'
-            ? '松开鼠标即可开始 OCR + AI 自动识别核对发票...'
-            : '拖拽数智云仓/昌记开具的电子发票（支持 PDF / OFD / JPG / PNG，图片自动走内置中文 OCR 识别）或点击上传。AI 自动核对：购买方、销售方、发票含税金额；完全一致后自动上传至对应通知单「发票」并标记已开票。' }}
+            ? '松开鼠标即可开始 PaddleOCR + DeepSeek 自动识别核对发票...'
+            : '拖拽数智云仓/昌记开具的电子发票（支持 JPG / PNG / PDF / OFD）或点击上传。自动核对：购买方、销售方、发票含税金额；完全一致后自动归入对应通知单「发票」并标记已开票。' }}
         </div>
       </div>
     </div>
@@ -77,20 +77,20 @@
     <div v-if="results.length" class="result-panel">
       <div class="result-head">
         <span>
-          本次 AI 核准记录（共 {{ results.length }} 份：
-          <strong class="ok-txt">自动通过 {{ approvedCount }} 份</strong>，
-          <strong class="warn-txt">需人工核对 {{ manualCount }} 份</strong>）
+          本次识别核准记录（共 {{ results.length }} 份：
+          <strong class="ok-txt">已归档 {{ approvedCount }} 份</strong>，
+          <strong class="warn-txt">待人工核对 {{ manualCount }} 份</strong>）
         </span>
         <el-button link type="info" size="small" @click="results = []">清空记录</el-button>
       </div>
-      <div v-for="(r, idx) in results" :key="idx" class="result-row" :class="r.status === 'AUTO_APPROVED' ? 'ok' : 'warn'">
+      <div v-for="(r, idx) in results" :key="idx" class="result-row" :class="isDone(r) ? 'ok' : 'warn'">
         <div class="result-main">
           <el-tag size="small" :type="r.docType === 'RECEIPT' ? 'success' : 'primary'" effect="plain">
             {{ r.docType === 'RECEIPT' ? '缴费回执' : '发票' }}
           </el-tag>
           <span class="fname" :title="r.fileName">{{ r.fileName }}</span>
-          <el-tag size="small" :type="r.status === 'AUTO_APPROVED' ? 'success' : 'danger'">
-            {{ r.status === 'AUTO_APPROVED' ? 'AI核准通过 · 已自动归档' : '拦截 · 请人工核对' }}
+          <el-tag size="small" :type="isDone(r) ? 'success' : 'danger'">
+            {{ r.status === 'AUTO_APPROVED' ? 'AI核准通过 · 已自动归档' : (r.status === 'MANUAL_BOUND' ? '已人工手动绑定' : '拦截 · 请人工核对') }}
           </el-tag>
           <span v-if="r.matchedNoticeNo" class="matched-info">
             → {{ r.matchedNoticeNo }}（{{ r.matchedTenantName }}）
@@ -109,6 +109,34 @@
             <template v-if="!c.passed">（通知单：{{ c.expected }}）</template>
           </el-tag>
         </div>
+        <!-- 识别失败或不一致时，支持直接手动选择通知单绑定 -->
+        <div v-if="!isDone(r) && r._rawFile && noticeOptions.length" class="manual-bind-bar">
+          <span class="bind-label">手动绑定：</span>
+          <el-select
+            v-model="r._selectedNoticeId"
+            size="small"
+            filterable
+            clearable
+            placeholder="请选择要绑定的缴费通知单"
+            style="width: 380px; max-width: 100%"
+          >
+            <el-option
+              v-for="opt in noticeOptions"
+              :key="opt.id"
+              :label="opt.label"
+              :value="opt.id"
+            />
+          </el-select>
+          <el-button
+            size="small"
+            type="primary"
+            :disabled="!r._selectedNoticeId"
+            :loading="r._binding"
+            @click="bindManually(r)"
+          >
+            {{ r.docType === 'RECEIPT' ? '手动绑定并标记已缴费' : '手动绑定并标记已开票' }}
+          </el-button>
+        </div>
       </div>
     </div>
   </div>
@@ -119,24 +147,38 @@ import { computed, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Upload } from '@element-plus/icons-vue'
 import { noticeAiApi } from '@/api/energy'
-import { isImageFile, recognizeImageText } from '../noticeOcr'
+import { money } from '../feePeriod'
 
 const props = defineProps({
   periodId: { type: Number, default: null },
   /** utility = 水电/垃圾费缴费汇总 | lease = 租金/物业管理费缴费汇总 */
-  mode: { type: String, default: 'utility' }
+  mode: { type: String, default: 'utility' },
+  /** 当前账期的通知单列表，用于识别失败时手动绑定 */
+  notices: { type: Array, default: () => [] }
 })
 const emit = defineEmits(['matched'])
 
 const draggingType = ref('')
 const uploadingType = ref('')
-const statusText = ref('')
 const pendingCount = ref(0)
 const results = ref([])
 
+const isDone = (r) => r.status === 'AUTO_APPROVED' || r.status === 'MANUAL_BOUND'
 const busy = computed(() => pendingCount.value > 0)
-const approvedCount = computed(() => results.value.filter((r) => r.status === 'AUTO_APPROVED').length)
-const manualCount = computed(() => results.value.filter((r) => r.status !== 'AUTO_APPROVED').length)
+const approvedCount = computed(() => results.value.filter(isDone).length)
+const manualCount = computed(() => results.value.filter((r) => !isDone(r)).length)
+
+const noticeOptions = computed(() =>
+  (props.notices || []).map((n) => {
+    const cat = props.mode === 'lease'
+      ? (n.feeCategory === 'RENT' ? '租金' : '物业费')
+      : '水电垃圾费'
+    return {
+      id: n.id,
+      label: `${n.noticeNo || ''} · ${n.tenantName || ''} · ${cat} · ¥${money(n.totalDue)}`
+    }
+  })
+)
 
 function onDragEnter(type) {
   if (!props.periodId || busy.value) return
@@ -169,37 +211,25 @@ async function handleOne(docType, file, emitNow = true) {
   uploadingType.value = docType
   pendingCount.value++
   try {
-    let ocrText = ''
-    let ocrError = ''
-    if (isImageFile(file)) {
-      statusText.value = 'OCR识别中...'
-      try {
-        ocrText = await recognizeImageText(file, (pct) => {
-          statusText.value = `OCR识别 ${pct}%`
-        })
-      } catch (e) {
-        ocrError = e?.message || String(e || 'OCR 引擎初始化失败')
-        ocrText = ''
-      }
-    }
-    statusText.value = 'AI核对中...'
     const fd = new FormData()
     fd.append('file', file)
     fd.append('mode', props.mode)
     fd.append('docType', docType)
     fd.append('periodId', props.periodId)
-    if (ocrText) fd.append('ocrText', ocrText)
     const res = await noticeAiApi.verifyUpload(fd)
-    if (ocrError && res.status !== 'AUTO_APPROVED') {
-      res.reason = `${res.reason}（OCR 详情：${ocrError}）`
+    const item = {
+      ...res,
+      _rawFile: res.status === 'AUTO_APPROVED' ? null : file,
+      _selectedNoticeId: null,
+      _binding: false
     }
-    results.value.unshift(res)
+    results.value.unshift(item)
     if (res.status === 'AUTO_APPROVED') {
       ElMessage.success(`「${file.name}」AI核准通过，已自动归档到 ${res.matchedNoticeNo}（${res.matchedTenantName}）`)
       if (emitNow) emit('matched')
       return true
     } else {
-      ElMessage.warning(`「${file.name}」未完全匹配，已拦截并提醒人工核对`)
+      ElMessage.warning(`「${file.name}」未完全匹配，已拦截，可在下方手动绑定对应通知单`)
       return false
     }
   } catch (err) {
@@ -207,16 +237,36 @@ async function handleOne(docType, file, emitNow = true) {
       status: 'MANUAL_REVIEW',
       fileName: file.name,
       docType,
-      reason: err?.message || '识别请求失败，请人工核对后手动上传',
-      checks: []
+      reason: err?.message || '识别请求失败，请在下方手动选择通知单绑定',
+      checks: [],
+      _rawFile: file,
+      _selectedNoticeId: null,
+      _binding: false
     })
     return false
   } finally {
     pendingCount.value = Math.max(0, pendingCount.value - 1)
     if (pendingCount.value === 0) {
       uploadingType.value = ''
-      statusText.value = ''
     }
+  }
+}
+
+async function bindManually(row) {
+  if (!row._rawFile || !row._selectedNoticeId) return
+  row._binding = true
+  try {
+    const fd = new FormData()
+    fd.append('file', row._rawFile)
+    fd.append('mode', props.mode)
+    fd.append('docType', row.docType)
+    fd.append('noticeId', row._selectedNoticeId)
+    const res = await noticeAiApi.manualBind(fd)
+    Object.assign(row, res, { _rawFile: null, _binding: false })
+    ElMessage.success(`已手动绑定到 ${res.matchedNoticeNo}（${res.matchedTenantName}）`)
+    emit('matched')
+  } finally {
+    row._binding = false
   }
 }
 </script>
@@ -339,5 +389,18 @@ async function handleOne(docType, file, emitNow = true) {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+}
+.manual-bind-bar {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--el-border-color);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.bind-label {
+  font-weight: 600;
+  color: var(--el-text-color-primary);
 }
 </style>

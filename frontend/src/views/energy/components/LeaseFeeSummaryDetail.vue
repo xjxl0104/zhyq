@@ -13,7 +13,7 @@
     </el-alert>
 
     <FeeBillFiles v-if="period" :period-id="period.id" :kinds="[BILL_KINDS.rent, BILL_KINDS.property]" />
-    <NoticeBatchAiUpload v-if="period" :period-id="period.id" mode="lease" @matched="load" />
+    <NoticeBatchAiUpload v-if="period" :period-id="period.id" :notices="notices" mode="lease" @matched="load" />
 
     <!-- 收取单位分开提示卡片 -->
     <div v-if="period" class="payee-bar">

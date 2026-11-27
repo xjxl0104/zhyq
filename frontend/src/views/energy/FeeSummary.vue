@@ -23,7 +23,7 @@
       </el-alert>
 
       <FeeBillFiles v-if="period" :period-id="period.id" :kinds="[BILL_KINDS.electric, BILL_KINDS.water, BILL_KINDS.garbage]" />
-      <NoticeBatchAiUpload v-if="period" :period-id="period.id" mode="utility" @matched="loadNotices" />
+      <NoticeBatchAiUpload v-if="period" :period-id="period.id" :notices="notices" mode="utility" @matched="loadNotices" />
 
       <div v-if="period" class="summary-grid">
         <div class="summary-item"><span>电:南网 + 光伏</span><strong>{{ num(Number(period.electricGridUsage || 0) + Number(period.electricSolarUsage || 0)) }} 度</strong></div>
