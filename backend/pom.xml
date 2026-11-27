@@ -106,8 +106,8 @@
         </dependency>
         <dependency>
             <groupId>io.github.mymonstercat</groupId>
-            <artifactId>rapidocr-onnx-platform</artifactId>
-            <version>0.0.7</version>
+            <artifactId>rapidocr-onnx-models</artifactId>
+            <version>1.2.2</version>
         </dependency>
 
         <dependency>
@@ -146,6 +146,40 @@
             <scope>test</scope>
         </dependency>
     </dependencies>
+
+    <profiles>
+        <!-- 显式按 OS family 绑定原生库，避免 Linux 上 os.arch=amd64 导致 rapidocr-onnx-platform 漏打 linux-x86_64 jar -->
+        <profile>
+            <id>rapidocr-linux</id>
+            <activation>
+                <os>
+                    <family>unix</family>
+                </os>
+            </activation>
+            <dependencies>
+                <dependency>
+                    <groupId>io.github.mymonstercat</groupId>
+                    <artifactId>rapidocr-onnx-linux-x86_64</artifactId>
+                    <version>1.2.2</version>
+                </dependency>
+            </dependencies>
+        </profile>
+        <profile>
+            <id>rapidocr-windows</id>
+            <activation>
+                <os>
+                    <family>windows</family>
+                </os>
+            </activation>
+            <dependencies>
+                <dependency>
+                    <groupId>io.github.mymonstercat</groupId>
+                    <artifactId>rapidocr-onnx-windows-x86_64</artifactId>
+                    <version>1.2.2</version>
+                </dependency>
+            </dependencies>
+        </profile>
+    </profiles>
 
     <build>
         <finalName>zhyq-park</finalName>
