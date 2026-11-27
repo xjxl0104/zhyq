@@ -1,16 +1,26 @@
 <template>
   <div class="page-container">
-    <!-- 年月表 + 图表(与电费/水费同模式) -->
+    <!-- 合并年月表 + 图表切换 -->
     <template v-if="!month">
-      <LeaseMonthPicker ref="picker" :kind="kind" @select="(m) => (month = m)" @year="(y) => (chartYear = y)" />
-      <LeaseFeeCharts ref="charts" :kind="kind" :year="chartYear" />
+      <LeaseMonthPicker ref="picker" kind="combined" @select="(m) => (month = m)" @year="(y) => (chartYear = y)" />
+      <div class="chart-switch-bar">
+        <el-radio-group v-model="chartKind" size="small">
+          <el-radio-button value="rent">租金趋势</el-radio-button>
+          <el-radio-button value="property">物业费趋势</el-radio-button>
+        </el-radio-group>
+      </div>
+      <LeaseFeeCharts ref="charts" :kind="chartKind" :year="chartYear" />
     </template>
 
-    <!-- 选定月份的租金/物业费明细工作表 -->
+    <!-- 选定月份的租金/物业费明细工作表（顶部一键切换租金 / 物业费） -->
     <template v-else>
       <div class="detail-head">
-        <el-button @click="month = null"><el-icon><ArrowLeft /></el-icon>返回年月表</el-button>
-        <h3>{{ monthLabel }} · {{ isRent ? '租金' : '物业管理费' }}明细</h3>
+        <el-button @click="backToBoard"><el-icon><ArrowLeft /></el-icon>返回年月表</el-button>
+        <h3>{{ monthLabel }}</h3>
+        <el-radio-group :model-value="activeFeeType" class="fee-tab-switch" @update:model-value="switchFeeType">
+          <el-radio-button value="RENT">租金</el-radio-button>
+          <el-radio-button value="PROPERTY">物业费</el-radio-button>
+        </el-radio-group>
         <el-tag v-if="locked" type="success">已确认出账（冻结，只读）</el-tag>
         <el-tag v-else-if="period?.noticeStale" type="warning">参数或减免系数有改动，通知单需重新生成</el-tag>
         <el-tag type="info" effect="plain">
@@ -99,19 +109,24 @@
 <script setup>
 import { computed, onActivated, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft } from '@element-plus/icons-vue'
 import { leaseFeeApi } from '@/api/energy'
-import { BILL_KINDS, applyFilter, filterOptions, floorBandClass, money, num } from './feePeriod'
+import { applyFilter, filterOptions, floorBandClass, money, num } from './feePeriod'
 import FeeFilterBar from './components/FeeFilterBar.vue'
-import FeeBillFiles from './components/FeeBillFiles.vue'
 import LeaseMonthPicker from './components/LeaseMonthPicker.vue'
 import LeaseFeeCharts from './components/LeaseFeeCharts.vue'
 
 const route = useRoute()
-const feeType = computed(() => route.meta.leaseFeeType || 'RENT')
+const initialFeeType = () => {
+  const q = String(route.query.tab || '').toUpperCase()
+  if (q === 'PROPERTY' || q === 'RENT') return q
+  return route.meta.leaseFeeType || 'RENT'
+}
+const activeFeeType = ref(initialFeeType())
+const feeType = computed(() => activeFeeType.value)
 const isRent = computed(() => feeType.value === 'RENT')
-const kind = computed(() => (isRent.value ? 'rent' : 'property'))
+const chartKind = ref(activeFeeType.value === 'PROPERTY' ? 'property' : 'rent')
 
 const month = ref(null)
 const chartYear = ref(new Date().getFullYear())
@@ -188,7 +203,43 @@ async function loadSheet() {
 }
 
 watch(month, openMonth)
-watch(feeType, () => { month.value = null })
+watch(() => route.query.tab, (q) => {
+  const next = String(q || '').toUpperCase()
+  if (next === 'RENT' || next === 'PROPERTY') {
+    activeFeeType.value = next
+    chartKind.value = next === 'PROPERTY' ? 'property' : 'rent'
+    if (month.value && period.value) loadSheet()
+  }
+})
+
+async function switchFeeType(next) {
+  if (!next || next === activeFeeType.value) return
+  if (dirty.size > 0) {
+    try {
+      await ElMessageBox.confirm('当前页签有未保存的减免系数或备注调整，切换会放弃未保存修改，是否继续？', '切换费用项', {
+        type: 'warning', confirmButtonText: '放弃并切换', cancelButtonText: '留在本页'
+      })
+    } catch {
+      return
+    }
+  }
+  activeFeeType.value = next
+  chartKind.value = next === 'PROPERTY' ? 'property' : 'rent'
+  if (month.value && period.value) await loadSheet()
+}
+
+async function backToBoard() {
+  if (dirty.size > 0) {
+    try {
+      await ElMessageBox.confirm('当前有未保存的调整，返回年月表会放弃未保存修改，是否继续？', '返回年月表', {
+        type: 'warning', confirmButtonText: '放弃并返回', cancelButtonText: '继续编辑'
+      })
+    } catch {
+      return
+    }
+  }
+  month.value = null
+}
 
 let firstActivation = true
 onActivated(async () => {
@@ -256,8 +307,10 @@ function summary({ columns, data }) {
 </script>
 
 <style scoped>
+.chart-switch-bar { display: flex; justify-content: flex-end; margin: 12px 0 -4px; }
 .detail-head { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
 .detail-head h3 { margin: 0; font-size: 16px; }
+.fee-tab-switch :deep(.el-radio-button__inner) { font-weight: 600; padding: 8px 18px; }
 .toolbar { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
 .toolbar-tip { font-size: 12px; color: var(--el-text-color-secondary); }
 .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; margin-bottom: 12px; }

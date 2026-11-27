@@ -1,10 +1,10 @@
 <template>
-  <div class="page-container">
-    <FeeMonthPicker v-if="!month" ref="picker" kind="garbage" @select="(m) => (month = m)" @year="(y) => (chartYear = y)" />
-    <FeeCharts v-if="!month" ref="charts" kind="garbage" :year="chartYear" />
+  <div :class="embedded ? '' : 'page-container'">
+    <FeeMonthPicker v-if="!embedded && !month" ref="picker" kind="garbage" @select="(m) => (month = m)" @year="(y) => (chartYear = y)" />
+    <FeeCharts v-if="!embedded && !month" ref="charts" kind="garbage" :year="chartYear" />
 
-    <template v-else>
-      <div class="detail-head">
+    <template v-else-if="month">
+      <div v-if="!embedded" class="detail-head">
         <el-button @click="back"><el-icon><ArrowLeft /></el-icon>返回年月表</el-button>
         <h3>{{ monthLabel }} · 垃圾处理费明细</h3>
         <el-tag v-if="locked" type="success">已确认出账（冻结，只读）</el-tag>
@@ -114,6 +114,12 @@ import FeeCharts from './components/FeeCharts.vue'
 import FeeBillFiles from './components/FeeBillFiles.vue'
 import FeeMeterDialog from './components/FeeMeterDialog.vue'
 
+const props = defineProps({
+  embedded: { type: Boolean, default: false },
+  embeddedMonth: { type: String, default: '' }
+})
+const emit = defineEmits(['period-change'])
+
 const sheet = ref(null)
 const sheetLoading = ref(false)
 const generating = ref(false)
@@ -153,13 +159,23 @@ async function loadSheet() {
   }
 }
 
+watch(() => props.embeddedMonth, (m) => {
+  if (props.embedded) month.value = m || null
+}, { immediate: true })
+watch(period, (p) => { emit('period-change', p) }, { immediate: true })
+
 let firstActivation = true
 onActivated(async () => {
+  if (props.embedded) return
   if (firstActivation) { firstActivation = false; return }
   if (!month.value) { picker.value?.refresh(); charts.value?.refresh() }
   else { await reload(); await loadSheet() }
 })
 watch(month, (v) => { if (!v) sheet.value = null })
+
+defineExpose({
+  refresh: async () => { if (month.value) { await reload(); await loadSheet() } }
+})
 
 async function saveHeader() {
   await save(form)

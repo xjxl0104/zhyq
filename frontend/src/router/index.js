@@ -128,14 +128,14 @@ const routes = [
       { path: 'app/vending', meta: { title: '自动售货机' }, component: () => import('@/views/app/Vending.vue') },
 
       // 缴费管理(园区运营下)
-      // 合同基础台账统一对接招商正式合同;保证金按合同台账登记;租金 / 物业费 一组件两路由;电费 / 水费 一组件两路由
+      // 合同基础台账统一对接招商正式合同;保证金按合同台账登记;租金及物业费合一入口;水电及垃圾费合一入口(旧子路由自动重定向兼容)
       { path: 'energy/contracts', meta: { title: '合同基础台账' }, component: () => import('@/views/energy/LeaseContracts.vue') },
       { path: 'energy/deposit', meta: { title: '保证金' }, component: () => import('@/views/energy/LeaseDeposit.vue') },
-      { path: 'energy/rent', meta: { title: '租金', leaseFeeType: 'RENT' }, component: () => import('@/views/energy/LeaseFeeSheet.vue') },
-      { path: 'energy/property', meta: { title: '物业费', leaseFeeType: 'PROPERTY' }, component: () => import('@/views/energy/LeaseFeeSheet.vue') },
-      { path: 'energy/electric', meta: { title: '电费', energyType: '电' }, component: () => import('@/views/energy/UtilityFeeSheet.vue') },
-      { path: 'energy/water', meta: { title: '水费', energyType: '水' }, component: () => import('@/views/energy/UtilityFeeSheet.vue') },
-      { path: 'energy/garbage', meta: { title: '垃圾处理费' }, component: () => import('@/views/energy/GarbageFee.vue') },
+      { path: 'energy/rent', meta: { title: '租金及物业费', leaseFeeType: 'RENT' }, component: () => import('@/views/energy/LeaseFeeSheet.vue') },
+      { path: 'energy/property', redirect: () => ({ path: '/energy/rent', query: { tab: 'PROPERTY' } }) },
+      { path: 'energy/electric', meta: { title: '水电及垃圾费' }, component: () => import('@/views/energy/UtilityAndGarbageFee.vue') },
+      { path: 'energy/water', redirect: () => ({ path: '/energy/electric', query: { tab: 'water' } }) },
+      { path: 'energy/garbage', redirect: () => ({ path: '/energy/electric', query: { tab: 'garbage' } }) },
       { path: 'energy/summary', meta: { title: '缴费汇总' }, component: () => import('@/views/energy/FeeSummary.vue') },
 
       // 智慧物联

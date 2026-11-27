@@ -70,7 +70,7 @@ import { ArrowLeft, ArrowRight } from '@element-plus/icons-vue'
 import { leaseFeeApi } from '@/api/energy'
 import { money } from '../feePeriod'
 
-// kind: rent 租金 | property 物业费 | summary 租金与物业管理费汇总
+// kind: combined 租金及物业费 | rent 租金 | property 物业费 | summary 租金与物业管理费汇总
 const props = defineProps({ kind: { type: String, required: true } })
 const emit = defineEmits(['select', 'year'])
 
@@ -90,11 +90,13 @@ const yearStr = computed({
 })
 
 const TITLES = {
+  combined: '租金及物业费 · 年月表',
   rent: '租金 · 年月表',
   property: '物业费 · 年月表',
   summary: '租金、物业管理费 · 年月表'
 }
 const SUBTITLES = {
+  combined: '点击月份进入当月明细，顶部可一键切换「租金 / 物业费」',
   rent: '点击月份查看当月各租户租金明细与减免调整',
   property: '点击月份查看当月各租户物业管理费明细',
   summary: '租金与物业管理费独立核算，点击月份进入汇总与通知单'
@@ -117,7 +119,12 @@ function onJumpMonth(val) {
 
 function fileCount(c) {
   if (!c) return 0
-  return { rent: c.rentFiles, property: c.propertyFiles, summary: (c.rentFiles || 0) + (c.propertyFiles || 0) }[props.kind] || 0
+  return {
+    rent: c.rentFiles,
+    property: c.propertyFiles,
+    combined: (c.rentFiles || 0) + (c.propertyFiles || 0),
+    summary: (c.rentFiles || 0) + (c.propertyFiles || 0)
+  }[props.kind] || 0
 }
 
 function lines(c) {

@@ -4,7 +4,7 @@
       <div class="fmp-title">
         <strong>{{ title }}</strong>
         <el-tag size="small" type="primary" effect="plain">{{ year }} 年</el-tag>
-        <span>点击月份进入明细；按钮展示当月合计</span>
+        <span>{{ subtitle }}</span>
       </div>
       <div class="fmp-controls">
         <div class="year-nav">
@@ -52,8 +52,9 @@
         <template v-if="cell(year, m)">
           <span class="m-line">{{ lines(cell(year, m))[0] }}</span>
           <span class="m-line fee">{{ lines(cell(year, m))[1] }}</span>
+          <span v-if="lines(cell(year, m))[2]" class="m-sub">{{ lines(cell(year, m))[2] }}</span>
           <span class="m-doc" :class="{ ok: fileCount(cell(year, m)) > 0 }">
-            {{ fileCount(cell(year, m)) > 0 ? `账单已留存 ${fileCount(cell(year, m))} 份` : '账单未上传' }}
+            {{ docText(cell(year, m)) }}
           </span>
         </template>
         <span v-else class="m-line muted">未录入</span>
@@ -68,7 +69,7 @@ import { ArrowLeft, ArrowRight } from '@element-plus/icons-vue'
 import { feePeriodApi } from '@/api/energy'
 import { money, num } from '../feePeriod'
 
-// kind: electric 电费 | water 水费 | garbage 垃圾处理费 | summary 缴费汇总
+// kind: combined 水电及垃圾费 | electric 电费 | water 水费 | garbage 垃圾处理费 | summary 缴费汇总
 const props = defineProps({ kind: { type: String, required: true } })
 const emit = defineEmits(['select', 'year'])
 
@@ -87,8 +88,22 @@ const yearStr = computed({
   }
 })
 
-const TITLES = { electric: '电费 · 年月表', water: '水费 · 年月表', garbage: '垃圾处理费 · 年月表', summary: '水电费、垃圾处理费 · 年月表' }
+const TITLES = {
+  combined: '水电及垃圾费 · 年月表',
+  electric: '电费 · 年月表',
+  water: '水费 · 年月表',
+  garbage: '垃圾处理费 · 年月表',
+  summary: '水电费、垃圾处理费 · 年月表'
+}
+const SUBTITLES = {
+  combined: '点击月份进入当月明细，顶部可一键切换「电费 / 水费 / 垃圾处理费」',
+  electric: '点击月份进入明细；按钮展示当月合计',
+  water: '点击月份进入明细；按钮展示当月合计',
+  garbage: '点击月份进入明细；按钮展示当月合计',
+  summary: '点击月份进入明细；按钮展示当月合计'
+}
 const title = computed(() => TITLES[props.kind] || '年月表')
+const subtitle = computed(() => SUBTITLES[props.kind] || '点击月份进入明细；按钮展示当月合计')
 
 const key = (y, m) => `${y}-${String(m).padStart(2, '0')}`
 const cell = (y, m) => data.value[key(y, m)]
@@ -105,12 +120,36 @@ function onJumpMonth(val) {
 
 function fileCount(c) {
   if (!c) return 0
-  return { electric: c.electricFiles, water: c.waterFiles, garbage: c.garbageFiles, summary: c.electricFiles + c.waterFiles + c.garbageFiles }[props.kind] || 0
+  return {
+    electric: c.electricFiles,
+    water: c.waterFiles,
+    garbage: c.garbageFiles,
+    combined: (c.electricFiles || 0) + (c.waterFiles || 0) + (c.garbageFiles || 0),
+    summary: (c.electricFiles || 0) + (c.waterFiles || 0) + (c.garbageFiles || 0)
+  }[props.kind] || 0
 }
 
-// 每个按钮下面两行:总量 + 费用
+function docText(c) {
+  const cnt = fileCount(c)
+  if (cnt > 0) return `账单已留存 ${cnt} 份`
+  if (props.kind === 'combined') return c.noticeCount ? `${c.noticeCount} 张通知单` : '点击进入录入'
+  return '账单未上传'
+}
+
+// 每个按钮下面显示合计明细
 function lines(c) {
   switch (props.kind) {
+    case 'combined': {
+      const garb = Number(c.garbageFee || c.garbageTotal || 0)
+      const total = c.totalDue != null
+        ? Number(c.totalDue)
+        : Number(c.electricFee || 0) + Number(c.waterFee || 0) + garb
+      return [
+        `电 ¥${money(c.electricFee)} · 水 ¥${money(c.waterFee)}`,
+        `垃圾 ¥${money(garb)}`,
+        `合计 ¥${money(total)}`
+      ]
+    }
     case 'electric': return [`总用电 ${num(c.electricUsage, 2)} 度`, `电费 ¥${money(c.electricFee)}`]
     case 'water': return [`总用水 ${num(c.waterUsage, 2)} m³`, `水费 ¥${money(c.waterFee)}`]
     case 'garbage': return [`垃圾总额 ¥${money(c.garbageTotal)}`, `已分摊 ¥${money(c.garbageFee)}`]
@@ -196,6 +235,7 @@ defineExpose({ refresh: load })
 .m-label { font-weight: 700; font-size: 13px; display: flex; align-items: center; justify-content: space-between; gap: 4px; }
 .m-line { font-size: 12px; line-height: 1.35; font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .m-line.fee { font-weight: 600; color: var(--el-color-danger); }
+.m-sub { font-size: 11px; font-weight: 600; color: var(--el-color-primary); font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .m-line.muted { color: var(--el-text-color-placeholder); }
 .m-doc { font-size: 11px; color: var(--el-text-color-placeholder); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .m-doc.ok { color: var(--el-color-success); }

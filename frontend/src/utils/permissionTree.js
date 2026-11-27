@@ -7,7 +7,10 @@ const ALIASES = {
   '/contract/archive': '/contract/list',
   '/crm/marketing/position': '/crm/marketing/setting',
   '/crm/marketing/grade': '/crm/marketing/setting',
-  '/crm/marketing/template': '/crm/marketing/contract'
+  '/crm/marketing/template': '/crm/marketing/contract',
+  '/energy/property': '/energy/rent',
+  '/energy/water': '/energy/electric',
+  '/energy/garbage': '/energy/electric'
 }
 const RETIRED_PATHS = new Set([
   '/system/dept', '/system/post',

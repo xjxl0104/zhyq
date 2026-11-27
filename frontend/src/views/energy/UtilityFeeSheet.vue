@@ -1,12 +1,12 @@
 <template>
-  <div class="page-container">
+  <div :class="embedded ? '' : 'page-container'">
     <!-- 先看年月表,点某个月才进入当月明细 -->
-    <FeeMonthPicker v-if="!month" ref="picker" :kind="isElectric ? 'electric' : 'water'" @select="(m) => (month = m)" @year="(y) => (chartYear = y)" />
+    <FeeMonthPicker v-if="!embedded && !month" ref="picker" :kind="isElectric ? 'electric' : 'water'" @select="(m) => (month = m)" @year="(y) => (chartYear = y)" />
     <!-- 年月表下面:全园区月度曲线 + 各租户当月柱状图 -->
-    <FeeCharts v-if="!month" ref="charts" :kind="isElectric ? 'electric' : 'water'" :year="chartYear" />
+    <FeeCharts v-if="!embedded && !month" ref="charts" :kind="isElectric ? 'electric' : 'water'" :year="chartYear" />
 
-    <template v-else>
-      <div class="detail-head">
+    <template v-else-if="month">
+      <div v-if="!embedded" class="detail-head">
         <el-button @click="back"><el-icon><ArrowLeft /></el-icon>返回年月表</el-button>
         <h3>{{ monthLabel }} · {{ isElectric ? '电费' : '水费' }}明细</h3>
         <el-tag v-if="locked" type="success">已确认出账（冻结，只读）</el-tag>
@@ -175,9 +175,16 @@ import FeeCharts from './components/FeeCharts.vue'
 import FeeBillFiles from './components/FeeBillFiles.vue'
 import FeeMeterDialog from './components/FeeMeterDialog.vue'
 
+const props = defineProps({
+  embedded: { type: Boolean, default: false },
+  embeddedMonth: { type: String, default: '' },
+  embeddedEnergyType: { type: String, default: '' }
+})
+const emit = defineEmits(['period-change'])
+
 const route = useRoute()
-// 一组件两路由:电费 / 水费 只差能源类型与几个录入格
-const energyType = computed(() => route.meta.energyType || '电')
+// 支持独立路由与嵌入「水电及垃圾费」双模式
+const energyType = computed(() => props.embeddedEnergyType || route.meta.energyType || '电')
 const isElectric = computed(() => energyType.value === '电')
 const billKind = computed(() => (isElectric.value ? BILL_KINDS.electric : BILL_KINDS.water))
 
@@ -215,15 +222,31 @@ async function loadSheet() {
     sheetLoading.value = false
   }
 }
-// 电费/水费各有自己的路由实例;万一组件被复用,切类型时回到年月表
-watch(energyType, () => { month.value = null })
+// 嵌入模式下同步外部月份与能源类型（切电/水不退回年月表）
+watch(() => props.embeddedMonth, (m) => {
+  if (props.embedded) month.value = m || null
+}, { immediate: true })
+watch(energyType, () => {
+  if (props.embedded) {
+    if (period.value) loadSheet()
+  } else {
+    month.value = null
+  }
+})
+watch(period, (p) => { emit('period-change', p) }, { immediate: true })
 
 // keep-alive 回到本页时刷新:年月表上的合计、当月明细都可能被别的页面改过
 let firstActivation = true
 onActivated(async () => {
+  if (props.embedded) return
   if (firstActivation) { firstActivation = false; return }
   if (!month.value) { picker.value?.refresh(); charts.value?.refresh() }
   else { await reload(); await loadSheet() }
+})
+
+defineExpose({
+  hasDirty: () => dirty.size > 0,
+  refresh: async () => { if (month.value) { await reload(); await loadSheet() } }
 })
 
 // 比例用百分比显示,保留两位;鼠标放上去看 6 位小数

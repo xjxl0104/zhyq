@@ -79,7 +79,7 @@ it('flattens overview, property service and smart iot menus and organizes park o
   expect(contractMenu.children.map(c => c.title)).toEqual(['正式合同', '简易合同', '合同模板', '合同设置'])
   const feeMgmt = ops.children.find(c => c.title === '缴费管理')
   expect(feeMgmt).toBeTruthy()
-  expect(feeMgmt.children.map(c => c.title)).toEqual(['合同基础台账', '保证金', '租金', '物业费', '电费', '水费', '垃圾处理费', '缴费汇总'])
+  expect(feeMgmt.children.map(c => c.title)).toEqual(['合同基础台账', '保证金', '租金及物业费', '水电及垃圾费', '缴费汇总'])
   const tree = buildPermissionTree([
     page(10, '/property/meeting'), page(11, '/service/forum'), page(15, '/iot/device'), page(16, '/acc/access'),
     page(19, '/service/mall'), page(20, '/oa/notice'), page(21, '/oa/attendance'),

@@ -123,11 +123,8 @@ export const menuTree = [
         title: '缴费管理', icon: 'Tickets', children: [
           { title: '合同基础台账', path: '/energy/contracts' },
           { title: '保证金', path: '/energy/deposit' },
-          { title: '租金', path: '/energy/rent' },
-          { title: '物业费', path: '/energy/property' },
-          { title: '电费', path: '/energy/electric' },
-          { title: '水费', path: '/energy/water' },
-          { title: '垃圾处理费', path: '/energy/garbage' },
+          { title: '租金及物业费', path: '/energy/rent' },
+          { title: '水电及垃圾费', path: '/energy/electric' },
           { title: '缴费汇总', path: '/energy/summary' }
         ]
       },

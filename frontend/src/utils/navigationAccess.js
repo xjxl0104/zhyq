@@ -82,7 +82,10 @@ const DETAIL_PARENTS = [
   [/^\/contract\/detail\//, '/contract/list'],
   [/^\/budget\/supplier-contract(?:\/|$)/, '/property/responsible-unit'],
   [/^\/app\/vending(?:\/|$)/, '/app/center'],
-  [/^\/screen$/, '/data/center']
+  [/^\/screen$/, '/data/center'],
+  [/^\/energy\/property(?:\/|$)/, '/energy/rent'],
+  [/^\/energy\/water(?:\/|$)/, '/energy/electric'],
+  [/^\/energy\/garbage(?:\/|$)/, '/energy/electric']
 ]
 
 export function canAccessNavigation(path, paths, admin = false) {
