@@ -116,4 +116,32 @@ class NoticeDocumentAiServiceTest {
         assertEquals("44050129162500000277", ex.payeeAccount());
         assertEquals(new BigDecimal("9400.00"), ex.amount());
     }
+
+    @Test
+    void clearElfExecStackFlagClearsPtGnuStackXBit() throws Exception {
+        // 构造最小 ELF64 little-endian 头 + 1 个 PT_GNU_STACK(p_flags=R|W|X=0x7) 程序头
+        byte[] elf = new byte[64 + 56];
+        elf[0] = 0x7F; elf[1] = 'E'; elf[2] = 'L'; elf[3] = 'F';
+        elf[4] = 2; // ELF64
+        elf[5] = 1; // little-endian
+        java.nio.ByteBuffer bb = java.nio.ByteBuffer.wrap(elf).order(java.nio.ByteOrder.LITTLE_ENDIAN);
+        bb.putLong(32, 64L);          // e_phoff
+        bb.putShort(54, (short) 56);  // e_phentsize
+        bb.putShort(56, (short) 1);   // e_phnum
+        bb.putInt(64, 0x6474e551);    // PT_GNU_STACK
+        bb.putInt(68, 0x7);           // PF_R | PF_W | PF_X
+
+        java.nio.file.Path tmp = java.nio.file.Files.createTempFile("elf-test-", ".so");
+        try {
+            java.nio.file.Files.write(tmp, elf);
+            assertTrue(RapidOcrEngine.clearElfExecStackFlag(tmp));
+            // 幂等：再次调用返回 false，且标志位已变为 PF_R | PF_W (0x6)
+            assertFalse(RapidOcrEngine.clearElfExecStackFlag(tmp));
+            byte[] after = java.nio.file.Files.readAllBytes(tmp);
+            int flags = java.nio.ByteBuffer.wrap(after).order(java.nio.ByteOrder.LITTLE_ENDIAN).getInt(68);
+            assertEquals(0x6, flags);
+        } finally {
+            java.nio.file.Files.deleteIfExists(tmp);
+        }
+    }
 }

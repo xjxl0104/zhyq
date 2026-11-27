@@ -7,8 +7,14 @@ import io.github.mymonstercat.ocr.InferenceEngine;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.RandomAccessFile;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -16,9 +22,12 @@ import java.util.List;
 /**
  * 后端中文 OCR 引擎（RapidOCR / PaddleOCR PP-OCRv4 ONNX）。
  * 1) 懒加载初始化，不影响应用启动速度；
- * 2) 全程加锁串行调用：规避 rapidocr 0.0.7 内部 isLibraryLoaded.compareAndSet(false,true) 在并发上传多张图时
+ * 2) Linux 下提前解压 libRapidOcr.so 并清除 ELF PT_GNU_STACK 的 PF_X（可执行栈）标志位：
+ *    兼容 glibc 2.41+（如 Ubuntu 24.04 / eclipse-temurin:17-jre），避免 dlopen 报错
+ *    "cannot enable executable stack as shared object requires: Invalid argument"；
+ * 3) 全程加锁串行调用：规避 rapidocr 0.0.7 内部 isLibraryLoaded.compareAndSet(false,true) 在并发上传多张图时
  *    直接跳过同步块触发 nativeLoader=null 的并发竞态 bug，也避免底层 ONNX/JNI 单实例并发踩内存；
- * 3) 记录首次初始化真实根因异常，避免后续调用被掩盖为 nativeLoader is null。
+ * 4) 记录首次初始化真实根因异常，避免后续调用被掩盖为 nativeLoader is null。
  */
 @Slf4j
 @Component
@@ -26,14 +35,95 @@ public class RapidOcrEngine {
 
     public record OcrOutput(String text, String error) {}
 
+    private static final int PT_GNU_STACK = 0x6474e551;
+    private static final int PF_X = 0x1;
+
     private volatile InferenceEngine engine;
     private volatile String firstInitError;
 
     private InferenceEngine getEngine() {
         if (engine == null) {
+            prepareLinuxNativeLibIfNeeded();
             engine = InferenceEngine.getInstance(Model.ONNX_PPOCR_V4);
         }
         return engine;
+    }
+
+    /**
+     * 在 Linux 环境下预先把 classpath 中的 lib/libRapidOcr.so 解压到 RapidOCR 约定的
+     * ${java.io.tmpdir}/ocrJava/onnx/libRapidOcr.so 并清除 ELF PT_GNU_STACK 的 PF_X 位（等效 execstack -c）。
+     * 随后 JarFileUtil.copyFileFromJar 见目标文件已存在即直接 System.load，从而彻底兼容 glibc 2.41+。
+     */
+    private static void prepareLinuxNativeLibIfNeeded() {
+        String os = System.getProperty("os.name", "").toLowerCase();
+        if (!os.contains("linux")) return;
+        String tmpDir = System.getProperty("java.io.tmpdir", "/tmp");
+        Path target = Path.of(tmpDir, "ocrJava", "onnx", "libRapidOcr.so");
+        try {
+            Files.createDirectories(target.getParent());
+            if (!Files.exists(target) || Files.size(target) == 0) {
+                ClassLoader cl = Thread.currentThread().getContextClassLoader();
+                InputStream in = (cl != null) ? cl.getResourceAsStream("lib/libRapidOcr.so") : null;
+                if (in == null) {
+                    in = RapidOcrEngine.class.getClassLoader().getResourceAsStream("lib/libRapidOcr.so");
+                }
+                if (in == null) {
+                    log.warn("classpath 未找到 lib/libRapidOcr.so，跳过 execstack 修补");
+                    return;
+                }
+                try (InputStream stream = in) {
+                    Files.copy(stream, target, StandardCopyOption.REPLACE_EXISTING);
+                }
+            }
+            boolean patched = clearElfExecStackFlag(target);
+            if (patched) {
+                log.info("已清除 {} 的 ELF PT_GNU_STACK 可执行栈标志位（兼容 glibc 2.41+）", target);
+            }
+        } catch (Exception e) {
+            log.warn("预处理 Linux RapidOCR 原生库失败（将继续尝试默认加载）: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * 就地清除 ELF64 小端共享库中 PT_GNU_STACK 段头的 PF_X 位。
+     * @return 若检测到 PF_X 并成功清除返回 true，否则返回 false。
+     */
+    static boolean clearElfExecStackFlag(Path soPath) throws IOException {
+        try (RandomAccessFile raf = new RandomAccessFile(soPath.toFile(), "rw")) {
+            if (raf.length() < 64) return false;
+            byte[] header = new byte[64];
+            raf.readFully(header);
+            // ELF64 little-endian: 0x7F 'E' 'L' 'F', EI_CLASS=2 (64-bit), EI_DATA=1 (little-endian)
+            if (header[0] != 0x7F || header[1] != 'E' || header[2] != 'L' || header[3] != 'F'
+                    || header[4] != 2 || header[5] != 1) {
+                return false;
+            }
+            ByteBuffer hb = ByteBuffer.wrap(header).order(ByteOrder.LITTLE_ENDIAN);
+            long ePhoff = hb.getLong(32);
+            int ePhentsize = Short.toUnsignedInt(hb.getShort(54));
+            int ePhnum = Short.toUnsignedInt(hb.getShort(56));
+            if (ePhoff <= 0 || ePhentsize < 8 || ePhnum <= 0 || ePhoff + (long) ePhentsize * ePhnum > raf.length()) {
+                return false;
+            }
+            byte[] ph = new byte[8];
+            boolean patched = false;
+            for (int i = 0; i < ePhnum; i++) {
+                long off = ePhoff + (long) i * ePhentsize;
+                raf.seek(off);
+                raf.readFully(ph);
+                ByteBuffer pb = ByteBuffer.wrap(ph).order(ByteOrder.LITTLE_ENDIAN);
+                int pType = pb.getInt(0);
+                int pFlags = pb.getInt(4);
+                if (pType == PT_GNU_STACK && (pFlags & PF_X) != 0) {
+                    int newFlags = pFlags & ~PF_X;
+                    ByteBuffer out = ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN).putInt(newFlags);
+                    raf.seek(off + 4);
+                    raf.write(out.array());
+                    patched = true;
+                }
+            }
+            return patched;
+        }
     }
 
     public String recognize(byte[] imageBytes, String ext) {
