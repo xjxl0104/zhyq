@@ -170,17 +170,19 @@ async function handleOne(docType, file, emitNow = true) {
   pendingCount.value++
   try {
     let ocrText = ''
+    let ocrError = ''
     if (isImageFile(file)) {
       statusText.value = 'OCR识别中...'
       try {
         ocrText = await recognizeImageText(file, (pct) => {
           statusText.value = `OCR识别 ${pct}%`
         })
-      } catch {
+      } catch (e) {
+        ocrError = e?.message || String(e || 'OCR 引擎初始化失败')
         ocrText = ''
       }
     }
-    statusText.value = '核对中...'
+    statusText.value = 'AI核对中...'
     const fd = new FormData()
     fd.append('file', file)
     fd.append('mode', props.mode)
@@ -188,6 +190,9 @@ async function handleOne(docType, file, emitNow = true) {
     fd.append('periodId', props.periodId)
     if (ocrText) fd.append('ocrText', ocrText)
     const res = await noticeAiApi.verifyUpload(fd)
+    if (ocrError && res.status !== 'AUTO_APPROVED') {
+      res.reason = `${res.reason}（OCR 详情：${ocrError}）`
+    }
     results.value.unshift(res)
     if (res.status === 'AUTO_APPROVED') {
       ElMessage.success(`「${file.name}」AI核准通过，已自动归档到 ${res.matchedNoticeNo}（${res.matchedTenantName}）`)

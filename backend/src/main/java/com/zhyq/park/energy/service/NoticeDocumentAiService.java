@@ -82,6 +82,14 @@ public class NoticeDocumentAiService {
     @Value("${zhyq.ai.vision-model:${ZHYQ_AI_VISION_MODEL:qwen-vl-max}}")
     private String visionModel;
 
+    /** 复用系统已配置的 DeepSeek 模型（ZHYQ_QUOTE_AI_*），用于将 OCR/PDF 原始文本精准结构化提取 */
+    @Value("${zhyq.ai.text-api-url:${ZHYQ_QUOTE_AI_URL:}}")
+    private String deepseekApiUrl;
+    @Value("${zhyq.ai.text-api-key:${ZHYQ_QUOTE_AI_KEY:}}")
+    private String deepseekApiKey;
+    @Value("${zhyq.ai.text-model:${ZHYQ_QUOTE_AI_MODEL:deepseek-flash}}")
+    private String deepseekModel;
+
     public record ExtractedFields(
             String payerName,
             String payeeName,
@@ -396,6 +404,7 @@ public class NoticeDocumentAiService {
         }
 
         // 优先使用前端/本地 OCR 识别出的文字（支持 JPG/PNG/WEBP 银行回执与发票图片）
+        String combinedText = StringUtils.hasText(text) ? text : (ocrText == null ? "" : ocrText);
         if (StringUtils.hasText(ocrText) && ocrText.trim().length() >= 10) {
             ExtractedFields fromOcr = DOC_RECEIPT.equals(docType)
                     ? parseReceiptText(ocrText, "OCR")
@@ -403,6 +412,18 @@ public class NoticeDocumentAiService {
             parsed = mergeExtracted(parsed, fromOcr);
             if (isComplete(parsed, docType)) {
                 return parsed;
+            }
+        }
+
+        // 若有 OCR/PDF/OFD 原文但正则未完整抽出字段，调用系统已接入的 DeepSeek 模型做结构化提取
+        if (StringUtils.hasText(combinedText) && combinedText.trim().length() >= 10
+                && StringUtils.hasText(deepseekApiUrl) && StringUtils.hasText(deepseekApiKey)) {
+            ExtractedFields ds = callDeepSeekExtract(combinedText, docType);
+            if (ds != null) {
+                parsed = mergeExtracted(parsed, ds);
+                if (isComplete(parsed, docType)) {
+                    return parsed;
+                }
             }
         }
 
@@ -488,6 +509,58 @@ public class NoticeDocumentAiService {
             ByteArrayOutputStream baos = new ByteArrayOutputStream();
             ImageIO.write(img, "png", baos);
             return baos.toByteArray();
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private ExtractedFields callDeepSeekExtract(String rawText, String docType) {
+        try {
+            String trimmed = normalizeOcrText(rawText);
+            if (trimmed.length() > 6000) trimmed = trimmed.substring(0, 6000);
+            String sysPrompt = DOC_RECEIPT.equals(docType)
+                    ? "你是严格的财务回执结构化抽取助手。请从下面的银行电子回单 OCR/PDF 原文中抽取字段，只返回纯 JSON 对象（不要 markdown 代码块）："
+                      + "{\"payerName\":\"付款人/支付单位全称\",\"payeeName\":\"收款人/接收单位全称\",\"payeeAccount\":\"收款人银行账号纯数字\",\"amount\":\"支付金额数字(如99000.00)\"}。"
+                      + "只能抽取原文中明确存在的信息，不得猜测或编造，原文没有的填 null。"
+                    : "你是严格的财务发票结构化抽取助手。请从下面的电子发票 OCR/PDF 原文中抽取字段，只返回纯 JSON 对象（不要 markdown 代码块）："
+                      + "{\"buyerName\":\"购买方名称全称\",\"sellerName\":\"销售方名称全称\",\"taxInclusiveAmount\":\"价税合计(小写)含税金额数字(如99000.00)\",\"invoiceNo\":\"发票号码\"}。"
+                      + "只能抽取原文中明确存在的信息，不得猜测或编造，原文没有的填 null。";
+            String modelName = StringUtils.hasText(deepseekModel) ? deepseekModel.trim() : "deepseek-flash";
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("model", modelName);
+            body.put("temperature", 0);
+            body.put("max_tokens", "deepseek-flash".equals(modelName) ? 4096 : 768);
+            body.put("messages", List.of(
+                    Map.of("role", "system", "content", sysPrompt),
+                    Map.of("role", "user", "content", trimmed)
+            ));
+            String reqJson = objectMapper.writeValueAsString(body);
+            HttpClient client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(deepseekApiUrl.trim()))
+                    .timeout(Duration.ofSeconds(40))
+                    .header("Content-Type", "application/json")
+                    .header("Authorization", "Bearer " + deepseekApiKey.trim())
+                    .POST(HttpRequest.BodyPublishers.ofString(reqJson, StandardCharsets.UTF_8))
+                    .build();
+            HttpResponse<String> resp = client.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+            if (resp.statusCode() < 200 || resp.statusCode() >= 300) return null;
+            JsonNode root = objectMapper.readTree(resp.body());
+            String content = root.path("choices").path(0).path("message").path("content").asText("");
+            int l = content.indexOf('{'), r = content.lastIndexOf('}');
+            if (l < 0 || r <= l) return null;
+            JsonNode j = objectMapper.readTree(content.substring(l, r + 1));
+            return new ExtractedFields(
+                    jsonStr(j, "payerName"),
+                    jsonStr(j, "payeeName"),
+                    digitsOnly(jsonStr(j, "payeeAccount")),
+                    parseDecimal(jsonStr(j, "amount")),
+                    jsonStr(j, "buyerName"),
+                    jsonStr(j, "sellerName"),
+                    parseDecimal(jsonStr(j, "taxInclusiveAmount")),
+                    jsonStr(j, "invoiceNo"),
+                    "OCR+DEEPSEEK"
+            );
         } catch (Exception e) {
             return null;
         }

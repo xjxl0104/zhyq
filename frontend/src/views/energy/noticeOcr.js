@@ -14,11 +14,14 @@ async function getWorker() {
   if (!workerPromise) {
     workerPromise = (async () => {
       const { createWorker } = await import('tesseract.js')
+      const origin = window.location.origin
       const base = (import.meta.env.BASE_URL || '/').replace(/\/+$/, '')
+      const prefix = `${origin}${base}/ocr`
+      // 显式指定 .wasm.js 路径，避免 tesseract.js v7 在新版 Chrome/Edge 上尝试拉取 relaxedsimd 报 404
       const worker = await createWorker(['chi_sim', 'eng'], 1, {
-        workerPath: `${base}/ocr/worker.min.js`,
-        corePath: `${base}/ocr/core`,
-        langPath: `${base}/ocr/lang`,
+        workerPath: `${prefix}/worker.min.js`,
+        corePath: `${prefix}/core/tesseract-core-lstm.wasm.js`,
+        langPath: `${prefix}/lang`,
         logger: (m) => {
           if (activeProgressCb && m?.status === 'recognizing text' && typeof m.progress === 'number') {
             activeProgressCb(Math.round(m.progress * 100))
