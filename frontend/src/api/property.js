@@ -113,6 +113,26 @@ export const checkApi = {
   rectify: (id) => request.post(`/property/check/${id}/rectify`)
 }
 
+// 统一巡检与检查体系（设备巡检 / 安防巡更 / 保洁检查 / 绿化检查）
+export const routineInspectionApi = {
+  serverTime: () => request.get('/property/routine/server-time'),
+  // 巡检人花名册
+  inspectors: (params) => request.get('/property/routine/inspectors', { params }),
+  saveInspector: (data) => request.post('/property/routine/inspectors', data),
+  deleteInspector: (id) => request.delete(`/property/routine/inspectors/${id}`),
+  // 巡检模板与检查项
+  templates: (moduleType) => request.get('/property/routine/templates', { params: { moduleType } }),
+  saveTemplate: (data) => request.post('/property/routine/templates', data),
+  deleteTemplate: (id) => request.delete(`/property/routine/templates/${id}`),
+  // 每日/24小时任务与即时拍照打卡
+  tasks: (params) => request.get('/property/routine/tasks', { params }),
+  getTask: (taskId) => request.get(`/property/routine/tasks/${taskId}`),
+  captureItem: (taskId, itemId, data) => request.post(`/property/routine/tasks/${taskId}/items/${itemId}/capture`, data),
+  toWorkOrder: (itemId) => request.post(`/property/routine/items/${itemId}/to-workorder`),
+  // 可视化汇总分析（日/月/年、巡检人、问题分析）
+  analytics: (params) => request.get('/property/routine/analytics', { params })
+}
+
 // 投诉反馈
 export const feedbackApi = {
   page: (params) => request.get('/property/feedback/page', { params }),

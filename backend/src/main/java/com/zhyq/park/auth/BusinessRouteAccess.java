@@ -103,6 +103,11 @@ public final class BusinessRouteAccess {
             case "property/meeting" -> hasMenu(grants, "/property/meeting");
             case "property/check" -> anyMenu(grants, "/property/check-clean", "/property/check-green",
                     "/property/check-quality") || hasPrefix(grants, "property:check:");
+            case "property/routine" -> anyMenu(grants, "/property/inspection", "/property/patrol",
+                    "/property/check-clean", "/property/check-green", "/property/workorder-summary")
+                    || hasPrefix(grants, "property:inspection:")
+                    || hasPrefix(grants, "property:patrol:")
+                    || hasPrefix(grants, "property:check:");
             case "property/feedback" -> hasMenu(grants, "/property/complaint")
                     || hasPrefix(grants, "property:feedback:");
             case "energy/stats-api" -> hasMenu(grants, "/energy/stats");
